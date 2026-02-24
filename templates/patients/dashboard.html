@@ -1,0 +1,37 @@
+{% extends 'base.html' %}
+{% block title %}Dashboard | MEDTRACK{% endblock %}
+{% block content %}
+<h1 class="h4 mb-3">Dashboard</h1>
+<div class="row g-2 g-md-3 mb-4">
+  <div class="col-6 col-md-2"><div class="card"><div class="card-body py-2 py-md-3"><small>Today's</small><div class="h5 mb-0">{{ today_tasks|length }}</div></div></div></div>
+  <div class="col-6 col-md-2"><div class="card"><div class="card-body py-2 py-md-3"><small>Upcoming</small><div class="h5 mb-0">{{ upcoming_tasks|length }}</div></div></div></div>
+  <div class="col-6 col-md-2"><div class="card"><div class="card-body py-2 py-md-3"><small>Overdue</small><div class="h5 mb-0 text-danger">{{ overdue_tasks|length }}</div></div></div></div>
+  <div class="col-6 col-md-2"><div class="card"><div class="card-body py-2 py-md-3"><small>Awaiting</small><div class="h5 mb-0">{{ awaiting_tasks|length }}</div></div></div></div>
+  <div class="col-6 col-md-2"><div class="card"><div class="card-body py-2 py-md-3"><small>Red List</small><div class="h5 mb-0 text-danger">{{ red_list_count }}</div></div></div></div>
+  <div class="col-6 col-md-2"><div class="card"><div class="card-body py-2 py-md-3"><small>Grey List</small><div class="h5 mb-0 text-secondary">{{ grey_list_count }}</div></div></div></div>
+</div>
+
+<div class="row g-3 g-md-4">
+  <div class="col-12 col-lg-6">
+    <h2 class="h6">Today's Tasks</h2>
+    <ul class="list-group mb-3">
+      {% for task in today_tasks %}<li class="list-group-item small"><a href="{% url 'patients:case_detail' task.case_id %}">{{ task.case.uhid }}</a> — {{ task.title }} ({{ task.due_date }})</li>{% empty %}<li class="list-group-item">No tasks due today.</li>{% endfor %}
+    </ul>
+    <h2 class="h6">Upcoming ({{ upcoming_days }} days)</h2>
+    <ul class="list-group">
+      {% for task in upcoming_tasks %}<li class="list-group-item small">{{ task.due_date }} — <a href="{% url 'patients:case_detail' task.case_id %}">{{ task.case.patient_name }}</a> / {{ task.title }}</li>{% empty %}<li class="list-group-item">No upcoming tasks.</li>{% endfor %}
+    </ul>
+  </div>
+  <div class="col-12 col-lg-6">
+    <h2 class="h6">Overdue Tasks</h2>
+    <ul class="list-group mb-3">
+      {% for task in overdue_tasks %}<li class="list-group-item small">{{ task.due_date }} — <a href="{% url 'patients:case_detail' task.case_id %}">{{ task.case.uhid }}</a> / {{ task.title }}</li>{% empty %}<li class="list-group-item">No overdue tasks.</li>{% endfor %}
+    </ul>
+    <h2 class="h6">Awaiting Reports</h2>
+    <ul class="list-group">
+      {% for task in awaiting_tasks %}<li class="list-group-item small"><a href="{% url 'patients:case_detail' task.case_id %}">{{ task.case.patient_name }}</a> — {{ task.title }}</li>{% empty %}<li class="list-group-item">No awaiting-report tasks.</li>{% endfor %}
+    </ul>
+    <p class="mt-3 mb-0 small"><strong>Cases:</strong> Active {{ active_case_count }} · Completed {{ completed_case_count }}</p>
+  </div>
+</div>
+{% endblock %}

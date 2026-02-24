@@ -1,0 +1,16 @@
+{% extends 'base.html' %}
+{% block title %}Edit Task | MEDTRACK{% endblock %}
+{% block content %}
+<div class="card"><div class="card-body">
+  <h1 class="h5">Edit Task</h1>
+  <form method="post" class="row g-3">{% csrf_token %}
+    {% for field in form %}
+      <div class="col-12 col-md-6">
+        <label class="form-label">{{ field.label }}</label>
+        {{ field }}
+      </div>
+    {% endfor %}
+    <div class="col-12"><button class="btn btn-primary w-100 w-sm-auto">Save Task</button></div>
+  </form>
+</div></div>
+{% endblock %}

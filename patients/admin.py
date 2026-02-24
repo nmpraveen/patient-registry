@@ -16,15 +16,24 @@ class TaskInline(admin.TabularInline):
 
 @admin.register(Case)
 class CaseAdmin(admin.ModelAdmin):
-    list_display = ("id", "uhid", "patient_name", "phone_number", "category", "status", "updated_at")
+    list_display = (
+        "id",
+        "uhid",
+        "patient_name",
+        "phone_number",
+        "category",
+        "status",
+        "review_date",
+        "updated_at",
+    )
     search_fields = ("uhid", "patient_name", "phone_number")
-    list_filter = ("status", "category")
+    list_filter = ("status", "category", "surgical_pathway")
     inlines = [TaskInline]
 
 
 @admin.register(Task)
 class TaskAdmin(admin.ModelAdmin):
-    list_display = ("id", "case", "title", "due_date", "status", "assigned_user", "task_type")
+    list_display = ("id", "case", "title", "due_date", "status", "assigned_user", "task_type", "frequency_label")
     search_fields = ("title", "case__uhid", "case__patient_name")
     list_filter = ("status", "task_type", "due_date")
 

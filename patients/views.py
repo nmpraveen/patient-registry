@@ -1,8 +1,10 @@
 from datetime import timedelta
 
 from django.contrib import messages
+from django.contrib.auth import get_user_model
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db.models import Count, Q
+from django.http import HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
 from django.utils import timezone
@@ -10,7 +12,42 @@ from django.views import View
 from django.views.generic import CreateView, DetailView, ListView, UpdateView
 
 from .forms import ActivityLogForm, CaseForm, TaskForm
-from .models import Case, CaseActivityLog, CaseStatus, Task, TaskStatus
+from .models import (
+    Case,
+    CaseActivityLog,
+    CaseStatus,
+    DepartmentConfig,
+    ReviewFrequency,
+    Task,
+    TaskStatus,
+    build_default_tasks,
+    frequency_to_days,
+)
+
+
+ROLE_RULES = {
+    "Admin": {"case_create", "case_edit", "task_create", "task_edit", "note_add"},
+    "Doctor": {"case_create", "case_edit", "task_create", "task_edit", "note_add"},
+    "Reception": {"case_create", "case_edit", "task_create", "note_add"},
+    "Nurse": {"task_edit", "note_add"},
+    "Caller": {"note_add"},
+}
+
+
+def has_capability(user, capability):
+    if user.is_superuser:
+        return True
+    user_groups = set(user.groups.values_list("name", flat=True))
+    for group in user_groups:
+        if capability in ROLE_RULES.get(group, set()):
+            return True
+    return False
+
+
+def is_doctor_admin(user):
+    if user.is_superuser:
+        return True
+    return user.groups.filter(name__in=["Doctor", "Admin"]).exists()
 
 
 class DashboardView(LoginRequiredMixin, ListView):
@@ -80,9 +117,6 @@ class CaseListView(LoginRequiredMixin, ListView):
         context = super().get_context_data(**kwargs)
         context["filters"] = {k: self.request.GET.get(k, "") for k in ["q", "status", "category", "assigned_user", "due_start", "due_end"]}
         context["case_statuses"] = CaseStatus.choices
-        from django.contrib.auth import get_user_model
-        from .models import DepartmentConfig
-
         context["categories"] = DepartmentConfig.objects.all()
         context["users"] = get_user_model().objects.order_by("username")
         return context
@@ -93,10 +127,25 @@ class CaseCreateView(LoginRequiredMixin, CreateView):
     form_class = CaseForm
     template_name = "patients/case_form.html"
 
+    def dispatch(self, request, *args, **kwargs):
+        if not has_capability(request.user, "case_create"):
+            return HttpResponseForbidden("You do not have permission to create cases.")
+        return super().dispatch(request, *args, **kwargs)
+
     def form_valid(self, form):
         form.instance.created_by = self.request.user
         response = super().form_valid(form)
-        CaseActivityLog.objects.create(case=self.object, user=self.request.user, note="Case created")
+
+        if self.object.review_frequency and not self.object.review_date:
+            self.object.review_date = timezone.localdate() + timedelta(days=frequency_to_days(self.object.review_frequency))
+            self.object.save(update_fields=["review_date", "updated_at"])
+
+        created_tasks = build_default_tasks(self.object, self.request.user)
+        CaseActivityLog.objects.create(
+            case=self.object,
+            user=self.request.user,
+            note=f"Case created with {len(created_tasks)} starter task(s)",
+        )
         return response
 
     def get_success_url(self):
@@ -118,7 +167,9 @@ class CaseDetailView(LoginRequiredMixin, DetailView):
         log_form.fields["task"].queryset = case.tasks.all()
         log_form.fields["task"].required = False
         context["log_form"] = log_form
-        context["is_doctor"] = self.request.user.groups.filter(name__in=["Doctor", "Admin"]).exists() or self.request.user.is_superuser
+        context["can_task_create"] = has_capability(self.request.user, "task_create")
+        context["can_task_edit"] = has_capability(self.request.user, "task_edit")
+        context["can_note_add"] = has_capability(self.request.user, "note_add")
         return context
 
 
@@ -127,16 +178,31 @@ class CaseUpdateView(LoginRequiredMixin, UpdateView):
     form_class = CaseForm
     template_name = "patients/case_form.html"
 
+    def dispatch(self, request, *args, **kwargs):
+        if not has_capability(request.user, "case_edit"):
+            return HttpResponseForbidden("You do not have permission to edit cases.")
+        return super().dispatch(request, *args, **kwargs)
+
     def form_valid(self, form):
         case = self.get_object()
         old_status = case.status
         new_status = form.cleaned_data["status"]
         grey_list_cutoff = timezone.localdate() - timedelta(days=30)
         has_grey_tasks = case.tasks.exclude(status=TaskStatus.COMPLETED).filter(due_date__lt=grey_list_cutoff).exists()
-        is_doctor = self.request.user.groups.filter(name__in=["Doctor", "Admin"]).exists() or self.request.user.is_superuser
-        if has_grey_tasks and new_status in [CaseStatus.LOSS_TO_FOLLOW_UP, CaseStatus.ACTIVE] and not is_doctor:
+        if has_grey_tasks and new_status in [CaseStatus.LOSS_TO_FOLLOW_UP, CaseStatus.ACTIVE] and not is_doctor_admin(self.request.user):
             form.add_error("status", "Only Doctor/Admin can set Grey List cases to Active or Loss to Follow-up.")
             return self.form_invalid(form)
+
+        if form.cleaned_data.get("surgery_done") and not case.surgery_done:
+            category_name = case.category.name.upper()
+            if category_name == "SURGERY":
+                non_surgical_department = DepartmentConfig.objects.filter(name__iexact="Non Surgical").first() or DepartmentConfig.objects.filter(
+                    name__iexact="Non-Surgical"
+                ).first()
+                if non_surgical_department:
+                    form.instance.category = non_surgical_department
+                    form.instance.review_date = timezone.localdate() + timedelta(days=30)
+
         if old_status != new_status:
             CaseActivityLog.objects.create(case=case, user=self.request.user, note=f"Case status changed: {old_status} → {new_status}")
         return super().form_valid(form)
@@ -147,6 +213,8 @@ class CaseUpdateView(LoginRequiredMixin, UpdateView):
 
 class TaskCreateView(LoginRequiredMixin, View):
     def post(self, request, pk):
+        if not has_capability(request.user, "task_create"):
+            return HttpResponseForbidden("You do not have permission to create tasks.")
         case = get_object_or_404(Case, pk=pk)
         form = TaskForm(request.POST)
         if form.is_valid():
@@ -166,6 +234,11 @@ class TaskUpdateView(LoginRequiredMixin, UpdateView):
     form_class = TaskForm
     template_name = "patients/task_form.html"
 
+    def dispatch(self, request, *args, **kwargs):
+        if not has_capability(request.user, "task_edit"):
+            return HttpResponseForbidden("You do not have permission to edit tasks.")
+        return super().dispatch(request, *args, **kwargs)
+
     def form_valid(self, form):
         response = super().form_valid(form)
         CaseActivityLog.objects.create(
@@ -182,6 +255,8 @@ class TaskUpdateView(LoginRequiredMixin, UpdateView):
 
 class AddCaseNoteView(LoginRequiredMixin, View):
     def post(self, request, pk):
+        if not has_capability(request.user, "note_add"):
+            return HttpResponseForbidden("You do not have permission to add notes.")
         case = get_object_or_404(Case, pk=pk)
         form = ActivityLogForm(request.POST)
         form.fields["task"].queryset = case.tasks.all()

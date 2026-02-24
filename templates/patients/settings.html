@@ -8,10 +8,16 @@
       <h2 class="h6">Create / Update Role Permissions</h2>
       <form method="post">{% csrf_token %}
         <input type="hidden" name="action" value="create_role" />
+        <div class="mb-2">{{ role_form.role_name.label_tag }} {{ role_form.role_name }}</div>
         {% for field in role_form %}
-          <div class="mb-2">{{ field.label_tag }} {{ field }}</div>
+          {% if field.name != 'role_name' %}
+            <div class="form-check mb-2">
+              {{ field }}
+              <label class="form-check-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+            </div>
+          {% endif %}
         {% endfor %}
-        <button class="btn btn-primary btn-sm w-100">Save Role</button>
+        <button class="btn btn-primary btn-sm w-100 mt-2">Save Role</button>
       </form>
       <hr>
       <ul class="list-group list-group-flush small">

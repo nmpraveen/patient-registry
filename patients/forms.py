@@ -11,7 +11,12 @@ class StyledModelForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         for field in self.fields.values():
-            css_class = "form-select" if isinstance(field.widget, forms.Select) else "form-control"
+            if isinstance(field.widget, forms.CheckboxInput):
+                css_class = "form-check-input"
+            elif isinstance(field.widget, forms.Select):
+                css_class = "form-select"
+            else:
+                css_class = "form-control"
             existing = field.widget.attrs.get("class", "")
             field.widget.attrs["class"] = f"{existing} {css_class}".strip()
 
@@ -80,6 +85,14 @@ class RoleSettingForm(StyledModelForm):
             "can_note_add",
             "can_manage_settings",
         ]
+        widgets = {
+            "can_case_create": forms.CheckboxInput(),
+            "can_case_edit": forms.CheckboxInput(),
+            "can_task_create": forms.CheckboxInput(),
+            "can_task_edit": forms.CheckboxInput(),
+            "can_note_add": forms.CheckboxInput(),
+            "can_manage_settings": forms.CheckboxInput(),
+        }
 
 
 class DepartmentConfigForm(StyledModelForm):

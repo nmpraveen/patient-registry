@@ -1,0 +1,47 @@
+{% extends 'base.html' %}
+{% block title %}Case {{ case.uhid }} | MEDTRACK{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-3">
+  <div>
+    <h1 class="h3 mb-1">{{ case.patient_name }} <small class="text-muted">({{ case.uhid }})</small></h1>
+    <p class="mb-0">Phone: {{ case.phone_number }} · Category: {{ case.category.name }} · Status: {{ case.get_status_display }}</p>
+  </div>
+  <a class="btn btn-outline-primary" href="{% url 'patients:case_edit' case.id %}">Edit Case</a>
+</div>
+<div class="row g-4">
+  <div class="col-lg-7">
+    <div class="card mb-3"><div class="card-body">
+      <h2 class="h5">Tasks</h2>
+      <table class="table table-sm">
+        <thead><tr><th>Title</th><th>Due</th><th>Status</th><th>Assigned</th><th></th></tr></thead>
+        <tbody>
+        {% for task in tasks %}
+          <tr><td>{{ task.title }}</td><td>{{ task.due_date }}</td><td>{{ task.get_status_display }}</td><td>{{ task.assigned_user|default:'-' }}</td><td><a href="{% url 'patients:task_edit' task.id %}">Edit</a></td></tr>
+        {% empty %}<tr><td colspan="5">No tasks added yet.</td></tr>{% endfor %}
+        </tbody>
+      </table>
+      <hr>
+      <h3 class="h6">Add Task</h3>
+      <form method="post" action="{% url 'patients:task_create' case.id %}" class="row g-2">{% csrf_token %}
+        {% for field in task_form %}<div class="col-md-6"><label class="form-label small">{{ field.label }}</label>{{ field }}</div>{% endfor %}
+        <div class="col-12"><button class="btn btn-primary btn-sm">Add Task</button></div>
+      </form>
+    </div></div>
+  </div>
+  <div class="col-lg-5">
+    <div class="card"><div class="card-body">
+      <h2 class="h5">Activity Log</h2>
+      <form method="post" action="{% url 'patients:case_note_create' case.id %}" class="mb-3">{% csrf_token %}
+        {{ log_form.task.label_tag }} {{ log_form.task }}
+        {{ log_form.note.label_tag }} {{ log_form.note }}
+        <button class="btn btn-secondary btn-sm mt-2">Add Note</button>
+      </form>
+      <ul class="list-group list-group-flush">
+        {% for log in activity_logs %}
+          <li class="list-group-item px-0"><small class="text-muted">{{ log.created_at }} · {{ log.user|default:'system' }}{% if log.task %} · {{ log.task.title }}{% endif %}</small><div>{{ log.note }}</div></li>
+        {% empty %}<li class="list-group-item px-0">No activity yet.</li>{% endfor %}
+      </ul>
+    </div></div>
+  </div>
+</div>
+{% endblock %}

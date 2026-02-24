@@ -8,5 +8,5 @@ urlpatterns = [
     path("login/", auth_views.LoginView.as_view(template_name="registration/login.html"), name="login"),
     path("logout/", auth_views.LogoutView.as_view(), name="logout"),
     path("patients/", include("patients.urls")),
-    path("", RedirectView.as_view(pattern_name="patients:list", permanent=False)),
+    path("", RedirectView.as_view(pattern_name="patients:dashboard", permanent=False)),
 ]

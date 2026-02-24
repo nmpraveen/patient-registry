@@ -1,32 +1,63 @@
 from django import forms
 
-from .models import Patient
+from .models import Case, CaseActivityLog, Task, ensure_default_departments
 
 
-class PatientForm(forms.ModelForm):
+class StyledModelForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        for name, field in self.fields.items():
-            css_class = "form-select" if name == "sex" else "form-control"
+        for field in self.fields.values():
+            css_class = "form-select" if isinstance(field.widget, forms.Select) else "form-control"
             existing = field.widget.attrs.get("class", "")
             field.widget.attrs["class"] = f"{existing} {css_class}".strip()
 
+
+class CaseForm(StyledModelForm):
+    def __init__(self, *args, **kwargs):
+        ensure_default_departments()
+        super().__init__(*args, **kwargs)
+        self.fields["category"].queryset = self.fields["category"].queryset.order_by("name")
+
     class Meta:
-        model = Patient
+        model = Case
         fields = [
-            "first_name",
-            "last_name",
-            "date_of_birth",
-            "sex",
-            "phone",
-            "email",
-            "address",
-            "emergency_contact_name",
-            "emergency_contact_phone",
+            "uhid",
+            "patient_name",
+            "phone_number",
+            "category",
+            "status",
+            "lmp",
+            "edd",
+            "surgical_pathway",
+            "surgery_done",
+            "surgery_date",
+            "review_frequency",
+            "review_date",
             "notes",
         ]
         widgets = {
-            "date_of_birth": forms.DateInput(attrs={"type": "date"}),
-            "address": forms.Textarea(attrs={"rows": 2}),
+            "lmp": forms.DateInput(attrs={"type": "date"}),
+            "edd": forms.DateInput(attrs={"type": "date"}),
+            "surgery_date": forms.DateInput(attrs={"type": "date"}),
+            "review_date": forms.DateInput(attrs={"type": "date"}),
             "notes": forms.Textarea(attrs={"rows": 3}),
+        }
+
+
+class TaskForm(StyledModelForm):
+    class Meta:
+        model = Task
+        fields = ["title", "due_date", "status", "assigned_user", "task_type", "frequency_label", "notes"]
+        widgets = {
+            "due_date": forms.DateInput(attrs={"type": "date"}),
+            "notes": forms.Textarea(attrs={"rows": 2}),
+        }
+
+
+class ActivityLogForm(StyledModelForm):
+    class Meta:
+        model = CaseActivityLog
+        fields = ["task", "note"]
+        widgets = {
+            "note": forms.Textarea(attrs={"rows": 2, "placeholder": "Add follow-up note"}),
         }

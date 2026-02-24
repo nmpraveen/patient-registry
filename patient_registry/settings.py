@@ -102,5 +102,8 @@ STATIC_URL = "static/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 LOGIN_URL = "login"
-LOGIN_REDIRECT_URL = "patients:list"
+LOGIN_REDIRECT_URL = "patients:dashboard"
 LOGOUT_REDIRECT_URL = "login"
+
+SESSION_COOKIE_AGE = env.int("SESSION_TIMEOUT_SECONDS", default=1800)
+SESSION_EXPIRE_AT_BROWSER_CLOSE = False

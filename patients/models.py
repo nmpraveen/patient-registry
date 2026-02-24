@@ -141,6 +141,17 @@ def ensure_default_role_settings():
     for role_name, perms in DEFAULT_ROLE_SETTINGS.items():
         RoleSetting.objects.get_or_create(role_name=role_name, defaults=perms)
 
+    @property
+    def trimester(self):
+        if not self.lmp:
+            return None
+        days = (timezone.localdate() - self.lmp).days
+        weeks = max(days // 7, 0)
+        if weeks < 13:
+            return "First"
+        if weeks < 28:
+            return "Second"
+        return "Third"
 
 class Case(models.Model):
     uhid = models.CharField(max_length=64, unique=True)

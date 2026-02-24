@@ -164,6 +164,7 @@ class Case(models.Model):
 
     lmp = models.DateField(blank=True, null=True)
     edd = models.DateField(blank=True, null=True)
+    usg_edd = models.DateField(blank=True, null=True)
     surgical_pathway = models.CharField(max_length=32, choices=SurgicalPathway.choices, blank=True)
     surgery_done = models.BooleanField(default=False)
     review_frequency = models.CharField(max_length=20, choices=ReviewFrequency.choices, blank=True)
@@ -201,8 +202,8 @@ class Case(models.Model):
                 raise ValidationError({"uhid": "No duplicate active cases are allowed for the same UHID."})
 
         category_name = self.category.name.upper() if self.category_id else ""
-        if category_name == "ANC" and (not self.lmp or not self.edd):
-            raise ValidationError("ANC cases require both LMP and EDD.")
+        if category_name == "ANC" and (not self.lmp or (not self.edd and not self.usg_edd)):
+            raise ValidationError("ANC cases require LMP and at least one EDD (LMP-based or USG-based).")
         if category_name == "SURGERY":
             if not self.surgical_pathway:
                 raise ValidationError({"surgical_pathway": "Please choose surveillance or planned surgery."})
@@ -228,6 +229,10 @@ class Case(models.Model):
             return "Second"
         return "Third"
 
+    @property
+    def effective_edd(self):
+        return self.usg_edd or self.edd
+
     def __str__(self) -> str:
         return f"{self.uhid} - {self.full_name}"
 
@@ -248,6 +253,12 @@ class Task(models.Model):
 
     class Meta:
         ordering = ["due_date", "id"]
+
+    def clean(self):
+        if self.status == TaskStatus.COMPLETED and self.case_id:
+            category_name = self.case.category.name.upper()
+            if category_name == "ANC" and self.due_date and self.due_date > timezone.localdate():
+                raise ValidationError({"status": "ANC tasks cannot be completed before their scheduled due date."})
 
     def save(self, *args, **kwargs):
         if self.status == TaskStatus.COMPLETED and self.completed_at is None:
@@ -283,12 +294,47 @@ def build_default_tasks(case: Case, actor):
     today = timezone.localdate()
 
     if category_name == "ANC":
-        anc_dates = [today, today + timedelta(days=30), today + timedelta(days=60)]
-        titles = ["ANC Visit", "USG Review", "BP & Labs"]
-        for title, due in zip(titles, anc_dates):
-            if case.edd and due > case.edd:
-                due = case.edd
-            tasks.append((title, due, TaskType.VISIT, "ANC protocol"))
+        start_date = case.lmp or today
+        anc_schedule = {
+            2: [
+                "Routine prenatal check up",
+                "Urine pregnancy test",
+                "Blood and urine test (ANC profile)",
+                "Pregnancy ultrasound scan for cardiac activity",
+            ],
+            3: [
+                "Routine prenatal check up",
+                "First trimester combined test",
+                "NT ultrasound scan (sonography) and a double marker test",
+            ],
+            4: ["Routine prenatal check up"],
+            5: ["Routine prenatal check up", "Anomaly or ultrasound level II scan"],
+            6: ["Routine prenatal check up", "First dose of Tetanus Toxoid (TT) injection"],
+            7: [
+                "Routine prenatal check up (once every two weeks)",
+                "Second dose of Tetanus Toxoid (TT) injection",
+                "Growth and fetal wellbeing ultrasound scan",
+                "Blood test (CBC/Urine R/OGCT)",
+            ],
+            8: ["Routine prenatal check up (once every two weeks)"],
+            9: [
+                "Routine prenatal check up (once every week)",
+                "Growth ultrasound scan",
+                "Nonstress test (NST)",
+                "Blood test (CBC/HIV/HBsAg)",
+            ],
+        }
+        for month, titles in anc_schedule.items():
+            due = start_date + timedelta(days=(month - 1) * 28)
+            if case.effective_edd and due > case.effective_edd:
+                due = case.effective_edd
+            for title in titles:
+                task_type = TaskType.VISIT
+                if "test" in title.lower() or "blood" in title.lower() or "urine" in title.lower():
+                    task_type = TaskType.LAB
+                elif "scan" in title.lower() or "injection" in title.lower() or "nst" in title.lower():
+                    task_type = TaskType.PROCEDURE
+                tasks.append((title, due, task_type, f"ANC month {month}"))
     elif category_name == "SURGERY":
         if case.surgical_pathway == SurgicalPathway.PLANNED_SURGERY:
             base_date = case.surgery_date or today

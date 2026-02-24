@@ -72,7 +72,42 @@ class MedtrackViewTests(TestCase):
         )
         self.assertEqual(response.status_code, 302)
         case = Case.objects.get(uhid="UH222")
-        self.assertGreaterEqual(case.tasks.count(), 3)
+        self.assertGreaterEqual(case.tasks.count(), 20)
+
+    def test_anc_task_cannot_complete_before_due_date(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH999",
+            first_name="Future",
+            last_name="ANC",
+            phone_number="9998887776",
+            category=self.anc,
+            status=CaseStatus.ACTIVE,
+            lmp=timezone.localdate() - timedelta(days=30),
+            edd=timezone.localdate() + timedelta(days=200),
+            created_by=self.user,
+        )
+        task = Task.objects.create(
+            case=case,
+            title="Future ANC Check",
+            due_date=timezone.localdate() + timedelta(days=7),
+            created_by=self.user,
+        )
+        response = self.client.post(
+            reverse("patients:task_edit", kwargs={"pk": task.pk}),
+            {
+                "title": task.title,
+                "due_date": task.due_date.isoformat(),
+                "status": TaskStatus.COMPLETED,
+                "assigned_user": "",
+                "task_type": task.task_type,
+                "frequency_label": task.frequency_label,
+                "notes": "",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        task.refresh_from_db()
+        self.assertNotEqual(task.status, TaskStatus.COMPLETED)
 
 
     def test_case_form_bootstraps_categories_when_empty(self):

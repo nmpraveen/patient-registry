@@ -7,6 +7,7 @@
     <p class="mb-0 small">Phone: {{ case.phone_number }} · Category: {{ case.category.name }} · Status: {{ case.get_status_display }}</p>
     <p class="mb-0 small text-muted">
       {% if case.lmp %}LMP {{ case.lmp }}{% endif %} {% if case.edd %}· EDD {{ case.edd }}{% endif %}
+      {% if case.usg_edd %}· USG-EDD {{ case.usg_edd }}{% endif %}
       {% if case.trimester %}· {{ case.trimester }} trimester{% endif %}
       {% if case.surgical_pathway %}· {{ case.get_surgical_pathway_display }}{% endif %}
       {% if case.review_date %}· Next review {{ case.review_date }}{% endif %}
@@ -23,13 +24,21 @@
           <thead><tr><th>Title</th><th>Due</th><th>Status</th><th class="d-none d-md-table-cell">Freq</th><th class="d-none d-md-table-cell">Assigned</th><th></th></tr></thead>
           <tbody>
           {% for task in tasks %}
-            <tr>
+            <tr {% if case.category.name|upper == 'ANC' and task.due_date > today %}class="table-secondary"{% endif %}>
               <td>{{ task.title }}</td>
               <td>{{ task.due_date }}</td>
               <td>{{ task.get_status_display }}</td>
               <td class="d-none d-md-table-cell">{{ task.frequency_label|default:'-' }}</td>
               <td class="d-none d-md-table-cell">{{ task.assigned_user|default:'-' }}</td>
-              <td>{% if can_task_edit %}<a href="{% url 'patients:task_edit' task.id %}">Edit</a>{% else %}-{% endif %}</td>
+              <td>
+                {% if can_task_edit %}
+                  {% if case.category.name|upper == 'ANC' and task.due_date > today %}
+                    <span class="text-muted small">Locked until due date</span>
+                  {% else %}
+                    <a href="{% url 'patients:task_edit' task.id %}">Edit</a>
+                  {% endif %}
+                {% else %}-{% endif %}
+              </td>
             </tr>
           {% empty %}<tr><td colspan="6">No tasks added yet.</td></tr>{% endfor %}
           </tbody>

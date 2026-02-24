@@ -160,6 +160,10 @@ class CaseDetailView(LoginRequiredMixin, DetailView):
         context["can_note_add"] = has_capability(self.request.user, "note_add")
         return context
 
+    def dispatch(self, request, *args, **kwargs):
+        if not has_capability(request.user, "task_edit"):
+            return HttpResponseForbidden("You do not have permission to edit tasks.")
+        return super().dispatch(request, *args, **kwargs)
 
 class CaseUpdateView(LoginRequiredMixin, UpdateView):
     model = Case

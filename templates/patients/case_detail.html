@@ -3,7 +3,7 @@
 {% block content %}
 <div class="d-flex flex-column flex-md-row justify-content-between align-items-start gap-2 mb-3">
   <div>
-    <h1 class="h4 mb-1">{{ case.patient_name }} <small class="text-muted">({{ case.uhid }})</small></h1>
+    <h1 class="h4 mb-1">{{ case.full_name }} <small class="text-muted">({{ case.uhid }})</small></h1>
     <p class="mb-0 small">Phone: {{ case.phone_number }} · Category: {{ case.category.name }} · Status: {{ case.get_status_display }}</p>
     <p class="mb-0 small text-muted">
       {% if case.lmp %}LMP {{ case.lmp }}{% endif %} {% if case.edd %}· EDD {{ case.edd }}{% endif %}

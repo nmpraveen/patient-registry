@@ -52,7 +52,8 @@ class Command(BaseCommand):
             bucket = i % 3
             kwargs = {
                 "uhid": uhid,
-                "patient_name": f"Mock Patient {i}",
+                "first_name": "Mock",
+                "last_name": f"Patient {i}",
                 "phone_number": f"9{i:09d}"[-10:],
                 "status": CaseStatus.ACTIVE,
                 "created_by": demo_user,

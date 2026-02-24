@@ -7,6 +7,7 @@ from .views import (
     CaseListView,
     CaseUpdateView,
     DashboardView,
+    AdminSettingsView,
     TaskCreateView,
     TaskUpdateView,
 )
@@ -15,6 +16,7 @@ app_name = "patients"
 
 urlpatterns = [
     path("", DashboardView.as_view(), name="dashboard"),
+    path("settings/", AdminSettingsView.as_view(), name="settings"),
     path("cases/", CaseListView.as_view(), name="case_list"),
     path("cases/new/", CaseCreateView.as_view(), name="case_create"),
     path("cases/<int:pk>/", CaseDetailView.as_view(), name="case_detail"),

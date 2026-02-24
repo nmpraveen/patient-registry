@@ -1,0 +1,59 @@
+{% extends 'base.html' %}
+{% block title %}Settings | MEDTRACK{% endblock %}
+{% block content %}
+<h1 class="h4 mb-3">Admin Settings</h1>
+<div class="row g-3">
+  <div class="col-12 col-lg-4">
+    <div class="card"><div class="card-body">
+      <h2 class="h6">Create / Update Role Permissions</h2>
+      <form method="post">{% csrf_token %}
+        <input type="hidden" name="action" value="create_role" />
+        {% for field in role_form %}
+          <div class="mb-2">{{ field.label_tag }} {{ field }}</div>
+        {% endfor %}
+        <button class="btn btn-primary btn-sm w-100">Save Role</button>
+      </form>
+      <hr>
+      <ul class="list-group list-group-flush small">
+        {% for role in roles %}
+          <li class="list-group-item px-0">{{ role.role_name }}: case-create {{ role.can_case_create|yesno:"yes,no" }}, case-edit {{ role.can_case_edit|yesno:"yes,no" }}, task-create {{ role.can_task_create|yesno:"yes,no" }}, task-edit {{ role.can_task_edit|yesno:"yes,no" }}, notes {{ role.can_note_add|yesno:"yes,no" }}, settings {{ role.can_manage_settings|yesno:"yes,no" }}</li>
+        {% endfor %}
+      </ul>
+    </div></div>
+  </div>
+
+  <div class="col-12 col-lg-4">
+    <div class="card"><div class="card-body">
+      <h2 class="h6">Create Custom Category</h2>
+      <form method="post">{% csrf_token %}
+        <input type="hidden" name="action" value="create_department" />
+        {% for field in department_form %}
+          <div class="mb-2">{{ field.label_tag }} {{ field }}{% if field.help_text %}<div class="text-muted small">{{ field.help_text }}</div>{% endif %}</div>
+        {% endfor %}
+        <button class="btn btn-primary btn-sm w-100">Save Category</button>
+      </form>
+      <hr>
+      <ul class="list-group list-group-flush small">
+        {% for dep in departments %}
+          <li class="list-group-item px-0">{{ dep.name }} (auto follow-up {{ dep.auto_follow_up_days }} days)</li>
+        {% endfor %}
+      </ul>
+    </div></div>
+  </div>
+
+  <div class="col-12 col-lg-4">
+    <div class="card"><div class="card-body">
+      <h2 class="h6">Assign Role to User</h2>
+      <form method="post">{% csrf_token %}
+        <input type="hidden" name="action" value="assign_role" />
+        {% for field in user_role_form %}
+          <div class="mb-2">{{ field.label_tag }} {{ field }}</div>
+        {% endfor %}
+        <button class="btn btn-primary btn-sm w-100">Assign</button>
+      </form>
+      <hr>
+      <div class="small text-muted">Users are assigned one primary group from the role list.</div>
+    </div></div>
+  </div>
+</div>
+{% endblock %}

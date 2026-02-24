@@ -3,43 +3,39 @@ from datetime import timedelta
 from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.contrib.auth.models import Group
 from django.db.models import Count, Q
 from django.http import HttpResponseForbidden
-from django.shortcuts import get_object_or_404, redirect
+from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.views import View
 from django.views.generic import CreateView, DetailView, ListView, UpdateView
 
-from .forms import ActivityLogForm, CaseForm, TaskForm
+from .forms import ActivityLogForm, CaseForm, DepartmentConfigForm, RoleSettingForm, TaskForm, UserRoleForm
 from .models import (
     Case,
     CaseActivityLog,
     CaseStatus,
     DepartmentConfig,
-    ReviewFrequency,
+    RoleSetting,
     Task,
     TaskStatus,
     build_default_tasks,
+    ensure_default_role_settings,
     frequency_to_days,
 )
-
-
-ROLE_RULES = {
-    "Admin": {"case_create", "case_edit", "task_create", "task_edit", "note_add"},
-    "Doctor": {"case_create", "case_edit", "task_create", "task_edit", "note_add"},
-    "Reception": {"case_create", "case_edit", "task_create", "note_add"},
-    "Nurse": {"task_edit", "note_add"},
-    "Caller": {"note_add"},
-}
 
 
 def has_capability(user, capability):
     if user.is_superuser:
         return True
+    ensure_default_role_settings()
     user_groups = set(user.groups.values_list("name", flat=True))
+    role_settings = {r.role_name: r for r in RoleSetting.objects.filter(role_name__in=user_groups)}
     for group in user_groups:
-        if capability in ROLE_RULES.get(group, set()):
+        role_setting = role_settings.get(group)
+        if role_setting and role_setting.capabilities().get(capability, False):
             return True
     return False
 
@@ -65,22 +61,14 @@ class DashboardView(LoginRequiredMixin, ListView):
         upcoming_days = int(self.request.GET.get("upcoming_days", 7))
 
         tasks = Task.objects.select_related("case", "assigned_user")
-        context["upcoming_tasks"] = tasks.filter(
-            due_date__gt=today,
-            due_date__lte=today + timedelta(days=upcoming_days),
-            status=TaskStatus.SCHEDULED,
-        )
+        context["upcoming_tasks"] = tasks.filter(due_date__gt=today, due_date__lte=today + timedelta(days=upcoming_days), status=TaskStatus.SCHEDULED)
         context["overdue_tasks"] = tasks.exclude(status=TaskStatus.COMPLETED).filter(due_date__lt=today)
         context["awaiting_tasks"] = tasks.filter(status=TaskStatus.AWAITING_REPORTS)
         context["active_case_count"] = Case.objects.filter(status=CaseStatus.ACTIVE).count()
         context["completed_case_count"] = Case.objects.filter(status=CaseStatus.COMPLETED).count()
         context["upcoming_days"] = upcoming_days
-        context["red_list_count"] = tasks.exclude(status=TaskStatus.COMPLETED).filter(
-            due_date__lt=today, due_date__gte=today - timedelta(days=30)
-        ).count()
-        context["grey_list_count"] = tasks.exclude(status=TaskStatus.COMPLETED).filter(
-            due_date__lt=today - timedelta(days=30)
-        ).count()
+        context["red_list_count"] = tasks.exclude(status=TaskStatus.COMPLETED).filter(due_date__lt=today, due_date__gte=today - timedelta(days=30)).count()
+        context["grey_list_count"] = tasks.exclude(status=TaskStatus.COMPLETED).filter(due_date__lt=today - timedelta(days=30)).count()
         return context
 
 
@@ -99,7 +87,13 @@ class CaseListView(LoginRequiredMixin, ListView):
         due_end = self.request.GET.get("due_end", "").strip()
 
         if q:
-            queryset = queryset.filter(Q(uhid__icontains=q) | Q(phone_number__icontains=q) | Q(patient_name__icontains=q))
+            queryset = queryset.filter(
+                Q(uhid__icontains=q)
+                | Q(phone_number__icontains=q)
+                | Q(first_name__icontains=q)
+                | Q(last_name__icontains=q)
+                | Q(patient_name__icontains=q)
+            )
         if status:
             queryset = queryset.filter(status=status)
         if category:
@@ -135,17 +129,11 @@ class CaseCreateView(LoginRequiredMixin, CreateView):
     def form_valid(self, form):
         form.instance.created_by = self.request.user
         response = super().form_valid(form)
-
         if self.object.review_frequency and not self.object.review_date:
             self.object.review_date = timezone.localdate() + timedelta(days=frequency_to_days(self.object.review_frequency))
-            self.object.save(update_fields=["review_date", "updated_at"])
-
+            self.object.save(update_fields=["review_date", "updated_at", "patient_name"])
         created_tasks = build_default_tasks(self.object, self.request.user)
-        CaseActivityLog.objects.create(
-            case=self.object,
-            user=self.request.user,
-            note=f"Case created with {len(created_tasks)} starter task(s)",
-        )
+        CaseActivityLog.objects.create(case=self.object, user=self.request.user, note=f"Case created with {len(created_tasks)} starter task(s)")
         return response
 
     def get_success_url(self):
@@ -172,6 +160,10 @@ class CaseDetailView(LoginRequiredMixin, DetailView):
         context["can_note_add"] = has_capability(self.request.user, "note_add")
         return context
 
+    def dispatch(self, request, *args, **kwargs):
+        if not has_capability(request.user, "task_edit"):
+            return HttpResponseForbidden("You do not have permission to edit tasks.")
+        return super().dispatch(request, *args, **kwargs)
 
 class CaseUpdateView(LoginRequiredMixin, UpdateView):
     model = Case
@@ -192,17 +184,6 @@ class CaseUpdateView(LoginRequiredMixin, UpdateView):
         if has_grey_tasks and new_status in [CaseStatus.LOSS_TO_FOLLOW_UP, CaseStatus.ACTIVE] and not is_doctor_admin(self.request.user):
             form.add_error("status", "Only Doctor/Admin can set Grey List cases to Active or Loss to Follow-up.")
             return self.form_invalid(form)
-
-        if form.cleaned_data.get("surgery_done") and not case.surgery_done:
-            category_name = case.category.name.upper()
-            if category_name == "SURGERY":
-                non_surgical_department = DepartmentConfig.objects.filter(name__iexact="Non Surgical").first() or DepartmentConfig.objects.filter(
-                    name__iexact="Non-Surgical"
-                ).first()
-                if non_surgical_department:
-                    form.instance.category = non_surgical_department
-                    form.instance.review_date = timezone.localdate() + timedelta(days=30)
-
         if old_status != new_status:
             CaseActivityLog.objects.create(case=case, user=self.request.user, note=f"Case status changed: {old_status} → {new_status}")
         return super().form_valid(form)
@@ -241,12 +222,7 @@ class TaskUpdateView(LoginRequiredMixin, UpdateView):
 
     def form_valid(self, form):
         response = super().form_valid(form)
-        CaseActivityLog.objects.create(
-            case=self.object.case,
-            task=self.object,
-            user=self.request.user,
-            note=f"Task updated: {self.object.title} ({self.object.status})",
-        )
+        CaseActivityLog.objects.create(case=self.object.case, task=self.object, user=self.request.user, note=f"Task updated: {self.object.title} ({self.object.status})")
         return response
 
     def get_success_url(self):
@@ -272,3 +248,63 @@ class AddCaseNoteView(LoginRequiredMixin, View):
         else:
             messages.error(request, "Could not save note.")
         return redirect("patients:case_detail", pk=pk)
+
+
+class AdminSettingsView(LoginRequiredMixin, View):
+    template_name = "patients/settings.html"
+
+    def _check_access(self, request):
+        if not has_capability(request.user, "manage_settings"):
+            return HttpResponseForbidden("Only admins can access settings.")
+        return None
+
+    def get(self, request):
+        denied = self._check_access(request)
+        if denied:
+            return denied
+        ensure_default_role_settings()
+        context = {
+            "role_form": RoleSettingForm(),
+            "department_form": DepartmentConfigForm(),
+            "user_role_form": UserRoleForm(),
+            "roles": RoleSetting.objects.all(),
+            "departments": DepartmentConfig.objects.all(),
+            "groups": Group.objects.order_by("name"),
+        }
+        return render(request, self.template_name, context)
+
+    def post(self, request):
+        denied = self._check_access(request)
+        if denied:
+            return denied
+
+        action = request.POST.get("action")
+        if action == "create_role":
+            form = RoleSettingForm(request.POST)
+            if form.is_valid():
+                role = form.save()
+                Group.objects.get_or_create(name=role.role_name)
+                messages.success(request, "Role setting saved.")
+            else:
+                messages.error(request, f"Role form errors: {form.errors}")
+
+        elif action == "create_department":
+            form = DepartmentConfigForm(request.POST)
+            if form.is_valid():
+                form.save()
+                messages.success(request, "Category saved.")
+            else:
+                messages.error(request, f"Category form errors: {form.errors}")
+
+        elif action == "assign_role":
+            form = UserRoleForm(request.POST)
+            if form.is_valid():
+                user = form.cleaned_data["user"]
+                role = form.cleaned_data["role"]
+                user.groups.clear()
+                user.groups.add(role)
+                messages.success(request, f"Assigned role {role.name} to {user.username}.")
+            else:
+                messages.error(request, f"User role form errors: {form.errors}")
+
+        return redirect("patients:settings")

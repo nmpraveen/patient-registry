@@ -19,7 +19,7 @@
     </ul>
     <h2 class="h6">Upcoming ({{ upcoming_days }} days)</h2>
     <ul class="list-group">
-      {% for task in upcoming_tasks %}<li class="list-group-item small">{{ task.due_date }} — <a href="{% url 'patients:case_detail' task.case_id %}">{{ task.case.patient_name }}</a> / {{ task.title }}</li>{% empty %}<li class="list-group-item">No upcoming tasks.</li>{% endfor %}
+      {% for task in upcoming_tasks %}<li class="list-group-item small">{{ task.due_date }} — <a href="{% url 'patients:case_detail' task.case_id %}">{{ task.case.full_name }}</a> / {{ task.title }}</li>{% empty %}<li class="list-group-item">No upcoming tasks.</li>{% endfor %}
     </ul>
   </div>
   <div class="col-12 col-lg-6">
@@ -29,7 +29,7 @@
     </ul>
     <h2 class="h6">Awaiting Reports</h2>
     <ul class="list-group">
-      {% for task in awaiting_tasks %}<li class="list-group-item small"><a href="{% url 'patients:case_detail' task.case_id %}">{{ task.case.patient_name }}</a> — {{ task.title }}</li>{% empty %}<li class="list-group-item">No awaiting-report tasks.</li>{% endfor %}
+      {% for task in awaiting_tasks %}<li class="list-group-item small"><a href="{% url 'patients:case_detail' task.case_id %}">{{ task.case.full_name }}</a> — {{ task.title }}</li>{% empty %}<li class="list-group-item">No awaiting-report tasks.</li>{% endfor %}
     </ul>
     <p class="mt-3 mb-0 small"><strong>Cases:</strong> Active {{ active_case_count }} · Completed {{ completed_case_count }}</p>
   </div>

@@ -53,6 +53,29 @@ class DepartmentConfig(models.Model):
         return self.name
 
 
+class RoleSetting(models.Model):
+    role_name = models.CharField(max_length=50, unique=True)
+    can_case_create = models.BooleanField(default=False)
+    can_case_edit = models.BooleanField(default=False)
+    can_task_create = models.BooleanField(default=False)
+    can_task_edit = models.BooleanField(default=False)
+    can_note_add = models.BooleanField(default=False)
+    can_manage_settings = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ["role_name"]
+
+    def capabilities(self):
+        return {
+            "case_create": self.can_case_create,
+            "case_edit": self.can_case_edit,
+            "task_create": self.can_task_create,
+            "task_edit": self.can_task_edit,
+            "note_add": self.can_note_add,
+            "manage_settings": self.can_manage_settings,
+        }
+
+
 DEFAULT_DEPARTMENTS = [
     {
         "name": "ANC",
@@ -71,6 +94,37 @@ DEFAULT_DEPARTMENTS = [
     },
 ]
 
+DEFAULT_ROLE_SETTINGS = {
+    "Admin": {
+        "can_case_create": True,
+        "can_case_edit": True,
+        "can_task_create": True,
+        "can_task_edit": True,
+        "can_note_add": True,
+        "can_manage_settings": True,
+    },
+    "Doctor": {
+        "can_case_create": True,
+        "can_case_edit": True,
+        "can_task_create": True,
+        "can_task_edit": True,
+        "can_note_add": True,
+    },
+    "Reception": {
+        "can_case_create": True,
+        "can_case_edit": True,
+        "can_task_create": True,
+        "can_note_add": True,
+    },
+    "Nurse": {
+        "can_task_edit": True,
+        "can_note_add": True,
+    },
+    "Caller": {
+        "can_note_add": True,
+    },
+}
+
 
 def ensure_default_departments():
     for item in DEFAULT_DEPARTMENTS:
@@ -83,9 +137,27 @@ def ensure_default_departments():
         )
 
 
+def ensure_default_role_settings():
+    for role_name, perms in DEFAULT_ROLE_SETTINGS.items():
+        RoleSetting.objects.get_or_create(role_name=role_name, defaults=perms)
+
+    @property
+    def trimester(self):
+        if not self.lmp:
+            return None
+        days = (timezone.localdate() - self.lmp).days
+        weeks = max(days // 7, 0)
+        if weeks < 13:
+            return "First"
+        if weeks < 28:
+            return "Second"
+        return "Third"
+
 class Case(models.Model):
     uhid = models.CharField(max_length=64, unique=True)
-    patient_name = models.CharField(max_length=200)
+    first_name = models.CharField(max_length=100, default="")
+    last_name = models.CharField(max_length=100, default="")
+    patient_name = models.CharField(max_length=200, blank=True)
     phone_number = models.CharField(max_length=10, db_index=True)
     category = models.ForeignKey(DepartmentConfig, on_delete=models.PROTECT, related_name="cases")
     status = models.CharField(max_length=32, choices=CaseStatus.choices, default=CaseStatus.ACTIVE)
@@ -106,7 +178,16 @@ class Case(models.Model):
 
     class Meta:
         ordering = ["-updated_at"]
-        indexes = [models.Index(fields=["patient_name"]), models.Index(fields=["uhid"]), models.Index(fields=["phone_number"])]
+        indexes = [
+            models.Index(fields=["first_name", "last_name"]),
+            models.Index(fields=["patient_name"]),
+            models.Index(fields=["uhid"]),
+            models.Index(fields=["phone_number"]),
+        ]
+
+    @property
+    def full_name(self):
+        return f"{self.first_name} {self.last_name}".strip()
 
     def clean(self):
         if self.phone_number and (not self.phone_number.isdigit() or len(self.phone_number) != 10):
@@ -120,9 +201,8 @@ class Case(models.Model):
                 raise ValidationError({"uhid": "No duplicate active cases are allowed for the same UHID."})
 
         category_name = self.category.name.upper() if self.category_id else ""
-        if category_name == "ANC":
-            if not self.lmp or not self.edd:
-                raise ValidationError("ANC cases require both LMP and EDD.")
+        if category_name == "ANC" and (not self.lmp or not self.edd):
+            raise ValidationError("ANC cases require both LMP and EDD.")
         if category_name == "SURGERY":
             if not self.surgical_pathway:
                 raise ValidationError({"surgical_pathway": "Please choose surveillance or planned surgery."})
@@ -130,15 +210,18 @@ class Case(models.Model):
                 raise ValidationError({"review_date": "Surveillance cases require a review date."})
             if self.surgical_pathway == SurgicalPathway.PLANNED_SURGERY and not self.surgery_date:
                 raise ValidationError({"surgery_date": "Planned surgery cases require a surgery date."})
-        if category_name in ["NON_SURGICAL", "NONSURGICAL"] and not self.review_date:
+        if category_name in ["NON SURGICAL", "NON-SURGICAL", "NONSURGICAL"] and not self.review_date:
             raise ValidationError({"review_date": "Non-surgical cases require a review date."})
+
+    def save(self, *args, **kwargs):
+        self.patient_name = self.full_name
+        super().save(*args, **kwargs)
 
     @property
     def trimester(self):
         if not self.lmp:
             return None
-        days = (timezone.localdate() - self.lmp).days
-        weeks = max(days // 7, 0)
+        weeks = max((timezone.localdate() - self.lmp).days // 7, 0)
         if weeks < 13:
             return "First"
         if weeks < 28:
@@ -146,7 +229,7 @@ class Case(models.Model):
         return "Third"
 
     def __str__(self) -> str:
-        return f"{self.uhid} - {self.patient_name}"
+        return f"{self.uhid} - {self.full_name}"
 
 
 class Task(models.Model):
@@ -173,9 +256,6 @@ class Task(models.Model):
             self.completed_at = None
         super().save(*args, **kwargs)
 
-    def __str__(self) -> str:
-        return f"{self.case.uhid}: {self.title}"
-
 
 class CaseActivityLog(models.Model):
     case = models.ForeignKey(Case, on_delete=models.CASCADE, related_name="activity_logs")
@@ -186,9 +266,6 @@ class CaseActivityLog(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
-
-    def __str__(self) -> str:
-        return f"{self.case.uhid} @ {self.created_at:%Y-%m-%d %H:%M}"
 
 
 def frequency_to_days(freq: str) -> int:
@@ -229,19 +306,19 @@ def build_default_tasks(case: Case, actor):
             tasks.append(("Surveillance Review", review, TaskType.VISIT, case.get_review_frequency_display() or "Review"))
     else:
         review = case.review_date or today + timedelta(days=30)
-        action = (case.category.predefined_actions[0] if case.category.predefined_actions else "Review by consultant")
+        action = case.category.predefined_actions[0] if case.category.predefined_actions else "Review by consultant"
         tasks.append((action, review, TaskType.CUSTOM, case.get_review_frequency_display() or "Review"))
 
     created = []
     for title, due_date, task_type, frequency_label in tasks:
-        task = Task.objects.create(
-            case=case,
-            title=title,
-            due_date=due_date,
-            task_type=task_type,
-            frequency_label=frequency_label,
-            created_by=actor,
+        created.append(
+            Task.objects.create(
+                case=case,
+                title=title,
+                due_date=due_date,
+                task_type=task_type,
+                frequency_label=frequency_label,
+                created_by=actor,
+            )
         )
-        created.append(task)
-
     return created

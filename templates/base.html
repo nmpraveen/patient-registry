@@ -31,6 +31,7 @@
             <div class="d-flex flex-column flex-md-row ms-md-auto gap-2 mt-3 mt-md-0">
               <a class="btn btn-sm btn-outline-light" href="{% url 'patients:case_list' %}">Cases</a>
               <a class="btn btn-sm btn-outline-light" href="{% url 'patients:case_create' %}">New Case</a>
+              <a class="btn btn-sm btn-outline-light" href="{% url 'patients:settings' %}">Settings</a>
               <form action="{% url 'logout' %}" method="post" class="m-0">
                 {% csrf_token %}
                 <button type="submit" class="btn btn-sm btn-light w-100">Logout</button>

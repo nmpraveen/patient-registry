@@ -7,12 +7,8 @@ from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from .models import Case, CaseStatus, DepartmentConfig, SurgicalPathway, Task, TaskStatus
+from .models import Case, CaseStatus, DepartmentConfig, RoleSetting, SurgicalPathway, Task, TaskStatus, ensure_default_role_settings
 
-class MedtrackModelTests(TestCase):
-    def setUp(self):
-        self.user = get_user_model().objects.create_user(username="doctor", password="pw12345")
-        self.department = DepartmentConfig.objects.create(name="ANC", predefined_actions=["USG"], metadata_template={"lmp": "date"})
 
 class MedtrackModelTests(TestCase):
     def setUp(self):
@@ -22,7 +18,8 @@ class MedtrackModelTests(TestCase):
     def test_anc_case_requires_lmp_edd(self):
         case = Case(
             uhid="UH001",
-            patient_name="Jane Doe",
+            first_name="Jane",
+            last_name="Doe",
             phone_number="9999999999",
             category=self.anc,
             created_by=self.user,
@@ -33,7 +30,8 @@ class MedtrackModelTests(TestCase):
     def test_task_completion_sets_completed_at(self):
         case = Case.objects.create(
             uhid="UH100",
-            patient_name="A",
+            first_name="A",
+            last_name="One",
             phone_number="9999999999",
             category=self.anc,
             lmp=timezone.localdate() - timedelta(days=70),
@@ -62,7 +60,8 @@ class MedtrackViewTests(TestCase):
             reverse("patients:case_create"),
             {
                 "uhid": "UH222",
-                "patient_name": "Grace Hopper",
+                "first_name": "Grace",
+                "last_name": "Hopper",
                 "phone_number": "9876543210",
                 "category": self.anc.id,
                 "status": CaseStatus.ACTIVE,
@@ -83,13 +82,37 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertGreaterEqual(DepartmentConfig.objects.count(), 3)
 
+
+    def test_admin_settings_page_access_and_role_config(self):
+        ensure_default_role_settings()
+        admin_group, _ = Group.objects.get_or_create(name="Admin")
+        self.user.groups.clear()
+        self.user.groups.add(admin_group)
+        self.client.force_login(self.user)
+        response = self.client.get(reverse("patients:settings"))
+        self.assertEqual(response.status_code, 200)
+        post_response = self.client.post(
+            reverse("patients:settings"),
+            {
+                "action": "create_role",
+                "role_name": "Reception",
+                "can_case_create": "on",
+                "can_case_edit": "on",
+                "can_task_create": "on",
+                "can_note_add": "on",
+            },
+        )
+        self.assertEqual(post_response.status_code, 302)
+        self.assertTrue(RoleSetting.objects.filter(role_name="Reception").exists())
+
     def test_create_surgery_case_requires_pathway_and_generates_preop_tasks(self):
         self.client.force_login(self.user)
         response = self.client.post(
             reverse("patients:case_create"),
             {
                 "uhid": "UH333",
-                "patient_name": "Surgical Pt",
+                "first_name": "Surgical",
+                "last_name": "Pt",
                 "phone_number": "9876500000",
                 "category": self.surgery.id,
                 "status": CaseStatus.ACTIVE,

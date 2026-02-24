@@ -11,6 +11,8 @@ A Django + PostgreSQL MVP for **case-based follow-up tracking**.
   - **Non-Surgical**: set review date/frequency and track follow-up tasks
 - Case dashboard with Today / Upcoming / Overdue / Awaiting / Red / Grey views
 - Case activity log with timestamp + user identity
+- Admin settings page for role permissions, role assignment, and custom category configuration
+- Patient identity with First Name + Last Name (instead of single name-only listing)
 
 ## Quick start
 
@@ -28,6 +30,7 @@ docker compose exec web python manage.py createsuperuser
 Open:
 - `http://localhost:8000/login/`
 - `http://localhost:8000/patients/`
+- `http://localhost:8000/patients/settings/` (admin role/settings page)
 
 ## Demo data (10 mock cases)
 

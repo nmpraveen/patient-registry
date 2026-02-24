@@ -29,6 +29,17 @@ Open:
 - `http://localhost:8000/login/`
 - `http://localhost:8000/patients/`
 
+## Demo data (10 mock cases)
+
+To quickly see the app with sample records:
+
+```bash
+docker compose exec web python manage.py seed_mock_data --count 10 --reset
+```
+
+- `--count` controls how many mock cases to create (default: `10`).
+- `--reset` clears existing case/task/activity data before seeding.
+
 ## Useful commands
 
 ```bash

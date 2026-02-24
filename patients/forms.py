@@ -1,6 +1,6 @@
 from django import forms
 
-from .models import Case, CaseActivityLog, Task
+from .models import Case, CaseActivityLog, Task, ensure_default_departments
 
 
 class StyledModelForm(forms.ModelForm):
@@ -13,6 +13,11 @@ class StyledModelForm(forms.ModelForm):
 
 
 class CaseForm(StyledModelForm):
+    def __init__(self, *args, **kwargs):
+        ensure_default_departments()
+        super().__init__(*args, **kwargs)
+        self.fields["category"].queryset = self.fields["category"].queryset.order_by("name")
+
     class Meta:
         model = Case
         fields = [

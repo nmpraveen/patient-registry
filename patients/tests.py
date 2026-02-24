@@ -2,6 +2,7 @@ from datetime import timedelta
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
+from django.core.management import call_command
 from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
@@ -16,7 +17,7 @@ class MedtrackModelTests(TestCase):
 class MedtrackModelTests(TestCase):
     def setUp(self):
         self.user = get_user_model().objects.create_user(username="doctor", password="pw12345")
-        self.anc = DepartmentConfig.objects.create(name="ANC", predefined_actions=["USG"], metadata_template={"lmp": "date"})
+        self.anc, _ = DepartmentConfig.objects.get_or_create(name="ANC", defaults={"predefined_actions": ["USG"], "metadata_template": {"lmp": "date"}})
 
     def test_anc_case_requires_lmp_edd(self):
         case = Case(
@@ -52,8 +53,8 @@ class MedtrackViewTests(TestCase):
         doctor_group, _ = Group.objects.get_or_create(name="Doctor")
         self.user.groups.add(doctor_group)
 
-        self.anc = DepartmentConfig.objects.create(name="ANC")
-        self.surgery = DepartmentConfig.objects.create(name="Surgery")
+        self.anc, _ = DepartmentConfig.objects.get_or_create(name="ANC")
+        self.surgery, _ = DepartmentConfig.objects.get_or_create(name="Surgery")
 
     def test_create_anc_case_autogenerates_tasks(self):
         self.client.force_login(self.user)
@@ -74,6 +75,14 @@ class MedtrackViewTests(TestCase):
         case = Case.objects.get(uhid="UH222")
         self.assertGreaterEqual(case.tasks.count(), 3)
 
+
+    def test_case_form_bootstraps_categories_when_empty(self):
+        DepartmentConfig.objects.all().delete()
+        self.client.force_login(self.user)
+        response = self.client.get(reverse("patients:case_create"))
+        self.assertEqual(response.status_code, 200)
+        self.assertGreaterEqual(DepartmentConfig.objects.count(), 3)
+
     def test_create_surgery_case_requires_pathway_and_generates_preop_tasks(self):
         self.client.force_login(self.user)
         response = self.client.post(
@@ -91,3 +100,9 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(response.status_code, 302)
         case = Case.objects.get(uhid="UH333")
         self.assertTrue(case.tasks.filter(title__icontains="Lab test").exists())
+
+
+class SeedMockDataCommandTests(TestCase):
+    def test_seed_mock_data_creates_cases(self):
+        call_command("seed_mock_data", "--count", "10", "--reset")
+        self.assertEqual(Case.objects.filter(uhid__startswith="MOCK-").count(), 10)

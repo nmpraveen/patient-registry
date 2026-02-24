@@ -53,6 +53,36 @@ class DepartmentConfig(models.Model):
         return self.name
 
 
+DEFAULT_DEPARTMENTS = [
+    {
+        "name": "ANC",
+        "predefined_actions": ["ANC Visit", "USG Review", "BP & Labs"],
+        "metadata_template": {"lmp": "Date", "edd": "Date"},
+    },
+    {
+        "name": "Surgery",
+        "predefined_actions": ["LAB TEST", "Xray", "ECG", "Inform Anesthetist"],
+        "metadata_template": {"surgical_pathway": "String", "surgery_date": "Date"},
+    },
+    {
+        "name": "Non Surgical",
+        "predefined_actions": ["Consultant Review", "Opinion for other consultant"],
+        "metadata_template": {"review_date": "Date", "review_frequency": "String"},
+    },
+]
+
+
+def ensure_default_departments():
+    for item in DEFAULT_DEPARTMENTS:
+        DepartmentConfig.objects.get_or_create(
+            name=item["name"],
+            defaults={
+                "predefined_actions": item["predefined_actions"],
+                "metadata_template": item["metadata_template"],
+            },
+        )
+
+
 class Case(models.Model):
     uhid = models.CharField(max_length=64, unique=True)
     patient_name = models.CharField(max_length=200)

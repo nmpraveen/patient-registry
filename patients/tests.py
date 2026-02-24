@@ -8,6 +8,10 @@ from django.utils import timezone
 
 from .models import Case, CaseStatus, DepartmentConfig, SurgicalPathway, Task, TaskStatus
 
+class MedtrackModelTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(username="doctor", password="pw12345")
+        self.department = DepartmentConfig.objects.create(name="ANC", predefined_actions=["USG"], metadata_template={"lmp": "date"})
 
 class MedtrackModelTests(TestCase):
     def setUp(self):

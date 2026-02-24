@@ -149,6 +149,7 @@ class CaseDetailView(LoginRequiredMixin, DetailView):
         context = super().get_context_data(**kwargs)
         case = self.object
         context["tasks"] = case.tasks.select_related("assigned_user")
+        context["today"] = timezone.localdate()
         context["activity_logs"] = case.activity_logs.select_related("user", "task")[:50]
         context["task_form"] = TaskForm()
         log_form = ActivityLogForm()

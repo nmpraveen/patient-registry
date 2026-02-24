@@ -1,10 +1,11 @@
 import json
 
 from django import forms
+from django.utils import timezone
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 
-from .models import Case, CaseActivityLog, DepartmentConfig, RoleSetting, Task, ensure_default_departments, ensure_default_role_settings
+from .models import Case, CaseActivityLog, DepartmentConfig, RoleSetting, Task, TaskStatus, ensure_default_departments, ensure_default_role_settings
 
 
 class StyledModelForm(forms.ModelForm):
@@ -38,6 +39,7 @@ class CaseForm(StyledModelForm):
             "status",
             "lmp",
             "edd",
+            "usg_edd",
             "surgical_pathway",
             "surgery_done",
             "surgery_date",
@@ -48,6 +50,7 @@ class CaseForm(StyledModelForm):
         widgets = {
             "lmp": forms.DateInput(attrs={"type": "date"}),
             "edd": forms.DateInput(attrs={"type": "date"}),
+            "usg_edd": forms.DateInput(attrs={"type": "date"}),
             "surgery_date": forms.DateInput(attrs={"type": "date"}),
             "review_date": forms.DateInput(attrs={"type": "date"}),
             "notes": forms.Textarea(attrs={"rows": 3}),
@@ -55,6 +58,17 @@ class CaseForm(StyledModelForm):
 
 
 class TaskForm(StyledModelForm):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        instance = getattr(self, "instance", None)
+        if not instance or not instance.pk:
+            return
+        is_anc = instance.case and instance.case.category.name.upper() == "ANC"
+        if is_anc and instance.due_date and instance.due_date > timezone.localdate():
+            self.fields["status"].choices = [
+                choice for choice in self.fields["status"].choices if choice[0] != TaskStatus.COMPLETED
+            ]
+
     class Meta:
         model = Task
         fields = ["title", "due_date", "status", "assigned_user", "task_type", "frequency_label", "notes"]

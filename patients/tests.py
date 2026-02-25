@@ -195,3 +195,9 @@ class SeedMockDataCommandTests(TestCase):
         for case in seeded_cases:
             self.assertRegex(case.uhid, r"^TN-[A-Z]{3}-\d{6}$")
             self.assertRegex(case.phone_number, r"^[6-9]\d{9}$")
+            self.assertTrue(case.gender)
+            self.assertIsNotNone(case.date_of_birth)
+            self.assertTrue(case.place)
+
+        anc_cases = seeded_cases.filter(category__name="ANC")
+        self.assertFalse(anc_cases.filter(gender="MALE").exists())

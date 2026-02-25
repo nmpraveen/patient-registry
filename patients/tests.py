@@ -329,7 +329,7 @@ class MedtrackViewTests(TestCase):
         response = self.client.get(reverse("patients:case_autocomplete"), {"field": "place", "q": "ch"})
         self.assertEqual(response.status_code, 302)
 
-    def test_case_autocomplete_returns_trimmed_frequency_sorted_suggestions(self):
+    def test_case_autocomplete_returns_normalized_frequency_sorted_suggestions(self):
         self.client.force_login(self.user)
         Case.objects.create(
             uhid="UH-AUTO-001",
@@ -340,7 +340,7 @@ class MedtrackViewTests(TestCase):
             status=CaseStatus.ACTIVE,
             surgical_pathway=SurgicalPathway.SURVEILLANCE,
             review_date=timezone.localdate() + timedelta(days=5),
-            place=" Chennai ",
+            place=" Chennai  ",
             created_by=self.user,
         )
         Case.objects.create(
@@ -352,7 +352,7 @@ class MedtrackViewTests(TestCase):
             status=CaseStatus.ACTIVE,
             surgical_pathway=SurgicalPathway.SURVEILLANCE,
             review_date=timezone.localdate() + timedelta(days=5),
-            place="Chennai",
+            place="ChEnnai",
             created_by=self.user,
         )
         Case.objects.create(
@@ -364,7 +364,7 @@ class MedtrackViewTests(TestCase):
             status=CaseStatus.ACTIVE,
             surgical_pathway=SurgicalPathway.SURVEILLANCE,
             review_date=timezone.localdate() + timedelta(days=5),
-            place=" Coimbatore ",
+            place="Coimbatore",
             created_by=self.user,
         )
         Case.objects.create(
@@ -372,6 +372,66 @@ class MedtrackViewTests(TestCase):
             first_name="Auto",
             last_name="Four",
             phone_number="9000000004",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=5),
+            place="PHC",
+            created_by=self.user,
+        )
+        Case.objects.create(
+            uhid="UH-AUTO-005",
+            first_name="Auto",
+            last_name="Five",
+            phone_number="9000000005",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=5),
+            place="phc",
+            created_by=self.user,
+        )
+        Case.objects.create(
+            uhid="UH-AUTO-006",
+            first_name="Auto",
+            last_name="Six",
+            phone_number="9000000006",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=5),
+            place="Phc",
+            created_by=self.user,
+        )
+        Case.objects.create(
+            uhid="UH-AUTO-007",
+            first_name="Auto",
+            last_name="Seven",
+            phone_number="9000000007",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=5),
+            place="New   Delhi",
+            created_by=self.user,
+        )
+        Case.objects.create(
+            uhid="UH-AUTO-008",
+            first_name="Auto",
+            last_name="Eight",
+            phone_number="9000000008",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=5),
+            place="  new delhi  ",
+            created_by=self.user,
+        )
+        Case.objects.create(
+            uhid="UH-AUTO-009",
+            first_name="Auto",
+            last_name="Nine",
+            phone_number="9000000009",
             category=self.surgery,
             status=CaseStatus.ACTIVE,
             surgical_pathway=SurgicalPathway.SURVEILLANCE,
@@ -386,10 +446,32 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(
             response.json(),
             [
+                {"text": "PHC", "count": 3},
                 {"text": "Chennai", "count": 2},
+                {"text": "New Delhi", "count": 2},
                 {"text": "Coimbatore", "count": 1},
             ],
         )
+
+    def test_case_autocomplete_query_matching_is_case_insensitive_and_space_normalized(self):
+        self.client.force_login(self.user)
+        Case.objects.create(
+            uhid="UH-AUTO-Q-001",
+            first_name="Auto",
+            last_name="Query",
+            phone_number="9010000001",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=5),
+            diagnosis="Type   2  Diabetes",
+            created_by=self.user,
+        )
+
+        response = self.client.get(reverse("patients:case_autocomplete"), {"field": "diagnosis", "q": "  TYPE 2   dia "})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), [{"text": "Type 2 Diabetes", "count": 1}])
 
     def test_case_autocomplete_rejects_invalid_field(self):
         self.client.force_login(self.user)

@@ -1,12 +1,11 @@
-from collections import OrderedDict
+from collections import Counter, OrderedDict
 from datetime import timedelta
 
 from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.models import Group
-from django.db.models import Count, F, Q
-from django.db.models.functions import Trim
+from django.db.models import Count, Q
 from django.http import HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -158,31 +157,48 @@ class CaseAutocompleteView(LoginRequiredMixin, View):
     allowed_fields = {"place", "diagnosis", "referred_by"}
     max_results = 10
 
+    @staticmethod
+    def _normalize_value(value):
+        return " ".join((value or "").split())
+
     def get(self, request):
         field = (request.GET.get("field") or "").strip()
         if field not in self.allowed_fields:
             return JsonResponse({"error": "Invalid field."}, status=400)
 
-        query = (request.GET.get("q") or "").strip()
-        suggestions = (
-            Case.objects.annotate(suggestion=Trim(F(field)))
-            .exclude(suggestion__isnull=True)
-            .exclude(suggestion="")
-        )
+        normalized_query = self._normalize_value(request.GET.get("q")).lower()
+        grouped = {}
 
-        if query:
-            suggestions = suggestions.filter(suggestion__icontains=query)
+        raw_values = Case.objects.exclude(**{f"{field}__isnull": True}).values_list(field, flat=True)
+        for raw_value in raw_values.iterator():
+            suggestion = self._normalize_value(raw_value)
+            if not suggestion:
+                continue
 
-        suggestion_rows = (
-            suggestions.values("suggestion")
-            .annotate(count=Count("id"))
-            .order_by("-count", "suggestion")[: self.max_results]
-        )
+            normalized_suggestion = suggestion.lower()
+            if normalized_query and normalized_query not in normalized_suggestion:
+                continue
 
-        return JsonResponse(
-            [{"text": row["suggestion"], "count": row["count"]} for row in suggestion_rows],
-            safe=False,
-        )
+            bucket = grouped.setdefault(normalized_suggestion, {"count": 0, "variants": Counter()})
+            bucket["count"] += 1
+            bucket["variants"][suggestion] += 1
+
+        sorted_groups = sorted(grouped.items(), key=lambda item: (-item[1]["count"], item[0]))[: self.max_results]
+        payload = []
+        for _, data in sorted_groups:
+            top_variant = sorted(
+                data["variants"].items(),
+                key=lambda item: (
+                    -item[1],
+                    0 if item[0].isupper() and len(item[0]) <= 5 else 1,
+                    0 if item[0] == item[0].title() else 1,
+                    item[0].lower(),
+                    item[0],
+                ),
+            )[0][0]
+            payload.append({"text": top_variant, "count": data["count"]})
+
+        return JsonResponse(payload, safe=False)
 
 
 class CaseCreateView(LoginRequiredMixin, CreateView):

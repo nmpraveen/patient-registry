@@ -288,6 +288,38 @@ class MedtrackViewTests(TestCase):
             review_date=timezone.localdate() + timedelta(days=15),
             created_by=self.user,
         )
+        Case.objects.create(
+            uhid="UH779",
+            first_name="ANC",
+            last_name="Completed",
+            phone_number="9876501113",
+            category=self.anc,
+            status=CaseStatus.COMPLETED,
+            lmp=timezone.localdate() - timedelta(days=60),
+            edd=timezone.localdate() + timedelta(days=210),
+            created_by=self.user,
+        )
+        Case.objects.create(
+            uhid="UH780",
+            first_name="Surgery",
+            last_name="Completed",
+            phone_number="9876501114",
+            category=self.surgery,
+            status=CaseStatus.COMPLETED,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=20),
+            created_by=self.user,
+        )
+        Case.objects.create(
+            uhid="UH781",
+            first_name="Non",
+            last_name="Completed",
+            phone_number="9876501115",
+            category=non_surgical,
+            status=CaseStatus.COMPLETED,
+            review_date=timezone.localdate() + timedelta(days=25),
+            created_by=self.user,
+        )
         Task.objects.create(case=anc_case, title="ANC Review", due_date=timezone.localdate(), created_by=self.user)
         Task.objects.create(case=case, title="Lab", due_date=timezone.localdate(), created_by=self.user)
         Task.objects.create(case=case, title="ECG", due_date=timezone.localdate(), created_by=self.user)

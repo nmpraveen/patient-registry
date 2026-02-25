@@ -96,7 +96,7 @@ class DashboardView(LoginRequiredMixin, ListView):
         tasks = Task.objects.select_related("case", "case__category", "assigned_user")
         category_counts = {
             (item["category__name"] or "").strip().upper(): item["total"]
-            for item in Case.objects.values("category__name").annotate(total=Count("id"))
+            for item in Case.objects.filter(status=CaseStatus.ACTIVE).values("category__name").annotate(total=Count("id"))
         }
         context["upcoming_tasks"] = tasks.filter(due_date__gt=today, due_date__lte=today + timedelta(days=upcoming_days), status=TaskStatus.SCHEDULED).order_by("due_date", "case_id", "id")
         context["overdue_tasks"] = tasks.exclude(status=TaskStatus.COMPLETED).filter(due_date__lt=today).order_by("due_date", "case_id", "id")

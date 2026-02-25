@@ -251,7 +251,7 @@
 
     function selectSuggestion(index) {
       if (index < 0 || index >= suggestions.length) return;
-      inputEl.value = suggestions[index].text;
+      inputEl.value = suggestions[index];
       closePanel();
     }
 
@@ -287,7 +287,7 @@
         itemEl.className = 'list-group-item list-group-item-action py-1 px-2 small';
         itemEl.id = `${panelId}-item-${index}`;
         itemEl.setAttribute('role', 'option');
-        itemEl.textContent = item.text;
+        itemEl.textContent = item;
         itemEl.addEventListener('mouseenter', () => setActiveSuggestion(index));
         itemEl.addEventListener('mousedown', (event) => {
           event.preventDefault();
@@ -318,13 +318,18 @@
       }
     }
 
+    let debounceHandle = null;
+
     inputEl.addEventListener('input', () => {
       const query = inputEl.value.trim();
-      if (query.length < 1) {
+      if (debounceHandle) {
+        window.clearTimeout(debounceHandle);
+      }
+      if (query.length < 2) {
         closePanel();
         return;
       }
-      fetchSuggestions(query);
+      debounceHandle = window.setTimeout(() => fetchSuggestions(query), 200);
     });
 
     inputEl.addEventListener('keydown', (event) => {

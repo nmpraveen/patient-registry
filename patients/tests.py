@@ -329,7 +329,7 @@ class MedtrackViewTests(TestCase):
         response = self.client.get(reverse("patients:case_autocomplete"), {"field": "place", "q": "ch"})
         self.assertEqual(response.status_code, 302)
 
-    def test_case_autocomplete_returns_normalized_frequency_sorted_suggestions(self):
+    def test_case_autocomplete_returns_normalized_sorted_suggestions_for_prefix_query(self):
         self.client.force_login(self.user)
         Case.objects.create(
             uhid="UH-AUTO-001",
@@ -440,18 +440,52 @@ class MedtrackViewTests(TestCase):
             created_by=self.user,
         )
 
-        response = self.client.get(reverse("patients:case_autocomplete"), {"field": "place", "q": ""})
+        response = self.client.get(reverse("patients:case_autocomplete"), {"field": "place", "q": "ch"})
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(
-            response.json(),
-            [
-                {"text": "PHC", "count": 3},
-                {"text": "Chennai", "count": 2},
-                {"text": "New Delhi", "count": 2},
-                {"text": "Coimbatore", "count": 1},
-            ],
+        self.assertEqual(response.json(), ["Chennai"])
+
+
+    def test_case_autocomplete_enforces_minimum_query_length(self):
+        self.client.force_login(self.user)
+        Case.objects.create(
+            uhid="UH-AUTO-MIN-001",
+            first_name="Auto",
+            last_name="Min",
+            phone_number="9010000002",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=5),
+            place="Chennai",
+            created_by=self.user,
         )
+
+        response = self.client.get(reverse("patients:case_autocomplete"), {"field": "place", "q": "c"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), [])
+
+    def test_case_autocomplete_applies_hard_result_cap(self):
+        self.client.force_login(self.user)
+        for index in range(12):
+            Case.objects.create(
+                uhid=f"UH-AUTO-CAP-{index:03d}",
+                first_name="Auto",
+                last_name="Cap",
+                phone_number=f"9020000{index:03d}",
+                category=self.surgery,
+                status=CaseStatus.ACTIVE,
+                surgical_pathway=SurgicalPathway.SURVEILLANCE,
+                review_date=timezone.localdate() + timedelta(days=5),
+                place=f"Alpha City {index}",
+                created_by=self.user,
+            )
+
+        response = self.client.get(reverse("patients:case_autocomplete"), {"field": "place", "q": "al"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.json()), 8)
 
     def test_case_autocomplete_query_matching_is_case_insensitive_and_space_normalized(self):
         self.client.force_login(self.user)
@@ -471,7 +505,7 @@ class MedtrackViewTests(TestCase):
         response = self.client.get(reverse("patients:case_autocomplete"), {"field": "diagnosis", "q": "  TYPE 2   dia "})
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), [{"text": "Type 2 Diabetes", "count": 1}])
+        self.assertEqual(response.json(), ["Type 2 Diabetes"])
 
     def test_case_autocomplete_rejects_invalid_field(self):
         self.client.force_login(self.user)

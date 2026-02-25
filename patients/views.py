@@ -1,4 +1,4 @@
-from collections import Counter, OrderedDict
+from collections import OrderedDict
 from datetime import timedelta
 
 from django.contrib import messages
@@ -155,11 +155,19 @@ class CaseListView(LoginRequiredMixin, ListView):
 
 class CaseAutocompleteView(LoginRequiredMixin, View):
     allowed_fields = {"place", "diagnosis", "referred_by"}
-    max_results = 10
+    min_query_length = 2
+    max_results = 8
+    scan_multiplier = 8
 
     @staticmethod
     def _normalize_value(value):
         return " ".join((value or "").split())
+
+    @staticmethod
+    def _display_value(value):
+        if value.isupper() and len(value) <= 5:
+            return value
+        return value.title()
 
     def get(self, request):
         field = (request.GET.get("field") or "").strip()
@@ -167,37 +175,33 @@ class CaseAutocompleteView(LoginRequiredMixin, View):
             return JsonResponse({"error": "Invalid field."}, status=400)
 
         normalized_query = self._normalize_value(request.GET.get("q")).lower()
+        if len(normalized_query) < self.min_query_length:
+            return JsonResponse([], safe=False)
+
         grouped = {}
 
-        raw_values = Case.objects.exclude(**{f"{field}__isnull": True}).values_list(field, flat=True)
-        for raw_value in raw_values.iterator():
+        queryset = (
+            Case.objects.exclude(**{f"{field}__isnull": True})
+            .exclude(**{field: ""})
+            .filter(**{f"{field}__istartswith": normalized_query.split(" ", 1)[0]})
+            .values_list(field, flat=True)
+            .order_by(field)
+        )
+
+        scan_limit = self.max_results * self.scan_multiplier
+        for raw_value in queryset[:scan_limit]:
             suggestion = self._normalize_value(raw_value)
             if not suggestion:
                 continue
-
             normalized_suggestion = suggestion.lower()
-            if normalized_query and normalized_query not in normalized_suggestion:
+            if not normalized_suggestion.startswith(normalized_query):
                 continue
 
-            bucket = grouped.setdefault(normalized_suggestion, {"count": 0, "variants": Counter()})
-            bucket["count"] += 1
-            bucket["variants"][suggestion] += 1
+            grouped[normalized_suggestion] = self._display_value(suggestion)
+            if len(grouped) >= self.max_results:
+                break
 
-        sorted_groups = sorted(grouped.items(), key=lambda item: (-item[1]["count"], item[0]))[: self.max_results]
-        payload = []
-        for _, data in sorted_groups:
-            top_variant = sorted(
-                data["variants"].items(),
-                key=lambda item: (
-                    -item[1],
-                    0 if item[0].isupper() and len(item[0]) <= 5 else 1,
-                    0 if item[0] == item[0].title() else 1,
-                    item[0].lower(),
-                    item[0],
-                ),
-            )[0][0]
-            payload.append({"text": top_variant, "count": data["count"]})
-
+        payload = [grouped[key] for key in sorted(grouped.keys())[: self.max_results]]
         return JsonResponse(payload, safe=False)
 
 

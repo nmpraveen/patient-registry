@@ -32,15 +32,15 @@ Open:
 - `http://localhost:8000/patients/`
 - `http://localhost:8000/patients/settings/` (admin role/settings page)
 
-## Demo data (10 mock cases)
+## Demo data (30 mock cases)
 
 To quickly see the app with sample records:
 
 ```bash
-docker compose exec web python manage.py seed_mock_data --count 10 --reset
+docker compose exec web python manage.py seed_mock_data --count 30 --reset
 ```
 
-- `--count` controls how many mock cases to create (default: `10`).
+- `--count` controls how many mock cases to create (default: `30`).
 - `--reset` clears existing case/task/activity data before seeding.
 
 ## Updating to latest version safely (with backup)

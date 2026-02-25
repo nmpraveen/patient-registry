@@ -18,7 +18,7 @@ from patients.models import (
 
 
 class Command(BaseCommand):
-    help = "Seed mock MEDTRACK data (default 10 cases) for local demo/testing."
+    help = "Seed mock MEDTRACK data (default 30 cases) for local demo/testing."
 
     mock_profiles = [
         {"first_name": "Karthik", "last_name": "Raman", "place": "Madurai", "gender": Gender.MALE, "date_of_birth": date(1989, 3, 11), "facility_code": "MDU"},
@@ -36,7 +36,7 @@ class Command(BaseCommand):
     ]
 
     def add_arguments(self, parser):
-        parser.add_argument("--count", type=int, default=10)
+        parser.add_argument("--count", type=int, default=30)
         parser.add_argument("--reset", action="store_true", help="Delete existing case/task/activity data before seeding")
 
     def _build_uhid(self, profile, index, today):
@@ -47,6 +47,10 @@ class Command(BaseCommand):
         # Indian mobile-style numbers with valid starting digits 6/7/8/9.
         start_digit = str(9 - ((index - 1) % 4))
         return f"{start_digit}{(700000000 + index):09d}"
+
+    def _build_alternate_phone_number(self, index):
+        start_digit = str(6 + ((index - 1) % 4))
+        return f"{start_digit}{(810000000 + index):09d}"
 
     def handle(self, *args, **options):
         count = max(options["count"], 1)
@@ -75,38 +79,70 @@ class Command(BaseCommand):
             if Case.objects.filter(uhid=uhid).exists():
                 continue
 
-            bucket = i % 3
+            bucket = i % 6
             kwargs = {
                 "uhid": uhid,
                 "first_name": profile["first_name"],
                 "last_name": profile["last_name"],
                 "gender": profile["gender"],
                 "date_of_birth": profile["date_of_birth"],
+                "age": max(today.year - profile["date_of_birth"].year, 18),
                 "place": profile["place"],
                 "phone_number": self._build_phone_number(i),
-                "status": CaseStatus.ACTIVE,
+                "alternate_phone_number": self._build_alternate_phone_number(i),
+                "status": [CaseStatus.ACTIVE, CaseStatus.COMPLETED, CaseStatus.CANCELLED, CaseStatus.LOSS_TO_FOLLOW_UP][i % 4],
+                "diagnosis": [
+                    "Moderate anemia",
+                    "Chronic cholecystitis",
+                    "Type 2 diabetes follow-up",
+                    "Gestational hypertension",
+                    "Thyroid nodule surveillance",
+                    "Post-op wound review",
+                ][(i - 1) % 6],
+                "ncd_flags": [
+                    ["T2DM"],
+                    ["SHTN", "THYROID"],
+                    ["BA"],
+                    ["CKD", "CAD"],
+                    ["SMOKING"],
+                    [],
+                ][(i - 1) % 6],
+                "referred_by": ["PHC", "District Hospital", "Self", "Private Clinic"][i % 4],
+                "high_risk": i % 5 == 0,
                 "created_by": demo_user,
                 "notes": f"Demo follow-up case from {profile['place']} OPD with reachable caretaker contact.",
             }
 
-            if bucket == 1 and profile["gender"] != Gender.MALE:
+            if bucket in (1, 4) and profile["gender"] != Gender.MALE:
                 case = Case.objects.create(
                     category=anc,
                     lmp=today - timedelta(days=50 + i),
                     edd=today + timedelta(days=180 - i),
+                    usg_edd=today + timedelta(days=175 - i),
+                    gravida=2 + (i % 2),
+                    para=1,
+                    abortions=i % 2,
+                    living=1,
                     **kwargs,
                 )
-            elif bucket == 2:
+            elif bucket in (2, 5):
                 case = Case.objects.create(
                     category=surgery,
-                    surgical_pathway=SurgicalPathway.PLANNED_SURGERY,
-                    surgery_date=today + timedelta(days=7 + i),
+                    surgical_pathway=SurgicalPathway.PLANNED_SURGERY if bucket == 2 else SurgicalPathway.SURVEILLANCE,
+                    surgery_done=bucket == 2 and i % 8 == 0,
+                    surgery_date=today + timedelta(days=7 + i) if bucket == 2 else None,
+                    review_date=today + timedelta(days=14 + i) if bucket == 5 else None,
                     **kwargs,
                 )
             else:
                 case = Case.objects.create(
                     category=non_surgical,
-                    review_frequency=ReviewFrequency.MONTHLY,
+                    review_frequency=[
+                        ReviewFrequency.MONTHLY,
+                        ReviewFrequency.QUARTERLY,
+                        ReviewFrequency.HALF_YEARLY,
+                        ReviewFrequency.YEARLY,
+                    ][(i - 1) % 4],
                     review_date=today + timedelta(days=10 + i),
                     **kwargs,
                 )

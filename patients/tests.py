@@ -284,18 +284,30 @@ class MedtrackViewTests(TestCase):
 
 
 class SeedMockDataCommandTests(TestCase):
-    def test_seed_mock_data_creates_cases_with_believable_identifiers(self):
-        call_command("seed_mock_data", "--count", "10", "--reset")
+    def test_seed_mock_data_creates_cases_with_believable_identifiers_and_new_fields(self):
+        call_command("seed_mock_data", "--count", "30", "--reset")
 
         seeded_cases = Case.objects.filter(uhid__startswith="TN-").order_by("uhid")
-        self.assertEqual(seeded_cases.count(), 10)
+        self.assertEqual(seeded_cases.count(), 30)
 
         for case in seeded_cases:
             self.assertRegex(case.uhid, r"^TN-[A-Z]{3}-\d{6}$")
             self.assertRegex(case.phone_number, r"^[6-9]\d{9}$")
+            self.assertRegex(case.alternate_phone_number, r"^[6-9]\d{9}$")
             self.assertTrue(case.gender)
             self.assertIsNotNone(case.date_of_birth)
             self.assertTrue(case.place)
+            self.assertIsNotNone(case.age)
+            self.assertTrue(case.diagnosis)
+            self.assertTrue(case.referred_by)
 
         anc_cases = seeded_cases.filter(category__name="ANC")
         self.assertFalse(anc_cases.filter(gender="MALE").exists())
+        self.assertTrue(anc_cases.filter(gravida__isnull=False, para__isnull=False, abortions__isnull=False, living__isnull=False).exists())
+
+        surgery_cases = seeded_cases.filter(category__name="Surgery")
+        self.assertTrue(surgery_cases.filter(surgical_pathway=SurgicalPathway.PLANNED_SURGERY).exists())
+        self.assertTrue(surgery_cases.filter(surgical_pathway=SurgicalPathway.SURVEILLANCE).exists())
+
+        non_surgical_cases = seeded_cases.filter(category__name="Non Surgical")
+        self.assertGreaterEqual(non_surgical_cases.values("review_frequency").distinct().count(), 3)

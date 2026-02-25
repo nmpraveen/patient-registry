@@ -27,14 +27,14 @@
       {% if case.gender %}Gender: {{ case.get_gender_display }} · {% endif %}
       {% if case.date_of_birth %}DOB: {{ case.date_of_birth }} · {% endif %}
       {% if case.place %}Place: {{ case.place }} · {% endif %}
-      Phone: {{ case.phone_number }} · Category: {{ case.category.name }} · Status: {{ case.get_status_display }}
+      Phone: {{ case.phone_number }}{% if case.alternate_phone_number %} · Alt: {{ case.alternate_phone_number }}{% endif %} · Category: {{ case.category.name }} · Status: {{ case.get_status_display }}
     </p>
     <p class="mb-0 small text-muted">
       {% if case.lmp %}LMP {{ case.lmp }}{% endif %} {% if case.edd %}· EDD {{ case.edd }}{% endif %}
       {% if case.usg_edd %}· USG-EDD {{ case.usg_edd }}{% endif %}
       {% if case.trimester %}· {{ case.trimester }} trimester{% endif %}
       {% if case.surgical_pathway %}· {{ case.get_surgical_pathway_display }}{% endif %}
-      {% if case.review_date %}· Next review {{ case.review_date }}{% endif %}
+      {% if case.review_date %}· Next review {{ case.review_date }}{% endif %}{% if case.diagnosis %} · Diagnosis {{ case.diagnosis }}{% endif %}{% if case.referred_by %} · Referred by {{ case.referred_by }}{% endif %}{% if case.high_risk %} · <span class="text-danger">High-risk</span>{% endif %}{% if case.gravida %} · G{{ case.gravida }} P{{ case.para|default:0 }} A{{ case.abortions|default:0 }} L{{ case.living|default:0 }}{% endif %}
     </p>
   </div>
   <a class="btn btn-outline-primary btn-sm" href="{% url 'patients:case_edit' case.id %}">Edit Case</a>

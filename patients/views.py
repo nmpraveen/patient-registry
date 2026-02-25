@@ -74,8 +74,11 @@ class DashboardView(LoginRequiredMixin, ListView):
                     "due_date": first_task.due_date,
                     "case_id": case.id,
                     "patient_name": case.full_name or case.patient_name,
-                    "diagnosis": case.category.name,
+                    "diagnosis": case.diagnosis or case.category.name,
                     "phone_number": case.phone_number,
+                    "referred_by": case.referred_by,
+                    "high_risk": case.high_risk,
+                    "ncd_flags": case.ncd_flags or [],
                     "task_titles": unique_titles,
                 }
             )

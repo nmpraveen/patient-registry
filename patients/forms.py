@@ -5,7 +5,17 @@ from django.utils import timezone
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 
-from .models import Case, CaseActivityLog, DepartmentConfig, RoleSetting, Task, TaskStatus, ensure_default_departments, ensure_default_role_settings
+from .models import (
+    Case,
+    CaseActivityLog,
+    DepartmentConfig,
+    NonCommunicableDisease,
+    RoleSetting,
+    Task,
+    TaskStatus,
+    ensure_default_departments,
+    ensure_default_role_settings,
+)
 
 
 class StyledModelForm(forms.ModelForm):
@@ -23,10 +33,51 @@ class StyledModelForm(forms.ModelForm):
 
 
 class CaseForm(StyledModelForm):
+    ncd_flags = forms.MultipleChoiceField(
+        required=False,
+        choices=NonCommunicableDisease.choices,
+        widget=forms.CheckboxSelectMultiple,
+        label="Non-Communicable Diseases",
+    )
+
     def __init__(self, *args, **kwargs):
         ensure_default_departments()
         super().__init__(*args, **kwargs)
         self.fields["category"].queryset = self.fields["category"].queryset.order_by("name")
+        if self.instance and self.instance.pk:
+            self.fields["ncd_flags"].initial = self.instance.ncd_flags
+
+        gpla_choices = [("", "-")] + [(i, i) for i in range(1, 11)]
+        for field_name in ["gravida", "para", "abortions", "living"]:
+            self.fields[field_name].widget = forms.Select(choices=gpla_choices)
+
+    def clean(self):
+        cleaned_data = super().clean()
+        category = cleaned_data.get("category")
+        category_name = category.name.upper() if category else ""
+
+        g, p, a, l = (
+            cleaned_data.get("gravida"),
+            cleaned_data.get("para"),
+            cleaned_data.get("abortions"),
+            cleaned_data.get("living"),
+        )
+        if category_name == "ANC" and None not in (g, p, a, l):
+            if p > g:
+                self.add_error("para", "P cannot exceed G.")
+            if p + a > g:
+                self.add_error("abortions", "P + A cannot exceed G.")
+        return cleaned_data
+
+    def clean_ncd_flags(self):
+        return self.cleaned_data.get("ncd_flags", [])
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        instance.ncd_flags = self.cleaned_data.get("ncd_flags", [])
+        if commit:
+            instance.save()
+        return instance
 
     class Meta:
         model = Case
@@ -37,9 +88,15 @@ class CaseForm(StyledModelForm):
             "gender",
             "date_of_birth",
             "place",
+            "age",
             "phone_number",
+            "alternate_phone_number",
             "category",
             "status",
+            "diagnosis",
+            "ncd_flags",
+            "referred_by",
+            "high_risk",
             "lmp",
             "edd",
             "usg_edd",
@@ -48,6 +105,10 @@ class CaseForm(StyledModelForm):
             "surgery_date",
             "review_frequency",
             "review_date",
+            "gravida",
+            "para",
+            "abortions",
+            "living",
             "notes",
         ]
         widgets = {

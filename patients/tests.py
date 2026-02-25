@@ -27,6 +27,25 @@ class MedtrackModelTests(TestCase):
         with self.assertRaises(Exception):
             case.full_clean()
 
+
+    def test_anc_gpla_validation_blocks_invalid_values(self):
+        case = Case(
+            uhid="UH-GPLA",
+            first_name="GPLA",
+            last_name="Invalid",
+            phone_number="9999999998",
+            category=self.anc,
+            lmp=timezone.localdate() - timedelta(days=56),
+            edd=timezone.localdate() + timedelta(days=210),
+            gravida=1,
+            para=2,
+            abortions=0,
+            living=0,
+            created_by=self.user,
+        )
+        with self.assertRaises(Exception):
+            case.full_clean()
+
     def test_task_completion_sets_completed_at(self):
         case = Case.objects.create(
             uhid="UH100",
@@ -215,6 +234,34 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(len(today_cards), 1)
         self.assertEqual(today_cards[0]["patient_name"], "Grouped Patient")
         self.assertEqual(today_cards[0]["task_titles"], ["Lab", "ECG"])
+
+
+    def test_dashboard_card_contains_referral_high_risk_and_ncd_flags(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-ICON",
+            first_name="Icon",
+            last_name="Patient",
+            phone_number="9876502222",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=3),
+            diagnosis="Thyroid nodule",
+            high_risk=True,
+            referred_by="PHC",
+            ncd_flags=["T2DM", "THYROID"],
+            created_by=self.user,
+        )
+        Task.objects.create(case=case, title="Review", due_date=timezone.localdate(), created_by=self.user)
+
+        response = self.client.get(reverse("patients:dashboard"))
+
+        self.assertEqual(response.status_code, 200)
+        card = response.context["today_cards"][0]
+        self.assertTrue(card["high_risk"])
+        self.assertEqual(card["referred_by"], "PHC")
+        self.assertEqual(card["ncd_flags"], ["T2DM", "THYROID"])
 
     def test_create_surgery_case_requires_pathway_and_generates_preop_tasks(self):
         self.client.force_login(self.user)

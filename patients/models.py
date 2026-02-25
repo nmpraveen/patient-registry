@@ -47,6 +47,22 @@ class Gender(models.TextChoices):
     UNKNOWN = "UNKNOWN", "Unknown"
 
 
+class NonCommunicableDisease(models.TextChoices):
+    T2DM = "T2DM", "T2DM"
+    SHTN = "SHTN", "SHTN"
+    BA = "BA", "BA"
+    EPILEPSY = "EPILEPSY", "Epilepsy"
+    CAD = "CAD", "CAD"
+    CKD = "CKD", "CKD"
+    CLD = "CLD", "CLD"
+    CVA = "CVA", "CVA"
+    COPD = "COPD", "COPD"
+    THYROID = "THYROID", "Thyroid"
+    SMOKING = "SMOKING", "Smoking"
+    ALCOHOL = "ALCOHOL", "Alcohol"
+    SSP = "SSP", "SSP"
+
+
 class DepartmentConfig(models.Model):
     name = models.CharField(max_length=100, unique=True)
     auto_follow_up_days = models.PositiveIntegerField(default=30)
@@ -168,9 +184,16 @@ class Case(models.Model):
     gender = models.CharField(max_length=20, choices=Gender.choices, blank=True)
     date_of_birth = models.DateField(blank=True, null=True)
     place = models.CharField(max_length=200, blank=True)
+    age = models.PositiveSmallIntegerField(blank=True, null=True)
     phone_number = models.CharField(max_length=10, db_index=True)
+    alternate_phone_number = models.CharField(max_length=10, blank=True)
     category = models.ForeignKey(DepartmentConfig, on_delete=models.PROTECT, related_name="cases")
     status = models.CharField(max_length=32, choices=CaseStatus.choices, default=CaseStatus.ACTIVE)
+
+    diagnosis = models.CharField(max_length=255, blank=True)
+    ncd_flags = models.JSONField(default=list, blank=True)
+    referred_by = models.CharField(max_length=255, blank=True)
+    high_risk = models.BooleanField(default=False)
 
     lmp = models.DateField(blank=True, null=True)
     edd = models.DateField(blank=True, null=True)
@@ -180,6 +203,11 @@ class Case(models.Model):
     review_frequency = models.CharField(max_length=20, choices=ReviewFrequency.choices, blank=True)
     review_date = models.DateField(blank=True, null=True)
     surgery_date = models.DateField(blank=True, null=True)
+
+    gravida = models.PositiveSmallIntegerField(blank=True, null=True)
+    para = models.PositiveSmallIntegerField(blank=True, null=True)
+    abortions = models.PositiveSmallIntegerField(blank=True, null=True)
+    living = models.PositiveSmallIntegerField(blank=True, null=True)
 
     metadata = models.JSONField(default=dict, blank=True)
     notes = models.TextField(blank=True)
@@ -203,6 +231,8 @@ class Case(models.Model):
     def clean(self):
         if self.phone_number and (not self.phone_number.isdigit() or len(self.phone_number) != 10):
             raise ValidationError({"phone_number": "Phone number must be exactly 10 digits."})
+        if self.alternate_phone_number and (not self.alternate_phone_number.isdigit() or len(self.alternate_phone_number) != 10):
+            raise ValidationError({"alternate_phone_number": "Alternate phone number must be exactly 10 digits."})
 
         if self.status == CaseStatus.ACTIVE:
             duplicate_qs = Case.objects.filter(uhid=self.uhid, status=CaseStatus.ACTIVE)
@@ -214,6 +244,15 @@ class Case(models.Model):
         category_name = self.category.name.upper() if self.category_id else ""
         if category_name == "ANC" and (not self.lmp or (not self.edd and not self.usg_edd)):
             raise ValidationError("ANC cases require LMP and at least one EDD (LMP-based or USG-based).")
+        if category_name == "ANC":
+            g, p, a, l = self.gravida, self.para, self.abortions, self.living
+            if None not in (g, p, a, l):
+                if p > g:
+                    raise ValidationError({"para": "Para (P) cannot exceed Gravida (G)."})
+                if a > g:
+                    raise ValidationError({"abortions": "Abortions (A) cannot exceed Gravida (G)."})
+                if p + a > g:
+                    raise ValidationError({"abortions": "The sum of Para and Abortions cannot exceed Gravida."})
         if category_name == "SURGERY":
             if not self.surgical_pathway:
                 raise ValidationError({"surgical_pathway": "Please choose surveillance or planned surgery."})

@@ -21,6 +21,9 @@
             <span class="text-muted">{{ card.due_date|date:'M d' }} —</span>
             <a class="fw-semibold text-decoration-none" href="{% url 'patients:case_detail' card.case_id %}">{{ card.patient_name }}</a>
             <span class="text-muted">/ {{ card.diagnosis }} /</span>
+            {% if card.high_risk %}<span title="High-risk case" class="text-danger">❗</span>{% endif %}
+            {% if card.referred_by %}<span title="Referred by: {{ card.referred_by }}">⭐</span>{% endif %}
+            {% if card.ncd_flags %}<span class="text-muted" title="NCD flags: {{ card.ncd_flags|join:', ' }}">🏷️</span>{% endif %}
             <a class="text-decoration-none" href="tel:{{ card.phone_number }}" data-bs-toggle="collapse" data-bs-target="#today-phone-{{ forloop.counter }}" aria-expanded="false" aria-controls="today-phone-{{ forloop.counter }}" title="Show and call patient">
               📞
             </a>
@@ -41,6 +44,9 @@
             <span class="text-muted">{{ card.due_date|date:'M d' }} —</span>
             <a class="fw-semibold text-decoration-none" href="{% url 'patients:case_detail' card.case_id %}">{{ card.patient_name }}</a>
             <span class="text-muted">/ {{ card.diagnosis }} /</span>
+            {% if card.high_risk %}<span title="High-risk case" class="text-danger">❗</span>{% endif %}
+            {% if card.referred_by %}<span title="Referred by: {{ card.referred_by }}">⭐</span>{% endif %}
+            {% if card.ncd_flags %}<span class="text-muted" title="NCD flags: {{ card.ncd_flags|join:', ' }}">🏷️</span>{% endif %}
             <a class="text-decoration-none" href="tel:{{ card.phone_number }}" data-bs-toggle="collapse" data-bs-target="#upcoming-phone-{{ forloop.counter }}" aria-expanded="false" aria-controls="upcoming-phone-{{ forloop.counter }}" title="Show and call patient">
               📞
             </a>
@@ -63,6 +69,9 @@
             <span class="text-danger">{{ card.due_date|date:'M d' }} —</span>
             <a class="fw-semibold text-decoration-none" href="{% url 'patients:case_detail' card.case_id %}">{{ card.patient_name }}</a>
             <span class="text-muted">/ {{ card.diagnosis }} /</span>
+            {% if card.high_risk %}<span title="High-risk case" class="text-danger">❗</span>{% endif %}
+            {% if card.referred_by %}<span title="Referred by: {{ card.referred_by }}">⭐</span>{% endif %}
+            {% if card.ncd_flags %}<span class="text-muted" title="NCD flags: {{ card.ncd_flags|join:', ' }}">🏷️</span>{% endif %}
             <a class="text-decoration-none" href="tel:{{ card.phone_number }}" data-bs-toggle="collapse" data-bs-target="#overdue-phone-{{ forloop.counter }}" aria-expanded="false" aria-controls="overdue-phone-{{ forloop.counter }}" title="Show and call patient">
               📞
             </a>

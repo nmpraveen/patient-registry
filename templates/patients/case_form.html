@@ -3,17 +3,86 @@
 {% block content %}
 <div class="card"><div class="card-body">
   <h1 class="h4">{% if object %}Edit Case{% else %}New Case{% endif %}</h1>
-  <p class="text-muted small mb-3">Flow: choose category first, then fill first/last names and pathway fields. Starter tasks are auto-created.</p>
-  <form method="post" class="row g-3">{% csrf_token %}
+  <p class="text-muted small mb-3">Step 1: choose category · Step 2: complete relevant sections only.</p>
+  <form method="post" class="row g-3" id="case-form">{% csrf_token %}
+    <div class="col-12 col-md-6 field-wrap" data-field="category"><label class="form-label">{{ form.category.label }}</label>{{ form.category }}</div>
+
+    <div class="col-12"><h2 class="h6 mb-1">Patient Info</h2></div>
+    <div class="col-md-6 field-wrap" data-field="uhid"><label class="form-label">{{ form.uhid.label }}</label>{{ form.uhid }}</div>
+    <div class="col-md-6 field-wrap" data-field="first_name"><label class="form-label">{{ form.first_name.label }}</label>{{ form.first_name }}</div>
+    <div class="col-md-6 field-wrap" data-field="last_name"><label class="form-label">{{ form.last_name.label }}</label>{{ form.last_name }}</div>
+    <div class="col-md-6 field-wrap" data-field="gender"><label class="form-label">{{ form.gender.label }}</label>{{ form.gender }}</div>
+    <div class="col-md-6 field-wrap" data-field="date_of_birth"><label class="form-label">{{ form.date_of_birth.label }}</label>{{ form.date_of_birth }}</div>
+    <div class="col-md-6 field-wrap" data-field="age"><label class="form-label">{{ form.age.label }}</label>{{ form.age }}</div>
+    <div class="col-md-6 field-wrap" data-field="place"><label class="form-label">{{ form.place.label }}</label>{{ form.place }}</div>
+    <div class="col-md-6 field-wrap" data-field="phone_number"><label class="form-label">{{ form.phone_number.label }}</label>{{ form.phone_number }}</div>
+    <div class="col-md-6 field-wrap" data-field="alternate_phone_number"><label class="form-label">{{ form.alternate_phone_number.label }}</label>{{ form.alternate_phone_number }}</div>
+    <div class="col-md-6 field-wrap" data-field="status"><label class="form-label">{{ form.status.label }}</label>{{ form.status }}</div>
+
+    <div class="col-12"><h2 class="h6 mb-1">Clinical Info</h2></div>
+    <div class="col-md-6 field-wrap" data-field="diagnosis"><label class="form-label">{{ form.diagnosis.label }}</label>{{ form.diagnosis }}</div>
+    <div class="col-md-6 field-wrap" data-field="lmp"><label class="form-label">{{ form.lmp.label }}</label>{{ form.lmp }}</div>
+    <div class="col-md-6 field-wrap" data-field="edd"><label class="form-label">{{ form.edd.label }}</label>{{ form.edd }}</div>
+    <div class="col-md-6 field-wrap" data-field="usg_edd"><label class="form-label">{{ form.usg_edd.label }}</label>{{ form.usg_edd }}</div>
+    <div class="col-md-6 field-wrap" data-field="surgical_pathway"><label class="form-label">{{ form.surgical_pathway.label }}</label>{{ form.surgical_pathway }}</div>
+    <div class="col-md-6 field-wrap" data-field="surgery_done"><label class="form-label">{{ form.surgery_done.label }}</label>{{ form.surgery_done }}</div>
+    <div class="col-md-6 field-wrap" data-field="surgery_date"><label class="form-label">{{ form.surgery_date.label }}</label>{{ form.surgery_date }}</div>
+    <div class="col-md-6 field-wrap" data-field="review_frequency"><label class="form-label">{{ form.review_frequency.label }}</label>{{ form.review_frequency }}</div>
+    <div class="col-md-6 field-wrap" data-field="review_date"><label class="form-label">{{ form.review_date.label }}</label>{{ form.review_date }}</div>
+    <div class="col-md-3 field-wrap" data-field="gravida"><label class="form-label">G</label>{{ form.gravida }}</div>
+    <div class="col-md-3 field-wrap" data-field="para"><label class="form-label">P</label>{{ form.para }}</div>
+    <div class="col-md-3 field-wrap" data-field="abortions"><label class="form-label">A</label>{{ form.abortions }}</div>
+    <div class="col-md-3 field-wrap" data-field="living"><label class="form-label">L</label>{{ form.living }}<div id="gpla-warning" class="small text-warning d-none">L is greater than P (allowed for multiple births).</div></div>
+
+    <div class="col-12"><h2 class="h6 mb-1">Risk Factors</h2></div>
+    <div class="col-md-6 field-wrap" data-field="high_risk"><label class="form-label">{{ form.high_risk.label }}</label>{{ form.high_risk }}</div>
+    <div class="col-md-6 field-wrap" data-field="ncd_flags"><label class="form-label">{{ form.ncd_flags.label }}</label>{{ form.ncd_flags }}</div>
+
+    <div class="col-12"><h2 class="h6 mb-1">Referral Info</h2></div>
+    <div class="col-md-6 field-wrap" data-field="referred_by"><label class="form-label">{{ form.referred_by.label }}</label>{{ form.referred_by }}</div>
+    <div class="col-md-6 field-wrap" data-field="notes"><label class="form-label">{{ form.notes.label }}</label>{{ form.notes }}</div>
+
     {% for field in form %}
-      <div class="col-md-6">
-        <label class="form-label">{{ field.label }}</label>
-        {{ field }}
-        {% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
-      </div>
+      {% for error in field.errors %}<div class="col-12 text-danger small">{{ field.label }}: {{ error }}</div>{% endfor %}
     {% endfor %}
     {% if form.non_field_errors %}<div class="col-12 text-danger small">{{ form.non_field_errors }}</div>{% endif %}
     <div class="col-12"><button class="btn btn-primary">Save Case</button></div>
   </form>
 </div></div>
+
+<script>
+(function() {
+  const categoryEl = document.getElementById('id_category');
+  if (!categoryEl) return;
+  const fieldsForCategory = {
+    anc: ['lmp', 'edd', 'usg_edd', 'gravida', 'para', 'abortions', 'living', 'high_risk'],
+    surgery: ['surgical_pathway', 'surgery_done', 'surgery_date', 'review_date'],
+    nonsurgical: ['review_frequency', 'review_date']
+  };
+  const allConditional = ['lmp', 'edd', 'usg_edd', 'surgical_pathway', 'surgery_done', 'surgery_date', 'review_frequency', 'review_date', 'gravida', 'para', 'abortions', 'living', 'high_risk'];
+  const normalize = (txt) => (txt || '').toLowerCase().replace(/[^a-z]/g, '');
+
+  function updateFieldVisibility() {
+    const normalized = normalize(categoryEl.options[categoryEl.selectedIndex]?.text);
+    const allowed = new Set(fieldsForCategory[normalized] || []);
+    document.querySelectorAll('.field-wrap[data-field]').forEach((wrapper) => {
+      const name = wrapper.dataset.field;
+      if (!allConditional.includes(name)) return;
+      wrapper.classList.toggle('d-none', !allowed.has(name));
+    });
+  }
+
+  function updateGPLAWarning() {
+    const para = parseInt(document.getElementById('id_para')?.value || '0', 10);
+    const living = parseInt(document.getElementById('id_living')?.value || '0', 10);
+    document.getElementById('gpla-warning')?.classList.toggle('d-none', !(living > para));
+  }
+
+  categoryEl.addEventListener('change', updateFieldVisibility);
+  document.getElementById('id_para')?.addEventListener('change', updateGPLAWarning);
+  document.getElementById('id_living')?.addEventListener('change', updateGPLAWarning);
+  updateFieldVisibility();
+  updateGPLAWarning();
+})();
+</script>
 {% endblock %}

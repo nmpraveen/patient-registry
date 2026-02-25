@@ -2,6 +2,77 @@
 {% block title %}Case {{ case.uhid }} | MEDTRACK{% endblock %}
 {% block content %}
 <style>
+  .case-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 0.75rem;
+    margin-top: 0.75rem;
+    width: 100%;
+  }
+
+  @media (min-width: 1200px) {
+    .case-summary-grid {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+  }
+
+  .case-summary-card {
+    border: 1px solid #e9ecef;
+    border-radius: 0.5rem;
+    padding: 0.75rem;
+    background: #fff;
+  }
+
+  .case-summary-title {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #6c757d;
+    margin-bottom: 0.35rem;
+    font-weight: 700;
+  }
+
+  .summary-item {
+    font-size: 0.88rem;
+    margin: 0 0 0.3rem;
+    line-height: 1.35;
+  }
+
+  .summary-item:last-child {
+    margin-bottom: 0;
+  }
+
+  .summary-label {
+    color: #6c757d;
+    font-weight: 600;
+  }
+
+  .info-pill {
+    display: inline-block;
+    border-radius: 999px;
+    padding: 0.22rem 0.58rem;
+    font-size: 0.74rem;
+    font-weight: 700;
+    margin: 0.15rem 0.35rem 0.15rem 0;
+    white-space: nowrap;
+    border: 1px solid transparent;
+  }
+
+  .pill-status-open { background: #cff4fc; color: #055160; border-color: #9eeaf9; }
+  .pill-status-pending { background: #fff3cd; color: #664d03; border-color: #ffe69c; }
+  .pill-status-cancelled { background: #f8d7da; color: #842029; border-color: #f1aeb5; }
+  .pill-status-completed { background: #d1e7dd; color: #0f5132; border-color: #a3cfbb; }
+  .pill-category { background: #e2e3e5; color: #41464b; border-color: #d3d6d8; }
+  .pill-high-risk { background: #f8d7da; color: #842029; border-color: #f1aeb5; }
+  .pill-review { background: #fff3cd; color: #664d03; border-color: #ffe69c; }
+  .pill-pathway { background: #dbeafe; color: #1e3a8a; border-color: #bfdbfe; }
+
+  @media (max-width: 575.98px) {
+    .case-summary-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
   .task-status-pill {
     display: inline-block;
     border-radius: 999px;
@@ -20,24 +91,47 @@
   .task-status-pill.status-awating-results { background: #fd7e14; }
   .task-status-pill.status-cancelled { background: #6c757d; }
 </style>
-<div class="d-flex flex-column flex-md-row justify-content-between align-items-start gap-2 mb-3">
-  <div>
+<div class="d-flex flex-column flex-md-row align-items-start gap-2 gap-md-3 mb-3">
+  <div class="flex-grow-1 w-100">
     <h1 class="h4 mb-1">{{ case.full_name }} <small class="text-muted">({{ case.uhid }})</small></h1>
-    <p class="mb-0 small">
-      {% if case.gender %}Gender: {{ case.get_gender_display }} · {% endif %}
-      {% if case.date_of_birth %}DOB: {{ case.date_of_birth }} · {% endif %}
-      {% if case.place %}Place: {{ case.place }} · {% endif %}
-      Phone: {{ case.phone_number }}{% if case.alternate_phone_number %} · Alt: {{ case.alternate_phone_number }}{% endif %} · Category: {{ case.category.name }} · Status: {{ case.get_status_display }}
-    </p>
-    <p class="mb-0 small text-muted">
-      {% if case.lmp %}LMP {{ case.lmp }}{% endif %} {% if case.edd %}· EDD {{ case.edd }}{% endif %}
-      {% if case.usg_edd %}· USG-EDD {{ case.usg_edd }}{% endif %}
-      {% if case.trimester %}· {{ case.trimester }} trimester{% endif %}
-      {% if case.surgical_pathway %}· {{ case.get_surgical_pathway_display }}{% endif %}
-      {% if case.review_date %}· Next review {{ case.review_date }}{% endif %}{% if case.diagnosis %} · Diagnosis {{ case.diagnosis }}{% endif %}{% if case.referred_by %} · Referred by {{ case.referred_by }}{% endif %}{% if case.high_risk %} · <span class="text-danger">High-risk</span>{% endif %}{% if case.gravida %} · G{{ case.gravida }} P{{ case.para|default:0 }} A{{ case.abortions|default:0 }} L{{ case.living|default:0 }}{% endif %}
-    </p>
+    <div class="mb-1">
+      <span class="info-pill pill-status-{{ case.status|slugify }}">Status: {{ case.get_status_display }}</span>
+      <span class="info-pill pill-category">Category: {{ case.category.name }}</span>
+      {% if case.high_risk %}<span class="info-pill pill-high-risk">High-risk</span>{% endif %}
+      {% if case.review_date %}<span class="info-pill pill-review">Next review: {{ case.review_date }}</span>{% endif %}
+      {% if case.surgical_pathway %}<span class="info-pill pill-pathway">{{ case.get_surgical_pathway_display }}</span>{% endif %}
+    </div>
+    <div class="case-summary-grid">
+      <div class="case-summary-card">
+        <div class="case-summary-title">Identity</div>
+        {% if case.gender %}<p class="summary-item"><span class="summary-label">Gender:</span> {{ case.get_gender_display }}</p>{% endif %}
+        {% if case.date_of_birth %}<p class="summary-item"><span class="summary-label">DOB:</span> {{ case.date_of_birth }}</p>{% endif %}
+        {% if case.place %}<p class="summary-item"><span class="summary-label">Place:</span> {{ case.place }}</p>{% endif %}
+        {% if not case.gender and not case.date_of_birth and not case.place %}<p class="summary-item text-muted">No identity details available.</p>{% endif %}
+      </div>
+      <div class="case-summary-card">
+        <div class="case-summary-title">Contact</div>
+        <p class="summary-item"><span class="summary-label">Phone:</span> {{ case.phone_number }}</p>
+        {% if case.alternate_phone_number %}<p class="summary-item"><span class="summary-label">Alt:</span> {{ case.alternate_phone_number }}</p>{% endif %}
+        {% if case.referred_by %}<p class="summary-item"><span class="summary-label">Referred by:</span> {{ case.referred_by }}</p>{% endif %}
+      </div>
+      <div class="case-summary-card">
+        <div class="case-summary-title">Clinical</div>
+        {% if case.diagnosis %}<p class="summary-item"><span class="summary-label">Diagnosis:</span> {{ case.diagnosis }}</p>{% endif %}
+        {% if case.lmp %}<p class="summary-item"><span class="summary-label">LMP:</span> {{ case.lmp }}</p>{% endif %}
+        {% if case.edd %}<p class="summary-item"><span class="summary-label">EDD:</span> {{ case.edd }}</p>{% endif %}
+        {% if case.usg_edd %}<p class="summary-item"><span class="summary-label">USG-EDD:</span> {{ case.usg_edd }}</p>{% endif %}
+        {% if not case.diagnosis and not case.lmp and not case.edd and not case.usg_edd %}<p class="summary-item text-muted">No clinical details available.</p>{% endif %}
+      </div>
+      <div class="case-summary-card">
+        <div class="case-summary-title">Follow-up</div>
+        {% if case.trimester %}<p class="summary-item"><span class="summary-label">Trimester:</span> {{ case.trimester }}</p>{% endif %}
+        {% if case.gravida %}<p class="summary-item"><span class="summary-label">Obstetric:</span> G{{ case.gravida }} P{{ case.para|default:0 }} A{{ case.abortions|default:0 }} L{{ case.living|default:0 }}</p>{% endif %}
+        {% if not case.trimester and not case.gravida %}<p class="summary-item text-muted">No follow-up flags available.</p>{% endif %}
+      </div>
+    </div>
   </div>
-  <a class="btn btn-outline-primary btn-sm" href="{% url 'patients:case_edit' case.id %}">Edit Case</a>
+  <a class="btn btn-outline-primary btn-sm mt-1 mt-md-0 ms-md-2 flex-shrink-0" href="{% url 'patients:case_edit' case.id %}">Edit Case</a>
 </div>
 <div class="row g-3 g-md-4">
   <div class="col-12 col-lg-7">

@@ -192,6 +192,30 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(latest_log.note, "Called patient and reviewed instructions.")
         self.assertIsNone(latest_log.task)
 
+    def test_dashboard_groups_tasks_by_patient_and_day(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH777",
+            first_name="Grouped",
+            last_name="Patient",
+            phone_number="9876501111",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=10),
+            created_by=self.user,
+        )
+        Task.objects.create(case=case, title="Lab", due_date=timezone.localdate(), created_by=self.user)
+        Task.objects.create(case=case, title="ECG", due_date=timezone.localdate(), created_by=self.user)
+
+        response = self.client.get(reverse("patients:dashboard"))
+
+        self.assertEqual(response.status_code, 200)
+        today_cards = response.context["today_cards"]
+        self.assertEqual(len(today_cards), 1)
+        self.assertEqual(today_cards[0]["patient_name"], "Grouped Patient")
+        self.assertEqual(today_cards[0]["task_titles"], ["Lab", "ECG"])
+
     def test_create_surgery_case_requires_pathway_and_generates_preop_tasks(self):
         self.client.force_login(self.user)
         response = self.client.post(

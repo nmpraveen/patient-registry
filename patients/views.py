@@ -1,3 +1,4 @@
+from collections import OrderedDict
 from datetime import timedelta
 
 from django.contrib import messages
@@ -51,19 +52,51 @@ class DashboardView(LoginRequiredMixin, ListView):
     template_name = "patients/dashboard.html"
     context_object_name = "today_tasks"
 
+    @staticmethod
+    def _build_patient_day_cards(task_queryset):
+        grouped_tasks = OrderedDict()
+        for task in task_queryset:
+            key = (task.due_date, task.case_id)
+            grouped_tasks.setdefault(key, []).append(task)
+
+        cards = []
+        for (_, _), grouped in grouped_tasks.items():
+            first_task = grouped[0]
+            case = first_task.case
+            unique_titles = []
+            seen_titles = set()
+            for task in grouped:
+                if task.title not in seen_titles:
+                    unique_titles.append(task.title)
+                    seen_titles.add(task.title)
+            cards.append(
+                {
+                    "due_date": first_task.due_date,
+                    "case_id": case.id,
+                    "patient_name": case.full_name or case.patient_name,
+                    "diagnosis": case.category.name,
+                    "phone_number": case.phone_number,
+                    "task_titles": unique_titles,
+                }
+            )
+        return cards
+
     def get_queryset(self):
         today = timezone.localdate()
-        return Task.objects.select_related("case", "assigned_user").filter(due_date=today, status=TaskStatus.SCHEDULED)
+        return Task.objects.select_related("case", "case__category", "assigned_user").filter(due_date=today, status=TaskStatus.SCHEDULED).order_by("due_date", "case_id", "id")
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         today = timezone.localdate()
         upcoming_days = int(self.request.GET.get("upcoming_days", 7))
 
-        tasks = Task.objects.select_related("case", "assigned_user")
-        context["upcoming_tasks"] = tasks.filter(due_date__gt=today, due_date__lte=today + timedelta(days=upcoming_days), status=TaskStatus.SCHEDULED)
-        context["overdue_tasks"] = tasks.exclude(status=TaskStatus.COMPLETED).filter(due_date__lt=today)
+        tasks = Task.objects.select_related("case", "case__category", "assigned_user")
+        context["upcoming_tasks"] = tasks.filter(due_date__gt=today, due_date__lte=today + timedelta(days=upcoming_days), status=TaskStatus.SCHEDULED).order_by("due_date", "case_id", "id")
+        context["overdue_tasks"] = tasks.exclude(status=TaskStatus.COMPLETED).filter(due_date__lt=today).order_by("due_date", "case_id", "id")
         context["awaiting_tasks"] = tasks.filter(status=TaskStatus.AWAITING_REPORTS)
+        context["today_cards"] = self._build_patient_day_cards(context["today_tasks"])
+        context["upcoming_cards"] = self._build_patient_day_cards(context["upcoming_tasks"])
+        context["overdue_cards"] = self._build_patient_day_cards(context["overdue_tasks"])
         context["active_case_count"] = Case.objects.filter(status=CaseStatus.ACTIVE).count()
         context["completed_case_count"] = Case.objects.filter(status=CaseStatus.COMPLETED).count()
         context["upcoming_days"] = upcoming_days

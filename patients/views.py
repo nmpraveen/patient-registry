@@ -28,15 +28,18 @@ from .models import (
 
 
 def has_capability(user, capability):
-    if user.is_superuser:
-        return True
     ensure_default_role_settings()
     user_groups = set(user.groups.values_list("name", flat=True))
     role_settings = {r.role_name: r for r in RoleSetting.objects.filter(role_name__in=user_groups)}
-    for group in user_groups:
-        role_setting = role_settings.get(group)
-        if role_setting and role_setting.capabilities().get(capability, False):
-            return True
+
+    # If users have explicit role assignments, evaluate only those role capabilities.
+    # This keeps role restrictions effective even for Django superusers.
+    if role_settings:
+        return any(role.capabilities().get(capability, False) for role in role_settings.values())
+
+    if user.is_superuser:
+        return True
+
     return False
 
 

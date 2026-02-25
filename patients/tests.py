@@ -140,6 +140,32 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(post_response.status_code, 302)
         self.assertTrue(RoleSetting.objects.filter(role_name="Reception").exists())
 
+
+    def test_superuser_with_restricted_role_cannot_access_settings(self):
+        ensure_default_role_settings()
+        restricted_role = RoleSetting.objects.create(
+            role_name="Coordinator",
+            can_case_create=True,
+            can_case_edit=True,
+            can_task_create=True,
+            can_task_edit=True,
+            can_note_add=True,
+            can_manage_settings=False,
+        )
+        restricted_group, _ = Group.objects.get_or_create(name=restricted_role.role_name)
+
+        privileged_user = get_user_model().objects.create_superuser(
+            username="ops_admin",
+            email="ops@example.com",
+            password="strong-pass-123",
+        )
+        privileged_user.groups.add(restricted_group)
+
+        self.client.force_login(privileged_user)
+        response = self.client.get(reverse("patients:settings"))
+
+        self.assertEqual(response.status_code, 403)
+
     def test_create_surgery_case_requires_pathway_and_generates_preop_tasks(self):
         self.client.force_login(self.user)
         response = self.client.post(

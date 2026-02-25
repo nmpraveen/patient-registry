@@ -22,7 +22,7 @@ class StyledModelForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         for field in self.fields.values():
-            if isinstance(field.widget, forms.CheckboxInput):
+            if isinstance(field.widget, (forms.CheckboxInput, forms.CheckboxSelectMultiple)):
                 css_class = "form-check-input"
             elif isinstance(field.widget, forms.Select):
                 css_class = "form-select"

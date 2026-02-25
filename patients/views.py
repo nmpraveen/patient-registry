@@ -94,17 +94,22 @@ class DashboardView(LoginRequiredMixin, ListView):
         upcoming_days = int(self.request.GET.get("upcoming_days", 7))
 
         tasks = Task.objects.select_related("case", "case__category", "assigned_user")
+        category_counts = {
+            (item["category__name"] or "").strip().upper(): item["total"]
+            for item in Case.objects.values("category__name").annotate(total=Count("id"))
+        }
         context["upcoming_tasks"] = tasks.filter(due_date__gt=today, due_date__lte=today + timedelta(days=upcoming_days), status=TaskStatus.SCHEDULED).order_by("due_date", "case_id", "id")
         context["overdue_tasks"] = tasks.exclude(status=TaskStatus.COMPLETED).filter(due_date__lt=today).order_by("due_date", "case_id", "id")
         context["awaiting_tasks"] = tasks.filter(status=TaskStatus.AWAITING_REPORTS)
         context["today_cards"] = self._build_patient_day_cards(context["today_tasks"])
         context["upcoming_cards"] = self._build_patient_day_cards(context["upcoming_tasks"])
         context["overdue_cards"] = self._build_patient_day_cards(context["overdue_tasks"])
+        context["anc_case_count"] = category_counts.get("ANC", 0)
+        context["surgery_case_count"] = category_counts.get("SURGERY", 0)
+        context["non_surgical_case_count"] = category_counts.get("NON SURGICAL", 0)
         context["active_case_count"] = Case.objects.filter(status=CaseStatus.ACTIVE).count()
         context["completed_case_count"] = Case.objects.filter(status=CaseStatus.COMPLETED).count()
         context["upcoming_days"] = upcoming_days
-        context["red_list_count"] = tasks.exclude(status=TaskStatus.COMPLETED).filter(due_date__lt=today, due_date__gte=today - timedelta(days=30)).count()
-        context["grey_list_count"] = tasks.exclude(status=TaskStatus.COMPLETED).filter(due_date__lt=today - timedelta(days=30)).count()
         return context
 
 

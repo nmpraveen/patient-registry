@@ -7,6 +7,7 @@ from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
+from .forms import CaseForm
 from .models import Case, CaseStatus, DepartmentConfig, RoleSetting, SurgicalPathway, Task, TaskStatus, ensure_default_role_settings
 
 
@@ -84,6 +85,7 @@ class MedtrackViewTests(TestCase):
                 "phone_number": "9876543210",
                 "category": self.anc.id,
                 "status": CaseStatus.ACTIVE,
+                "age": "28",
                 "lmp": timezone.localdate() - timedelta(days=60),
                 "edd": timezone.localdate() + timedelta(days=210),
                 "notes": "",
@@ -184,6 +186,45 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(case.place, "Chennai")
         self.assertEqual(case.date_of_birth.isoformat(), "1995-01-15")
 
+    def test_case_form_uses_dob_to_calculate_age(self):
+        dob = timezone.localdate() - timedelta(days=365 * 25)
+        form = CaseForm(
+            data={
+                "uhid": "UH-AGE1",
+                "first_name": "Age",
+                "last_name": "Auto",
+                "phone_number": "9876500077",
+                "category": self.surgery.id,
+                "status": CaseStatus.ACTIVE,
+                "date_of_birth": dob.isoformat(),
+                "age": "",
+                "surgical_pathway": SurgicalPathway.SURVEILLANCE,
+                "review_date": (timezone.localdate() + timedelta(days=10)).isoformat(),
+            }
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        today = timezone.localdate()
+        expected_age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+        self.assertEqual(form.cleaned_data["age"], expected_age)
+
+    def test_case_form_requires_age_when_dob_missing(self):
+        form = CaseForm(
+            data={
+                "uhid": "UH-AGE2",
+                "first_name": "Age",
+                "last_name": "Manual",
+                "phone_number": "9876500078",
+                "category": self.surgery.id,
+                "status": CaseStatus.ACTIVE,
+                "surgical_pathway": SurgicalPathway.SURVEILLANCE,
+                "review_date": (timezone.localdate() + timedelta(days=10)).isoformat(),
+            }
+        )
+
+        self.assertFalse(form.is_valid())
+        self.assertIn("age", form.errors)
+
 
     def test_case_note_add_does_not_require_task_selection(self):
         self.client.force_login(self.user)
@@ -274,6 +315,7 @@ class MedtrackViewTests(TestCase):
                 "phone_number": "9876500000",
                 "category": self.surgery.id,
                 "status": CaseStatus.ACTIVE,
+                "age": "42",
                 "surgical_pathway": SurgicalPathway.PLANNED_SURGERY,
                 "surgery_date": timezone.localdate() + timedelta(days=7),
             },

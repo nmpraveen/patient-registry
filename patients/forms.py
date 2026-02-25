@@ -53,6 +53,16 @@ class CaseForm(StyledModelForm):
 
     def clean(self):
         cleaned_data = super().clean()
+        dob = cleaned_data.get("date_of_birth")
+        entered_age = cleaned_data.get("age")
+        if dob:
+            today = timezone.localdate()
+            years = today.year - dob.year
+            has_had_birthday = (today.month, today.day) >= (dob.month, dob.day)
+            cleaned_data["age"] = years if has_had_birthday else years - 1
+        elif entered_age is None:
+            self.add_error("age", "Enter age when date of birth is not available.")
+
         category = cleaned_data.get("category")
         category_name = category.name.upper() if category else ""
 

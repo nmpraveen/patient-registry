@@ -254,6 +254,19 @@ class MedtrackViewTests(TestCase):
 
     def test_dashboard_groups_tasks_by_patient_and_day(self):
         self.client.force_login(self.user)
+        non_surgical, _ = DepartmentConfig.objects.get_or_create(name="Non Surgical")
+
+        anc_case = Case.objects.create(
+            uhid="UH776",
+            first_name="ANC",
+            last_name="Patient",
+            phone_number="9876501110",
+            category=self.anc,
+            status=CaseStatus.ACTIVE,
+            lmp=timezone.localdate() - timedelta(days=70),
+            edd=timezone.localdate() + timedelta(days=200),
+            created_by=self.user,
+        )
         case = Case.objects.create(
             uhid="UH777",
             first_name="Grouped",
@@ -265,6 +278,17 @@ class MedtrackViewTests(TestCase):
             review_date=timezone.localdate() + timedelta(days=10),
             created_by=self.user,
         )
+        Case.objects.create(
+            uhid="UH778",
+            first_name="Non",
+            last_name="Surgical",
+            phone_number="9876501112",
+            category=non_surgical,
+            status=CaseStatus.ACTIVE,
+            review_date=timezone.localdate() + timedelta(days=15),
+            created_by=self.user,
+        )
+        Task.objects.create(case=anc_case, title="ANC Review", due_date=timezone.localdate(), created_by=self.user)
         Task.objects.create(case=case, title="Lab", due_date=timezone.localdate(), created_by=self.user)
         Task.objects.create(case=case, title="ECG", due_date=timezone.localdate(), created_by=self.user)
 
@@ -272,10 +296,40 @@ class MedtrackViewTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         today_cards = response.context["today_cards"]
-        self.assertEqual(len(today_cards), 1)
-        self.assertEqual(today_cards[0]["patient_name"], "Grouped Patient")
-        self.assertEqual(today_cards[0]["task_titles"], ["Lab", "ECG"])
+        self.assertEqual(len(today_cards), 2)
+        self.assertEqual(today_cards[1]["patient_name"], "Grouped Patient")
+        self.assertEqual(today_cards[1]["task_titles"], ["Lab", "ECG"])
+        self.assertEqual(response.context["anc_case_count"], 1)
+        self.assertEqual(response.context["surgery_case_count"], 1)
+        self.assertEqual(response.context["non_surgical_case_count"], 1)
 
+
+    def test_dashboard_shows_awaiting_reports_list(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-AWAIT",
+            first_name="Awaiting",
+            last_name="Patient",
+            phone_number="9876503333",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=4),
+            created_by=self.user,
+        )
+        Task.objects.create(
+            case=case,
+            title="Upload report",
+            due_date=timezone.localdate(),
+            status=TaskStatus.AWAITING_REPORTS,
+            created_by=self.user,
+        )
+
+        response = self.client.get(reverse("patients:dashboard"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Awaiting Reports")
+        self.assertContains(response, "Upload report")
 
     def test_dashboard_card_contains_referral_high_risk_and_ncd_flags(self):
         self.client.force_login(self.user)

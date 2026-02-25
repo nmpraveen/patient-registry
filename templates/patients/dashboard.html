@@ -3,12 +3,12 @@
 {% block content %}
 <h1 class="h4 mb-3">Dashboard</h1>
 <div class="row g-2 g-md-3 mb-4">
-  <div class="col-6 col-md-2"><div class="card"><div class="card-body py-2 py-md-3"><small>Today's</small><div class="h5 mb-0">{{ today_tasks|length }}</div></div></div></div>
-  <div class="col-6 col-md-2"><div class="card"><div class="card-body py-2 py-md-3"><small>Upcoming</small><div class="h5 mb-0">{{ upcoming_tasks|length }}</div></div></div></div>
-  <div class="col-6 col-md-2"><div class="card"><div class="card-body py-2 py-md-3"><small>Overdue</small><div class="h5 mb-0 text-danger">{{ overdue_tasks|length }}</div></div></div></div>
-  <div class="col-6 col-md-2"><div class="card"><div class="card-body py-2 py-md-3"><small>Awaiting</small><div class="h5 mb-0">{{ awaiting_tasks|length }}</div></div></div></div>
-  <div class="col-6 col-md-2"><div class="card"><div class="card-body py-2 py-md-3"><small>Red List</small><div class="h5 mb-0 text-danger">{{ red_list_count }}</div></div></div></div>
-  <div class="col-6 col-md-2"><div class="card"><div class="card-body py-2 py-md-3"><small>Grey List</small><div class="h5 mb-0 text-secondary">{{ grey_list_count }}</div></div></div></div>
+  <div class="col-6 col-md-2"><div class="card border-primary-subtle"><div class="card-body py-2 py-md-3 bg-primary-subtle"><small>Today's</small><div class="h5 mb-0">{{ today_tasks|length }}</div></div></div></div>
+  <div class="col-6 col-md-2"><div class="card border-info-subtle"><div class="card-body py-2 py-md-3 bg-info-subtle"><small>Upcoming</small><div class="h5 mb-0">{{ upcoming_tasks|length }}</div></div></div></div>
+  <div class="col-6 col-md-2"><div class="card border-danger-subtle"><div class="card-body py-2 py-md-3 bg-danger-subtle"><small>Overdue</small><div class="h5 mb-0 text-danger">{{ overdue_tasks|length }}</div></div></div></div>
+  <div class="col-6 col-md-2"><div class="card border-success-subtle"><div class="card-body py-2 py-md-3 bg-success-subtle"><small>ANC</small><div class="h5 mb-0">{{ anc_case_count }}</div></div></div></div>
+  <div class="col-6 col-md-2"><div class="card border-warning-subtle"><div class="card-body py-2 py-md-3 bg-warning-subtle"><small>Surgery</small><div class="h5 mb-0">{{ surgery_case_count }}</div></div></div></div>
+  <div class="col-6 col-md-2"><div class="card border-secondary-subtle"><div class="card-body py-2 py-md-3 bg-secondary-subtle"><small>Non Surgical</small><div class="h5 mb-0">{{ non_surgical_case_count }}</div></div></div></div>
 </div>
 
 <div class="row g-3 g-md-4">

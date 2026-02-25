@@ -14,19 +14,67 @@
 <div class="row g-3 g-md-4">
   <div class="col-12 col-lg-6">
     <h2 class="h6">Today's Tasks</h2>
-    <ul class="list-group mb-3">
-      {% for task in today_tasks %}<li class="list-group-item small"><a href="{% url 'patients:case_detail' task.case_id %}">{{ task.case.uhid }}</a> — {{ task.title }} ({{ task.due_date }})</li>{% empty %}<li class="list-group-item">No tasks due today.</li>{% endfor %}
-    </ul>
-    <h2 class="h6">Upcoming ({{ upcoming_days }} days)</h2>
-    <ul class="list-group">
-      {% for task in upcoming_tasks %}<li class="list-group-item small">{{ task.due_date }} — <a href="{% url 'patients:case_detail' task.case_id %}">{{ task.case.full_name }}</a> / {{ task.title }}</li>{% empty %}<li class="list-group-item">No upcoming tasks.</li>{% endfor %}
-    </ul>
+    {% for card in today_cards %}
+      <div class="card mb-3 shadow-sm">
+        <div class="card-body py-2 px-3">
+          <div class="d-flex align-items-center flex-wrap gap-1 small">
+            <span class="text-muted">{{ card.due_date|date:'M d' }} —</span>
+            <a class="fw-semibold text-decoration-none" href="{% url 'patients:case_detail' card.case_id %}">{{ card.patient_name }}</a>
+            <span class="text-muted">/ {{ card.diagnosis }} /</span>
+            <a class="text-decoration-none" href="tel:{{ card.phone_number }}" data-bs-toggle="collapse" data-bs-target="#today-phone-{{ forloop.counter }}" aria-expanded="false" aria-controls="today-phone-{{ forloop.counter }}" title="Show and call patient">
+              📞
+            </a>
+            <span id="today-phone-{{ forloop.counter }}" class="collapse text-muted">{{ card.phone_number }}</span>
+          </div>
+          <div class="text-muted small mt-1">{{ card.task_titles|join:' • ' }}</div>
+        </div>
+      </div>
+    {% empty %}
+      <div class="card"><div class="card-body">No tasks due today.</div></div>
+    {% endfor %}
+
+    <h2 class="h6 mt-3">Upcoming ({{ upcoming_days }} days)</h2>
+    {% for card in upcoming_cards %}
+      <div class="card mb-3 shadow-sm">
+        <div class="card-body py-2 px-3">
+          <div class="d-flex align-items-center flex-wrap gap-1 small">
+            <span class="text-muted">{{ card.due_date|date:'M d' }} —</span>
+            <a class="fw-semibold text-decoration-none" href="{% url 'patients:case_detail' card.case_id %}">{{ card.patient_name }}</a>
+            <span class="text-muted">/ {{ card.diagnosis }} /</span>
+            <a class="text-decoration-none" href="tel:{{ card.phone_number }}" data-bs-toggle="collapse" data-bs-target="#upcoming-phone-{{ forloop.counter }}" aria-expanded="false" aria-controls="upcoming-phone-{{ forloop.counter }}" title="Show and call patient">
+              📞
+            </a>
+            <span id="upcoming-phone-{{ forloop.counter }}" class="collapse text-muted">{{ card.phone_number }}</span>
+          </div>
+          <div class="text-muted small mt-1">{{ card.task_titles|join:' • ' }}</div>
+        </div>
+      </div>
+    {% empty %}
+      <div class="card"><div class="card-body">No upcoming tasks.</div></div>
+    {% endfor %}
   </div>
+
   <div class="col-12 col-lg-6">
     <h2 class="h6">Overdue Tasks</h2>
-    <ul class="list-group mb-3">
-      {% for task in overdue_tasks %}<li class="list-group-item small">{{ task.due_date }} — <a href="{% url 'patients:case_detail' task.case_id %}">{{ task.case.uhid }}</a> / {{ task.title }}</li>{% empty %}<li class="list-group-item">No overdue tasks.</li>{% endfor %}
-    </ul>
+    {% for card in overdue_cards %}
+      <div class="card mb-3 border-danger-subtle shadow-sm">
+        <div class="card-body py-2 px-3">
+          <div class="d-flex align-items-center flex-wrap gap-1 small">
+            <span class="text-danger">{{ card.due_date|date:'M d' }} —</span>
+            <a class="fw-semibold text-decoration-none" href="{% url 'patients:case_detail' card.case_id %}">{{ card.patient_name }}</a>
+            <span class="text-muted">/ {{ card.diagnosis }} /</span>
+            <a class="text-decoration-none" href="tel:{{ card.phone_number }}" data-bs-toggle="collapse" data-bs-target="#overdue-phone-{{ forloop.counter }}" aria-expanded="false" aria-controls="overdue-phone-{{ forloop.counter }}" title="Show and call patient">
+              📞
+            </a>
+            <span id="overdue-phone-{{ forloop.counter }}" class="collapse text-muted">{{ card.phone_number }}</span>
+          </div>
+          <div class="text-muted small mt-1">{{ card.task_titles|join:' • ' }}</div>
+        </div>
+      </div>
+    {% empty %}
+      <div class="card"><div class="card-body">No overdue tasks.</div></div>
+    {% endfor %}
+
     <h2 class="h6">Awaiting Reports</h2>
     <ul class="list-group">
       {% for task in awaiting_tasks %}<li class="list-group-item small"><a href="{% url 'patients:case_detail' task.case_id %}">{{ task.case.full_name }}</a> — {{ task.title }}</li>{% empty %}<li class="list-group-item">No awaiting-report tasks.</li>{% endfor %}

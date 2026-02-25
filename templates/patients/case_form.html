@@ -19,9 +19,16 @@
   }
   .ncd-grid .form-check {
     margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+  }
+  .ncd-grid .form-check-input {
+    margin-top: 0;
+    float: none;
   }
   .ncd-grid .form-check-label {
-    margin-left: 0.35rem;
+    margin-left: 0;
   }
 </style>
 
@@ -108,7 +115,12 @@
           <div class="col-md-6 field-wrap" data-field="ncd_flags">
             <label class="form-label">{{ form.ncd_flags.label }}</label>
             <div class="ncd-grid border rounded p-2 bg-light-subtle">
-              {{ form.ncd_flags }}
+              {% for choice in form.ncd_flags %}
+                <div class="form-check">
+                  {{ choice.tag }}
+                  <label class="form-check-label" for="{{ choice.id_for_label }}">{{ choice.choice_label }}</label>
+                </div>
+              {% endfor %}
             </div>
           </div>
         </div>

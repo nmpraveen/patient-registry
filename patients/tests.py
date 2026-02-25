@@ -161,6 +161,12 @@ class MedtrackViewTests(TestCase):
 
 
 class SeedMockDataCommandTests(TestCase):
-    def test_seed_mock_data_creates_cases(self):
+    def test_seed_mock_data_creates_cases_with_believable_identifiers(self):
         call_command("seed_mock_data", "--count", "10", "--reset")
-        self.assertEqual(Case.objects.filter(uhid__startswith="MOCK-").count(), 10)
+
+        seeded_cases = Case.objects.filter(uhid__startswith="TN-").order_by("uhid")
+        self.assertEqual(seeded_cases.count(), 10)
+
+        for case in seeded_cases:
+            self.assertRegex(case.uhid, r"^TN-[A-Z]{3}-\d{6}$")
+            self.assertRegex(case.phone_number, r"^[6-9]\d{9}$")

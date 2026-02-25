@@ -30,6 +30,18 @@
   .ncd-grid .form-check-label {
     margin-left: 0;
   }
+  .autocomplete-panel {
+    position: absolute;
+    top: calc(100% + 0.25rem);
+    left: 0;
+    right: 0;
+    z-index: 1050;
+    max-height: 13rem;
+    overflow-y: auto;
+  }
+  .autocomplete-panel .list-group-item {
+    cursor: pointer;
+  }
 </style>
 
 <div class="card shadow-sm"><div class="card-body">
@@ -207,10 +219,147 @@
     document.getElementById('gpla-warning')?.classList.toggle('d-none', !(living > para));
   }
 
+  function initAutocomplete(inputId, fieldName) {
+    const inputEl = document.getElementById(inputId);
+    if (!inputEl) return;
+
+    const container = inputEl.closest('.field-wrap') || inputEl.parentElement;
+    if (!container) return;
+    container.classList.add('position-relative');
+
+    const panelId = `${inputId}-autocomplete`;
+    const panelEl = document.createElement('div');
+    panelEl.id = panelId;
+    panelEl.className = 'autocomplete-panel list-group shadow-sm d-none';
+    panelEl.setAttribute('role', 'listbox');
+    panelEl.setAttribute('aria-label', `${fieldName} suggestions`);
+    container.appendChild(panelEl);
+    inputEl.setAttribute('autocomplete', 'off');
+    inputEl.setAttribute('aria-controls', panelId);
+
+    let suggestions = [];
+    let activeIndex = -1;
+    let currentRequestId = 0;
+
+    function closePanel() {
+      panelEl.classList.add('d-none');
+      panelEl.innerHTML = '';
+      suggestions = [];
+      activeIndex = -1;
+      inputEl.removeAttribute('aria-activedescendant');
+    }
+
+    function selectSuggestion(index) {
+      if (index < 0 || index >= suggestions.length) return;
+      inputEl.value = suggestions[index].text;
+      closePanel();
+    }
+
+    function setActiveSuggestion(index) {
+      activeIndex = index;
+      Array.from(panelEl.children).forEach((itemEl, itemIndex) => {
+        itemEl.classList.toggle('active', itemIndex === activeIndex);
+      });
+      if (activeIndex >= 0) {
+        const activeEl = panelEl.children[activeIndex];
+        if (activeEl) {
+          inputEl.setAttribute('aria-activedescendant', activeEl.id);
+          activeEl.scrollIntoView({ block: 'nearest' });
+        }
+      } else {
+        inputEl.removeAttribute('aria-activedescendant');
+      }
+    }
+
+    function renderSuggestions(items) {
+      panelEl.innerHTML = '';
+      suggestions = items;
+      activeIndex = -1;
+
+      if (!items.length) {
+        closePanel();
+        return;
+      }
+
+      items.forEach((item, index) => {
+        const itemEl = document.createElement('button');
+        itemEl.type = 'button';
+        itemEl.className = 'list-group-item list-group-item-action py-1 px-2 small';
+        itemEl.id = `${panelId}-item-${index}`;
+        itemEl.setAttribute('role', 'option');
+        itemEl.textContent = item.text;
+        itemEl.addEventListener('mouseenter', () => setActiveSuggestion(index));
+        itemEl.addEventListener('mousedown', (event) => {
+          event.preventDefault();
+          selectSuggestion(index);
+        });
+        panelEl.appendChild(itemEl);
+      });
+
+      panelEl.classList.remove('d-none');
+    }
+
+    async function fetchSuggestions(query) {
+      const requestId = ++currentRequestId;
+      const params = new URLSearchParams({ field: fieldName, q: query });
+      try {
+        const response = await fetch(`{% url 'patients:case_autocomplete' %}?${params.toString()}`, {
+          headers: { 'X-Requested-With': 'XMLHttpRequest' },
+          credentials: 'same-origin'
+        });
+        if (!response.ok || requestId !== currentRequestId) {
+          return;
+        }
+        const data = await response.json();
+        if (requestId !== currentRequestId) return;
+        renderSuggestions(Array.isArray(data) ? data : []);
+      } catch (error) {
+        closePanel();
+      }
+    }
+
+    inputEl.addEventListener('input', () => {
+      const query = inputEl.value.trim();
+      if (query.length < 1) {
+        closePanel();
+        return;
+      }
+      fetchSuggestions(query);
+    });
+
+    inputEl.addEventListener('keydown', (event) => {
+      if (panelEl.classList.contains('d-none')) {
+        return;
+      }
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        setActiveSuggestion((activeIndex + 1) % suggestions.length);
+      } else if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        setActiveSuggestion((activeIndex - 1 + suggestions.length) % suggestions.length);
+      } else if (event.key === 'Enter') {
+        if (activeIndex >= 0) {
+          event.preventDefault();
+          selectSuggestion(activeIndex);
+        }
+      } else if (event.key === 'Escape') {
+        closePanel();
+      }
+    });
+
+    inputEl.addEventListener('blur', () => {
+      window.setTimeout(closePanel, 120);
+    });
+  }
+
   categoryEl.addEventListener('change', updateFieldVisibility);
   dobEl?.addEventListener('change', updateAgeBehavior);
   document.getElementById('id_para')?.addEventListener('change', updateGPLAWarning);
   document.getElementById('id_living')?.addEventListener('change', updateGPLAWarning);
+
+  initAutocomplete('id_place', 'place');
+  initAutocomplete('id_diagnosis', 'diagnosis');
+  initAutocomplete('id_referred_by', 'referred_by');
 
   updateFieldVisibility();
   updateGPLAWarning();

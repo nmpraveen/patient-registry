@@ -130,6 +130,66 @@ class MedtrackViewTests(TestCase):
         task.refresh_from_db()
         self.assertNotEqual(task.status, TaskStatus.COMPLETED)
 
+    def test_task_create_blocks_anc_completion_before_due_date(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH998",
+            first_name="Future",
+            last_name="Create",
+            phone_number="9998887775",
+            category=self.anc,
+            status=CaseStatus.ACTIVE,
+            lmp=timezone.localdate() - timedelta(days=30),
+            edd=timezone.localdate() + timedelta(days=200),
+            created_by=self.user,
+        )
+
+        response = self.client.post(
+            reverse("patients:task_create", kwargs={"pk": case.pk}),
+            {
+                "title": "Future ANC Create",
+                "due_date": (timezone.localdate() + timedelta(days=7)).isoformat(),
+                "status": TaskStatus.COMPLETED,
+                "assigned_user": "",
+                "task_type": "CUSTOM",
+                "frequency_label": "",
+                "notes": "",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(case.tasks.filter(title="Future ANC Create").exists())
+
+    def test_case_detail_allows_note_only_role(self):
+        ensure_default_role_settings()
+        caller_group, _ = Group.objects.get_or_create(name="Caller")
+        caller_user = get_user_model().objects.create_user(username="caller", password="strong-password-123")
+        caller_user.groups.add(caller_group)
+        case = Case.objects.create(
+            uhid="UH-CALLER",
+            first_name="Note",
+            last_name="Only",
+            phone_number="9876511111",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=10),
+            created_by=self.user,
+        )
+
+        self.client.force_login(caller_user)
+        response = self.client.get(reverse("patients:case_detail", kwargs={"pk": case.pk}))
+
+        self.assertEqual(response.status_code, 200)
+
+    def test_dashboard_invalid_upcoming_days_defaults_to_seven(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("patients:dashboard"), {"upcoming_days": "invalid"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["upcoming_days"], 7)
+
 
     def test_case_form_bootstraps_categories_when_empty(self):
         DepartmentConfig.objects.all().delete()

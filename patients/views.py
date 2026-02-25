@@ -5,6 +5,7 @@ from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.models import Group
+from django.core.exceptions import ValidationError
 from django.db.models import Count, Q
 from django.http import HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -91,7 +92,12 @@ class DashboardView(LoginRequiredMixin, ListView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         today = timezone.localdate()
-        upcoming_days = int(self.request.GET.get("upcoming_days", 7))
+        raw_upcoming_days = self.request.GET.get("upcoming_days", "7")
+        try:
+            upcoming_days = int(raw_upcoming_days)
+        except (TypeError, ValueError):
+            upcoming_days = 7
+        upcoming_days = max(1, min(upcoming_days, 30))
 
         tasks = Task.objects.select_related("case", "case__category", "assigned_user")
         category_counts = {
@@ -253,8 +259,12 @@ class CaseDetailView(LoginRequiredMixin, DetailView):
         return context
 
     def dispatch(self, request, *args, **kwargs):
-        if not has_capability(request.user, "task_edit"):
-            return HttpResponseForbidden("You do not have permission to edit tasks.")
+        can_view = any(
+            has_capability(request.user, capability)
+            for capability in ("case_edit", "task_edit", "task_create", "note_add")
+        )
+        if not can_view:
+            return HttpResponseForbidden("You do not have permission to view case details.")
         return super().dispatch(request, *args, **kwargs)
 
 class CaseUpdateView(LoginRequiredMixin, UpdateView):
@@ -294,9 +304,14 @@ class TaskCreateView(LoginRequiredMixin, View):
             task = form.save(commit=False)
             task.case = case
             task.created_by = request.user
-            task.save()
-            CaseActivityLog.objects.create(case=case, task=task, user=request.user, note=f"Task created: {task.title}")
-            messages.success(request, "Task added.")
+            try:
+                task.full_clean()
+                task.save()
+            except ValidationError:
+                messages.error(request, "Could not add task. Please check the inputs.")
+            else:
+                CaseActivityLog.objects.create(case=case, task=task, user=request.user, note=f"Task created: {task.title}")
+                messages.success(request, "Task added.")
         else:
             messages.error(request, "Could not add task. Please check the inputs.")
         return redirect("patients:case_detail", pk=pk)

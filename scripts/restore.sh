@@ -19,6 +19,11 @@ if [ -f "$ENV_FILE" ]; then
   cp "$ENV_FILE" .env
   echo "Restored .env from backup"
 fi
+if [ -f .env ]; then
+  set -a
+  source .env
+  set +a
+fi
 
 echo "Recreating DB schema..."
 docker compose exec -T db psql -U "${POSTGRES_USER:-patient_registry}" -d postgres -c "DROP DATABASE IF EXISTS ${POSTGRES_DB:-patient_registry};"

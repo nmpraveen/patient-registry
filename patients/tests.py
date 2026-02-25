@@ -325,6 +325,78 @@ class MedtrackViewTests(TestCase):
         self.assertTrue(case.tasks.filter(title__icontains="Lab test").exists())
 
 
+    def test_case_autocomplete_requires_authentication(self):
+        response = self.client.get(reverse("patients:case_autocomplete"), {"field": "place", "q": "ch"})
+        self.assertEqual(response.status_code, 302)
+
+    def test_case_autocomplete_returns_trimmed_frequency_sorted_suggestions(self):
+        self.client.force_login(self.user)
+        Case.objects.create(
+            uhid="UH-AUTO-001",
+            first_name="Auto",
+            last_name="One",
+            phone_number="9000000001",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=5),
+            place=" Chennai ",
+            created_by=self.user,
+        )
+        Case.objects.create(
+            uhid="UH-AUTO-002",
+            first_name="Auto",
+            last_name="Two",
+            phone_number="9000000002",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=5),
+            place="Chennai",
+            created_by=self.user,
+        )
+        Case.objects.create(
+            uhid="UH-AUTO-003",
+            first_name="Auto",
+            last_name="Three",
+            phone_number="9000000003",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=5),
+            place=" Coimbatore ",
+            created_by=self.user,
+        )
+        Case.objects.create(
+            uhid="UH-AUTO-004",
+            first_name="Auto",
+            last_name="Four",
+            phone_number="9000000004",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=5),
+            place="   ",
+            created_by=self.user,
+        )
+
+        response = self.client.get(reverse("patients:case_autocomplete"), {"field": "place", "q": ""})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            [
+                {"text": "Chennai", "count": 2},
+                {"text": "Coimbatore", "count": 1},
+            ],
+        )
+
+    def test_case_autocomplete_rejects_invalid_field(self):
+        self.client.force_login(self.user)
+        response = self.client.get(reverse("patients:case_autocomplete"), {"field": "bad_field", "q": "x"})
+        self.assertEqual(response.status_code, 400)
+
+
 class SeedMockDataCommandTests(TestCase):
     def test_seed_mock_data_creates_cases_with_believable_identifiers_and_new_fields(self):
         call_command("seed_mock_data", "--count", "30", "--reset")

@@ -5,8 +5,9 @@ from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.models import Group
-from django.db.models import Count, Q
-from django.http import HttpResponseForbidden
+from django.db.models import Count, F, Q
+from django.db.models.functions import Trim
+from django.http import HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -151,6 +152,37 @@ class CaseListView(LoginRequiredMixin, ListView):
         context["categories"] = DepartmentConfig.objects.all()
         context["users"] = get_user_model().objects.order_by("username")
         return context
+
+
+class CaseAutocompleteView(LoginRequiredMixin, View):
+    allowed_fields = {"place", "diagnosis", "referred_by"}
+    max_results = 10
+
+    def get(self, request):
+        field = (request.GET.get("field") or "").strip()
+        if field not in self.allowed_fields:
+            return JsonResponse({"error": "Invalid field."}, status=400)
+
+        query = (request.GET.get("q") or "").strip()
+        suggestions = (
+            Case.objects.annotate(suggestion=Trim(F(field)))
+            .exclude(suggestion__isnull=True)
+            .exclude(suggestion="")
+        )
+
+        if query:
+            suggestions = suggestions.filter(suggestion__icontains=query)
+
+        suggestion_rows = (
+            suggestions.values("suggestion")
+            .annotate(count=Count("id"))
+            .order_by("-count", "suggestion")[: self.max_results]
+        )
+
+        return JsonResponse(
+            [{"text": row["suggestion"], "count": row["count"]} for row in suggestion_rows],
+            safe=False,
+        )
 
 
 class CaseCreateView(LoginRequiredMixin, CreateView):

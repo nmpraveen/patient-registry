@@ -165,6 +165,33 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(case.place, "Chennai")
         self.assertEqual(case.date_of_birth.isoformat(), "1995-01-15")
 
+
+    def test_case_note_add_does_not_require_task_selection(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH555",
+            first_name="No",
+            last_name="Task",
+            phone_number="9876500011",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=10),
+            created_by=self.user,
+        )
+
+        response = self.client.post(
+            reverse("patients:case_note_create", kwargs={"pk": case.pk}),
+            {"note": "Called patient and reviewed instructions."},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        case.refresh_from_db()
+        latest_log = case.activity_logs.first()
+        self.assertIsNotNone(latest_log)
+        self.assertEqual(latest_log.note, "Called patient and reviewed instructions.")
+        self.assertIsNone(latest_log.task)
+
     def test_create_surgery_case_requires_pathway_and_generates_preop_tasks(self):
         self.client.force_login(self.user)
         response = self.client.post(

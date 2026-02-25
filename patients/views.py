@@ -153,10 +153,7 @@ class CaseDetailView(LoginRequiredMixin, DetailView):
         context["today"] = timezone.localdate()
         context["activity_logs"] = case.activity_logs.select_related("user", "task")[:50]
         context["task_form"] = TaskForm()
-        log_form = ActivityLogForm()
-        log_form.fields["task"].queryset = case.tasks.all()
-        log_form.fields["task"].required = False
-        context["log_form"] = log_form
+        context["log_form"] = ActivityLogForm()
         context["can_task_create"] = has_capability(self.request.user, "task_create")
         context["can_task_edit"] = has_capability(self.request.user, "task_edit")
         context["can_note_add"] = has_capability(self.request.user, "note_add")
@@ -237,14 +234,10 @@ class AddCaseNoteView(LoginRequiredMixin, View):
             return HttpResponseForbidden("You do not have permission to add notes.")
         case = get_object_or_404(Case, pk=pk)
         form = ActivityLogForm(request.POST)
-        form.fields["task"].queryset = case.tasks.all()
         if form.is_valid():
             log = form.save(commit=False)
             log.case = case
             log.user = request.user
-            if log.task and log.task.case_id != case.id:
-                messages.error(request, "Selected task does not belong to this case.")
-                return redirect("patients:case_detail", pk=pk)
             log.save()
             messages.success(request, "Note added.")
         else:

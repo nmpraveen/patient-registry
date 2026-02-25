@@ -1,6 +1,22 @@
 {% extends 'base.html' %}
 {% block title %}Case {{ case.uhid }} | MEDTRACK{% endblock %}
 {% block content %}
+<style>
+  .task-status-pill {
+    display: inline-block;
+    border-radius: 999px;
+    padding: 0.2rem 0.6rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #fff;
+    white-space: nowrap;
+  }
+
+  .task-status-pill.status-completed { background: #198754; }
+  .task-status-pill.status-scheduled { background: #0d6efd; }
+  .task-status-pill.status-awaiting-reports { background: #fd7e14; }
+  .task-status-pill.status-cancelled { background: #6c757d; }
+</style>
 <div class="d-flex flex-column flex-md-row justify-content-between align-items-start gap-2 mb-3">
   <div>
     <h1 class="h4 mb-1">{{ case.full_name }} <small class="text-muted">({{ case.uhid }})</small></h1>
@@ -31,8 +47,10 @@
           {% for task in tasks %}
             <tr {% if case.category.name|upper == 'ANC' and task.due_date > today %}class="table-secondary"{% endif %}>
               <td>{{ task.title }}</td>
-              <td>{{ task.due_date }}</td>
-              <td>{{ task.get_status_display }}</td>
+              <td>{{ task.due_date|date:'d-m-y' }}</td>
+              <td>
+                <span class="task-status-pill status-{{ task.status|slugify }}">{{ task.get_status_display }}</span>
+              </td>
               <td class="d-none d-md-table-cell">{{ task.frequency_label|default:'-' }}</td>
               <td class="d-none d-md-table-cell">{{ task.assigned_user|default:'-' }}</td>
               <td>
@@ -64,7 +82,6 @@
       <h2 class="h5">Activity Log</h2>
       {% if can_note_add %}
       <form method="post" action="{% url 'patients:case_note_create' case.id %}" class="mb-3">{% csrf_token %}
-        <div class="mb-2">{{ log_form.task.label_tag }} {{ log_form.task }}</div>
         <div class="mb-2">{{ log_form.note.label_tag }} {{ log_form.note }}</div>
         <button class="btn btn-secondary btn-sm w-100">Add Note</button>
       </form>

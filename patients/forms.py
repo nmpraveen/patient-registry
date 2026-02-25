@@ -85,7 +85,7 @@ class TaskForm(StyledModelForm):
 class ActivityLogForm(StyledModelForm):
     class Meta:
         model = CaseActivityLog
-        fields = ["task", "note"]
+        fields = ["note"]
         widgets = {
             "note": forms.Textarea(attrs={"rows": 2, "placeholder": "Add follow-up note"}),
         }

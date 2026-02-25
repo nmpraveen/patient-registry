@@ -93,6 +93,7 @@ class CaseListView(LoginRequiredMixin, ListView):
                 | Q(first_name__icontains=q)
                 | Q(last_name__icontains=q)
                 | Q(patient_name__icontains=q)
+                | Q(place__icontains=q)
             )
         if status:
             queryset = queryset.filter(status=status)

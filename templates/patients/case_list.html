@@ -14,19 +14,22 @@
 
 <div class="d-none d-md-block table-responsive">
   <table class="table table-striped table-sm bg-white align-middle">
-    <thead><tr><th>UHID</th><th>Name</th><th>Phone</th><th>Category</th><th>Status</th><th>Tasks</th></tr></thead>
+    <thead><tr><th>UHID</th><th>Name</th><th>Gender</th><th>DOB</th><th>Place</th><th>Phone</th><th>Category</th><th>Status</th><th>Tasks</th></tr></thead>
     <tbody>
       {% for case in cases %}
         <tr>
           <td><a href="{% url 'patients:case_detail' case.id %}">{{ case.uhid }}</a></td>
           <td>{{ case.full_name }}</td>
+          <td>{{ case.get_gender_display|default:"-" }}</td>
+          <td>{{ case.date_of_birth|default:"-" }}</td>
+          <td>{{ case.place|default:"-" }}</td>
           <td>{{ case.phone_number }}</td>
           <td>{{ case.category.name }}</td>
           <td>{{ case.get_status_display }}</td>
           <td>{{ case.task_count }}</td>
         </tr>
       {% empty %}
-        <tr><td colspan="6">No cases found.</td></tr>
+        <tr><td colspan="9">No cases found.</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -37,7 +40,8 @@
     <div class="card mb-2">
       <div class="card-body py-2">
         <div class="fw-semibold"><a href="{% url 'patients:case_detail' case.id %}">{{ case.full_name }}</a></div>
-        <div class="small text-muted">{{ case.uhid }} · {{ case.phone_number }}</div>
+        <div class="small text-muted">{{ case.uhid }} · {{ case.get_gender_display|default:"-" }} · {{ case.date_of_birth|default:"-" }}</div>
+        <div class="small text-muted">{{ case.place|default:"-" }} · {{ case.phone_number }}</div>
         <div class="small">{{ case.category.name }} · {{ case.get_status_display }} · Tasks {{ case.task_count }}</div>
       </div>
     </div>

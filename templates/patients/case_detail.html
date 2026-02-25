@@ -4,7 +4,12 @@
 <div class="d-flex flex-column flex-md-row justify-content-between align-items-start gap-2 mb-3">
   <div>
     <h1 class="h4 mb-1">{{ case.full_name }} <small class="text-muted">({{ case.uhid }})</small></h1>
-    <p class="mb-0 small">Phone: {{ case.phone_number }} · Category: {{ case.category.name }} · Status: {{ case.get_status_display }}</p>
+    <p class="mb-0 small">
+      {% if case.gender %}Gender: {{ case.get_gender_display }} · {% endif %}
+      {% if case.date_of_birth %}DOB: {{ case.date_of_birth }} · {% endif %}
+      {% if case.place %}Place: {{ case.place }} · {% endif %}
+      Phone: {{ case.phone_number }} · Category: {{ case.category.name }} · Status: {{ case.get_status_display }}
+    </p>
     <p class="mb-0 small text-muted">
       {% if case.lmp %}LMP {{ case.lmp }}{% endif %} {% if case.edd %}· EDD {{ case.edd }}{% endif %}
       {% if case.usg_edd %}· USG-EDD {{ case.usg_edd }}{% endif %}

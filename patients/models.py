@@ -40,6 +40,13 @@ class ReviewFrequency(models.TextChoices):
     YEARLY = "YEARLY", "Yearly"
 
 
+class Gender(models.TextChoices):
+    FEMALE = "FEMALE", "Female"
+    MALE = "MALE", "Male"
+    OTHER = "OTHER", "Other"
+    UNKNOWN = "UNKNOWN", "Unknown"
+
+
 class DepartmentConfig(models.Model):
     name = models.CharField(max_length=100, unique=True)
     auto_follow_up_days = models.PositiveIntegerField(default=30)
@@ -158,6 +165,9 @@ class Case(models.Model):
     first_name = models.CharField(max_length=100, default="")
     last_name = models.CharField(max_length=100, default="")
     patient_name = models.CharField(max_length=200, blank=True)
+    gender = models.CharField(max_length=20, choices=Gender.choices, blank=True)
+    date_of_birth = models.DateField(blank=True, null=True)
+    place = models.CharField(max_length=200, blank=True)
     phone_number = models.CharField(max_length=10, db_index=True)
     category = models.ForeignKey(DepartmentConfig, on_delete=models.PROTECT, related_name="cases")
     status = models.CharField(max_length=32, choices=CaseStatus.choices, default=CaseStatus.ACTIVE)

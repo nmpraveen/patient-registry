@@ -34,6 +34,9 @@ class CaseForm(StyledModelForm):
             "uhid",
             "first_name",
             "last_name",
+            "gender",
+            "date_of_birth",
+            "place",
             "phone_number",
             "category",
             "status",
@@ -54,6 +57,7 @@ class CaseForm(StyledModelForm):
             "surgery_date": forms.DateInput(attrs={"type": "date"}),
             "review_date": forms.DateInput(attrs={"type": "date"}),
             "notes": forms.Textarea(attrs={"rows": 3}),
+            "date_of_birth": forms.DateInput(attrs={"type": "date"}),
         }
 
 

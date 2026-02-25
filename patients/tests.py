@@ -140,6 +140,31 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(post_response.status_code, 302)
         self.assertTrue(RoleSetting.objects.filter(role_name="Reception").exists())
 
+
+    def test_create_case_saves_gender_dob_and_place(self):
+        self.client.force_login(self.user)
+        response = self.client.post(
+            reverse("patients:case_create"),
+            {
+                "uhid": "UH444",
+                "first_name": "Asha",
+                "last_name": "Devi",
+                "gender": "FEMALE",
+                "date_of_birth": "1995-01-15",
+                "place": "Chennai",
+                "phone_number": "9123456789",
+                "category": self.surgery.id,
+                "status": CaseStatus.ACTIVE,
+                "surgical_pathway": SurgicalPathway.SURVEILLANCE,
+                "review_date": (timezone.localdate() + timedelta(days=14)).isoformat(),
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        case = Case.objects.get(uhid="UH444")
+        self.assertEqual(case.gender, "FEMALE")
+        self.assertEqual(case.place, "Chennai")
+        self.assertEqual(case.date_of_birth.isoformat(), "1995-01-15")
+
     def test_create_surgery_case_requires_pathway_and_generates_preop_tasks(self):
         self.client.force_login(self.user)
         response = self.client.post(

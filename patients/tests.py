@@ -802,6 +802,135 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(response.status_code, 400)
 
 
+    def test_universal_case_search_requires_authentication(self):
+        response = self.client.get(reverse("patients:universal_case_search"), {"q": "uh"})
+        self.assertEqual(response.status_code, 302)
+
+    def test_universal_case_search_returns_expected_fields_and_compact_format_data(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-SEARCH-001",
+            first_name="Priya",
+            last_name="Sharma",
+            phone_number="9012345678",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=5),
+            age=31,
+            place="Pune",
+            diagnosis="Gallbladder stones",
+            high_risk=True,
+            referred_by="PHC",
+            ncd_flags=["T2DM"],
+            created_by=self.user,
+        )
+
+        response = self.client.get(reverse("patients:universal_case_search"), {"q": "gall", "category": ["surgical"]})
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertIn("results", payload)
+        self.assertEqual(len(payload["results"]), 1)
+        result = payload["results"][0]
+        self.assertEqual(result["uhid"], case.uhid)
+        self.assertEqual(result["name"], "Priya Sharma")
+        self.assertEqual(result["age"], 31)
+        self.assertEqual(result["village"], "Pune")
+        self.assertEqual(result["diagnosis"], "Gallbladder stones")
+        self.assertEqual(result["detail_url"], reverse("patients:case_detail", kwargs={"pk": case.pk}))
+        self.assertTrue(any(tag["kind"] == "category" for tag in result["tags"]))
+        self.assertTrue(any(tag["kind"] == "high_risk" for tag in result["tags"]))
+        self.assertTrue(any(tag["kind"] == "referred" for tag in result["tags"]))
+        self.assertTrue(any(tag["kind"] == "ncd" for tag in result["tags"]))
+
+    def test_universal_case_search_applies_multiple_category_filters(self):
+        self.client.force_login(self.user)
+        non_surgical, _ = DepartmentConfig.objects.get_or_create(name="Non Surgical")
+
+        anc_case = Case.objects.create(
+            uhid="UH-SEARCH-ANC",
+            first_name="Anu",
+            last_name="Care",
+            phone_number="9111111111",
+            category=self.anc,
+            status=CaseStatus.ACTIVE,
+            lmp=timezone.localdate() - timedelta(days=70),
+            edd=timezone.localdate() + timedelta(days=200),
+            diagnosis="Anemia",
+            created_by=self.user,
+        )
+        surgical_case = Case.objects.create(
+            uhid="UH-SEARCH-SURG",
+            first_name="Sur",
+            last_name="Gery",
+            phone_number="9222222222",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=8),
+            diagnosis="Hernia",
+            created_by=self.user,
+        )
+        Case.objects.create(
+            uhid="UH-SEARCH-NS",
+            first_name="Non",
+            last_name="Surg",
+            phone_number="9333333333",
+            category=non_surgical,
+            status=CaseStatus.ACTIVE,
+            review_date=timezone.localdate() + timedelta(days=10),
+            diagnosis="Asthma",
+            created_by=self.user,
+        )
+
+        response = self.client.get(
+            reverse("patients:universal_case_search"),
+            {"q": "uh-search", "category": ["anc", "surgical"]},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        result_ids = {item["id"] for item in response.json()["results"]}
+        self.assertIn(anc_case.id, result_ids)
+        self.assertIn(surgical_case.id, result_ids)
+        self.assertEqual(len(result_ids), 2)
+
+    def test_universal_case_search_orders_by_recent_activity_after_relevance(self):
+        self.client.force_login(self.user)
+        older_case = Case.objects.create(
+            uhid="UH-SEARCH-RECENT-OLD",
+            first_name="Recent",
+            last_name="Old",
+            phone_number="9444444444",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=7),
+            diagnosis="Kidney stone",
+            created_by=self.user,
+        )
+        newer_case = Case.objects.create(
+            uhid="UH-SEARCH-RECENT-NEW",
+            first_name="Recent",
+            last_name="New",
+            phone_number="9555555555",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=7),
+            diagnosis="Kidney stone",
+            created_by=self.user,
+        )
+        Case.objects.filter(pk=older_case.pk).update(updated_at=timezone.now() - timedelta(days=3))
+        Case.objects.filter(pk=newer_case.pk).update(updated_at=timezone.now())
+
+        response = self.client.get(reverse("patients:universal_case_search"), {"q": "kidney", "category": ["surgical"]})
+
+        self.assertEqual(response.status_code, 200)
+        ordered_ids = [item["id"] for item in response.json()["results"]]
+        self.assertEqual(ordered_ids[:2], [newer_case.id, older_case.id])
+
+
 class SeedMockDataCommandTests(TestCase):
     def test_seed_mock_data_creates_cases_with_believable_identifiers_and_new_fields(self):
         call_command("seed_mock_data", "--count", "30", "--reset")

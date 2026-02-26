@@ -999,6 +999,29 @@ class MedtrackViewTests(TestCase):
         response = self.client.get(reverse("patients:universal_case_search"), {"q": "uh"})
         self.assertEqual(response.status_code, 302)
 
+    def test_case_data_views_require_role_capabilities_for_authenticated_users(self):
+        restricted_user = get_user_model().objects.create_user(
+            username="restricted",
+            password="strong-password-123",
+        )
+        self.client.force_login(restricted_user)
+
+        dashboard_response = self.client.get(reverse("patients:dashboard"))
+        case_list_response = self.client.get(reverse("patients:case_list"))
+        autocomplete_response = self.client.get(
+            reverse("patients:case_autocomplete"),
+            {"field": "place", "q": "ch"},
+        )
+        universal_search_response = self.client.get(
+            reverse("patients:universal_case_search"),
+            {"q": "uh"},
+        )
+
+        self.assertEqual(dashboard_response.status_code, 403)
+        self.assertEqual(case_list_response.status_code, 403)
+        self.assertEqual(autocomplete_response.status_code, 403)
+        self.assertEqual(universal_search_response.status_code, 403)
+
     def test_universal_case_search_returns_expected_fields_and_compact_format_data(self):
         self.client.force_login(self.user)
         case = Case.objects.create(

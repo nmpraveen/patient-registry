@@ -262,25 +262,50 @@
           const renderResults = (results) => {
             currentResults = results;
             activeIndex = -1;
+            dropdown.replaceChildren();
             if (!results.length) {
-              dropdown.innerHTML = '<div class="global-search-empty">No matching cases.</div>';
+              const emptyState = document.createElement("div");
+              emptyState.className = "global-search-empty";
+              emptyState.textContent = "No matching cases.";
+              dropdown.appendChild(emptyState);
               openDropdown();
               return;
             }
 
-            dropdown.innerHTML = results
-              .map((result, index) => {
-                const tags = (result.tags || [])
-                  .map((tag) => `<span class="global-search-tag">${tag.icon || ""}${tag.label}</span>`)
-                  .join("");
-                return `
-                  <button type="button" class="global-search-item" data-index="${index}" role="option">
-                    <div class="small fw-semibold">${result.name}, ${result.age}, ${result.village}, ${result.diagnosis}, ${result.phone_number || "—"}, ${result.uhid}</div>
-                    <div class="global-search-tags">${tags}</div>
-                  </button>
-                `;
-              })
-              .join("");
+            results.forEach((result, index) => {
+              const row = document.createElement("button");
+              row.type = "button";
+              row.className = "global-search-item";
+              row.dataset.index = String(index);
+              row.setAttribute("role", "option");
+
+              const summary = document.createElement("div");
+              summary.className = "small fw-semibold";
+              const summaryParts = [
+                result?.name,
+                result?.age,
+                result?.village,
+                result?.diagnosis,
+                result?.phone_number || "—",
+                result?.uhid,
+              ];
+              summary.textContent = summaryParts.map((value) => `${value ?? "—"}`).join(", ");
+              row.appendChild(summary);
+
+              const tags = document.createElement("div");
+              tags.className = "global-search-tags";
+              const resultTags = Array.isArray(result?.tags) ? result.tags : [];
+              resultTags.forEach((tag) => {
+                const tagChip = document.createElement("span");
+                tagChip.className = "global-search-tag";
+                const icon = typeof tag?.icon === "string" ? tag.icon : "";
+                const label = typeof tag?.label === "string" ? tag.label : "";
+                tagChip.textContent = `${icon}${label}`;
+                tags.appendChild(tagChip);
+              });
+              row.appendChild(tags);
+              dropdown.appendChild(row);
+            });
             openDropdown();
           };
 
@@ -292,7 +317,11 @@
             }
             const categories = selectedCategories();
             if (!categories.length) {
-              dropdown.innerHTML = '<div class="global-search-empty">Select at least one category filter.</div>';
+              dropdown.replaceChildren();
+              const emptyState = document.createElement("div");
+              emptyState.className = "global-search-empty";
+              emptyState.textContent = "Select at least one category filter.";
+              dropdown.appendChild(emptyState);
               openDropdown();
               return;
             }

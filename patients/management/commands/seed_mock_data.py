@@ -71,8 +71,8 @@ class Command(BaseCommand):
 
         User = get_user_model()
         demo_user, _ = User.objects.get_or_create(username="demo_seed")
-        if not demo_user.has_usable_password():
-            demo_user.set_password("demo12345")
+        if demo_user.has_usable_password():
+            demo_user.set_unusable_password()
             demo_user.save(update_fields=["password"])
 
         today = timezone.localdate()

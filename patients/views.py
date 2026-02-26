@@ -44,18 +44,38 @@ CASE_CATEGORY_GROUP_FILTERS = {
     "non_surgical": NON_SURGICAL_CASE_FILTER,
 }
 
+CASE_DATA_CAPABILITIES = (
+    "case_create",
+    "case_edit",
+    "task_create",
+    "task_edit",
+    "note_add",
+    "manage_settings",
+)
+
+CAPABILITY_FIELD_MAP = {
+    "case_create": "can_case_create",
+    "case_edit": "can_case_edit",
+    "task_create": "can_task_create",
+    "task_edit": "can_task_edit",
+    "note_add": "can_note_add",
+    "manage_settings": "can_manage_settings",
+}
+
+
+def _user_role_settings_queryset(user):
+    return RoleSetting.objects.filter(
+        role_name__in=user.groups.values_list("name", flat=True),
+    )
+
 
 def has_capability(user, capability):
     if user.is_superuser:
         return True
-    ensure_default_role_settings()
-    user_groups = set(user.groups.values_list("name", flat=True))
-    role_settings = {r.role_name: r for r in RoleSetting.objects.filter(role_name__in=user_groups)}
-    for group in user_groups:
-        role_setting = role_settings.get(group)
-        if role_setting and role_setting.capabilities().get(capability, False):
-            return True
-    return False
+    capability_field = CAPABILITY_FIELD_MAP.get(capability)
+    if not capability_field:
+        return False
+    return _user_role_settings_queryset(user).filter(**{capability_field: True}).exists()
 
 
 def is_doctor_admin(user):
@@ -64,7 +84,27 @@ def is_doctor_admin(user):
     return user.groups.filter(name__in=["Doctor", "Admin"]).exists()
 
 
-class DashboardView(LoginRequiredMixin, ListView):
+def can_access_case_data(user):
+    if user.is_superuser:
+        return True
+    return _user_role_settings_queryset(user).filter(
+        Q(can_case_create=True)
+        | Q(can_case_edit=True)
+        | Q(can_task_create=True)
+        | Q(can_task_edit=True)
+        | Q(can_note_add=True)
+        | Q(can_manage_settings=True)
+    ).exists()
+
+
+class CaseDataAccessMixin:
+    def dispatch(self, request, *args, **kwargs):
+        if not can_access_case_data(request.user):
+            return HttpResponseForbidden("You do not have permission to access case data.")
+        return super().dispatch(request, *args, **kwargs)
+
+
+class DashboardView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
     model = Task
     template_name = "patients/dashboard.html"
     context_object_name = "today_tasks"
@@ -213,7 +253,7 @@ class DashboardView(LoginRequiredMixin, ListView):
         return context
 
 
-class CaseListView(LoginRequiredMixin, ListView):
+class CaseListView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
     model = Case
     template_name = "patients/case_list.html"
     context_object_name = "cases"
@@ -299,7 +339,7 @@ class CaseListView(LoginRequiredMixin, ListView):
         return context
 
 
-class CaseAutocompleteView(LoginRequiredMixin, View):
+class CaseAutocompleteView(LoginRequiredMixin, CaseDataAccessMixin, View):
     allowed_fields = {"place", "diagnosis", "referred_by"}
     min_query_length = 2
     max_results = 8
@@ -351,7 +391,7 @@ class CaseAutocompleteView(LoginRequiredMixin, View):
         return JsonResponse(payload, safe=False)
 
 
-class UniversalCaseSearchView(LoginRequiredMixin, View):
+class UniversalCaseSearchView(LoginRequiredMixin, CaseDataAccessMixin, View):
     min_query_length = 2
     max_results = 10
     category_filters = {
@@ -530,11 +570,7 @@ class CaseDetailView(LoginRequiredMixin, DetailView):
         return context
 
     def dispatch(self, request, *args, **kwargs):
-        can_view = any(
-            has_capability(request.user, capability)
-            for capability in ("case_edit", "task_edit", "task_create", "note_add")
-        )
-        if not can_view:
+        if not can_access_case_data(request.user):
             return HttpResponseForbidden("You do not have permission to view case details.")
         return super().dispatch(request, *args, **kwargs)
 

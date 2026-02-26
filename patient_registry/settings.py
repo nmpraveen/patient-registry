@@ -71,7 +71,7 @@ else:
             "ENGINE": "django.db.backends.postgresql",
             "NAME": env("POSTGRES_DB", default="patient_registry"),
             "USER": env("POSTGRES_USER", default="patient_registry"),
-            "PASSWORD": env("POSTGRES_PASSWORD", default="patient_registry"),
+            "PASSWORD": env("POSTGRES_PASSWORD"),
             "HOST": env("POSTGRES_HOST", default="db"),
             "PORT": env("POSTGRES_PORT", default="5432"),
         }
@@ -107,3 +107,17 @@ LOGOUT_REDIRECT_URL = "login"
 
 SESSION_COOKIE_AGE = env.int("SESSION_TIMEOUT_SECONDS", default=1800)
 SESSION_EXPIRE_AT_BROWSER_CLOSE = False
+
+# Deployment hardening toggles (set secure values in production environment).
+SECURE_SSL_REDIRECT = env.bool("SECURE_SSL_REDIRECT", default=False)
+SECURE_HSTS_SECONDS = env.int("SECURE_HSTS_SECONDS", default=0)
+SECURE_HSTS_INCLUDE_SUBDOMAINS = env.bool("SECURE_HSTS_INCLUDE_SUBDOMAINS", default=False)
+SECURE_HSTS_PRELOAD = env.bool("SECURE_HSTS_PRELOAD", default=False)
+SESSION_COOKIE_SECURE = env.bool("SESSION_COOKIE_SECURE", default=False)
+CSRF_COOKIE_SECURE = env.bool("CSRF_COOKIE_SECURE", default=False)
+SECURE_CONTENT_TYPE_NOSNIFF = env.bool("SECURE_CONTENT_TYPE_NOSNIFF", default=True)
+SECURE_REFERRER_POLICY = env("SECURE_REFERRER_POLICY", default="same-origin")
+X_FRAME_OPTIONS = env("X_FRAME_OPTIONS", default="DENY")
+
+if env.bool("USE_X_FORWARDED_PROTO", default=False):
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")

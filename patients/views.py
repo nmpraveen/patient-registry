@@ -1,5 +1,6 @@
 from collections import OrderedDict
 from datetime import timedelta
+from difflib import SequenceMatcher
 
 from django.contrib import messages
 from django.contrib.auth import get_user_model
@@ -302,6 +303,137 @@ class CaseAutocompleteView(LoginRequiredMixin, View):
 
         payload = [grouped[key] for key in sorted(grouped.keys())[: self.max_results]]
         return JsonResponse(payload, safe=False)
+
+
+class UniversalCaseSearchView(LoginRequiredMixin, View):
+    min_query_length = 2
+    max_results = 10
+    category_filters = {
+        "anc": Q(category__name__iexact="ANC"),
+        "surgical": Q(category__name__iexact="Surgery"),
+        "non_surgical": (
+            Q(category__name__iexact="Non Surgical")
+            | Q(category__name__iexact="Non-Surgical")
+            | Q(category__name__iexact="Nonsurgical")
+        ),
+    }
+
+    @staticmethod
+    def _normalized(value):
+        return " ".join((value or "").split())
+
+    @staticmethod
+    def _score_value(query, value):
+        normalized_value = UniversalCaseSearchView._normalized(value).lower()
+        if not normalized_value:
+            return 0
+        if normalized_value == query:
+            return 130
+        if normalized_value.startswith(query):
+            return 110
+        if query in normalized_value:
+            return 90
+        if any(part.startswith(query) for part in normalized_value.split()):
+            return 75
+        ratio = SequenceMatcher(None, query, normalized_value).ratio()
+        if ratio >= 0.65:
+            return int(ratio * 60)
+        return 0
+
+    def _category_query(self, raw_categories):
+        clauses = [self.category_filters.get(raw) for raw in raw_categories if raw in self.category_filters]
+        if not clauses:
+            return Q()
+        category_query = clauses[0]
+        for clause in clauses[1:]:
+            category_query |= clause
+        return category_query
+
+    def get(self, request):
+        raw_query = self._normalized(request.GET.get("q"))
+        query = raw_query.lower()
+        if len(query) < self.min_query_length:
+            return JsonResponse({"results": []})
+
+        selected_categories = request.GET.getlist("category")
+        category_query = self._category_query(selected_categories)
+        base_query = (
+            Q(uhid__icontains=query)
+            | Q(first_name__icontains=query)
+            | Q(last_name__icontains=query)
+            | Q(patient_name__icontains=query)
+            | Q(phone_number__icontains=query)
+            | Q(diagnosis__icontains=query)
+        )
+
+        cases = list(
+            Case.objects.select_related("category")
+            .filter(base_query)
+            .filter(category_query)
+            .only(
+                "id",
+                "uhid",
+                "first_name",
+                "last_name",
+                "patient_name",
+                "age",
+                "place",
+                "diagnosis",
+                "phone_number",
+                "high_risk",
+                "referred_by",
+                "ncd_flags",
+                "updated_at",
+                "category__name",
+            )[:150]
+        )
+
+        scored = []
+        for case in cases:
+            full_name = case.full_name or case.patient_name
+            top_score = max(
+                self._score_value(query, case.uhid),
+                self._score_value(query, full_name),
+                self._score_value(query, case.phone_number),
+                self._score_value(query, case.diagnosis),
+            )
+            if top_score <= 0:
+                continue
+            scored.append((top_score, case.updated_at, case))
+
+        scored.sort(key=lambda row: (-row[0], -row[1].timestamp(), row[2].uhid))
+        top_cases = [row[2] for row in scored[: self.max_results]]
+
+        results = []
+        for case in top_cases:
+            diagnosis = self._normalized(case.diagnosis) or "—"
+            village = self._normalized(case.place) or "—"
+            age = case.age if case.age is not None else "—"
+            category = case.category.name
+            tags = [
+                {"kind": "category", "label": category},
+            ]
+            if case.high_risk:
+                tags.append({"kind": "high_risk", "label": "High-risk", "icon": "❗"})
+            if case.referred_by:
+                tags.append({"kind": "referred", "label": "Referred", "icon": "⭐"})
+            if case.ncd_flags:
+                tags.append({"kind": "ncd", "label": "NCD", "icon": "🏷️"})
+
+            results.append(
+                {
+                    "id": case.id,
+                    "uhid": case.uhid,
+                    "name": case.full_name or case.patient_name,
+                    "age": age,
+                    "village": village,
+                    "diagnosis": diagnosis,
+                    "phone_number": case.phone_number,
+                    "tags": tags,
+                    "detail_url": reverse("patients:case_detail", kwargs={"pk": case.pk}),
+                }
+            )
+        return JsonResponse({"results": results})
 
 
 class CaseCreateView(LoginRequiredMixin, CreateView):

@@ -24,9 +24,13 @@
             {% if card.high_risk %}<span title="High-risk case" class="text-danger">❗</span>{% endif %}
             {% if card.referred_by %}<span title="Referred by: {{ card.referred_by }}">⭐</span>{% endif %}
             {% if card.ncd_flags %}<span class="text-muted" title="NCD flags: {{ card.ncd_flags|join:', ' }}">🏷️</span>{% endif %}
-            <a class="text-decoration-none" href="tel:{{ card.phone_number }}" data-bs-toggle="collapse" data-bs-target="#today-phone-{{ forloop.counter }}" aria-expanded="false" aria-controls="today-phone-{{ forloop.counter }}" title="Show and call patient">
-              📞
-            </a>
+            {% if card.call_status == "CONFIRMED" %}<span title="Confirmed">🟢📞</span>
+            {% elif card.call_status == "NOT_REACHABLE" %}<span title="Not reachable">🔴📞 x{{ card.failed_attempt_count }}</span>
+            {% elif card.call_status == "INVALID_CONTACT" %}<span title="Invalid contact">⚠️📞</span>
+            {% elif card.call_status == "LOST" %}<span title="Lost follow-up">❌</span>
+            {% elif card.call_status == "CALL_BACK_LATER" %}<span title="Call back later">🟡📞</span>
+            {% else %}<span title="Not contacted">📞</span>{% endif %}
+            <a class="text-decoration-none" href="tel:{{ card.phone_number }}" data-bs-toggle="collapse" data-bs-target="#today-phone-{{ forloop.counter }}" aria-expanded="false" aria-controls="today-phone-{{ forloop.counter }}" title="Show and call patient number">☎️</a>
             <span id="today-phone-{{ forloop.counter }}" class="collapse text-muted">{{ card.phone_number }}</span>
           </div>
           <div class="text-muted small mt-1">{{ card.task_titles|join:' • ' }}</div>
@@ -47,9 +51,13 @@
             {% if card.high_risk %}<span title="High-risk case" class="text-danger">❗</span>{% endif %}
             {% if card.referred_by %}<span title="Referred by: {{ card.referred_by }}">⭐</span>{% endif %}
             {% if card.ncd_flags %}<span class="text-muted" title="NCD flags: {{ card.ncd_flags|join:', ' }}">🏷️</span>{% endif %}
-            <a class="text-decoration-none" href="tel:{{ card.phone_number }}" data-bs-toggle="collapse" data-bs-target="#upcoming-phone-{{ forloop.counter }}" aria-expanded="false" aria-controls="upcoming-phone-{{ forloop.counter }}" title="Show and call patient">
-              📞
-            </a>
+            {% if card.call_status == "CONFIRMED" %}<span title="Confirmed">🟢📞</span>
+            {% elif card.call_status == "NOT_REACHABLE" %}<span title="Not reachable">🔴📞 x{{ card.failed_attempt_count }}</span>
+            {% elif card.call_status == "INVALID_CONTACT" %}<span title="Invalid contact">⚠️📞</span>
+            {% elif card.call_status == "LOST" %}<span title="Lost follow-up">❌</span>
+            {% elif card.call_status == "CALL_BACK_LATER" %}<span title="Call back later">🟡📞</span>
+            {% else %}<span title="Not contacted">📞</span>{% endif %}
+            <a class="text-decoration-none" href="tel:{{ card.phone_number }}" data-bs-toggle="collapse" data-bs-target="#upcoming-phone-{{ forloop.counter }}" aria-expanded="false" aria-controls="upcoming-phone-{{ forloop.counter }}" title="Show and call patient number">☎️</a>
             <span id="upcoming-phone-{{ forloop.counter }}" class="collapse text-muted">{{ card.phone_number }}</span>
           </div>
           <div class="text-muted small mt-1">{{ card.task_titles|join:' • ' }}</div>
@@ -72,9 +80,13 @@
             {% if card.high_risk %}<span title="High-risk case" class="text-danger">❗</span>{% endif %}
             {% if card.referred_by %}<span title="Referred by: {{ card.referred_by }}">⭐</span>{% endif %}
             {% if card.ncd_flags %}<span class="text-muted" title="NCD flags: {{ card.ncd_flags|join:', ' }}">🏷️</span>{% endif %}
-            <a class="text-decoration-none" href="tel:{{ card.phone_number }}" data-bs-toggle="collapse" data-bs-target="#overdue-phone-{{ forloop.counter }}" aria-expanded="false" aria-controls="overdue-phone-{{ forloop.counter }}" title="Show and call patient">
-              📞
-            </a>
+            {% if card.call_status == "CONFIRMED" %}<span title="Confirmed">🟢📞</span>
+            {% elif card.call_status == "NOT_REACHABLE" %}<span title="Not reachable">🔴📞 x{{ card.failed_attempt_count }}</span>
+            {% elif card.call_status == "INVALID_CONTACT" %}<span title="Invalid contact">⚠️📞</span>
+            {% elif card.call_status == "LOST" %}<span title="Lost follow-up">❌</span>
+            {% elif card.call_status == "CALL_BACK_LATER" %}<span title="Call back later">🟡📞</span>
+            {% else %}<span title="Not contacted">📞</span>{% endif %}
+            <a class="text-decoration-none" href="tel:{{ card.phone_number }}" data-bs-toggle="collapse" data-bs-target="#overdue-phone-{{ forloop.counter }}" aria-expanded="false" aria-controls="overdue-phone-{{ forloop.counter }}" title="Show and call patient number">☎️</a>
             <span id="overdue-phone-{{ forloop.counter }}" class="collapse text-muted">{{ card.phone_number }}</span>
           </div>
           <div class="text-muted small mt-1">{{ card.task_titles|join:' • ' }}</div>

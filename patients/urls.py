@@ -1,6 +1,7 @@
 from django.urls import path
 
 from .views import (
+    AddCallLogView,
     AddCaseNoteView,
     CaseCreateView,
     CaseDetailView,
@@ -28,4 +29,5 @@ urlpatterns = [
     path("cases/<int:pk>/tasks/new/", TaskCreateView.as_view(), name="task_create"),
     path("tasks/<int:pk>/edit/", TaskUpdateView.as_view(), name="task_edit"),
     path("cases/<int:pk>/notes/new/", AddCaseNoteView.as_view(), name="case_note_create"),
+    path("cases/<int:pk>/calls/new/", AddCallLogView.as_view(), name="case_call_create"),
 ]

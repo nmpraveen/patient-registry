@@ -16,8 +16,10 @@ from django.utils import timezone
 from django.views import View
 from django.views.generic import CreateView, DetailView, ListView, UpdateView
 
-from .forms import ActivityLogForm, CaseForm, DepartmentConfigForm, RoleSettingForm, TaskForm, UserRoleForm
+from .forms import ActivityLogForm, CallLogForm, CaseForm, DepartmentConfigForm, RoleSettingForm, TaskForm, UserRoleForm
 from .models import (
+    CallCommunicationStatus,
+    CallLog,
     Case,
     CaseActivityLog,
     CaseStatus,
@@ -73,7 +75,7 @@ class DashboardView(LoginRequiredMixin, ListView):
     )
 
     @staticmethod
-    def _build_patient_day_cards(task_queryset):
+    def _build_patient_day_cards(task_queryset, call_summary_by_case):
         grouped_tasks = OrderedDict()
         for task in task_queryset:
             key = (task.due_date, task.case_id)
@@ -89,6 +91,7 @@ class DashboardView(LoginRequiredMixin, ListView):
                 if task.title not in seen_titles:
                     unique_titles.append(task.title)
                     seen_titles.add(task.title)
+            call_summary = call_summary_by_case.get(case.id, {})
             cards.append(
                 {
                     "due_date": first_task.due_date,
@@ -100,9 +103,29 @@ class DashboardView(LoginRequiredMixin, ListView):
                     "high_risk": case.high_risk,
                     "ncd_flags": case.ncd_flags or [],
                     "task_titles": unique_titles,
+                    "call_status": call_summary.get("status", CallCommunicationStatus.NONE),
+                    "failed_attempt_count": call_summary.get("failed_attempt_count", 0),
+                    "latest_call_outcome": call_summary.get("latest_outcome", ""),
                 }
             )
         return cards
+
+    @staticmethod
+    def _build_call_summaries(case_ids):
+        if not case_ids:
+            return {}
+        summaries = {}
+        grouped = OrderedDict()
+        call_logs = (
+            CallLog.objects.filter(case_id__in=case_ids)
+            .only("id", "case_id", "task_id", "outcome", "created_at")
+            .order_by("case_id", "-created_at", "-id")
+        )
+        for log in call_logs:
+            grouped.setdefault(log.case_id, []).append(log)
+        for case_id, logs in grouped.items():
+            summaries[case_id] = CallLog.summarize_case(logs)
+        return summaries
 
     def _task_queryset(self):
         return (
@@ -161,9 +184,13 @@ class DashboardView(LoginRequiredMixin, ListView):
         context["upcoming_tasks"] = upcoming_tasks
         context["overdue_tasks"] = overdue_tasks
         context["awaiting_tasks"] = awaiting_tasks
-        context["today_cards"] = self._build_patient_day_cards(today_tasks)
-        context["upcoming_cards"] = self._build_patient_day_cards(upcoming_tasks)
-        context["overdue_cards"] = self._build_patient_day_cards(overdue_tasks)
+        case_ids = sorted({task.case_id for task in [*today_tasks, *upcoming_tasks, *overdue_tasks]})
+        call_summary_by_case = self._build_call_summaries(case_ids)
+
+        context["today_cards"] = self._build_patient_day_cards(today_tasks, call_summary_by_case)
+        context["upcoming_cards"] = self._build_patient_day_cards(upcoming_tasks, call_summary_by_case)
+        context["overdue_cards"] = self._build_patient_day_cards(overdue_tasks, call_summary_by_case)
+        context["call_log_form"] = CallLogForm()
         context["anc_case_count"] = case_counts["anc_case_count"]
         context["surgery_case_count"] = case_counts["surgery_case_count"]
         context["non_surgical_case_count"] = case_counts["non_surgical_case_count"]
@@ -471,8 +498,13 @@ class CaseDetailView(LoginRequiredMixin, DetailView):
         context["tasks"] = case.tasks.select_related("assigned_user")
         context["today"] = timezone.localdate()
         context["activity_logs"] = case.activity_logs.select_related("user", "task")[:50]
+        context["call_logs"] = case.call_logs.select_related("staff_user", "task")[:50]
         context["task_form"] = TaskForm()
         context["log_form"] = ActivityLogForm()
+        call_log_form = CallLogForm()
+        call_log_form.fields["task"].queryset = case.tasks.order_by("due_date", "id")
+        call_log_form.fields["task"].required = False
+        context["call_log_form"] = call_log_form
         context["can_task_create"] = has_capability(self.request.user, "task_create")
         context["can_task_edit"] = has_capability(self.request.user, "task_edit")
         context["can_note_add"] = has_capability(self.request.user, "note_add")
@@ -570,6 +602,30 @@ class AddCaseNoteView(LoginRequiredMixin, View):
             messages.success(request, "Note added.")
         else:
             messages.error(request, "Could not save note.")
+        return redirect("patients:case_detail", pk=pk)
+
+
+class AddCallLogView(LoginRequiredMixin, View):
+    def post(self, request, pk):
+        if not has_capability(request.user, "note_add"):
+            return HttpResponseForbidden("You do not have permission to add call logs.")
+        case = get_object_or_404(Case, pk=pk)
+        form = CallLogForm(request.POST)
+        form.fields["task"].queryset = case.tasks.all()
+        if form.is_valid():
+            log = form.save(commit=False)
+            log.case = case
+            log.staff_user = request.user
+            log.save()
+            CaseActivityLog.objects.create(
+                case=case,
+                task=log.task,
+                user=request.user,
+                note=f"Call outcome logged: {log.get_outcome_display()}",
+            )
+            messages.success(request, "Call outcome logged.")
+        else:
+            messages.error(request, "Could not log call outcome.")
         return redirect("patients:case_detail", pk=pk)
 
 

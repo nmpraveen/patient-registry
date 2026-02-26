@@ -1,10 +1,13 @@
 from datetime import date, timedelta
+import random
 
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 
 from patients.models import (
+    CallLog,
+    CallOutcome,
     Case,
     CaseActivityLog,
     CaseStatus,
@@ -62,6 +65,7 @@ class Command(BaseCommand):
         non_surgical = DepartmentConfig.objects.get(name="Non Surgical")
 
         if reset:
+            CallLog.objects.all().delete()
             CaseActivityLog.objects.all().delete()
             Case.objects.all().delete()
 
@@ -72,6 +76,7 @@ class Command(BaseCommand):
             demo_user.save(update_fields=["password"])
 
         today = timezone.localdate()
+        rng = random.Random(20260226)
         created = 0
         for i in range(1, count + 1):
             profile = self.mock_profiles[(i - 1) % len(self.mock_profiles)]
@@ -110,6 +115,7 @@ class Command(BaseCommand):
                 "referred_by": ["PHC", "District Hospital", "Self", "Private Clinic"][i % 4],
                 "high_risk": i % 5 == 0,
                 "created_by": demo_user,
+                "metadata": {"seed_profile": profile["facility_code"], "source": "seed_mock_data"},
                 "notes": f"Demo follow-up case from {profile['place']} OPD with reachable caretaker contact.",
             }
 
@@ -153,6 +159,36 @@ class Command(BaseCommand):
                 user=demo_user,
                 note=f"Mock case seeded with {len(tasks)} starter tasks",
             )
+
+            call_attempts = rng.randint(0, 4)
+            task_choices = list(case.tasks.all()[:5])
+            for attempt in range(call_attempts):
+                outcome = rng.choice([
+                    CallOutcome.NO_ANSWER,
+                    CallOutcome.SWITCHED_OFF,
+                    CallOutcome.CALL_REJECTED,
+                    CallOutcome.CALL_BACK_LATER,
+                    CallOutcome.INVALID_NUMBER,
+                    CallOutcome.ANSWERED_UNCERTAIN,
+                    CallOutcome.PATIENT_DECLINED,
+                    CallOutcome.RUDE_BEHAVIOR,
+                    CallOutcome.PATIENT_SHIFTED,
+                ])
+                if attempt == call_attempts - 1 and call_attempts > 1 and rng.random() < 0.4:
+                    outcome = CallOutcome.ANSWERED_CONFIRMED_VISIT
+                call_log = CallLog.objects.create(
+                    case=case,
+                    task=rng.choice(task_choices) if task_choices and rng.random() < 0.6 else None,
+                    outcome=outcome,
+                    notes=f"Seeded call attempt #{attempt + 1}",
+                    staff_user=demo_user,
+                )
+                CaseActivityLog.objects.create(
+                    case=case,
+                    task=call_log.task,
+                    user=demo_user,
+                    note=f"Call outcome logged: {call_log.get_outcome_display()}",
+                )
             created += 1
 
         self.stdout.write(self.style.SUCCESS(f"Seeding complete. Created {created} new cases. Total cases: {Case.objects.count()}"))

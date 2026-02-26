@@ -10,7 +10,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from .forms import CaseForm
-from .models import Case, CaseStatus, DepartmentConfig, RoleSetting, SurgicalPathway, Task, TaskStatus, ensure_default_role_settings
+from .models import CallCommunicationStatus, CallLog, CallOutcome, Case, CaseStatus, DepartmentConfig, RoleSetting, SurgicalPathway, Task, TaskStatus, ensure_default_role_settings
 
 
 class MedtrackModelTests(TestCase):
@@ -592,6 +592,56 @@ class MedtrackViewTests(TestCase):
         self.assertTrue(card["high_risk"])
         self.assertEqual(card["referred_by"], "PHC")
         self.assertEqual(card["ncd_flags"], ["T2DM", "THYROID"])
+
+
+    def test_call_log_summary_resets_failed_counter_after_confirmation(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-CALL-01",
+            first_name="Caller",
+            last_name="Reset",
+            phone_number="9876508888",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=2),
+            created_by=self.user,
+        )
+        Task.objects.create(case=case, title="Follow-up", due_date=timezone.localdate(), created_by=self.user)
+        CallLog.objects.create(case=case, outcome=CallOutcome.NO_ANSWER, staff_user=self.user, notes="Attempt 1")
+        CallLog.objects.create(case=case, outcome=CallOutcome.CALL_REJECTED, staff_user=self.user, notes="Attempt 2")
+        CallLog.objects.create(case=case, outcome=CallOutcome.ANSWERED_CONFIRMED_VISIT, staff_user=self.user, notes="Confirmed")
+
+        response = self.client.get(reverse("patients:dashboard"))
+
+        self.assertEqual(response.status_code, 200)
+        card = response.context["today_cards"][0]
+        self.assertEqual(card["call_status"], CallCommunicationStatus.CONFIRMED)
+        self.assertEqual(card["failed_attempt_count"], 0)
+
+    def test_add_call_log_creates_structured_log_and_activity(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-CALL-02",
+            first_name="Call",
+            last_name="Create",
+            phone_number="9876507777",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=2),
+            created_by=self.user,
+        )
+        task = Task.objects.create(case=case, title="Phone review", due_date=timezone.localdate(), created_by=self.user)
+
+        response = self.client.post(
+            reverse("patients:case_call_create", kwargs={"pk": case.id}),
+            {"task": task.id, "outcome": CallOutcome.INVALID_NUMBER, "notes": "Wrong number"},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(CallLog.objects.filter(case=case, task=task, outcome=CallOutcome.INVALID_NUMBER).exists())
+        self.assertTrue(case.activity_logs.filter(note__icontains="Call outcome logged").exists())
 
     def test_create_surgery_case_requires_pathway_and_generates_preop_tasks(self):
         self.client.force_login(self.user)

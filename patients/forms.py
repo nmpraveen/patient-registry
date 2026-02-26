@@ -6,6 +6,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 
 from .models import (
+    CallLog,
     Case,
     CaseActivityLog,
     DepartmentConfig,
@@ -160,6 +161,17 @@ class ActivityLogForm(StyledModelForm):
         widgets = {
             "note": forms.Textarea(attrs={"rows": 2, "placeholder": "Add follow-up note"}),
         }
+
+
+class CallLogForm(StyledModelForm):
+    class Meta:
+        model = CallLog
+        fields = ["task", "outcome", "notes"]
+        widgets = {
+            "task": forms.Select(),
+            "notes": forms.Textarea(attrs={"rows": 2, "placeholder": "Optional call note"}),
+        }
+
 
 
 class RoleSettingForm(StyledModelForm):

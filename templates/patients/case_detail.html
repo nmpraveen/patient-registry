@@ -176,6 +176,21 @@
   </div>
   <div class="col-12 col-lg-5">
     <div class="card"><div class="card-body">
+      <h2 class="h5">Call Tracking</h2>
+      {% if can_note_add %}
+      <form method="post" action="{% url 'patients:case_call_create' case.id %}" class="mb-3 row g-2">{% csrf_token %}
+        <div class="col-12"><label class="form-label small">{{ call_log_form.task.label }}</label>{{ call_log_form.task }}</div>
+        <div class="col-12"><label class="form-label small">{{ call_log_form.outcome.label }}</label>{{ call_log_form.outcome }}</div>
+        <div class="col-12"><label class="form-label small">{{ call_log_form.notes.label }}</label>{{ call_log_form.notes }}</div>
+        <div class="col-12"><button class="btn btn-warning btn-sm w-100">Log Call Outcome</button></div>
+      </form>
+      {% endif %}
+      <ul class="list-group list-group-flush mb-3">
+        {% for log in call_logs %}
+          <li class="list-group-item px-0"><small class="text-muted">{{ log.created_at }} · {{ log.staff_user|default:'system' }}{% if log.task %} · {{ log.task.title }}{% endif %}</small><div><strong>{{ log.get_outcome_display }}</strong>{% if log.notes %} — {{ log.notes }}{% endif %}</div></li>
+        {% empty %}<li class="list-group-item px-0">No call attempts logged yet.</li>{% endfor %}
+      </ul>
+
       <h2 class="h5">Activity Log</h2>
       {% if can_note_add %}
       <form method="post" action="{% url 'patients:case_note_create' case.id %}" class="mb-3">{% csrf_token %}

@@ -28,6 +28,28 @@ class TaskType(models.TextChoices):
     CUSTOM = "CUSTOM", "Custom"
 
 
+class CallOutcome(models.TextChoices):
+    ANSWERED_CONFIRMED_VISIT = "ANSWERED_CONFIRMED_VISIT", "Answered - Confirmed visit"
+    ANSWERED_UNCERTAIN = "ANSWERED_UNCERTAIN", "Answered - Uncertain"
+    NO_ANSWER = "NO_ANSWER", "No answer"
+    SWITCHED_OFF = "SWITCHED_OFF", "Switched off"
+    CALL_REJECTED = "CALL_REJECTED", "Call rejected"
+    INVALID_NUMBER = "INVALID_NUMBER", "Invalid number"
+    PATIENT_SHIFTED = "PATIENT_SHIFTED", "Patient shifted"
+    PATIENT_DECLINED = "PATIENT_DECLINED", "Patient declined"
+    RUDE_BEHAVIOR = "RUDE_BEHAVIOR", "Rude behavior"
+    CALL_BACK_LATER = "CALL_BACK_LATER", "Call back later"
+
+
+class CallCommunicationStatus(models.TextChoices):
+    NONE = "NONE", "Not contacted"
+    CONFIRMED = "CONFIRMED", "Confirmed"
+    NOT_REACHABLE = "NOT_REACHABLE", "Not reachable"
+    INVALID_CONTACT = "INVALID_CONTACT", "Invalid contact"
+    LOST = "LOST", "Lost follow-up"
+    CALL_BACK_LATER = "CALL_BACK_LATER", "Call back later"
+
+
 class SurgicalPathway(models.TextChoices):
     PLANNED_SURGERY = "PLANNED_SURGERY", "Planned for surgery"
     SURVEILLANCE = "SURVEILLANCE", "Surveillance only"
@@ -312,6 +334,68 @@ class CaseActivityLog(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+
+
+class CallLog(models.Model):
+    case = models.ForeignKey(Case, on_delete=models.CASCADE, related_name="call_logs")
+    task = models.ForeignKey(Task, on_delete=models.SET_NULL, null=True, blank=True, related_name="call_logs")
+    outcome = models.CharField(max_length=40, choices=CallOutcome.choices)
+    notes = models.TextField(blank=True)
+    staff_user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="call_logs")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    FAILED_OUTCOMES = {
+        CallOutcome.NO_ANSWER,
+        CallOutcome.SWITCHED_OFF,
+        CallOutcome.CALL_REJECTED,
+        CallOutcome.RUDE_BEHAVIOR,
+    }
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["case", "-created_at"], name="pat_call_case_created_idx"),
+            models.Index(fields=["outcome"], name="pat_call_outcome_idx"),
+        ]
+
+    @classmethod
+    def summarize_case(cls, call_logs):
+        logs = list(call_logs)
+        if not logs:
+            return {
+                "status": CallCommunicationStatus.NONE,
+                "failed_attempt_count": 0,
+                "latest_outcome": "",
+                "latest_logged_at": None,
+            }
+
+        latest = logs[0]
+        latest_outcome = latest.outcome
+        if latest_outcome == CallOutcome.ANSWERED_CONFIRMED_VISIT:
+            return {
+                "status": CallCommunicationStatus.CONFIRMED,
+                "failed_attempt_count": 0,
+                "latest_outcome": latest_outcome,
+                "latest_logged_at": latest.created_at,
+            }
+        if latest_outcome == CallOutcome.PATIENT_SHIFTED:
+            status = CallCommunicationStatus.LOST
+        elif latest_outcome == CallOutcome.INVALID_NUMBER:
+            status = CallCommunicationStatus.INVALID_CONTACT
+        elif latest_outcome == CallOutcome.CALL_BACK_LATER:
+            status = CallCommunicationStatus.CALL_BACK_LATER
+        elif latest_outcome in cls.FAILED_OUTCOMES:
+            status = CallCommunicationStatus.NOT_REACHABLE
+        else:
+            status = CallCommunicationStatus.NONE
+
+        failed_attempt_count = sum(1 for log in logs if log.outcome in cls.FAILED_OUTCOMES)
+        return {
+            "status": status,
+            "failed_attempt_count": failed_attempt_count,
+            "latest_outcome": latest_outcome,
+            "latest_logged_at": latest.created_at,
+        }
 
 
 def frequency_to_days(freq: str) -> int:

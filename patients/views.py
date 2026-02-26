@@ -32,6 +32,18 @@ from .models import (
     frequency_to_days,
 )
 
+NON_SURGICAL_CASE_FILTER = (
+    Q(category__name__iexact="Non Surgical")
+    | Q(category__name__iexact="Non-Surgical")
+    | Q(category__name__iexact="Nonsurgical")
+)
+
+CASE_CATEGORY_GROUP_FILTERS = {
+    "anc": Q(category__name__iexact="ANC"),
+    "surgery": Q(category__name__iexact="Surgery"),
+    "non_surgical": NON_SURGICAL_CASE_FILTER,
+}
+
 
 def has_capability(user, capability):
     if user.is_superuser:
@@ -167,17 +179,18 @@ class DashboardView(LoginRequiredMixin, ListView):
                     upcoming_tasks.append(task)
 
         awaiting_tasks = list(self._task_queryset().filter(status=TaskStatus.AWAITING_REPORTS))
-        non_surgical_name_filter = (
-            Q(category__name__iexact="Non Surgical")
-            | Q(category__name__iexact="Non-Surgical")
-            | Q(category__name__iexact="Nonsurgical")
-        )
         case_counts = Case.objects.aggregate(
             active_case_count=Count("id", filter=Q(status=CaseStatus.ACTIVE)),
             completed_case_count=Count("id", filter=Q(status=CaseStatus.COMPLETED)),
-            anc_case_count=Count("id", filter=Q(status=CaseStatus.ACTIVE, category__name__iexact="ANC")),
-            surgery_case_count=Count("id", filter=Q(status=CaseStatus.ACTIVE, category__name__iexact="Surgery")),
-            non_surgical_case_count=Count("id", filter=Q(status=CaseStatus.ACTIVE) & non_surgical_name_filter),
+            anc_case_count=Count("id", filter=Q(status=CaseStatus.ACTIVE) & CASE_CATEGORY_GROUP_FILTERS["anc"]),
+            surgery_case_count=Count(
+                "id",
+                filter=Q(status=CaseStatus.ACTIVE) & CASE_CATEGORY_GROUP_FILTERS["surgery"],
+            ),
+            non_surgical_case_count=Count(
+                "id",
+                filter=Q(status=CaseStatus.ACTIVE) & CASE_CATEGORY_GROUP_FILTERS["non_surgical"],
+            ),
         )
 
         context["today_tasks"] = today_tasks
@@ -236,6 +249,7 @@ class CaseListView(LoginRequiredMixin, ListView):
         q = self.request.GET.get("q", "").strip()
         status = self.request.GET.get("status", "").strip()
         category = self.request.GET.get("category", "").strip()
+        category_group = self.request.GET.get("category_group", "").strip()
         assigned_user = self.request.GET.get("assigned_user", "").strip()
         due_start = self.request.GET.get("due_start", "").strip()
         due_end = self.request.GET.get("due_end", "").strip()
@@ -251,6 +265,8 @@ class CaseListView(LoginRequiredMixin, ListView):
             )
         if status:
             queryset = queryset.filter(status=status)
+        if category_group in CASE_CATEGORY_GROUP_FILTERS:
+            queryset = queryset.filter(CASE_CATEGORY_GROUP_FILTERS[category_group])
         if category:
             queryset = queryset.filter(category_id=category)
         if assigned_user:
@@ -270,7 +286,10 @@ class CaseListView(LoginRequiredMixin, ListView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context["filters"] = {k: self.request.GET.get(k, "") for k in ["q", "status", "category", "assigned_user", "due_start", "due_end"]}
+        context["filters"] = {
+            k: self.request.GET.get(k, "")
+            for k in ["q", "status", "category", "category_group", "assigned_user", "due_start", "due_end"]
+        }
         context["case_statuses"] = CaseStatus.choices
         context["categories"] = DepartmentConfig.objects.only("id", "name")
         context["users"] = get_user_model().objects.only("id", "username").order_by("username")

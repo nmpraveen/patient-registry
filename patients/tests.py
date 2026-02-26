@@ -171,6 +171,95 @@ class MedtrackViewTests(TestCase):
         self.assertIn("q=Perf", response.context["filter_querystring"])
         self.assertNotIn("page=", response.context["filter_querystring"])
 
+    def test_case_list_category_group_filter_matches_dashboard_buckets(self):
+        self.client.force_login(self.user)
+        non_surgical_hyphen, _ = DepartmentConfig.objects.get_or_create(name="Non-Surgical")
+        non_surgical_space, _ = DepartmentConfig.objects.get_or_create(name="Non Surgical")
+        today = timezone.localdate()
+
+        anc_active = Case.objects.create(
+            uhid="UH-GROUP-ANC-ACT",
+            first_name="Anc",
+            last_name="Active",
+            phone_number="8123000001",
+            category=self.anc,
+            status=CaseStatus.ACTIVE,
+            lmp=today - timedelta(days=70),
+            edd=today + timedelta(days=200),
+            created_by=self.user,
+        )
+        Case.objects.create(
+            uhid="UH-GROUP-ANC-COMP",
+            first_name="Anc",
+            last_name="Completed",
+            phone_number="8123000002",
+            category=self.anc,
+            status=CaseStatus.COMPLETED,
+            lmp=today - timedelta(days=65),
+            edd=today + timedelta(days=205),
+            created_by=self.user,
+        )
+        Case.objects.create(
+            uhid="UH-GROUP-SURG-ACT",
+            first_name="Surgery",
+            last_name="Active",
+            phone_number="8123000003",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=today + timedelta(days=12),
+            created_by=self.user,
+        )
+        non_surgical_one = Case.objects.create(
+            uhid="UH-GROUP-NS-ACT-1",
+            first_name="Non",
+            last_name="Hyphen",
+            phone_number="8123000004",
+            category=non_surgical_hyphen,
+            status=CaseStatus.ACTIVE,
+            review_date=today + timedelta(days=9),
+            created_by=self.user,
+        )
+        non_surgical_two = Case.objects.create(
+            uhid="UH-GROUP-NS-ACT-2",
+            first_name="Non",
+            last_name="Space",
+            phone_number="8123000005",
+            category=non_surgical_space,
+            status=CaseStatus.ACTIVE,
+            review_date=today + timedelta(days=11),
+            created_by=self.user,
+        )
+
+        anc_response = self.client.get(
+            reverse("patients:case_list"),
+            {"status": CaseStatus.ACTIVE, "category_group": "anc"},
+        )
+        non_surgical_response = self.client.get(
+            reverse("patients:case_list"),
+            {"status": CaseStatus.ACTIVE, "category_group": "non_surgical"},
+        )
+
+        anc_ids = {case.id for case in anc_response.context["cases"]}
+        non_surgical_ids = {case.id for case in non_surgical_response.context["cases"]}
+
+        self.assertEqual(anc_response.status_code, 200)
+        self.assertEqual(non_surgical_response.status_code, 200)
+        self.assertEqual(anc_ids, {anc_active.id})
+        self.assertEqual(non_surgical_ids, {non_surgical_one.id, non_surgical_two.id})
+        self.assertIn("category_group=anc", anc_response.context["filter_querystring"])
+        self.assertIn("category_group=non_surgical", non_surgical_response.context["filter_querystring"])
+
+    def test_dashboard_category_cards_link_to_active_case_filters(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("patients:dashboard"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "?status=ACTIVE&category_group=anc")
+        self.assertContains(response, "?status=ACTIVE&category_group=surgery")
+        self.assertContains(response, "?status=ACTIVE&category_group=non_surgical")
+
     def test_dashboard_query_count_stays_bounded(self):
         self.client.force_login(self.user)
         non_surgical, _ = DepartmentConfig.objects.get_or_create(name="Non Surgical")

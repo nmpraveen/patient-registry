@@ -3,6 +3,7 @@
 {% block content %}
 <h1 class="h4 h3-md mb-3">Case List</h1>
 <form class="row g-2 mb-3" method="get">
+  {% if filters.category_group %}<input type="hidden" name="category_group" value="{{ filters.category_group }}">{% endif %}
   <div class="col-12 col-md-3"><input class="form-control" name="q" value="{{ filters.q }}" placeholder="UHID / Phone / Name"></div>
   <div class="col-6 col-md-2"><select class="form-select" name="status"><option value="">All statuses</option>{% for value,label in case_statuses %}<option value="{{ value }}" {% if filters.status == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
   <div class="col-6 col-md-2"><select class="form-select" name="category"><option value="">All categories</option>{% for item in categories %}<option value="{{ item.id }}" {% if filters.category == item.id|stringformat:'s' %}selected{% endif %}>{{ item.name }}</option>{% endfor %}</select></div>

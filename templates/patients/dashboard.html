@@ -6,9 +6,36 @@
   <div class="col-6 col-md-2"><div class="card border-primary-subtle"><div class="card-body py-2 py-md-3 bg-primary-subtle"><small>Today's</small><div class="h5 mb-0">{{ today_tasks|length }}</div></div></div></div>
   <div class="col-6 col-md-2"><div class="card border-info-subtle"><div class="card-body py-2 py-md-3 bg-info-subtle"><small>Upcoming</small><div class="h5 mb-0">{{ upcoming_tasks|length }}</div></div></div></div>
   <div class="col-6 col-md-2"><div class="card border-danger-subtle"><div class="card-body py-2 py-md-3 bg-danger-subtle"><small>Overdue</small><div class="h5 mb-0 text-danger">{{ overdue_tasks|length }}</div></div></div></div>
-  <div class="col-6 col-md-2"><div class="card border-success-subtle"><div class="card-body py-2 py-md-3 bg-success-subtle"><small>ANC</small><div class="h5 mb-0">{{ anc_case_count }}</div></div></div></div>
-  <div class="col-6 col-md-2"><div class="card border-warning-subtle"><div class="card-body py-2 py-md-3 bg-warning-subtle"><small>Surgery</small><div class="h5 mb-0">{{ surgery_case_count }}</div></div></div></div>
-  <div class="col-6 col-md-2"><div class="card border-secondary-subtle"><div class="card-body py-2 py-md-3 bg-secondary-subtle"><small>Non Surgical</small><div class="h5 mb-0">{{ non_surgical_case_count }}</div></div></div></div>
+  <div class="col-6 col-md-2">
+    <a class="text-decoration-none d-block h-100" href="{% url 'patients:case_list' %}?status=ACTIVE&category_group=anc" aria-label="View active ANC cases">
+      <div class="card border-success-subtle h-100">
+        <div class="card-body py-2 py-md-3 bg-success-subtle">
+          <small class="text-body">ANC</small>
+          <div class="h5 mb-0 text-body">{{ anc_case_count }}</div>
+        </div>
+      </div>
+    </a>
+  </div>
+  <div class="col-6 col-md-2">
+    <a class="text-decoration-none d-block h-100" href="{% url 'patients:case_list' %}?status=ACTIVE&category_group=surgery" aria-label="View active Surgery cases">
+      <div class="card border-warning-subtle h-100">
+        <div class="card-body py-2 py-md-3 bg-warning-subtle">
+          <small class="text-body">Surgery</small>
+          <div class="h5 mb-0 text-body">{{ surgery_case_count }}</div>
+        </div>
+      </div>
+    </a>
+  </div>
+  <div class="col-6 col-md-2">
+    <a class="text-decoration-none d-block h-100" href="{% url 'patients:case_list' %}?status=ACTIVE&category_group=non_surgical" aria-label="View active Non-Surgical cases">
+      <div class="card border-secondary-subtle h-100">
+        <div class="card-body py-2 py-md-3 bg-secondary-subtle">
+          <small class="text-body">Non Surgical</small>
+          <div class="h5 mb-0 text-body">{{ non_surgical_case_count }}</div>
+        </div>
+      </div>
+    </a>
+  </div>
 </div>
 
 <div class="row g-3 g-md-4">

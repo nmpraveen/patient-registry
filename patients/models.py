@@ -324,6 +324,9 @@ class Task(models.Model):
             self.completed_at = None
         super().save(*args, **kwargs)
 
+    def __str__(self) -> str:
+        return self.title
+
 
 class CaseActivityLog(models.Model):
     case = models.ForeignKey(Case, on_delete=models.CASCADE, related_name="activity_logs")

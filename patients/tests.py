@@ -3,7 +3,9 @@ from datetime import timedelta
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.core.management import call_command
+from django.db import connection
 from django.test import TestCase
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 
@@ -73,6 +75,147 @@ class MedtrackViewTests(TestCase):
 
         self.anc, _ = DepartmentConfig.objects.get_or_create(name="ANC")
         self.surgery, _ = DepartmentConfig.objects.get_or_create(name="Surgery")
+
+    def assert_max_queries(self, max_queries, url, params=None):
+        with CaptureQueriesContext(connection) as captured:
+            response = self.client.get(url, params or {})
+            self.assertEqual(response.status_code, 200)
+            response.render()
+        self.assertLessEqual(
+            len(captured),
+            max_queries,
+            f"Expected at most {max_queries} queries, but saw {len(captured)}.",
+        )
+        return response
+
+    def test_case_list_pagination_is_active(self):
+        self.client.force_login(self.user)
+        for index in range(30):
+            Case.objects.create(
+                uhid=f"UH-PAGE-{index:03d}",
+                first_name="Paginated",
+                last_name=f"Case {index}",
+                phone_number=f"9{index:09d}",
+                category=self.surgery,
+                status=CaseStatus.ACTIVE,
+                surgical_pathway=SurgicalPathway.SURVEILLANCE,
+                review_date=timezone.localdate() + timedelta(days=10),
+                created_by=self.user,
+            )
+
+        first_page = self.client.get(reverse("patients:case_list"))
+        second_page = self.client.get(reverse("patients:case_list"), {"page": 2})
+
+        self.assertEqual(first_page.status_code, 200)
+        self.assertEqual(second_page.status_code, 200)
+        self.assertTrue(first_page.context["is_paginated"])
+        self.assertEqual(first_page.context["paginator"].per_page, 25)
+        self.assertEqual(len(first_page.context["cases"]), 25)
+        self.assertEqual(len(second_page.context["cases"]), 5)
+
+    def test_case_list_query_count_stays_bounded_for_filtered_request(self):
+        self.client.force_login(self.user)
+        assignee = get_user_model().objects.create_user(username="assignee", password="strong-password-123")
+        today = timezone.localdate()
+
+        for index in range(30):
+            case = Case.objects.create(
+                uhid=f"UH-QL-{index:03d}",
+                first_name="Perf",
+                last_name=f"List {index}",
+                phone_number=f"8{index:09d}",
+                category=self.surgery,
+                status=CaseStatus.ACTIVE,
+                place="Chennai",
+                surgical_pathway=SurgicalPathway.SURVEILLANCE,
+                review_date=today + timedelta(days=14),
+                created_by=self.user,
+            )
+            Task.objects.create(
+                case=case,
+                title="Assigned follow-up",
+                due_date=today + timedelta(days=index % 7),
+                assigned_user=assignee if index % 2 == 0 else None,
+                created_by=self.user,
+            )
+
+        response = self.assert_max_queries(
+            10,
+            reverse("patients:case_list"),
+            {
+                "q": "Perf",
+                "status": CaseStatus.ACTIVE,
+                "category": str(self.surgery.id),
+                "assigned_user": str(assignee.id),
+                "due_start": (today - timedelta(days=1)).isoformat(),
+                "due_end": (today + timedelta(days=10)).isoformat(),
+                "page": "1",
+            },
+        )
+
+        self.assertIn("q=Perf", response.context["filter_querystring"])
+        self.assertNotIn("page=", response.context["filter_querystring"])
+
+    def test_dashboard_query_count_stays_bounded(self):
+        self.client.force_login(self.user)
+        non_surgical, _ = DepartmentConfig.objects.get_or_create(name="Non Surgical")
+        today = timezone.localdate()
+
+        anc_active = Case.objects.create(
+            uhid="UH-DASH-ANC-ACT",
+            first_name="Dash",
+            last_name="AncActive",
+            phone_number="7777000001",
+            category=self.anc,
+            status=CaseStatus.ACTIVE,
+            lmp=today - timedelta(days=70),
+            edd=today + timedelta(days=200),
+            created_by=self.user,
+        )
+        surgery_active = Case.objects.create(
+            uhid="UH-DASH-SURG-ACT",
+            first_name="Dash",
+            last_name="SurgActive",
+            phone_number="7777000002",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=today + timedelta(days=12),
+            created_by=self.user,
+        )
+        non_surgical_active = Case.objects.create(
+            uhid="UH-DASH-NS-ACT",
+            first_name="Dash",
+            last_name="NsActive",
+            phone_number="7777000003",
+            category=non_surgical,
+            status=CaseStatus.ACTIVE,
+            review_date=today + timedelta(days=8),
+            created_by=self.user,
+        )
+        Case.objects.create(
+            uhid="UH-DASH-COMP",
+            first_name="Dash",
+            last_name="Completed",
+            phone_number="7777000004",
+            category=self.surgery,
+            status=CaseStatus.COMPLETED,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=today + timedelta(days=9),
+            created_by=self.user,
+        )
+
+        Task.objects.create(case=anc_active, title="Today", due_date=today, status=TaskStatus.SCHEDULED, created_by=self.user)
+        Task.objects.create(case=surgery_active, title="Upcoming", due_date=today + timedelta(days=3), status=TaskStatus.SCHEDULED, created_by=self.user)
+        Task.objects.create(case=non_surgical_active, title="Overdue", due_date=today - timedelta(days=2), status=TaskStatus.SCHEDULED, created_by=self.user)
+        Task.objects.create(case=non_surgical_active, title="Awaiting", due_date=today + timedelta(days=11), status=TaskStatus.AWAITING_REPORTS, created_by=self.user)
+        Task.objects.create(case=surgery_active, title="Completed", due_date=today - timedelta(days=1), status=TaskStatus.COMPLETED, created_by=self.user)
+
+        response = self.assert_max_queries(8, reverse("patients:dashboard"), {"upcoming_days": 14})
+
+        self.assertEqual(response.context["anc_case_count"], 1)
+        self.assertEqual(response.context["surgery_case_count"], 1)
+        self.assertEqual(response.context["non_surgical_case_count"], 1)
 
     def test_create_anc_case_autogenerates_tasks(self):
         self.client.force_login(self.user)

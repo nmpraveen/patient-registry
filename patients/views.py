@@ -6,7 +6,8 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.models import Group
 from django.core.exceptions import ValidationError
-from django.db.models import Count, Q
+from django.db.models import Count, Exists, IntegerField, OuterRef, Q, Subquery
+from django.db.models.functions import Coalesce
 from django.http import HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -52,6 +53,23 @@ class DashboardView(LoginRequiredMixin, ListView):
     model = Task
     template_name = "patients/dashboard.html"
     context_object_name = "today_tasks"
+    task_only_fields = (
+        "id",
+        "title",
+        "due_date",
+        "status",
+        "case_id",
+        "case__id",
+        "case__first_name",
+        "case__last_name",
+        "case__patient_name",
+        "case__diagnosis",
+        "case__phone_number",
+        "case__referred_by",
+        "case__high_risk",
+        "case__ncd_flags",
+        "case__category__name",
+    )
 
     @staticmethod
     def _build_patient_day_cards(task_queryset):
@@ -85,9 +103,15 @@ class DashboardView(LoginRequiredMixin, ListView):
             )
         return cards
 
+    def _task_queryset(self):
+        return (
+            Task.objects.select_related("case", "case__category")
+            .only(*self.task_only_fields)
+            .order_by("due_date", "case_id", "id")
+        )
+
     def get_queryset(self):
-        today = timezone.localdate()
-        return Task.objects.select_related("case", "case__category", "assigned_user").filter(due_date=today, status=TaskStatus.SCHEDULED).order_by("due_date", "case_id", "id")
+        return Task.objects.none()
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -98,23 +122,52 @@ class DashboardView(LoginRequiredMixin, ListView):
         except (TypeError, ValueError):
             upcoming_days = 7
         upcoming_days = max(1, min(upcoming_days, 30))
+        upper_bound = today + timedelta(days=upcoming_days)
 
-        tasks = Task.objects.select_related("case", "case__category", "assigned_user")
-        category_counts = {
-            (item["category__name"] or "").strip().upper(): item["total"]
-            for item in Case.objects.filter(status=CaseStatus.ACTIVE).values("category__name").annotate(total=Count("id"))
-        }
-        context["upcoming_tasks"] = tasks.filter(due_date__gt=today, due_date__lte=today + timedelta(days=upcoming_days), status=TaskStatus.SCHEDULED).order_by("due_date", "case_id", "id")
-        context["overdue_tasks"] = tasks.exclude(status=TaskStatus.COMPLETED).filter(due_date__lt=today).order_by("due_date", "case_id", "id")
-        context["awaiting_tasks"] = tasks.filter(status=TaskStatus.AWAITING_REPORTS)
-        context["today_cards"] = self._build_patient_day_cards(context["today_tasks"])
-        context["upcoming_cards"] = self._build_patient_day_cards(context["upcoming_tasks"])
-        context["overdue_cards"] = self._build_patient_day_cards(context["overdue_tasks"])
-        context["anc_case_count"] = category_counts.get("ANC", 0)
-        context["surgery_case_count"] = category_counts.get("SURGERY", 0)
-        context["non_surgical_case_count"] = category_counts.get("NON SURGICAL", 0)
-        context["active_case_count"] = Case.objects.filter(status=CaseStatus.ACTIVE).count()
-        context["completed_case_count"] = Case.objects.filter(status=CaseStatus.COMPLETED).count()
+        window_tasks = list(
+            self._task_queryset()
+            .exclude(status=TaskStatus.COMPLETED)
+            .filter(due_date__lte=upper_bound)
+        )
+
+        today_tasks = []
+        upcoming_tasks = []
+        overdue_tasks = []
+        for task in window_tasks:
+            if task.due_date < today:
+                overdue_tasks.append(task)
+            if task.status == TaskStatus.SCHEDULED:
+                if task.due_date == today:
+                    today_tasks.append(task)
+                elif task.due_date > today:
+                    upcoming_tasks.append(task)
+
+        awaiting_tasks = list(self._task_queryset().filter(status=TaskStatus.AWAITING_REPORTS))
+        non_surgical_name_filter = (
+            Q(category__name__iexact="Non Surgical")
+            | Q(category__name__iexact="Non-Surgical")
+            | Q(category__name__iexact="Nonsurgical")
+        )
+        case_counts = Case.objects.aggregate(
+            active_case_count=Count("id", filter=Q(status=CaseStatus.ACTIVE)),
+            completed_case_count=Count("id", filter=Q(status=CaseStatus.COMPLETED)),
+            anc_case_count=Count("id", filter=Q(status=CaseStatus.ACTIVE, category__name__iexact="ANC")),
+            surgery_case_count=Count("id", filter=Q(status=CaseStatus.ACTIVE, category__name__iexact="Surgery")),
+            non_surgical_case_count=Count("id", filter=Q(status=CaseStatus.ACTIVE) & non_surgical_name_filter),
+        )
+
+        context["today_tasks"] = today_tasks
+        context["upcoming_tasks"] = upcoming_tasks
+        context["overdue_tasks"] = overdue_tasks
+        context["awaiting_tasks"] = awaiting_tasks
+        context["today_cards"] = self._build_patient_day_cards(today_tasks)
+        context["upcoming_cards"] = self._build_patient_day_cards(upcoming_tasks)
+        context["overdue_cards"] = self._build_patient_day_cards(overdue_tasks)
+        context["anc_case_count"] = case_counts["anc_case_count"]
+        context["surgery_case_count"] = case_counts["surgery_case_count"]
+        context["non_surgical_case_count"] = case_counts["non_surgical_case_count"]
+        context["active_case_count"] = case_counts["active_case_count"]
+        context["completed_case_count"] = case_counts["completed_case_count"]
         context["upcoming_days"] = upcoming_days
         return context
 
@@ -123,9 +176,35 @@ class CaseListView(LoginRequiredMixin, ListView):
     model = Case
     template_name = "patients/case_list.html"
     context_object_name = "cases"
+    paginate_by = 25
 
     def get_queryset(self):
-        queryset = Case.objects.select_related("category")
+        task_count_subquery = (
+            Task.objects.filter(case_id=OuterRef("pk"))
+            .order_by()
+            .values("case_id")
+            .annotate(total=Count("id"))
+            .values("total")[:1]
+        )
+        queryset = (
+            Case.objects.select_related("category")
+            .only(
+                "id",
+                "uhid",
+                "first_name",
+                "last_name",
+                "patient_name",
+                "gender",
+                "date_of_birth",
+                "place",
+                "phone_number",
+                "status",
+                "updated_at",
+                "category__id",
+                "category__name",
+            )
+            .annotate(task_count=Coalesce(Subquery(task_count_subquery, output_field=IntegerField()), 0))
+        )
         q = self.request.GET.get("q", "").strip()
         status = self.request.GET.get("status", "").strip()
         category = self.request.GET.get("category", "").strip()
@@ -147,20 +226,29 @@ class CaseListView(LoginRequiredMixin, ListView):
         if category:
             queryset = queryset.filter(category_id=category)
         if assigned_user:
-            queryset = queryset.filter(tasks__assigned_user_id=assigned_user).distinct()
+            queryset = queryset.filter(
+                Exists(Task.objects.filter(case_id=OuterRef("pk"), assigned_user_id=assigned_user))
+            )
         if due_start:
-            queryset = queryset.filter(tasks__due_date__gte=due_start).distinct()
+            queryset = queryset.filter(
+                Exists(Task.objects.filter(case_id=OuterRef("pk"), due_date__gte=due_start))
+            )
         if due_end:
-            queryset = queryset.filter(tasks__due_date__lte=due_end).distinct()
+            queryset = queryset.filter(
+                Exists(Task.objects.filter(case_id=OuterRef("pk"), due_date__lte=due_end))
+            )
 
-        return queryset.annotate(task_count=Count("tasks"))
+        return queryset
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["filters"] = {k: self.request.GET.get(k, "") for k in ["q", "status", "category", "assigned_user", "due_start", "due_end"]}
         context["case_statuses"] = CaseStatus.choices
-        context["categories"] = DepartmentConfig.objects.all()
-        context["users"] = get_user_model().objects.order_by("username")
+        context["categories"] = DepartmentConfig.objects.only("id", "name")
+        context["users"] = get_user_model().objects.only("id", "username").order_by("username")
+        query_params = self.request.GET.copy()
+        query_params.pop("page", None)
+        context["filter_querystring"] = query_params.urlencode()
         return context
 
 

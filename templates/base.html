@@ -24,12 +24,82 @@
 
       .global-search-wrap {
         position: relative;
-        min-width: min(100%, 700px);
+        width: min(100%, 840px);
+        margin-inline: auto;
+      }
+
+      .global-search-controls {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: center;
+        gap: 0.55rem;
+      }
+
+      .global-search-input {
+        flex: 1 1 380px;
+        min-width: 250px;
+        max-width: 540px;
+      }
+
+      .search-filter-pills {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.45rem;
+        justify-content: center;
+      }
+
+      .search-filter-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        border: 1px solid rgba(255, 255, 255, 0.45);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.12);
+        color: #fff;
+        font-size: 0.78rem;
+        font-weight: 600;
+        letter-spacing: 0.01em;
+        padding: 0.22rem 0.6rem;
+        cursor: pointer;
+        transition: background-color 0.15s ease, border-color 0.15s ease;
+      }
+
+      .search-filter-pill:hover {
+        border-color: rgba(255, 255, 255, 0.8);
+        background: rgba(255, 255, 255, 0.2);
+      }
+
+      .search-filter-pill input {
+        appearance: none;
+        width: 0.85rem;
+        height: 0.85rem;
+        border: 1px solid rgba(255, 255, 255, 0.9);
+        border-radius: 50%;
+        background: transparent;
+        margin: 0;
+        position: relative;
+      }
+
+      .search-filter-pill input:checked {
+        background: #fff;
+        border-color: #fff;
+      }
+
+      .search-filter-pill input:checked::after {
+        content: "";
+        position: absolute;
+        top: 0.17rem;
+        left: 0.17rem;
+        width: 0.35rem;
+        height: 0.35rem;
+        border-radius: 50%;
+        background: #0d6efd;
       }
 
       .global-search-dropdown {
         position: absolute;
-        top: calc(100% + 0.25rem);
+        top: calc(100% + 0.3rem);
         left: 0;
         right: 0;
         z-index: 1080;
@@ -59,12 +129,6 @@
         background: #eef4ff;
       }
 
-      .global-search-meta {
-        font-size: 0.75rem;
-        color: #5d6778;
-        line-height: 1.35;
-      }
-
       .global-search-tags {
         display: flex;
         align-items: center;
@@ -91,6 +155,13 @@
         font-size: 0.8rem;
         padding: 0.7rem 0.75rem;
       }
+
+      @media (min-width: 768px) {
+        .global-nav-actions {
+          margin-left: auto;
+          white-space: nowrap;
+        }
+      }
     </style>
   </head>
   <body class="bg-light">
@@ -110,28 +181,27 @@
             <span class="navbar-toggler-icon"></span>
           </button>
           <div class="collapse navbar-collapse" id="mainNav">
-            <div class="w-100 d-flex flex-column gap-2 ms-md-3 mt-3 mt-md-0">
+            <div class="w-100 d-flex flex-column flex-md-row align-items-md-center gap-2 mt-3 mt-md-0">
               <div class="global-search-wrap" id="global-search-container">
-                <div class="d-flex flex-wrap align-items-center gap-2">
+                <div class="global-search-controls">
                   <label class="visually-hidden" for="global-case-search-input">Search cases</label>
                   <input
                     id="global-case-search-input"
                     type="search"
-                    class="form-control form-control-sm"
+                    class="form-control form-control-sm global-search-input"
                     placeholder="Search UHID / name / phone / diagnosis"
                     autocomplete="off"
                     aria-label="Search cases"
-                    style="max-width: 26rem;"
                   />
-                  <div class="d-flex align-items-center gap-2 small text-white-50 flex-wrap">
-                    <label class="d-inline-flex align-items-center gap-1"><input class="form-check-input m-0" type="checkbox" value="anc" data-search-category checked /> ANC</label>
-                    <label class="d-inline-flex align-items-center gap-1"><input class="form-check-input m-0" type="checkbox" value="surgical" data-search-category checked /> Surgical</label>
-                    <label class="d-inline-flex align-items-center gap-1"><input class="form-check-input m-0" type="checkbox" value="non_surgical" data-search-category checked /> Non-surgical</label>
+                  <div class="search-filter-pills" aria-label="Category filters">
+                    <label class="search-filter-pill"><input type="checkbox" value="anc" data-search-category checked /> ANC</label>
+                    <label class="search-filter-pill"><input type="checkbox" value="surgical" data-search-category checked /> Surgical</label>
+                    <label class="search-filter-pill"><input type="checkbox" value="non_surgical" data-search-category checked /> Non-surgical</label>
                   </div>
                 </div>
                 <div id="global-search-dropdown" class="global-search-dropdown" role="listbox" hidden></div>
               </div>
-              <div class="d-flex flex-column flex-md-row ms-md-auto gap-2 mt-1">
+              <div class="d-flex flex-column flex-md-row gap-2 mt-1 mt-md-0 global-nav-actions">
                 <a class="btn btn-sm btn-outline-light" href="{% url 'patients:case_list' %}">Cases</a>
                 <a class="btn btn-sm btn-outline-light" href="{% url 'patients:case_create' %}">New Case</a>
                 <a class="btn btn-sm btn-outline-light" href="{% url 'patients:settings' %}">Settings</a>
@@ -205,7 +275,7 @@
                   .join("");
                 return `
                   <button type="button" class="global-search-item" data-index="${index}" role="option">
-                    <div class="small fw-semibold">${result.uhid}, ${result.name}, ${result.age}, ${result.village}, ${result.diagnosis}</div>
+                    <div class="small fw-semibold">${result.name}, ${result.age}, ${result.village}, ${result.diagnosis}, ${result.phone_number || "—"}, ${result.uhid}</div>
                     <div class="global-search-tags">${tags}</div>
                   </button>
                 `;

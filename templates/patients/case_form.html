@@ -124,6 +124,17 @@
         </div>
         <div class="card-body row g-3">
           <div class="col-md-6 field-wrap" data-field="high_risk"><label class="form-label">{{ form.high_risk.label }}</label>{{ form.high_risk }}</div>
+          <div class="col-12 field-wrap" data-field="anc_high_risk_reasons">
+            <label class="form-label">{{ form.anc_high_risk_reasons.label }}</label>
+            <div class="ncd-grid border rounded p-2 bg-light-subtle">
+              {% for choice in form.anc_high_risk_reasons %}
+                <div class="form-check">
+                  {{ choice.tag }}
+                  <label class="form-check-label" for="{{ choice.id_for_label }}">{{ choice.choice_label }}</label>
+                </div>
+              {% endfor %}
+            </div>
+          </div>
           <div class="col-md-6 field-wrap" data-field="ncd_flags">
             <label class="form-label">{{ form.ncd_flags.label }}</label>
             <div class="ncd-grid border rounded p-2 bg-light-subtle">
@@ -167,13 +178,14 @@
   const dobEl = document.getElementById('id_date_of_birth');
   const ageEl = document.getElementById('id_age');
   const ageHelpText = document.getElementById('age-help-text');
+  const highRiskEl = document.getElementById('id_high_risk');
 
   const fieldsForCategory = {
-    anc: ['lmp', 'edd', 'usg_edd', 'gravida', 'para', 'abortions', 'living', 'high_risk'],
+    anc: ['lmp', 'edd', 'usg_edd', 'gravida', 'para', 'abortions', 'living', 'high_risk', 'anc_high_risk_reasons'],
     surgery: ['surgical_pathway', 'surgery_done', 'surgery_date', 'review_date'],
     nonsurgical: ['review_frequency', 'review_date']
   };
-  const allConditional = ['lmp', 'edd', 'usg_edd', 'surgical_pathway', 'surgery_done', 'surgery_date', 'review_frequency', 'review_date', 'gravida', 'para', 'abortions', 'living', 'high_risk'];
+  const allConditional = ['lmp', 'edd', 'usg_edd', 'surgical_pathway', 'surgery_done', 'surgery_date', 'review_frequency', 'review_date', 'gravida', 'para', 'abortions', 'living', 'high_risk', 'anc_high_risk_reasons'];
   const normalize = (txt) => (txt || '').toLowerCase().replace(/[^a-z]/g, '');
 
   function calculateAgeFromDob(dobValue) {
@@ -210,6 +222,20 @@
       const name = wrapper.dataset.field;
       if (!allConditional.includes(name)) return;
       wrapper.classList.toggle('d-none', !allowed.has(name));
+    });
+    updateAncHighRiskReasonsVisibility();
+  }
+
+  function updateAncHighRiskReasonsVisibility() {
+    const normalized = normalize(categoryEl.options[categoryEl.selectedIndex]?.text);
+    const reasonsWrap = document.querySelector('.field-wrap[data-field="anc_high_risk_reasons"]');
+    if (!reasonsWrap) return;
+
+    const showReasons = normalized === 'anc' && Boolean(highRiskEl?.checked);
+    reasonsWrap.classList.toggle('d-none', !showReasons);
+
+    reasonsWrap.querySelectorAll('input[type="checkbox"]').forEach((checkbox) => {
+      checkbox.disabled = !showReasons;
     });
   }
 
@@ -358,6 +384,7 @@
   }
 
   categoryEl.addEventListener('change', updateFieldVisibility);
+  highRiskEl?.addEventListener('change', updateAncHighRiskReasonsVisibility);
   dobEl?.addEventListener('change', updateAgeBehavior);
   document.getElementById('id_para')?.addEventListener('change', updateGPLAWarning);
   document.getElementById('id_living')?.addEventListener('change', updateGPLAWarning);

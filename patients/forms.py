@@ -6,6 +6,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 
 from .models import (
+    AncHighRiskReason,
     CallLog,
     Case,
     CaseActivityLog,
@@ -40,6 +41,12 @@ class CaseForm(StyledModelForm):
         widget=forms.CheckboxSelectMultiple,
         label="Non-Communicable Diseases",
     )
+    anc_high_risk_reasons = forms.MultipleChoiceField(
+        required=False,
+        choices=AncHighRiskReason.choices,
+        widget=forms.CheckboxSelectMultiple,
+        label="ANC High-Risk Reasons",
+    )
 
     def __init__(self, *args, **kwargs):
         ensure_default_departments()
@@ -47,6 +54,7 @@ class CaseForm(StyledModelForm):
         self.fields["category"].queryset = self.fields["category"].queryset.order_by("name")
         if self.instance and self.instance.pk:
             self.fields["ncd_flags"].initial = self.instance.ncd_flags
+            self.fields["anc_high_risk_reasons"].initial = self.instance.anc_high_risk_reasons
 
         gpla_choices = [("", "-")] + [(i, i) for i in range(1, 11)]
         for field_name in ["gravida", "para", "abortions", "living"]:
@@ -66,6 +74,8 @@ class CaseForm(StyledModelForm):
 
         category = cleaned_data.get("category")
         category_name = category.name.upper() if category else ""
+        high_risk = cleaned_data.get("high_risk")
+        anc_high_risk_reasons = cleaned_data.get("anc_high_risk_reasons", [])
 
         g, p, a, l = (
             cleaned_data.get("gravida"),
@@ -78,14 +88,26 @@ class CaseForm(StyledModelForm):
                 self.add_error("para", "P cannot exceed G.")
             if p + a > g:
                 self.add_error("abortions", "P + A cannot exceed G.")
+        if category_name == "ANC":
+            if high_risk and not anc_high_risk_reasons:
+                self.add_error("anc_high_risk_reasons", "Select at least one ANC high-risk reason.")
+        else:
+            cleaned_data["anc_high_risk_reasons"] = []
+
+        if category_name == "ANC" and not high_risk:
+            cleaned_data["anc_high_risk_reasons"] = []
         return cleaned_data
 
     def clean_ncd_flags(self):
         return self.cleaned_data.get("ncd_flags", [])
 
+    def clean_anc_high_risk_reasons(self):
+        return self.cleaned_data.get("anc_high_risk_reasons", [])
+
     def save(self, commit=True):
         instance = super().save(commit=False)
         instance.ncd_flags = self.cleaned_data.get("ncd_flags", [])
+        instance.anc_high_risk_reasons = self.cleaned_data.get("anc_high_risk_reasons", [])
         if commit:
             instance.save()
         return instance
@@ -108,6 +130,7 @@ class CaseForm(StyledModelForm):
             "ncd_flags",
             "referred_by",
             "high_risk",
+            "anc_high_risk_reasons",
             "lmp",
             "edd",
             "usg_edd",

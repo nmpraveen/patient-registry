@@ -85,6 +85,16 @@ class NonCommunicableDisease(models.TextChoices):
     SSP = "SSP", "SSP"
 
 
+class AncHighRiskReason(models.TextChoices):
+    TEENAGE_PREGNANCY = "TEENAGE_PREGNANCY", "Teenage pregnancy"
+    ANEMIA = "ANEMIA", "Anemia"
+    REPEAT_ABORTION = "REPEAT_ABORTION", "Repeat abortion"
+    ELDERLY_PRIMI = "ELDERLY_PRIMI", "Elderly primi"
+    SHORT_STATURE_HEIGHT = "SHORT_STATURE_HEIGHT", "Short stature height"
+    PREVIOUS_LSCS = "PREVIOUS_LSCS", "Previous LSCS"
+    PIH = "PIH", "PIH"
+
+
 class DepartmentConfig(models.Model):
     name = models.CharField(max_length=100, unique=True)
     auto_follow_up_days = models.PositiveIntegerField(default=30)
@@ -204,6 +214,7 @@ class Case(models.Model):
     ncd_flags = models.JSONField(default=list, blank=True)
     referred_by = models.CharField(max_length=255, blank=True)
     high_risk = models.BooleanField(default=False)
+    anc_high_risk_reasons = models.JSONField(default=list, blank=True)
 
     lmp = models.DateField(blank=True, null=True)
     edd = models.DateField(blank=True, null=True)
@@ -249,6 +260,15 @@ class Case(models.Model):
             if duplicate_qs.exists():
                 raise ValidationError({"uhid": "No duplicate active cases are allowed for the same UHID."})
 
+        valid_anc_reason_values = {value for value, _ in AncHighRiskReason.choices}
+        raw_reasons = self.anc_high_risk_reasons or []
+        if not isinstance(raw_reasons, list):
+            raw_reasons = []
+        self.anc_high_risk_reasons = []
+        for reason in raw_reasons:
+            if reason in valid_anc_reason_values and reason not in self.anc_high_risk_reasons:
+                self.anc_high_risk_reasons.append(reason)
+
         category_name = self.category.name.upper() if self.category_id else ""
         if category_name == "ANC" and (not self.lmp or (not self.edd and not self.usg_edd)):
             raise ValidationError("ANC cases require LMP and at least one EDD (LMP-based or USG-based).")
@@ -261,6 +281,12 @@ class Case(models.Model):
                     raise ValidationError({"abortions": "Abortions (A) cannot exceed Gravida (G)."})
                 if p + a > g:
                     raise ValidationError({"abortions": "The sum of Para and Abortions cannot exceed Gravida."})
+            if self.high_risk and not self.anc_high_risk_reasons:
+                raise ValidationError({"anc_high_risk_reasons": "Select at least one ANC high-risk reason."})
+            if not self.high_risk:
+                self.anc_high_risk_reasons = []
+        else:
+            self.anc_high_risk_reasons = []
         if category_name == "SURGERY":
             if not self.surgical_pathway:
                 raise ValidationError({"surgical_pathway": "Please choose surveillance or planned surgery."})
@@ -289,6 +315,11 @@ class Case(models.Model):
     @property
     def effective_edd(self):
         return self.usg_edd or self.edd
+
+    @property
+    def anc_high_risk_reason_labels(self):
+        choice_map = dict(AncHighRiskReason.choices)
+        return [choice_map[value] for value in (self.anc_high_risk_reasons or []) if value in choice_map]
 
     def __str__(self) -> str:
         return f"{self.uhid} - {self.full_name}"

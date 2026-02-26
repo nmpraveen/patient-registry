@@ -127,7 +127,8 @@
         <div class="case-summary-title">Follow-up</div>
         {% if case.trimester %}<p class="summary-item"><span class="summary-label">Trimester:</span> {{ case.trimester }}</p>{% endif %}
         {% if case.gravida %}<p class="summary-item"><span class="summary-label">Obstetric:</span> G{{ case.gravida }} P{{ case.para|default:0 }} A{{ case.abortions|default:0 }} L{{ case.living|default:0 }}</p>{% endif %}
-        {% if not case.trimester and not case.gravida %}<p class="summary-item text-muted">No follow-up flags available.</p>{% endif %}
+        {% if case.anc_high_risk_reason_labels %}<p class="summary-item"><span class="summary-label">High-risk reasons:</span> {{ case.anc_high_risk_reason_labels|join:", " }}</p>{% endif %}
+        {% if not case.trimester and not case.gravida and not case.anc_high_risk_reason_labels %}<p class="summary-item text-muted">No follow-up flags available.</p>{% endif %}
       </div>
     </div>
   </div>

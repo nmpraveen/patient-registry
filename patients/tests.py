@@ -10,7 +10,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from .forms import CaseForm
-from .models import CallCommunicationStatus, CallLog, CallOutcome, Case, CaseStatus, DepartmentConfig, RoleSetting, SurgicalPathway, Task, TaskStatus, ensure_default_role_settings
+from .models import AncHighRiskReason, CallCommunicationStatus, CallLog, CallOutcome, Case, CaseStatus, DepartmentConfig, RoleSetting, SurgicalPathway, Task, TaskStatus, ensure_default_role_settings
 
 
 class MedtrackModelTests(TestCase):
@@ -442,6 +442,45 @@ class MedtrackViewTests(TestCase):
 
         self.assertFalse(form.is_valid())
         self.assertIn("age", form.errors)
+
+    def test_case_form_requires_anc_high_risk_reasons_when_high_risk_checked(self):
+        form = CaseForm(
+            data={
+                "uhid": "UH-HR-ANC-1",
+                "first_name": "High",
+                "last_name": "Risk",
+                "phone_number": "9876500091",
+                "category": self.anc.id,
+                "status": CaseStatus.ACTIVE,
+                "age": "21",
+                "lmp": (timezone.localdate() - timedelta(days=56)).isoformat(),
+                "edd": (timezone.localdate() + timedelta(days=210)).isoformat(),
+                "high_risk": "on",
+            }
+        )
+
+        self.assertFalse(form.is_valid())
+        self.assertIn("anc_high_risk_reasons", form.errors)
+
+    def test_case_form_accepts_anc_high_risk_reasons(self):
+        form = CaseForm(
+            data={
+                "uhid": "UH-HR-ANC-2",
+                "first_name": "Reasoned",
+                "last_name": "Risk",
+                "phone_number": "9876500092",
+                "category": self.anc.id,
+                "status": CaseStatus.ACTIVE,
+                "age": "24",
+                "lmp": (timezone.localdate() - timedelta(days=56)).isoformat(),
+                "edd": (timezone.localdate() + timedelta(days=210)).isoformat(),
+                "high_risk": "on",
+                "anc_high_risk_reasons": [AncHighRiskReason.ANEMIA, AncHighRiskReason.PIH],
+            }
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertEqual(form.cleaned_data["anc_high_risk_reasons"], [AncHighRiskReason.ANEMIA, AncHighRiskReason.PIH])
 
 
     def test_case_note_add_does_not_require_task_selection(self):

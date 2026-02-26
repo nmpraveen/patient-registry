@@ -66,6 +66,21 @@ class MedtrackModelTests(TestCase):
         task.save()
         self.assertIsNotNone(task.completed_at)
 
+    def test_task_string_representation_uses_title(self):
+        case = Case.objects.create(
+            uhid="UH101",
+            first_name="B",
+            last_name="Two",
+            phone_number="9999999998",
+            category=self.anc,
+            lmp=timezone.localdate() - timedelta(days=70),
+            edd=timezone.localdate() + timedelta(days=200),
+            created_by=self.user,
+        )
+        task = Task.objects.create(case=case, title="ECG", due_date=timezone.localdate(), created_by=self.user)
+
+        self.assertEqual(str(task), "ECG")
+
 
 class MedtrackViewTests(TestCase):
     def setUp(self):

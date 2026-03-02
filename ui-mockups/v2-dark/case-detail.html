@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Case Detail | MEDTRACK - Dark Clinical</title>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'IBM Plex Sans', -apple-system, sans-serif; min-height: 100vh; background: #0a0a0f; color: #e4e4e7; }
+
+    .sidebar {
+      position: fixed; top: 0; left: 0; bottom: 0; width: 240px;
+      background: #111118; border-right: 1px solid #1e293b;
+      display: flex; flex-direction: column; z-index: 100;
+    }
+    .sidebar-brand { padding: 1.25rem 1.5rem; border-bottom: 1px solid #1e293b; }
+    .sidebar-brand .logo { font-size: 1.2rem; font-weight: 700; color: #22d3ee; letter-spacing: 0.06em; }
+    .sidebar-brand .logo-sub { font-size: 0.68rem; color: #475569; text-transform: uppercase; letter-spacing: 0.08em; }
+    .sidebar-nav { flex: 1; padding: 1rem 0; }
+    .nav-section { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em; color: #475569; font-weight: 700; padding: 0.5rem 1.5rem 0.4rem; margin-top: 0.5rem; }
+    .nav-item { display: flex; align-items: center; gap: 0.75rem; padding: 0.6rem 1.5rem; color: #94a3b8; font-size: 0.85rem; font-weight: 500; text-decoration: none; border-left: 2px solid transparent; transition: all 0.15s; }
+    .nav-item:hover { color: #e2e8f0; background: rgba(255,255,255,0.03); }
+    .nav-item.active { color: #22d3ee; background: rgba(34,211,238,0.05); border-left-color: #22d3ee; }
+    .nav-icon { font-size: 1rem; width: 1.2rem; text-align: center; }
+    .sidebar-user { padding: 1rem 1.5rem; border-top: 1px solid #1e293b; display: flex; align-items: center; gap: 0.75rem; }
+    .user-avatar { width: 32px; height: 32px; border-radius: 8px; background: #1e293b; display: flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 700; color: #22d3ee; }
+    .user-name { font-size: 0.82rem; font-weight: 600; color: #e2e8f0; }
+    .user-role { font-size: 0.68rem; color: #64748b; }
+
+    .main-area { margin-left: 240px; min-height: 100vh; }
+    .content { padding: 1.5rem 2rem; }
+
+    /* Case header */
+    .case-header {
+      display: flex; align-items: flex-start; justify-content: space-between;
+      gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap;
+    }
+    .case-title { font-size: 1.4rem; font-weight: 700; color: #f1f5f9; }
+    .case-uhid { font-family: 'IBM Plex Mono', monospace; font-size: 0.85rem; color: #64748b; font-weight: 400; }
+
+    .info-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.5rem; }
+    .info-chip {
+      display: inline-block; padding: 0.18rem 0.55rem; border-radius: 4px;
+      font-size: 0.7rem; font-weight: 700; font-family: 'IBM Plex Mono', monospace;
+    }
+    .chip-active { background: rgba(74,222,128,0.1); color: #4ade80; border: 1px solid rgba(74,222,128,0.2); }
+    .chip-cat { background: rgba(167,139,250,0.1); color: #a78bfa; border: 1px solid rgba(167,139,250,0.2); }
+    .chip-risk { background: rgba(248,113,113,0.1); color: #f87171; border: 1px solid rgba(248,113,113,0.2); }
+    .chip-review { background: rgba(251,191,36,0.1); color: #fbbf24; border: 1px solid rgba(251,191,36,0.2); }
+
+    .btn-edit {
+      padding: 0.45rem 1rem; border: 1px solid #1e293b; border-radius: 8px;
+      background: transparent; color: #22d3ee; font-size: 0.82rem;
+      font-weight: 600; font-family: inherit; cursor: pointer; text-decoration: none;
+      transition: all 0.15s; flex-shrink: 0;
+    }
+    .btn-edit:hover { background: rgba(34,211,238,0.1); border-color: #22d3ee; }
+
+    /* Summary grid */
+    .summary-grid {
+      display: grid; grid-template-columns: repeat(4, 1fr);
+      gap: 0.75rem; margin-bottom: 1.5rem;
+    }
+    @media (max-width: 1024px) { .summary-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 575px) { .summary-grid { grid-template-columns: 1fr; } }
+
+    .summary-card {
+      background: #111118; border: 1px solid #1e293b; border-radius: 10px; padding: 1rem;
+    }
+    .summary-card-title {
+      font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.08em;
+      color: #475569; font-weight: 700; margin-bottom: 0.6rem;
+      padding-bottom: 0.4rem; border-bottom: 1px solid #1e293b;
+    }
+    .summary-row { font-size: 0.82rem; margin-bottom: 0.3rem; line-height: 1.4; }
+    .summary-row:last-child { margin-bottom: 0; }
+    .summary-label { color: #64748b; font-weight: 600; }
+    .summary-value { color: #e2e8f0; }
+    .mono { font-family: 'IBM Plex Mono', monospace; }
+
+    /* Content columns */
+    .content-grid { display: grid; grid-template-columns: 7fr 5fr; gap: 1.25rem; }
+    @media (max-width: 768px) { .content-grid { grid-template-columns: 1fr; } }
+
+    .panel {
+      background: #111118; border: 1px solid #1e293b; border-radius: 12px;
+      overflow: hidden; margin-bottom: 1.25rem;
+    }
+    .panel-header {
+      padding: 0.85rem 1.25rem; border-bottom: 1px solid #1e293b;
+      font-size: 0.85rem; font-weight: 700; color: #f1f5f9;
+    }
+    .panel-body { padding: 0; }
+    .panel-padded { padding: 1rem 1.25rem; }
+
+    /* Tasks table */
+    .tasks-table { width: 100%; border-collapse: collapse; }
+    .tasks-table thead th {
+      font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.08em;
+      color: #475569; font-weight: 700; padding: 0.6rem 0.85rem;
+      border-bottom: 1px solid #1e293b; text-align: left; background: rgba(0,0,0,0.2);
+    }
+    .tasks-table tbody td {
+      padding: 0.55rem 0.85rem; border-bottom: 1px solid rgba(30,41,59,0.5);
+      font-size: 0.82rem; color: #94a3b8;
+    }
+    .tasks-table tbody tr:hover { background: rgba(255,255,255,0.02); }
+
+    .task-chip {
+      display: inline-block; padding: 0.15rem 0.45rem; border-radius: 4px;
+      font-size: 0.68rem; font-weight: 700; font-family: 'IBM Plex Mono', monospace;
+    }
+    .task-scheduled { background: rgba(34,211,238,0.15); color: #22d3ee; }
+    .task-completed { background: rgba(74,222,128,0.15); color: #4ade80; }
+    .task-awaiting { background: rgba(251,146,60,0.15); color: #fb923c; }
+    .task-locked { color: #334155; font-size: 0.72rem; }
+
+    .task-link { color: #22d3ee; text-decoration: none; font-size: 0.78rem; font-weight: 500; }
+    .task-link:hover { text-decoration: underline; }
+
+    /* Forms */
+    .form-section { border-top: 1px solid #1e293b; padding: 1rem 1.25rem; }
+    .form-section-title { font-size: 0.78rem; font-weight: 700; color: #94a3b8; margin-bottom: 0.75rem; }
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.65rem; }
+    @media (max-width: 575px) { .form-grid { grid-template-columns: 1fr; } }
+
+    .form-field label {
+      display: block; font-size: 0.68rem; font-weight: 600; color: #475569;
+      text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.3rem;
+    }
+    .form-field input, .form-field select, .form-field textarea {
+      width: 100%; padding: 0.45rem 0.7rem; border: 1px solid #1e293b; border-radius: 6px;
+      background: #0a0a0f; color: #e2e8f0; font-size: 0.82rem; font-family: inherit; outline: none;
+    }
+    .form-field input:focus, .form-field select:focus, .form-field textarea:focus { border-color: #22d3ee; }
+    .form-field select option { background: #111118; }
+    .form-field textarea { resize: vertical; min-height: 60px; }
+
+    .btn-action {
+      padding: 0.45rem 1rem; border: none; border-radius: 6px;
+      font-size: 0.82rem; font-weight: 700; font-family: inherit; cursor: pointer;
+      margin-top: 0.65rem; transition: opacity 0.15s;
+    }
+    .btn-action:hover { opacity: 0.85; }
+    .btn-action.primary { background: #22d3ee; color: #0a0a0f; }
+    .btn-action.warning { background: #f59e0b; color: #0a0a0f; }
+    .btn-action.secondary { background: #1e293b; color: #94a3b8; }
+
+    /* Call/Activity logs */
+    .log-item { padding: 0.6rem 1.25rem; border-bottom: 1px solid rgba(30,41,59,0.5); }
+    .log-item:last-child { border-bottom: none; }
+    .log-meta { font-size: 0.7rem; color: #475569; font-family: 'IBM Plex Mono', monospace; }
+    .log-content { font-size: 0.82rem; color: #94a3b8; margin-top: 0.15rem; }
+    .log-content strong { color: #e2e8f0; }
+
+    @media (max-width: 768px) {
+      .sidebar { display: none; }
+      .main-area { margin-left: 0; }
+    }
+  </style>
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <div class="logo">MEDTRACK</div>
+      <div class="logo-sub">Patient Registry</div>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-section">Main</div>
+      <a class="nav-item" href="dashboard.html"><span class="nav-icon">&#9632;</span> Dashboard</a>
+      <a class="nav-item active" href="case-list.html"><span class="nav-icon">&#9776;</span> Cases</a>
+      <a class="nav-item" href="#"><span class="nav-icon">+</span> New Case</a>
+      <div class="nav-section">Admin</div>
+      <a class="nav-item" href="#"><span class="nav-icon">&#9881;</span> Settings</a>
+    </nav>
+    <div class="sidebar-user">
+      <div class="user-avatar">DP</div>
+      <div><div class="user-name">Dr. Patel</div><div class="user-role">Admin</div></div>
+    </div>
+  </aside>
+
+  <div class="main-area">
+    <div class="content">
+      <div class="case-header">
+        <div>
+          <h1 class="case-title">Priya Sharma <span class="case-uhid">(MH-20241)</span></h1>
+          <div class="info-chips">
+            <span class="info-chip chip-active">ACTIVE</span>
+            <span class="info-chip chip-cat">ANC</span>
+            <span class="info-chip chip-risk">HIGH-RISK</span>
+            <span class="info-chip chip-review">REVIEW: 2026-03-15</span>
+          </div>
+        </div>
+        <a class="btn-edit" href="#">Edit Case</a>
+      </div>
+
+      <div class="summary-grid">
+        <div class="summary-card">
+          <div class="summary-card-title">Identity</div>
+          <p class="summary-row"><span class="summary-label">Gender:</span> <span class="summary-value">Female</span></p>
+          <p class="summary-row"><span class="summary-label">DOB:</span> <span class="summary-value mono">1995-06-12</span></p>
+          <p class="summary-row"><span class="summary-label">Place:</span> <span class="summary-value">Mangalore</span></p>
+        </div>
+        <div class="summary-card">
+          <div class="summary-card-title">Contact</div>
+          <p class="summary-row"><span class="summary-label">Phone:</span> <span class="summary-value mono">9876543210</span></p>
+          <p class="summary-row"><span class="summary-label">Alt:</span> <span class="summary-value mono">9876543299</span></p>
+          <p class="summary-row"><span class="summary-label">Referred by:</span> <span class="summary-value">Dr. Anand</span></p>
+        </div>
+        <div class="summary-card">
+          <div class="summary-card-title">Clinical</div>
+          <p class="summary-row"><span class="summary-label">Diagnosis:</span> <span class="summary-value">Pregnancy</span></p>
+          <p class="summary-row"><span class="summary-label">LMP:</span> <span class="summary-value mono">2025-08-15</span></p>
+          <p class="summary-row"><span class="summary-label">EDD:</span> <span class="summary-value mono">2026-05-22</span></p>
+        </div>
+        <div class="summary-card">
+          <div class="summary-card-title">Follow-up</div>
+          <p class="summary-row"><span class="summary-label">Trimester:</span> <span class="summary-value">Third</span></p>
+          <p class="summary-row"><span class="summary-label">Obstetric:</span> <span class="summary-value mono">G2 P1 A0 L1</span></p>
+          <p class="summary-row"><span class="summary-label">High-risk:</span> <span class="summary-value" style="color:#f87171;">Previous LSCS</span></p>
+        </div>
+      </div>
+
+      <div class="content-grid">
+        <div>
+          <div class="panel">
+            <div class="panel-header">Tasks</div>
+            <div class="panel-body">
+              <table class="tasks-table">
+                <thead><tr><th>Title</th><th>Due</th><th>Status</th><th>Freq</th><th>Assigned</th><th></th></tr></thead>
+                <tbody>
+                  <tr>
+                    <td>ANC Visit Month 7</td>
+                    <td class="mono">02-03-26</td>
+                    <td><span class="task-chip task-scheduled">SCHEDULED</span></td>
+                    <td>Monthly</td><td>Dr. Patel</td>
+                    <td><a class="task-link" href="#">Edit</a></td>
+                  </tr>
+                  <tr style="opacity:0.4;">
+                    <td>ANC Visit Month 8</td>
+                    <td class="mono">02-04-26</td>
+                    <td><span class="task-chip task-scheduled">SCHEDULED</span></td>
+                    <td>Monthly</td><td>Dr. Patel</td>
+                    <td><span class="task-locked">Locked</span></td>
+                  </tr>
+                  <tr>
+                    <td>Lab Test CBC</td>
+                    <td class="mono">28-02-26</td>
+                    <td><span class="task-chip task-awaiting">AWAITING</span></td>
+                    <td>-</td><td>Nurse Geetha</td>
+                    <td><a class="task-link" href="#">Edit</a></td>
+                  </tr>
+                  <tr>
+                    <td>ANC Visit Month 6</td>
+                    <td class="mono">02-02-26</td>
+                    <td><span class="task-chip task-completed">COMPLETED</span></td>
+                    <td>Monthly</td><td>Dr. Patel</td>
+                    <td><a class="task-link" href="#">Edit</a></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="form-section">
+              <div class="form-section-title">Add Task</div>
+              <div class="form-grid">
+                <div class="form-field"><label>Title</label><input type="text" placeholder="Task title"></div>
+                <div class="form-field"><label>Due Date</label><input type="date"></div>
+                <div class="form-field"><label>Status</label><select><option>Scheduled</option><option>Awaiting Reports</option><option>Completed</option></select></div>
+                <div class="form-field"><label>Assigned To</label><select><option>Dr. Patel</option><option>Nurse Geetha</option></select></div>
+                <div class="form-field"><label>Type</label><select><option>Visit</option><option>Lab</option><option>Procedure</option><option>Call</option></select></div>
+                <div class="form-field"><label>Frequency</label><input type="text" placeholder="e.g. Monthly"></div>
+              </div>
+              <button class="btn-action primary">Add Task</button>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div class="panel">
+            <div class="panel-header">Call Tracking</div>
+            <div class="panel-padded">
+              <div class="form-grid" style="margin-bottom:0.65rem;">
+                <div class="form-field"><label>Task</label><select><option>ANC Visit Month 7</option><option>Lab Test CBC</option></select></div>
+                <div class="form-field"><label>Outcome</label><select><option>Confirmed visit</option><option>No answer</option><option>Switched off</option></select></div>
+              </div>
+              <div class="form-field"><label>Notes</label><textarea placeholder="Call notes..."></textarea></div>
+              <button class="btn-action warning">Log Call Outcome</button>
+            </div>
+            <div class="panel-body">
+              <div class="log-item">
+                <div class="log-meta">2026-03-01 14:32 &middot; nurse_geetha &middot; ANC Visit Month 7</div>
+                <div class="log-content"><strong>Confirmed visit</strong> &mdash; Patient confirmed appointment for March 2</div>
+              </div>
+              <div class="log-item">
+                <div class="log-meta">2026-02-25 10:15 &middot; caller_ravi &middot; ANC Visit Month 7</div>
+                <div class="log-content"><strong>No answer</strong> &mdash; Tried twice, no response</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-header">Activity Log</div>
+            <div class="panel-padded">
+              <div class="form-field"><label>Note</label><textarea placeholder="Add a note..."></textarea></div>
+              <button class="btn-action secondary">Add Note</button>
+            </div>
+            <div class="panel-body">
+              <div class="log-item">
+                <div class="log-meta">2026-03-01 14:35 &middot; nurse_geetha</div>
+                <div class="log-content">Confirmed for tomorrow. Reminded to bring previous reports.</div>
+              </div>
+              <div class="log-item">
+                <div class="log-meta">2026-02-20 09:00 &middot; dr_patel</div>
+                <div class="log-content">ANC Visit Month 6 completed. All vitals normal. Continue iron supplements.</div>
+              </div>
+              <div class="log-item">
+                <div class="log-meta">2026-02-02 11:30 &middot; system</div>
+                <div class="log-content">Case created. Auto-generated ANC task schedule.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

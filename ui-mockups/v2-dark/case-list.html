@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cases | MEDTRACK - Dark Clinical</title>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'IBM Plex Sans', -apple-system, sans-serif; min-height: 100vh; background: #0a0a0f; color: #e4e4e7; }
+
+    .sidebar {
+      position: fixed; top: 0; left: 0; bottom: 0; width: 240px;
+      background: #111118; border-right: 1px solid #1e293b;
+      display: flex; flex-direction: column; z-index: 100;
+    }
+    .sidebar-brand { padding: 1.25rem 1.5rem; border-bottom: 1px solid #1e293b; }
+    .sidebar-brand .logo { font-size: 1.2rem; font-weight: 700; color: #22d3ee; letter-spacing: 0.06em; }
+    .sidebar-brand .logo-sub { font-size: 0.68rem; color: #475569; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 500; }
+    .sidebar-nav { flex: 1; padding: 1rem 0; }
+    .nav-section { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em; color: #475569; font-weight: 700; padding: 0.5rem 1.5rem 0.4rem; margin-top: 0.5rem; }
+    .nav-item { display: flex; align-items: center; gap: 0.75rem; padding: 0.6rem 1.5rem; color: #94a3b8; font-size: 0.85rem; font-weight: 500; text-decoration: none; transition: all 0.15s; border-left: 2px solid transparent; }
+    .nav-item:hover { color: #e2e8f0; background: rgba(255,255,255,0.03); }
+    .nav-item.active { color: #22d3ee; background: rgba(34,211,238,0.05); border-left-color: #22d3ee; }
+    .nav-icon { font-size: 1rem; width: 1.2rem; text-align: center; }
+    .sidebar-user { padding: 1rem 1.5rem; border-top: 1px solid #1e293b; display: flex; align-items: center; gap: 0.75rem; }
+    .user-avatar { width: 32px; height: 32px; border-radius: 8px; background: #1e293b; display: flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 700; color: #22d3ee; }
+    .user-name { font-size: 0.82rem; font-weight: 600; color: #e2e8f0; }
+    .user-role { font-size: 0.68rem; color: #64748b; }
+
+    .main-area { margin-left: 240px; min-height: 100vh; }
+
+    .topbar {
+      position: sticky; top: 0; z-index: 50;
+      background: rgba(10,10,15,0.85); backdrop-filter: blur(12px);
+      border-bottom: 1px solid #1e293b;
+      padding: 0.75rem 2rem; display: flex; align-items: center; gap: 1rem;
+    }
+    .search-input {
+      flex: 1; max-width: 480px; padding: 0.5rem 1rem;
+      border: 1px solid #1e293b; border-radius: 8px;
+      background: #111118; color: #e2e8f0; font-size: 0.85rem; font-family: inherit; outline: none;
+    }
+    .search-input:focus { border-color: #22d3ee; }
+    .search-input::placeholder { color: #475569; }
+
+    .content { padding: 1.5rem 2rem; }
+    .page-title { font-size: 1.25rem; font-weight: 600; color: #f1f5f9; margin-bottom: 1.25rem; }
+
+    /* Filters */
+    .filter-bar {
+      display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1.25rem;
+      padding: 1rem; background: #111118; border: 1px solid #1e293b; border-radius: 10px;
+    }
+    .filter-bar input, .filter-bar select {
+      padding: 0.45rem 0.75rem; border: 1px solid #1e293b; border-radius: 6px;
+      background: #0a0a0f; color: #e2e8f0; font-size: 0.82rem; font-family: inherit; outline: none;
+      min-width: 130px; flex: 1;
+    }
+    .filter-bar select option { background: #111118; }
+    .filter-bar input::placeholder { color: #475569; }
+    .filter-bar .btn-filter {
+      padding: 0.45rem 1rem; border: none; border-radius: 6px; background: #22d3ee; color: #0a0a0f;
+      font-size: 0.82rem; font-weight: 700; font-family: inherit; cursor: pointer;
+    }
+
+    /* Table */
+    .data-panel {
+      background: #111118; border: 1px solid #1e293b; border-radius: 12px; overflow: hidden;
+    }
+    .data-table { width: 100%; border-collapse: collapse; }
+    .data-table thead th {
+      font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.08em;
+      color: #475569; font-weight: 700; padding: 0.75rem 1rem;
+      border-bottom: 1px solid #1e293b; text-align: left;
+      background: rgba(0,0,0,0.2);
+    }
+    .data-table tbody td {
+      padding: 0.65rem 1rem; border-bottom: 1px solid rgba(30,41,59,0.5);
+      font-size: 0.82rem; color: #94a3b8;
+    }
+    .data-table tbody tr { transition: background 0.1s; }
+    .data-table tbody tr:hover { background: rgba(255,255,255,0.02); }
+    .data-table a { color: #22d3ee; text-decoration: none; font-weight: 500; }
+    .data-table a:hover { text-decoration: underline; }
+
+    .chip {
+      display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px;
+      font-size: 0.7rem; font-weight: 700; font-family: 'IBM Plex Mono', monospace;
+    }
+    .chip-active { background: rgba(74,222,128,0.1); color: #4ade80; border: 1px solid rgba(74,222,128,0.2); }
+    .chip-completed { background: rgba(34,211,238,0.1); color: #22d3ee; border: 1px solid rgba(34,211,238,0.2); }
+    .chip-cat { background: rgba(167,139,250,0.1); color: #a78bfa; border: 1px solid rgba(167,139,250,0.2); }
+
+    .mono { font-family: 'IBM Plex Mono', monospace; font-size: 0.78rem; }
+
+    /* Pagination */
+    .pagination { display: flex; gap: 0.35rem; justify-content: center; margin-top: 1.25rem; }
+    .page-btn {
+      padding: 0.35rem 0.75rem; border: 1px solid #1e293b; border-radius: 6px;
+      background: transparent; color: #64748b; font-size: 0.78rem;
+      font-family: inherit; cursor: pointer; text-decoration: none; transition: all 0.15s;
+    }
+    .page-btn:hover { background: rgba(255,255,255,0.05); color: #e2e8f0; }
+    .page-btn.active { border-color: #22d3ee; color: #22d3ee; background: rgba(34,211,238,0.05); }
+    .page-btn.disabled { opacity: 0.3; pointer-events: none; }
+
+    /* Mobile cards */
+    .mobile-cards { display: none; }
+    @media (max-width: 768px) {
+      .sidebar { display: none; }
+      .main-area { margin-left: 0; }
+      .data-panel { display: none; }
+      .mobile-cards { display: block; }
+    }
+    .mobile-card {
+      background: #111118; border: 1px solid #1e293b; border-radius: 10px;
+      padding: 0.85rem 1rem; margin-bottom: 0.6rem;
+    }
+    .mc-name { font-weight: 600; color: #e2e8f0; }
+    .mc-name a { color: #22d3ee; text-decoration: none; }
+    .mc-meta { font-size: 0.75rem; color: #475569; margin-top: 0.2rem; }
+    .mc-bottom { display: flex; gap: 0.4rem; margin-top: 0.4rem; flex-wrap: wrap; }
+  </style>
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <div class="logo">MEDTRACK</div>
+      <div class="logo-sub">Patient Registry</div>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-section">Main</div>
+      <a class="nav-item" href="dashboard.html"><span class="nav-icon">&#9632;</span> Dashboard</a>
+      <a class="nav-item active" href="#"><span class="nav-icon">&#9776;</span> Cases</a>
+      <a class="nav-item" href="#"><span class="nav-icon">+</span> New Case</a>
+      <div class="nav-section">Admin</div>
+      <a class="nav-item" href="#"><span class="nav-icon">&#9881;</span> Settings</a>
+    </nav>
+    <div class="sidebar-user">
+      <div class="user-avatar">DP</div>
+      <div><div class="user-name">Dr. Patel</div><div class="user-role">Admin</div></div>
+    </div>
+  </aside>
+
+  <div class="main-area">
+    <div class="topbar">
+      <input class="search-input" type="search" placeholder="Search UHID / name / phone / diagnosis...">
+    </div>
+
+    <div class="content">
+      <h1 class="page-title">Case List</h1>
+
+      <div class="filter-bar">
+        <input type="text" placeholder="UHID / Phone / Name">
+        <select><option>All statuses</option><option>Active</option><option>Completed</option><option>Cancelled</option><option>Loss to Follow-up</option></select>
+        <select><option>All categories</option><option>ANC</option><option>Surgery</option><option>Non-Surgical</option></select>
+        <select><option>Any assignee</option><option>Dr. Patel</option><option>Dr. Sharma</option><option>Nurse Geetha</option></select>
+        <input type="date">
+        <input type="date">
+        <button class="btn-filter">Filter</button>
+      </div>
+
+      <div class="data-panel">
+        <table class="data-table">
+          <thead>
+            <tr><th>UHID</th><th>Name</th><th>Gender</th><th>DOB</th><th>Place</th><th>Phone</th><th>Category</th><th>Status</th><th>Tasks</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><a href="case-detail.html" class="mono">MH-20241</a></td>
+              <td>Priya Sharma</td><td>Female</td><td class="mono">1995-06-12</td><td>Mangalore</td><td class="mono">9876543210</td>
+              <td><span class="chip chip-cat">ANC</span></td>
+              <td><span class="chip chip-active">ACTIVE</span></td>
+              <td class="mono">5</td>
+            </tr>
+            <tr>
+              <td><a href="#" class="mono">MH-20242</a></td>
+              <td>Rajesh Kumar</td><td>Male</td><td class="mono">1968-11-03</td><td>Udupi</td><td class="mono">9876543211</td>
+              <td><span class="chip chip-cat">SURGERY</span></td>
+              <td><span class="chip chip-active">ACTIVE</span></td>
+              <td class="mono">3</td>
+            </tr>
+            <tr>
+              <td><a href="#" class="mono">MH-20243</a></td>
+              <td>Meena Devi</td><td>Female</td><td class="mono">1972-03-18</td><td>Kasaragod</td><td class="mono">9876543212</td>
+              <td><span class="chip chip-cat">NON-SURG</span></td>
+              <td><span class="chip chip-active">ACTIVE</span></td>
+              <td class="mono">2</td>
+            </tr>
+            <tr>
+              <td><a href="#" class="mono">MH-20244</a></td>
+              <td>Suresh P</td><td>Male</td><td class="mono">1980-08-22</td><td>Puttur</td><td class="mono">9876543213</td>
+              <td><span class="chip chip-cat">SURGERY</span></td>
+              <td><span class="chip chip-completed">COMPLETED</span></td>
+              <td class="mono">4</td>
+            </tr>
+            <tr>
+              <td><a href="#" class="mono">MH-20245</a></td>
+              <td>Lakshmi G</td><td>Female</td><td class="mono">1998-01-07</td><td>Bantwal</td><td class="mono">9876543214</td>
+              <td><span class="chip chip-cat">ANC</span></td>
+              <td><span class="chip chip-active">ACTIVE</span></td>
+              <td class="mono">6</td>
+            </tr>
+            <tr>
+              <td><a href="#" class="mono">MH-20246</a></td>
+              <td>Anita B</td><td>Female</td><td class="mono">1965-12-14</td><td>Sullia</td><td class="mono">9876543215</td>
+              <td><span class="chip chip-cat">NON-SURG</span></td>
+              <td><span class="chip chip-active">ACTIVE</span></td>
+              <td class="mono">1</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="mobile-cards">
+        <div class="mobile-card">
+          <div class="mc-name"><a href="case-detail.html">Priya Sharma</a></div>
+          <div class="mc-meta">MH-20241 &middot; Female &middot; 1995-06-12 &middot; Mangalore</div>
+          <div class="mc-bottom"><span class="chip chip-cat">ANC</span><span class="chip chip-active">ACTIVE</span></div>
+        </div>
+        <div class="mobile-card">
+          <div class="mc-name"><a href="#">Rajesh Kumar</a></div>
+          <div class="mc-meta">MH-20242 &middot; Male &middot; 1968-11-03 &middot; Udupi</div>
+          <div class="mc-bottom"><span class="chip chip-cat">SURGERY</span><span class="chip chip-active">ACTIVE</span></div>
+        </div>
+      </div>
+
+      <div class="pagination">
+        <a class="page-btn disabled">Previous</a>
+        <a class="page-btn active">1</a>
+        <a class="page-btn" href="#">2</a>
+        <a class="page-btn" href="#">3</a>
+        <a class="page-btn" href="#">Next</a>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

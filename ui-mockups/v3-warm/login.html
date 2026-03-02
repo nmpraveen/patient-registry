@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Login | MEDTRACK - Warm Minimal</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'DM Sans', -apple-system, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      background: #faf8f5;
+      color: #2d2a26;
+    }
+
+    .login-left {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 3rem;
+    }
+
+    .login-right {
+      flex: 1;
+      background: linear-gradient(160deg, #f4ebe3 0%, #e8ddd4 50%, #ddd0c4 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 3rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .login-right::before {
+      content: '';
+      position: absolute;
+      width: 300px; height: 300px;
+      border-radius: 50%;
+      background: rgba(180, 130, 90, 0.12);
+      top: -80px; right: -80px;
+    }
+    .login-right::after {
+      content: '';
+      position: absolute;
+      width: 200px; height: 200px;
+      border-radius: 50%;
+      background: rgba(180, 130, 90, 0.08);
+      bottom: -60px; left: -60px;
+    }
+
+    .brand-content {
+      position: relative;
+      z-index: 1;
+      max-width: 360px;
+    }
+
+    .brand-logo {
+      font-size: 2.5rem;
+      font-weight: 700;
+      color: #5c4a3a;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.5rem;
+    }
+
+    .brand-line {
+      width: 50px;
+      height: 3px;
+      background: #b4825a;
+      border-radius: 2px;
+      margin-bottom: 1.25rem;
+    }
+
+    .brand-desc {
+      font-size: 1.05rem;
+      line-height: 1.7;
+      color: #7a6b5d;
+    }
+
+    .brand-features {
+      margin-top: 2rem;
+      list-style: none;
+    }
+
+    .brand-features li {
+      font-size: 0.88rem;
+      color: #8b7b6d;
+      padding: 0.45rem 0;
+      padding-left: 1.5rem;
+      position: relative;
+    }
+
+    .brand-features li::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 0.7rem;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #b4825a;
+      opacity: 0.5;
+    }
+
+    .login-form-wrap {
+      width: 100%;
+      max-width: 380px;
+    }
+
+    .login-form-wrap h1 {
+      font-size: 1.75rem;
+      font-weight: 700;
+      color: #2d2a26;
+      margin-bottom: 0.3rem;
+    }
+
+    .login-form-wrap .subtitle {
+      font-size: 0.88rem;
+      color: #9a8e82;
+      margin-bottom: 2.5rem;
+    }
+
+    .form-group { margin-bottom: 1.5rem; }
+
+    .form-group label {
+      display: block;
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: #5c4a3a;
+      margin-bottom: 0.45rem;
+    }
+
+    .form-group input {
+      width: 100%;
+      padding: 0.8rem 1rem;
+      border: 1.5px solid #e0d6cc;
+      border-radius: 10px;
+      background: #fff;
+      color: #2d2a26;
+      font-size: 0.92rem;
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .form-group input:focus {
+      border-color: #b4825a;
+      box-shadow: 0 0 0 3px rgba(180, 130, 90, 0.1);
+    }
+    .form-group input::placeholder { color: #c5b8aa; }
+
+    .btn-login {
+      width: 100%;
+      padding: 0.85rem;
+      border: none;
+      border-radius: 10px;
+      background: #5c4a3a;
+      color: #fff;
+      font-size: 0.95rem;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      transition: background 0.2s;
+      letter-spacing: 0.01em;
+    }
+    .btn-login:hover { background: #4a3b2e; }
+
+    .error-msg {
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      border-radius: 8px;
+      padding: 0.6rem 0.8rem;
+      color: #991b1b;
+      font-size: 0.82rem;
+      margin-bottom: 1rem;
+    }
+
+    @media (max-width: 768px) {
+      body { flex-direction: column; }
+      .login-right { display: none; }
+      .login-left { min-height: 100vh; }
+    }
+  </style>
+</head>
+<body>
+  <div class="login-left">
+    <div class="login-form-wrap">
+      <h1>Welcome back</h1>
+      <p class="subtitle">Sign in to your MEDTRACK account</p>
+
+      <form>
+        <div class="form-group">
+          <label for="username">Username</label>
+          <input type="text" id="username" placeholder="Enter your username" autofocus>
+        </div>
+        <div class="form-group">
+          <label for="password">Password</label>
+          <input type="password" id="password" placeholder="Enter your password">
+        </div>
+        <button type="submit" class="btn-login">Sign In</button>
+      </form>
+    </div>
+  </div>
+  <div class="login-right">
+    <div class="brand-content">
+      <div class="brand-logo">MEDTRACK</div>
+      <div class="brand-line"></div>
+      <p class="brand-desc">A thoughtfully designed patient registry for clinical follow-up tracking.</p>
+      <ul class="brand-features">
+        <li>ANC, Surgical & Non-Surgical pathways</li>
+        <li>Smart task scheduling & reminders</li>
+        <li>Call tracking & activity logging</li>
+        <li>Role-based access control</li>
+      </ul>
+    </div>
+  </div>
+</body>
+</html>

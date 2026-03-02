@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dashboard | MEDTRACK - Dark Clinical</title>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'IBM Plex Sans', -apple-system, sans-serif;
+      min-height: 100vh;
+      background: #0a0a0f;
+      color: #e4e4e7;
+    }
+
+    /* Sidebar */
+    .sidebar {
+      position: fixed;
+      top: 0; left: 0; bottom: 0;
+      width: 240px;
+      background: #111118;
+      border-right: 1px solid #1e293b;
+      display: flex;
+      flex-direction: column;
+      z-index: 100;
+    }
+
+    .sidebar-brand {
+      padding: 1.25rem 1.5rem;
+      border-bottom: 1px solid #1e293b;
+    }
+    .sidebar-brand .logo {
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: #22d3ee;
+      letter-spacing: 0.06em;
+    }
+    .sidebar-brand .logo-sub {
+      font-size: 0.68rem;
+      color: #475569;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 500;
+    }
+
+    .sidebar-nav {
+      flex: 1;
+      padding: 1rem 0;
+      overflow-y: auto;
+    }
+
+    .nav-section {
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #475569;
+      font-weight: 700;
+      padding: 0.5rem 1.5rem 0.4rem;
+      margin-top: 0.5rem;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.6rem 1.5rem;
+      color: #94a3b8;
+      font-size: 0.85rem;
+      font-weight: 500;
+      text-decoration: none;
+      transition: all 0.15s;
+      border-left: 2px solid transparent;
+    }
+    .nav-item:hover { color: #e2e8f0; background: rgba(255,255,255,0.03); }
+    .nav-item.active {
+      color: #22d3ee;
+      background: rgba(34, 211, 238, 0.05);
+      border-left-color: #22d3ee;
+    }
+    .nav-icon { font-size: 1rem; width: 1.2rem; text-align: center; }
+
+    .sidebar-user {
+      padding: 1rem 1.5rem;
+      border-top: 1px solid #1e293b;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .user-avatar {
+      width: 32px; height: 32px;
+      border-radius: 8px;
+      background: #1e293b;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: #22d3ee;
+    }
+    .user-name { font-size: 0.82rem; font-weight: 600; color: #e2e8f0; }
+    .user-role { font-size: 0.68rem; color: #64748b; }
+
+    /* Main content */
+    .main-area {
+      margin-left: 240px;
+      min-height: 100vh;
+    }
+
+    .topbar {
+      position: sticky; top: 0; z-index: 50;
+      background: rgba(10, 10, 15, 0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid #1e293b;
+      padding: 0.75rem 2rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .search-input {
+      flex: 1;
+      max-width: 480px;
+      padding: 0.5rem 1rem;
+      border: 1px solid #1e293b;
+      border-radius: 8px;
+      background: #111118;
+      color: #e2e8f0;
+      font-size: 0.85rem;
+      font-family: inherit;
+      outline: none;
+    }
+    .search-input:focus { border-color: #22d3ee; }
+    .search-input::placeholder { color: #475569; }
+
+    .filter-chips {
+      display: flex; gap: 0.35rem;
+    }
+    .filter-chip {
+      padding: 0.25rem 0.6rem;
+      border-radius: 6px;
+      border: 1px solid #1e293b;
+      background: transparent;
+      color: #64748b;
+      font-size: 0.72rem;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .filter-chip.active {
+      border-color: #22d3ee;
+      color: #22d3ee;
+      background: rgba(34, 211, 238, 0.08);
+    }
+
+    .content { padding: 1.5rem 2rem; }
+
+    .page-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 1.5rem;
+    }
+    .page-title { font-size: 1.25rem; font-weight: 600; color: #f1f5f9; }
+    .page-date { font-size: 0.82rem; color: #64748b; font-family: 'IBM Plex Mono', monospace; }
+
+    /* Stat cards */
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 0.75rem;
+      margin-bottom: 2rem;
+    }
+    @media (max-width: 1024px) { .stat-grid { grid-template-columns: repeat(3, 1fr); } }
+    @media (max-width: 640px) { .stat-grid { grid-template-columns: repeat(2, 1fr); } }
+
+    .stat-card {
+      background: #111118;
+      border: 1px solid #1e293b;
+      border-radius: 10px;
+      padding: 1rem;
+      transition: border-color 0.2s;
+      text-decoration: none;
+      color: inherit;
+    }
+    .stat-card:hover { border-color: #334155; }
+
+    .stat-label {
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #64748b;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+    }
+    .stat-value {
+      font-size: 1.75rem;
+      font-weight: 700;
+      font-family: 'IBM Plex Mono', monospace;
+    }
+    .stat-value.cyan { color: #22d3ee; }
+    .stat-value.green { color: #4ade80; }
+    .stat-value.red { color: #f87171; }
+    .stat-value.purple { color: #a78bfa; }
+    .stat-value.pink { color: #f472b6; }
+    .stat-value.amber { color: #fbbf24; }
+
+    .stat-delta {
+      font-size: 0.7rem;
+      margin-top: 0.25rem;
+      font-family: 'IBM Plex Mono', monospace;
+    }
+    .stat-delta.up { color: #4ade80; }
+    .stat-delta.down { color: #f87171; }
+
+    /* Panels */
+    .panels {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.25rem;
+    }
+    @media (max-width: 768px) { .panels { grid-template-columns: 1fr; } }
+
+    .panel {
+      background: #111118;
+      border: 1px solid #1e293b;
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    .panel-header {
+      padding: 0.85rem 1.25rem;
+      border-bottom: 1px solid #1e293b;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .panel-title {
+      font-size: 0.8rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #94a3b8;
+    }
+    .panel-badge {
+      font-size: 0.7rem;
+      font-weight: 700;
+      font-family: 'IBM Plex Mono', monospace;
+      padding: 0.15rem 0.5rem;
+      border-radius: 6px;
+    }
+    .panel-badge.cyan { background: rgba(34,211,238,0.1); color: #22d3ee; }
+    .panel-badge.red { background: rgba(248,113,113,0.1); color: #f87171; }
+    .panel-badge.green { background: rgba(74,222,128,0.1); color: #4ade80; }
+
+    .panel-body { padding: 0; }
+
+    /* Task rows */
+    .task-row {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.65rem 1.25rem;
+      border-bottom: 1px solid rgba(30, 41, 59, 0.5);
+      transition: background 0.1s;
+    }
+    .task-row:last-child { border-bottom: none; }
+    .task-row:hover { background: rgba(255,255,255,0.02); }
+
+    .task-date {
+      font-size: 0.72rem;
+      font-family: 'IBM Plex Mono', monospace;
+      color: #475569;
+      min-width: 48px;
+    }
+
+    .task-info { flex: 1; min-width: 0; }
+    .task-name {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #e2e8f0;
+      text-decoration: none;
+    }
+    .task-name:hover { color: #22d3ee; }
+    .task-detail {
+      font-size: 0.75rem;
+      color: #64748b;
+      margin-top: 0.15rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .task-badges { display: flex; gap: 0.35rem; align-items: center; }
+
+    .badge-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+    .badge-dot.green { background: #4ade80; }
+    .badge-dot.red { background: #f87171; }
+    .badge-dot.amber { background: #fbbf24; }
+    .badge-dot.gray { background: #475569; }
+
+    .badge-text {
+      font-size: 0.68rem;
+      font-weight: 600;
+      color: #64748b;
+      font-family: 'IBM Plex Mono', monospace;
+    }
+
+    .risk-badge {
+      font-size: 0.65rem;
+      font-weight: 700;
+      padding: 0.1rem 0.4rem;
+      border-radius: 4px;
+      background: rgba(248,113,113,0.1);
+      color: #f87171;
+      border: 1px solid rgba(248,113,113,0.2);
+    }
+
+    .overdue-row .task-date { color: #f87171; }
+    .overdue-row { border-left: 2px solid #f87171; }
+
+    .empty-state {
+      padding: 1.5rem; text-align: center;
+      color: #475569; font-size: 0.82rem;
+    }
+
+    /* Await list */
+    .await-row {
+      padding: 0.5rem 1.25rem;
+      border-bottom: 1px solid rgba(30,41,59,0.5);
+      font-size: 0.82rem;
+    }
+    .await-row:last-child { border-bottom: none; }
+    .await-row a { color: #22d3ee; text-decoration: none; }
+    .await-row a:hover { text-decoration: underline; }
+    .await-row .task { color: #64748b; }
+
+    .footer-row {
+      padding: 0.75rem 1.25rem;
+      border-top: 1px solid #1e293b;
+      font-size: 0.78rem;
+      color: #475569;
+      font-family: 'IBM Plex Mono', monospace;
+    }
+    .footer-row strong { color: #94a3b8; }
+
+    @media (max-width: 768px) {
+      .sidebar { display: none; }
+      .main-area { margin-left: 0; }
+    }
+  </style>
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <div class="logo">MEDTRACK</div>
+      <div class="logo-sub">Patient Registry</div>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-section">Main</div>
+      <a class="nav-item active" href="#">
+        <span class="nav-icon">&#9632;</span> Dashboard
+      </a>
+      <a class="nav-item" href="case-list.html">
+        <span class="nav-icon">&#9776;</span> Cases
+      </a>
+      <a class="nav-item" href="#">
+        <span class="nav-icon">+</span> New Case
+      </a>
+      <div class="nav-section">Admin</div>
+      <a class="nav-item" href="#">
+        <span class="nav-icon">&#9881;</span> Settings
+      </a>
+    </nav>
+    <div class="sidebar-user">
+      <div class="user-avatar">DP</div>
+      <div>
+        <div class="user-name">Dr. Patel</div>
+        <div class="user-role">Admin</div>
+      </div>
+    </div>
+  </aside>
+
+  <div class="main-area">
+    <div class="topbar">
+      <input class="search-input" type="search" placeholder="Search UHID / name / phone / diagnosis...">
+      <div class="filter-chips">
+        <button class="filter-chip active">ANC</button>
+        <button class="filter-chip active">Surgical</button>
+        <button class="filter-chip active">Non-surgical</button>
+      </div>
+    </div>
+
+    <div class="content">
+      <div class="page-header">
+        <h1 class="page-title">Dashboard</h1>
+        <span class="page-date">2026-03-02</span>
+      </div>
+
+      <div class="stat-grid">
+        <div class="stat-card">
+          <div class="stat-label">Today</div>
+          <div class="stat-value cyan">12</div>
+          <div class="stat-delta up">+3 vs yesterday</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Upcoming</div>
+          <div class="stat-value green">34</div>
+          <div class="stat-delta">7-day window</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Overdue</div>
+          <div class="stat-value red">8</div>
+          <div class="stat-delta down">+2 since last week</div>
+        </div>
+        <a class="stat-card" href="#">
+          <div class="stat-label">ANC Cases</div>
+          <div class="stat-value purple">45</div>
+        </a>
+        <a class="stat-card" href="#">
+          <div class="stat-label">Surgery</div>
+          <div class="stat-value pink">23</div>
+        </a>
+        <a class="stat-card" href="#">
+          <div class="stat-label">Non-Surgical</div>
+          <div class="stat-value amber">67</div>
+        </a>
+      </div>
+
+      <div class="panels">
+        <!-- Left column -->
+        <div>
+          <div class="panel" style="margin-bottom:1.25rem;">
+            <div class="panel-header">
+              <span class="panel-title">Today's Tasks</span>
+              <span class="panel-badge cyan">12</span>
+            </div>
+            <div class="panel-body">
+              <div class="task-row">
+                <span class="task-date">Mar 02</span>
+                <div class="task-info">
+                  <a class="task-name" href="case-detail.html">Priya Sharma</a>
+                  <div class="task-detail">Pregnancy &middot; ANC Visit Month 7 &bull; Lab Test CBC</div>
+                </div>
+                <div class="task-badges">
+                  <span class="risk-badge">HIGH</span>
+                  <span class="badge-dot green" title="Confirmed"></span>
+                </div>
+              </div>
+              <div class="task-row">
+                <span class="task-date">Mar 02</span>
+                <div class="task-info">
+                  <a class="task-name" href="#">Rajesh Kumar</a>
+                  <div class="task-detail">Hernia Repair &middot; Pre-op Lab Test</div>
+                </div>
+                <div class="task-badges">
+                  <span class="badge-dot gray" title="Not contacted"></span>
+                </div>
+              </div>
+              <div class="task-row">
+                <span class="task-date">Mar 02</span>
+                <div class="task-info">
+                  <a class="task-name" href="#">Meena Devi</a>
+                  <div class="task-detail">T2DM &middot; Quarterly Review</div>
+                </div>
+                <div class="task-badges">
+                  <span class="badge-text">NCD</span>
+                  <span class="badge-dot amber" title="Call back later"></span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-header">
+              <span class="panel-title">Upcoming (7 days)</span>
+              <span class="panel-badge green">34</span>
+            </div>
+            <div class="panel-body">
+              <div class="task-row">
+                <span class="task-date">Mar 05</span>
+                <div class="task-info">
+                  <a class="task-name" href="#">Lakshmi G</a>
+                  <div class="task-detail">Pregnancy &middot; ANC Visit Month 5</div>
+                </div>
+                <div class="task-badges">
+                  <span class="badge-dot green" title="Confirmed"></span>
+                </div>
+              </div>
+              <div class="task-row">
+                <span class="task-date">Mar 07</span>
+                <div class="task-info">
+                  <a class="task-name" href="#">Suresh P</a>
+                  <div class="task-detail">Cataract &middot; Post-op Follow-up &bull; Vision Check</div>
+                </div>
+                <div class="task-badges">
+                  <span class="badge-dot gray" title="Not contacted"></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right column -->
+        <div>
+          <div class="panel" style="margin-bottom:1.25rem;">
+            <div class="panel-header">
+              <span class="panel-title">Overdue</span>
+              <span class="panel-badge red">8</span>
+            </div>
+            <div class="panel-body">
+              <div class="task-row overdue-row">
+                <span class="task-date">Feb 25</span>
+                <div class="task-info">
+                  <a class="task-name" href="#">Anita B</a>
+                  <div class="task-detail">Hypertension &middot; Monthly Review &bull; BP Check</div>
+                </div>
+                <div class="task-badges">
+                  <span class="badge-dot red" title="Not reachable"></span>
+                  <span class="badge-text">x3</span>
+                </div>
+              </div>
+              <div class="task-row overdue-row">
+                <span class="task-date">Feb 20</span>
+                <div class="task-info">
+                  <a class="task-name" href="#">Ravi M</a>
+                  <div class="task-detail">Appendectomy &middot; Post-op Wound Check</div>
+                </div>
+                <div class="task-badges">
+                  <span class="badge-text" style="color:#f87171;">LOST</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-header">
+              <span class="panel-title">Awaiting Reports</span>
+            </div>
+            <div class="panel-body">
+              <div class="await-row"><a href="#">Priya Sharma</a> <span class="task">&mdash; CBC Blood Test</span></div>
+              <div class="await-row"><a href="#">Rajesh Kumar</a> <span class="task">&mdash; X-ray Chest</span></div>
+              <div class="await-row"><a href="#">Meena Devi</a> <span class="task">&mdash; HbA1c</span></div>
+            </div>
+            <div class="footer-row">
+              <strong>Cases:</strong> Active 135 &middot; Completed 89
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cases | MEDTRACK - Warm Minimal</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'DM Sans', -apple-system, sans-serif; min-height: 100vh; background: #faf8f5; color: #2d2a26; }
+
+    .navbar {
+      background: #fff; border-bottom: 1px solid #ece6de;
+      padding: 0.75rem 2rem; display: flex; align-items: center;
+      gap: 1.5rem; position: sticky; top: 0; z-index: 100; flex-wrap: wrap;
+    }
+    .navbar-brand { font-size: 1.3rem; font-weight: 700; color: #5c4a3a; text-decoration: none; }
+    .search-bar { flex: 1; max-width: 480px; }
+    .search-bar input {
+      width: 100%; padding: 0.55rem 1rem; border: 1.5px solid #e0d6cc;
+      border-radius: 10px; background: #faf8f5; color: #2d2a26;
+      font-size: 0.85rem; font-family: inherit; outline: none;
+    }
+    .search-bar input:focus { border-color: #b4825a; }
+    .search-bar input::placeholder { color: #b8a99a; }
+    .nav-actions { margin-left: auto; display: flex; gap: 0.5rem; }
+    .btn-nav {
+      padding: 0.4rem 0.9rem; border: 1.5px solid #e0d6cc; border-radius: 8px;
+      background: #fff; color: #5c4a3a; font-size: 0.82rem; font-weight: 500;
+      font-family: inherit; cursor: pointer; text-decoration: none; transition: all 0.15s;
+    }
+    .btn-nav:hover { background: #f4ebe3; }
+    .btn-nav.active { background: #5c4a3a; border-color: #5c4a3a; color: #fff; }
+
+    .main { max-width: 1100px; margin: 0 auto; padding: 2rem; }
+    .page-title { font-size: 1.5rem; font-weight: 700; color: #2d2a26; margin-bottom: 1.5rem; }
+
+    /* Filter bar */
+    .filter-bar {
+      display: flex; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 1.5rem;
+      background: #fff; border: 1px solid #ece6de; border-radius: 12px; padding: 1rem 1.25rem;
+    }
+    .filter-bar input, .filter-bar select {
+      padding: 0.5rem 0.8rem; border: 1.5px solid #e0d6cc; border-radius: 8px;
+      background: #faf8f5; color: #2d2a26; font-size: 0.82rem; font-family: inherit;
+      outline: none; min-width: 130px; flex: 1;
+    }
+    .filter-bar input:focus, .filter-bar select:focus { border-color: #b4825a; }
+    .filter-bar input::placeholder { color: #b8a99a; }
+    .filter-bar .btn-filter {
+      padding: 0.5rem 1.2rem; border: none; border-radius: 8px;
+      background: #5c4a3a; color: #fff; font-size: 0.82rem; font-weight: 600;
+      font-family: inherit; cursor: pointer; transition: background 0.15s;
+    }
+    .filter-bar .btn-filter:hover { background: #4a3b2e; }
+
+    /* Table */
+    .table-panel {
+      background: #fff; border: 1px solid #ece6de; border-radius: 14px; overflow: hidden;
+    }
+    .data-table { width: 100%; border-collapse: collapse; }
+    .data-table thead th {
+      font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em;
+      color: #9a8e82; font-weight: 700; padding: 0.85rem 1.25rem;
+      border-bottom: 1px solid #ece6de; text-align: left; background: #fdf9f5;
+    }
+    .data-table tbody td {
+      padding: 0.75rem 1.25rem; border-bottom: 1px solid #f5f0eb;
+      font-size: 0.85rem; color: #5c4a3a;
+    }
+    .data-table tbody tr { transition: background 0.1s; }
+    .data-table tbody tr:hover { background: #fdf9f5; }
+    .data-table a { color: #b4825a; text-decoration: none; font-weight: 600; }
+    .data-table a:hover { text-decoration: underline; }
+
+    .chip {
+      display: inline-block; padding: 0.2rem 0.55rem; border-radius: 999px;
+      font-size: 0.7rem; font-weight: 600;
+    }
+    .chip-active { background: #f0fdf4; color: #3d8b5e; }
+    .chip-completed { background: #f0f9ff; color: #2a8c8c; }
+    .chip-cat { background: #f4ebe3; color: #5c4a3a; }
+
+    /* Pagination */
+    .pagination { display: flex; gap: 0.4rem; justify-content: center; margin-top: 1.5rem; }
+    .page-btn {
+      padding: 0.4rem 0.85rem; border: 1.5px solid #e0d6cc; border-radius: 8px;
+      background: #fff; color: #9a8e82; font-size: 0.8rem; font-family: inherit;
+      cursor: pointer; text-decoration: none; transition: all 0.15s;
+    }
+    .page-btn:hover { background: #f4ebe3; color: #5c4a3a; }
+    .page-btn.active { background: #5c4a3a; border-color: #5c4a3a; color: #fff; }
+    .page-btn.disabled { opacity: 0.35; pointer-events: none; }
+
+    /* Mobile */
+    .mobile-cards { display: none; }
+    @media (max-width: 768px) {
+      .table-panel { display: none; }
+      .mobile-cards { display: block; }
+      .nav-actions { margin-left: 0; width: 100%; }
+    }
+    .mobile-card {
+      background: #fff; border: 1px solid #ece6de; border-radius: 12px;
+      padding: 1rem 1.25rem; margin-bottom: 0.75rem;
+    }
+    .mc-name { font-weight: 600; color: #2d2a26; }
+    .mc-name a { color: #b4825a; text-decoration: none; }
+    .mc-meta { font-size: 0.78rem; color: #9a8e82; margin-top: 0.2rem; }
+    .mc-bottom { display: flex; gap: 0.4rem; margin-top: 0.5rem; flex-wrap: wrap; }
+  </style>
+</head>
+<body>
+  <nav class="navbar">
+    <a class="navbar-brand" href="dashboard.html">MEDTRACK</a>
+    <div class="search-bar">
+      <input type="search" placeholder="Search UHID / name / phone / diagnosis">
+    </div>
+    <div class="nav-actions">
+      <a class="btn-nav" href="dashboard.html">Dashboard</a>
+      <a class="btn-nav active" href="#">Cases</a>
+      <a class="btn-nav" href="#">+ New Case</a>
+      <a class="btn-nav" href="#">Settings</a>
+      <a class="btn-nav" href="login.html">Logout</a>
+    </div>
+  </nav>
+
+  <main class="main">
+    <h1 class="page-title">Case List</h1>
+
+    <div class="filter-bar">
+      <input type="text" placeholder="UHID / Phone / Name">
+      <select><option>All statuses</option><option>Active</option><option>Completed</option><option>Cancelled</option><option>Loss to Follow-up</option></select>
+      <select><option>All categories</option><option>ANC</option><option>Surgery</option><option>Non-Surgical</option></select>
+      <select><option>Any assignee</option><option>Dr. Patel</option><option>Dr. Sharma</option><option>Nurse Geetha</option></select>
+      <input type="date">
+      <input type="date">
+      <button class="btn-filter">Filter</button>
+    </div>
+
+    <div class="table-panel">
+      <table class="data-table">
+        <thead>
+          <tr><th>UHID</th><th>Name</th><th>Gender</th><th>DOB</th><th>Place</th><th>Phone</th><th>Category</th><th>Status</th><th>Tasks</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><a href="case-detail.html">MH-20241</a></td>
+            <td>Priya Sharma</td><td>Female</td><td>1995-06-12</td><td>Mangalore</td><td>9876543210</td>
+            <td><span class="chip chip-cat">ANC</span></td>
+            <td><span class="chip chip-active">Active</span></td>
+            <td>5</td>
+          </tr>
+          <tr>
+            <td><a href="#">MH-20242</a></td>
+            <td>Rajesh Kumar</td><td>Male</td><td>1968-11-03</td><td>Udupi</td><td>9876543211</td>
+            <td><span class="chip chip-cat">Surgery</span></td>
+            <td><span class="chip chip-active">Active</span></td>
+            <td>3</td>
+          </tr>
+          <tr>
+            <td><a href="#">MH-20243</a></td>
+            <td>Meena Devi</td><td>Female</td><td>1972-03-18</td><td>Kasaragod</td><td>9876543212</td>
+            <td><span class="chip chip-cat">Non-Surgical</span></td>
+            <td><span class="chip chip-active">Active</span></td>
+            <td>2</td>
+          </tr>
+          <tr>
+            <td><a href="#">MH-20244</a></td>
+            <td>Suresh P</td><td>Male</td><td>1980-08-22</td><td>Puttur</td><td>9876543213</td>
+            <td><span class="chip chip-cat">Surgery</span></td>
+            <td><span class="chip chip-completed">Completed</span></td>
+            <td>4</td>
+          </tr>
+          <tr>
+            <td><a href="#">MH-20245</a></td>
+            <td>Lakshmi G</td><td>Female</td><td>1998-01-07</td><td>Bantwal</td><td>9876543214</td>
+            <td><span class="chip chip-cat">ANC</span></td>
+            <td><span class="chip chip-active">Active</span></td>
+            <td>6</td>
+          </tr>
+          <tr>
+            <td><a href="#">MH-20246</a></td>
+            <td>Anita B</td><td>Female</td><td>1965-12-14</td><td>Sullia</td><td>9876543215</td>
+            <td><span class="chip chip-cat">Non-Surgical</span></td>
+            <td><span class="chip chip-active">Active</span></td>
+            <td>1</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="mobile-cards">
+      <div class="mobile-card">
+        <div class="mc-name"><a href="case-detail.html">Priya Sharma</a></div>
+        <div class="mc-meta">MH-20241 &middot; Female &middot; 1995-06-12 &middot; Mangalore</div>
+        <div class="mc-bottom"><span class="chip chip-cat">ANC</span><span class="chip chip-active">Active</span></div>
+      </div>
+      <div class="mobile-card">
+        <div class="mc-name"><a href="#">Rajesh Kumar</a></div>
+        <div class="mc-meta">MH-20242 &middot; Male &middot; 1968-11-03 &middot; Udupi</div>
+        <div class="mc-bottom"><span class="chip chip-cat">Surgery</span><span class="chip chip-active">Active</span></div>
+      </div>
+    </div>
+
+    <div class="pagination">
+      <a class="page-btn disabled">Previous</a>
+      <a class="page-btn active">1</a>
+      <a class="page-btn" href="#">2</a>
+      <a class="page-btn" href="#">3</a>
+      <a class="page-btn" href="#">Next</a>
+    </div>
+  </main>
+</body>
+</html>

@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Case Detail | MEDTRACK - Warm Minimal</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'DM Sans', -apple-system, sans-serif; min-height: 100vh; background: #faf8f5; color: #2d2a26; }
+
+    .navbar {
+      background: #fff; border-bottom: 1px solid #ece6de;
+      padding: 0.75rem 2rem; display: flex; align-items: center;
+      gap: 1.5rem; position: sticky; top: 0; z-index: 100; flex-wrap: wrap;
+    }
+    .navbar-brand { font-size: 1.3rem; font-weight: 700; color: #5c4a3a; text-decoration: none; }
+    .nav-actions { margin-left: auto; display: flex; gap: 0.5rem; }
+    .btn-nav {
+      padding: 0.4rem 0.9rem; border: 1.5px solid #e0d6cc; border-radius: 8px;
+      background: #fff; color: #5c4a3a; font-size: 0.82rem; font-weight: 500;
+      font-family: inherit; cursor: pointer; text-decoration: none; transition: all 0.15s;
+    }
+    .btn-nav:hover { background: #f4ebe3; }
+
+    .main { max-width: 1100px; margin: 0 auto; padding: 2rem; }
+
+    /* Case header */
+    .case-header {
+      display: flex; align-items: flex-start; justify-content: space-between;
+      gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap;
+    }
+    .case-title { font-size: 1.5rem; font-weight: 700; color: #2d2a26; }
+    .case-uhid { font-size: 0.9rem; color: #9a8e82; font-weight: 400; }
+
+    .info-pills { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.5rem; }
+    .info-pill {
+      display: inline-block; padding: 0.22rem 0.6rem; border-radius: 999px;
+      font-size: 0.72rem; font-weight: 700;
+    }
+    .pill-active { background: #f0fdf4; color: #3d8b5e; }
+    .pill-cat { background: #f4ebe3; color: #5c4a3a; }
+    .pill-risk { background: #fef2f2; color: #c0392b; }
+    .pill-review { background: #fff7ed; color: #b47d3a; }
+
+    .btn-edit {
+      padding: 0.5rem 1.2rem; border: 1.5px solid #e0d6cc; border-radius: 8px;
+      background: #fff; color: #b4825a; font-size: 0.82rem;
+      font-weight: 600; font-family: inherit; cursor: pointer; text-decoration: none;
+      transition: all 0.15s; flex-shrink: 0;
+    }
+    .btn-edit:hover { background: #f4ebe3; border-color: #b4825a; }
+
+    /* Summary grid */
+    .summary-grid {
+      display: grid; grid-template-columns: repeat(4, 1fr);
+      gap: 1rem; margin-bottom: 1.5rem;
+    }
+    @media (max-width: 1024px) { .summary-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 575px) { .summary-grid { grid-template-columns: 1fr; } }
+
+    .summary-card {
+      background: #fff; border: 1px solid #ece6de; border-radius: 12px; padding: 1rem 1.25rem;
+    }
+    .summary-card-title {
+      font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em;
+      color: #9a8e82; font-weight: 700; margin-bottom: 0.65rem;
+      padding-bottom: 0.45rem; border-bottom: 1px solid #f5f0eb;
+    }
+    .summary-row { font-size: 0.85rem; margin-bottom: 0.35rem; line-height: 1.4; }
+    .summary-row:last-child { margin-bottom: 0; }
+    .summary-label { color: #9a8e82; font-weight: 600; }
+    .summary-value { color: #2d2a26; }
+
+    /* Content columns */
+    .content-grid { display: grid; grid-template-columns: 7fr 5fr; gap: 1.5rem; }
+    @media (max-width: 768px) { .content-grid { grid-template-columns: 1fr; } }
+
+    .panel {
+      background: #fff; border: 1px solid #ece6de; border-radius: 14px;
+      overflow: hidden; margin-bottom: 1.5rem;
+    }
+    .panel-header {
+      padding: 1rem 1.25rem; border-bottom: 1px solid #ece6de;
+      font-size: 0.95rem; font-weight: 700; color: #2d2a26;
+    }
+
+    /* Tasks table */
+    .tasks-table { width: 100%; border-collapse: collapse; }
+    .tasks-table thead th {
+      font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em;
+      color: #9a8e82; font-weight: 700; padding: 0.7rem 1rem;
+      border-bottom: 1px solid #ece6de; text-align: left; background: #fdf9f5;
+    }
+    .tasks-table tbody td {
+      padding: 0.7rem 1rem; border-bottom: 1px solid #f5f0eb;
+      font-size: 0.85rem; color: #5c4a3a;
+    }
+    .tasks-table tbody tr:hover { background: #fdf9f5; }
+
+    .task-chip {
+      display: inline-block; padding: 0.2rem 0.55rem; border-radius: 999px;
+      font-size: 0.7rem; font-weight: 600;
+    }
+    .task-scheduled { background: #eff6ff; color: #3b82f6; }
+    .task-completed { background: #f0fdf4; color: #3d8b5e; }
+    .task-awaiting { background: #fff7ed; color: #b47d3a; }
+
+    .task-link { color: #b4825a; text-decoration: none; font-size: 0.8rem; font-weight: 600; }
+    .task-link:hover { text-decoration: underline; }
+    .task-locked { color: #c5b8aa; font-size: 0.75rem; }
+
+    /* Forms */
+    .form-section { border-top: 1px solid #ece6de; padding: 1.25rem; }
+    .form-section-title { font-size: 0.88rem; font-weight: 700; color: #2d2a26; margin-bottom: 0.85rem; }
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+    @media (max-width: 575px) { .form-grid { grid-template-columns: 1fr; } }
+
+    .form-field label {
+      display: block; font-size: 0.75rem; font-weight: 600; color: #9a8e82;
+      margin-bottom: 0.3rem;
+    }
+    .form-field input, .form-field select, .form-field textarea {
+      width: 100%; padding: 0.55rem 0.8rem; border: 1.5px solid #e0d6cc; border-radius: 8px;
+      background: #faf8f5; color: #2d2a26; font-size: 0.85rem; font-family: inherit; outline: none;
+    }
+    .form-field input:focus, .form-field select:focus, .form-field textarea:focus { border-color: #b4825a; }
+    .form-field textarea { resize: vertical; min-height: 65px; }
+
+    .btn-action {
+      padding: 0.55rem 1.5rem; border: none; border-radius: 8px;
+      font-size: 0.85rem; font-weight: 600; font-family: inherit; cursor: pointer;
+      margin-top: 0.75rem; transition: background 0.15s;
+    }
+    .btn-action:hover { opacity: 0.9; }
+    .btn-action.primary { background: #5c4a3a; color: #fff; }
+    .btn-action.warning { background: #b47d3a; color: #fff; }
+    .btn-action.secondary { background: #f4ebe3; color: #5c4a3a; }
+
+    /* Logs */
+    .panel-padded { padding: 1.25rem; }
+    .log-item { padding: 0.7rem 1.25rem; border-bottom: 1px solid #f5f0eb; }
+    .log-item:last-child { border-bottom: none; }
+    .log-meta { font-size: 0.72rem; color: #b8a99a; }
+    .log-content { font-size: 0.85rem; color: #5c4a3a; margin-top: 0.15rem; }
+    .log-content strong { color: #2d2a26; }
+  </style>
+</head>
+<body>
+  <nav class="navbar">
+    <a class="navbar-brand" href="dashboard.html">MEDTRACK</a>
+    <div class="nav-actions">
+      <a class="btn-nav" href="dashboard.html">Dashboard</a>
+      <a class="btn-nav" href="case-list.html">Cases</a>
+      <a class="btn-nav" href="#">+ New Case</a>
+      <a class="btn-nav" href="login.html">Logout</a>
+    </div>
+  </nav>
+
+  <main class="main">
+    <div class="case-header">
+      <div>
+        <h1 class="case-title">Priya Sharma <span class="case-uhid">(MH-20241)</span></h1>
+        <div class="info-pills">
+          <span class="info-pill pill-active">Status: Active</span>
+          <span class="info-pill pill-cat">Category: ANC</span>
+          <span class="info-pill pill-risk">High-risk</span>
+          <span class="info-pill pill-review">Next review: 2026-03-15</span>
+        </div>
+      </div>
+      <a class="btn-edit" href="#">Edit Case</a>
+    </div>
+
+    <div class="summary-grid">
+      <div class="summary-card">
+        <div class="summary-card-title">Identity</div>
+        <p class="summary-row"><span class="summary-label">Gender:</span> <span class="summary-value">Female</span></p>
+        <p class="summary-row"><span class="summary-label">DOB:</span> <span class="summary-value">1995-06-12</span></p>
+        <p class="summary-row"><span class="summary-label">Place:</span> <span class="summary-value">Mangalore</span></p>
+      </div>
+      <div class="summary-card">
+        <div class="summary-card-title">Contact</div>
+        <p class="summary-row"><span class="summary-label">Phone:</span> <span class="summary-value">9876543210</span></p>
+        <p class="summary-row"><span class="summary-label">Alt:</span> <span class="summary-value">9876543299</span></p>
+        <p class="summary-row"><span class="summary-label">Referred by:</span> <span class="summary-value">Dr. Anand</span></p>
+      </div>
+      <div class="summary-card">
+        <div class="summary-card-title">Clinical</div>
+        <p class="summary-row"><span class="summary-label">Diagnosis:</span> <span class="summary-value">Pregnancy</span></p>
+        <p class="summary-row"><span class="summary-label">LMP:</span> <span class="summary-value">2025-08-15</span></p>
+        <p class="summary-row"><span class="summary-label">EDD:</span> <span class="summary-value">2026-05-22</span></p>
+      </div>
+      <div class="summary-card">
+        <div class="summary-card-title">Follow-up</div>
+        <p class="summary-row"><span class="summary-label">Trimester:</span> <span class="summary-value">Third</span></p>
+        <p class="summary-row"><span class="summary-label">Obstetric:</span> <span class="summary-value">G2 P1 A0 L1</span></p>
+        <p class="summary-row"><span class="summary-label">High-risk:</span> <span class="summary-value" style="color:#c0392b;">Previous LSCS</span></p>
+      </div>
+    </div>
+
+    <div class="content-grid">
+      <div>
+        <div class="panel">
+          <div class="panel-header">Tasks</div>
+          <table class="tasks-table">
+            <thead><tr><th>Title</th><th>Due</th><th>Status</th><th>Freq</th><th>Assigned</th><th></th></tr></thead>
+            <tbody>
+              <tr>
+                <td>ANC Visit Month 7</td>
+                <td>02-03-26</td>
+                <td><span class="task-chip task-scheduled">Scheduled</span></td>
+                <td>Monthly</td><td>Dr. Patel</td>
+                <td><a class="task-link" href="#">Edit</a></td>
+              </tr>
+              <tr style="opacity:0.45;">
+                <td>ANC Visit Month 8</td>
+                <td>02-04-26</td>
+                <td><span class="task-chip task-scheduled">Scheduled</span></td>
+                <td>Monthly</td><td>Dr. Patel</td>
+                <td><span class="task-locked">Locked until due</span></td>
+              </tr>
+              <tr>
+                <td>Lab Test CBC</td>
+                <td>28-02-26</td>
+                <td><span class="task-chip task-awaiting">Awaiting Reports</span></td>
+                <td>-</td><td>Nurse Geetha</td>
+                <td><a class="task-link" href="#">Edit</a></td>
+              </tr>
+              <tr>
+                <td>ANC Visit Month 6</td>
+                <td>02-02-26</td>
+                <td><span class="task-chip task-completed">Completed</span></td>
+                <td>Monthly</td><td>Dr. Patel</td>
+                <td><a class="task-link" href="#">Edit</a></td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div class="form-section">
+            <div class="form-section-title">Add Task</div>
+            <div class="form-grid">
+              <div class="form-field"><label>Title</label><input type="text" placeholder="Task title"></div>
+              <div class="form-field"><label>Due Date</label><input type="date"></div>
+              <div class="form-field"><label>Status</label><select><option>Scheduled</option><option>Awaiting Reports</option><option>Completed</option><option>Cancelled</option></select></div>
+              <div class="form-field"><label>Assigned To</label><select><option>Dr. Patel</option><option>Nurse Geetha</option><option>Dr. Sharma</option></select></div>
+              <div class="form-field"><label>Type</label><select><option>Visit</option><option>Lab</option><option>Procedure</option><option>Call</option></select></div>
+              <div class="form-field"><label>Frequency</label><input type="text" placeholder="e.g. Monthly"></div>
+            </div>
+            <button class="btn-action primary">Add Task</button>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="panel">
+          <div class="panel-header">Call Tracking</div>
+          <div class="panel-padded">
+            <div class="form-grid" style="margin-bottom:0.75rem;">
+              <div class="form-field"><label>Task</label><select><option>ANC Visit Month 7</option><option>Lab Test CBC</option></select></div>
+              <div class="form-field"><label>Outcome</label><select><option>Confirmed visit</option><option>No answer</option><option>Switched off</option><option>Call back later</option></select></div>
+            </div>
+            <div class="form-field" style="margin-bottom:0.75rem;"><label>Notes</label><textarea placeholder="Call notes..."></textarea></div>
+            <button class="btn-action warning">Log Call Outcome</button>
+          </div>
+          <div>
+            <div class="log-item">
+              <div class="log-meta">2026-03-01 14:32 &middot; Nurse Geetha &middot; ANC Visit Month 7</div>
+              <div class="log-content"><strong>Confirmed visit</strong> &mdash; Patient confirmed appointment for March 2</div>
+            </div>
+            <div class="log-item">
+              <div class="log-meta">2026-02-25 10:15 &middot; Caller Ravi &middot; ANC Visit Month 7</div>
+              <div class="log-content"><strong>No answer</strong> &mdash; Tried twice, no response</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">Activity Log</div>
+          <div class="panel-padded">
+            <div class="form-field" style="margin-bottom:0.75rem;"><label>Note</label><textarea placeholder="Add a note..."></textarea></div>
+            <button class="btn-action secondary">Add Note</button>
+          </div>
+          <div>
+            <div class="log-item">
+              <div class="log-meta">2026-03-01 14:35 &middot; Nurse Geetha</div>
+              <div class="log-content">Confirmed for tomorrow. Reminded to bring previous reports.</div>
+            </div>
+            <div class="log-item">
+              <div class="log-meta">2026-02-20 09:00 &middot; Dr. Patel</div>
+              <div class="log-content">ANC Visit Month 6 completed. All vitals normal. Continue iron supplements.</div>
+            </div>
+            <div class="log-item">
+              <div class="log-meta">2026-02-02 11:30 &middot; system</div>
+              <div class="log-content">Case created. Auto-generated ANC task schedule.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</body>
+</html>

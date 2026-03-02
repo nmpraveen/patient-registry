@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MEDTRACK UI Design Variations</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', -apple-system, sans-serif;
+      min-height: 100vh;
+      background: #f8fafc;
+      color: #1e293b;
+      padding: 3rem 2rem;
+    }
+
+    .container { max-width: 1000px; margin: 0 auto; }
+
+    h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      text-align: center;
+      margin-bottom: 0.5rem;
+      color: #0f172a;
+    }
+
+    .subtitle {
+      text-align: center;
+      color: #64748b;
+      font-size: 1rem;
+      margin-bottom: 3rem;
+      line-height: 1.6;
+    }
+
+    .variation-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 2rem;
+    }
+
+    .variation-card {
+      border-radius: 16px;
+      overflow: hidden;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .variation-card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.1);
+    }
+
+    .card-preview {
+      height: 200px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+
+    .card-preview .preview-text {
+      font-size: 1.5rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      z-index: 1;
+    }
+
+    /* V1 Glass */
+    .v1-preview {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
+    }
+    .v1-preview .preview-text { color: rgba(255,255,255,0.9); }
+
+    /* V2 Dark */
+    .v2-preview {
+      background: linear-gradient(135deg, #0a0a0f 0%, #1a1a2e 50%, #16213e 100%);
+    }
+    .v2-preview .preview-text { color: #22d3ee; }
+
+    /* V3 Warm */
+    .v3-preview {
+      background: linear-gradient(135deg, #faf8f5 0%, #f4ebe3 50%, #e8ddd4 100%);
+    }
+    .v3-preview .preview-text { color: #5c4a3a; }
+
+    .card-body {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-top: none;
+      border-radius: 0 0 16px 16px;
+      padding: 1.5rem;
+    }
+
+    .card-title {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: #0f172a;
+      margin-bottom: 0.3rem;
+    }
+
+    .card-desc {
+      font-size: 0.85rem;
+      color: #64748b;
+      line-height: 1.6;
+      margin-bottom: 1rem;
+    }
+
+    .card-features {
+      list-style: none;
+      margin-bottom: 1.25rem;
+    }
+    .card-features li {
+      font-size: 0.8rem;
+      color: #475569;
+      padding: 0.25rem 0;
+      padding-left: 1.2rem;
+      position: relative;
+    }
+    .card-features li::before {
+      content: '';
+      position: absolute;
+      left: 0; top: 0.55rem;
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: #94a3b8;
+    }
+
+    .card-links {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 0.5rem;
+    }
+
+    .card-link {
+      display: block;
+      text-align: center;
+      padding: 0.5rem;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      color: #3b82f6;
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-decoration: none;
+      transition: all 0.15s;
+    }
+    .card-link:hover {
+      background: #eff6ff;
+      border-color: #3b82f6;
+    }
+
+    .note {
+      text-align: center;
+      margin-top: 3rem;
+      padding: 1.5rem;
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      font-size: 0.85rem;
+      color: #64748b;
+      line-height: 1.7;
+    }
+    .note strong { color: #1e293b; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>MEDTRACK UI Design Variations</h1>
+    <p class="subtitle">Three modern design directions for the patient registry system.<br>Each variation includes Login, Dashboard, Case List, and Case Detail pages.</p>
+
+    <div class="variation-grid">
+      <!-- V1: Glass Morphism -->
+      <div class="variation-card">
+        <div class="card-preview v1-preview">
+          <span class="preview-text">MEDTRACK</span>
+        </div>
+        <div class="card-body">
+          <div class="card-title">V1: Glass Morphism</div>
+          <p class="card-desc">Frosted glass panels over vibrant gradients. Bold, futuristic aesthetic with translucent layers and ambient light effects.</p>
+          <ul class="card-features">
+            <li>Backdrop-filter blur effects on all panels</li>
+            <li>Gradient backgrounds with floating orbs</li>
+            <li>Top navbar with integrated search</li>
+            <li>Cyan accent colors on dark gradient</li>
+          </ul>
+          <div class="card-links">
+            <a class="card-link" href="v1-glass/login.html">Login</a>
+            <a class="card-link" href="v1-glass/dashboard.html">Dashboard</a>
+            <a class="card-link" href="v1-glass/case-list.html">Case List</a>
+            <a class="card-link" href="v1-glass/case-detail.html">Case Detail</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- V2: Dark Clinical -->
+      <div class="variation-card">
+        <div class="card-preview v2-preview">
+          <span class="preview-text">MEDTRACK</span>
+        </div>
+        <div class="card-body">
+          <div class="card-title">V2: Dark Clinical</div>
+          <p class="card-desc">Professional dark theme with a permanent sidebar. Data-dense layout using monospace typography for clinical precision.</p>
+          <ul class="card-features">
+            <li>Fixed sidebar navigation with user profile</li>
+            <li>IBM Plex Sans + Mono font pairing</li>
+            <li>Color-coded dot indicators for status</li>
+            <li>Compact, information-dense layout</li>
+          </ul>
+          <div class="card-links">
+            <a class="card-link" href="v2-dark/login.html">Login</a>
+            <a class="card-link" href="v2-dark/dashboard.html">Dashboard</a>
+            <a class="card-link" href="v2-dark/case-list.html">Case List</a>
+            <a class="card-link" href="v2-dark/case-detail.html">Case Detail</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- V3: Warm Minimal -->
+      <div class="variation-card">
+        <div class="card-preview v3-preview">
+          <span class="preview-text">MEDTRACK</span>
+        </div>
+        <div class="card-body">
+          <div class="card-title">V3: Warm Minimal</div>
+          <p class="card-desc">Clean, calming design with warm earth tones. Generous white space and soft borders create a friendly, approachable feel.</p>
+          <ul class="card-features">
+            <li>Off-white background with warm tan accents</li>
+            <li>DM Sans font for modern readability</li>
+            <li>Rounded, soft UI elements</li>
+            <li>Split-pane login with feature showcase</li>
+          </ul>
+          <div class="card-links">
+            <a class="card-link" href="v3-warm/login.html">Login</a>
+            <a class="card-link" href="v3-warm/dashboard.html">Dashboard</a>
+            <a class="card-link" href="v3-warm/case-list.html">Case List</a>
+            <a class="card-link" href="v3-warm/case-detail.html">Case Detail</a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="note">
+      <strong>Note:</strong> These are static HTML mockups with sample data. They do not modify the original MEDTRACK codebase.
+      Open any page directly in a browser to preview the design. All pages are self-contained with embedded CSS.
+    </div>
+  </div>
+</body>
+</html>

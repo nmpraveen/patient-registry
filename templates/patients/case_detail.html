@@ -12,7 +12,7 @@
 
   @media (min-width: 1200px) {
     .case-summary-grid {
-      grid-template-columns: repeat(4, minmax(0, 1fr));
+      grid-template-columns: repeat(5, minmax(0, 1fr));
     }
   }
 
@@ -91,15 +91,73 @@
   .task-status-pill.status-awating-results { background: #fd7e14; }
   .task-status-pill.status-cancelled { background: #6c757d; }
 
-  .vitals-warning-badge {
-    display: inline-block;
-    border-radius: 999px;
-    padding: 0.1rem 0.45rem;
-    font-size: 0.68rem;
+  .vitals-summary-card.has-vitals {
+    border-color: #bfdbfe;
+    background: #f8fbff;
+  }
+
+  .vitals-card-link {
+    display: block;
+    text-decoration: none;
+    color: inherit;
+  }
+
+  .vitals-card-link:hover {
+    color: inherit;
+  }
+
+  .vitals-summary-row {
+    margin-bottom: 0.45rem;
+  }
+
+  .vitals-summary-row:last-child {
+    margin-bottom: 0;
+  }
+
+  .vitals-summary-metric {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.76rem;
+    margin-bottom: 0.2rem;
+    gap: 0.5rem;
+  }
+
+  .vitals-summary-label {
+    color: #495057;
+    font-weight: 600;
+  }
+
+  .vitals-summary-value {
+    color: #212529;
     font-weight: 700;
-    color: #664d03;
-    background: #fff3cd;
-    border: 1px solid #ffe69c;
+  }
+
+  .vitals-summary-bar {
+    height: 0.38rem;
+    border-radius: 999px;
+    background: #e9ecef;
+    overflow: hidden;
+  }
+
+  .vitals-summary-fill {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+  }
+
+  .vitals-status-low { background: #dc3545; }
+  .vitals-status-normal { background: #198754; }
+  .vitals-status-high { background: #fd7e14; }
+  .vitals-status-neutral { background: #0d6efd; }
+  .vitals-status-na { background: #adb5bd; }
+
+  .vitals-open-hint {
+    display: inline-block;
+    margin-top: 0.15rem;
+    font-size: 0.72rem;
+    color: #0d6efd;
+    font-weight: 600;
   }
 </style>
 <div class="d-flex flex-column flex-md-row align-items-start gap-2 gap-md-3 mb-3">
@@ -152,6 +210,38 @@
         {% endif %}
         {% if case.anc_high_risk_reason_labels %}<p class="summary-item"><span class="summary-label">High-risk reasons:</span> {{ case.anc_high_risk_reason_labels|join:", " }}</p>{% endif %}
         {% if not case.trimester and not case.gravida and not case.anc_high_risk_reason_labels and not case.rch_number and not case.rch_bypass %}<p class="summary-item text-muted">No follow-up flags available.</p>{% endif %}
+      </div>
+      <div class="case-summary-card vitals-summary-card {% if has_vitals %}has-vitals{% endif %}">
+        <div class="d-flex align-items-center justify-content-between mb-1">
+          <div class="case-summary-title mb-0">Vitals</div>
+          {% if latest_vitals_recorded_at %}
+            <small class="text-muted">{{ latest_vitals_recorded_at|date:'d-m-y H:i' }}</small>
+          {% endif %}
+        </div>
+        {% if has_vitals %}
+          <a class="vitals-card-link" href="{{ vitals_detail_url }}">
+            {% for metric in vitals_summary_metrics %}
+              <div class="vitals-summary-row">
+                <div class="vitals-summary-metric">
+                  <span class="vitals-summary-label">{{ metric.label }}</span>
+                  <span class="vitals-summary-value">{{ metric.value_display }}</span>
+                </div>
+                <div class="vitals-summary-bar">
+                  <span
+                    class="vitals-summary-fill vitals-status-{{ metric.status }}"
+                    style="width:{% if metric.status == 'na' %}16{% else %}{{ metric.percent|floatformat:0 }}{% endif %}%"
+                  ></span>
+                </div>
+              </div>
+            {% endfor %}
+            <span class="vitals-open-hint">Open vitals trends</span>
+          </a>
+        {% else %}
+          <p class="summary-item text-muted mb-2">No vitals recorded.</p>
+          {% if can_vitals_edit %}
+            <a class="btn btn-link btn-sm p-0" href="{% url 'patients:vitals_create' case.id %}">Add Vitals</a>
+          {% endif %}
+        {% endif %}
       </div>
     </div>
   </div>
@@ -234,127 +324,6 @@
         {% empty %}<li class="list-group-item px-0">No activity yet.</li>{% endfor %}
       </ul>
     </div></div>
-    <div class="card mt-3"><div class="card-body">
-      <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-2">
-        <h2 class="h5 mb-0">Vitals</h2>
-        {% if can_vitals_edit %}
-          <a class="btn btn-outline-primary btn-sm" href="{% url 'patients:vitals_create' case.id %}">Add Vitals</a>
-        {% endif %}
-      </div>
-      <hr>
-      {% if vitals %}
-        <div class="table-responsive">
-          <table class="table table-sm align-middle">
-            <thead>
-              <tr>
-                <th>Recorded</th>
-                <th>BP</th>
-                <th>PR</th>
-                <th>SPO2</th>
-                <th>WT (kg)</th>
-                <th>Hb</th>
-                <th class="d-none d-md-table-cell">Edited</th>
-                {% if can_vitals_edit %}<th></th>{% endif %}
-              </tr>
-            </thead>
-            <tbody>
-              {% for vital in vitals %}
-                <tr>
-                  <td>{{ vital.recorded_at|date:'d-m-y H:i' }}</td>
-                  <td>
-                    {% if vital.bp_systolic or vital.bp_diastolic %}
-                      {{ vital.bp_systolic|default:'-' }}/{{ vital.bp_diastolic|default:'-' }}
-                    {% else %}
-                      -
-                    {% endif %}
-                  </td>
-                  <td>{{ vital.pr|default:'-' }}</td>
-                  <td>{{ vital.spo2|default:'-' }}</td>
-                  <td>{{ vital.weight_kg|default:'-' }}</td>
-                  <td>
-                    {{ vital.hemoglobin|default:'-' }}
-                    {% if vital.hemoglobin_out_of_range %}
-                      <span class="vitals-warning-badge">Out of range</span>
-                    {% endif %}
-                  </td>
-                  <td class="d-none d-md-table-cell">
-                    {{ vital.updated_at|date:'d-m-y H:i' }} · {{ vital.updated_by|default:'system' }}
-                  </td>
-                  {% if can_vitals_edit %}
-                    <td><a href="{% url 'patients:vitals_edit' vital.id %}">Edit</a></td>
-                  {% endif %}
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      {% else %}
-        <p class="text-muted mb-0">No vitals recorded yet.</p>
-      {% endif %}
-
-      {% if vitals_chart_payload %}
-        <hr>
-        <h3 class="h6">Trend (Hemoglobin, Weight, SPO2)</h3>
-        <canvas id="vitals-trend-chart" height="140"></canvas>
-        {{ vitals_chart_payload|json_script:"vitals-chart-data" }}
-      {% endif %}
-    </div></div>
   </div>
 </div>
-{% if vitals_chart_payload %}
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
-  <script>
-    (function() {
-      const dataEl = document.getElementById('vitals-chart-data');
-      const canvas = document.getElementById('vitals-trend-chart');
-      if (!dataEl || !canvas || typeof Chart === 'undefined') return;
-      const payload = JSON.parse(dataEl.textContent || '{}');
-      const labels = payload.labels || [];
-      const datasets = payload.datasets || {};
-      if (!labels.length) return;
-
-      new Chart(canvas, {
-        type: 'line',
-        data: {
-          labels,
-          datasets: [
-            {
-              label: 'Hemoglobin',
-              data: datasets.hemoglobin || [],
-              borderColor: '#dc3545',
-              backgroundColor: 'rgba(220, 53, 69, 0.15)',
-              spanGaps: true,
-              tension: 0.25,
-            },
-            {
-              label: 'Weight (kg)',
-              data: datasets.weight || [],
-              borderColor: '#0d6efd',
-              backgroundColor: 'rgba(13, 110, 253, 0.15)',
-              spanGaps: true,
-              tension: 0.25,
-            },
-            {
-              label: 'SPO2',
-              data: datasets.spo2 || [],
-              borderColor: '#198754',
-              backgroundColor: 'rgba(25, 135, 84, 0.15)',
-              spanGaps: true,
-              tension: 0.25,
-            },
-          ],
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          scales: {
-            y: {
-              beginAtZero: false,
-            },
-          },
-        },
-      });
-    })();
-  </script>
-{% endif %}
 {% endblock %}

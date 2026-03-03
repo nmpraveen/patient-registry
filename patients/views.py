@@ -112,17 +112,148 @@ def can_access_case_data(user):
     ).exists()
 
 
-def _build_vitals_chart_payload(vitals_queryset):
+def _metric_status(value, *, low_lt=None, high_gt=None, high_gte=None, neutral=False):
+    if value is None:
+        return "na"
+    if neutral:
+        return "neutral"
+    if low_lt is not None and value < low_lt:
+        return "low"
+    if high_gte is not None and value >= high_gte:
+        return "high"
+    if high_gt is not None and value > high_gt:
+        return "high"
+    return "normal"
+
+
+def _metric_percent(value, minimum, maximum):
+    if value is None:
+        return 0
+    if maximum <= minimum:
+        return 0
+    raw = ((float(value) - minimum) / (maximum - minimum)) * 100
+    return max(0, min(100, round(raw, 2)))
+
+
+def _build_latest_vitals_summary(latest_vital):
+    if not latest_vital:
+        return []
+
+    def format_integer(value):
+        return str(int(value))
+
+    def format_decimal_one(value):
+        return f"{float(value):.1f}"
+
+    metric_definitions = [
+        {
+            "key": "bp_systolic",
+            "label": "BP Systolic",
+            "unit": "mmHg",
+            "value": latest_vital.bp_systolic,
+            "minimum": 70,
+            "maximum": 180,
+            "low_lt": 90,
+            "high_gte": 130,
+            "formatter": format_integer,
+        },
+        {
+            "key": "bp_diastolic",
+            "label": "BP Diastolic",
+            "unit": "mmHg",
+            "value": latest_vital.bp_diastolic,
+            "minimum": 40,
+            "maximum": 120,
+            "low_lt": 60,
+            "high_gte": 80,
+            "formatter": format_integer,
+        },
+        {
+            "key": "pr",
+            "label": "Pulse Rate",
+            "unit": "bpm",
+            "value": latest_vital.pr,
+            "minimum": 40,
+            "maximum": 140,
+            "low_lt": 60,
+            "high_gt": 100,
+            "formatter": format_integer,
+        },
+        {
+            "key": "spo2",
+            "label": "SpO2",
+            "unit": "%",
+            "value": latest_vital.spo2,
+            "minimum": 80,
+            "maximum": 100,
+            "low_lt": 95,
+            "high_gt": 100,
+            "formatter": format_integer,
+        },
+        {
+            "key": "weight",
+            "label": "Weight",
+            "unit": "kg",
+            "value": latest_vital.weight_kg,
+            "minimum": 30,
+            "maximum": 120,
+            "neutral": True,
+            "formatter": format_decimal_one,
+        },
+        {
+            "key": "hemoglobin",
+            "label": "Hemoglobin",
+            "unit": "g/dL",
+            "value": latest_vital.hemoglobin,
+            "minimum": 4,
+            "maximum": 16,
+            "low_lt": 10,
+            "high_gt": 13,
+            "formatter": format_decimal_one,
+        },
+    ]
+
+    summary = []
+    for metric in metric_definitions:
+        value = metric["value"]
+        numeric_value = float(value) if value is not None else None
+        status = _metric_status(
+            numeric_value,
+            low_lt=metric.get("low_lt"),
+            high_gt=metric.get("high_gt"),
+            high_gte=metric.get("high_gte"),
+            neutral=metric.get("neutral", False),
+        )
+        if value is None:
+            value_display = "N/A"
+        else:
+            formatted_value = metric["formatter"](value)
+            value_display = f"{formatted_value} {metric['unit']}"
+        summary.append(
+            {
+                "key": metric["key"],
+                "label": metric["label"],
+                "value": value,
+                "value_display": value_display,
+                "status": status,
+                "percent": _metric_percent(numeric_value, metric["minimum"], metric["maximum"]),
+            }
+        )
+    return summary
+
+
+def _build_vitals_trend_payload(vitals_queryset):
     chart_rows = []
     for vital in vitals_queryset:
-        if vital.hemoglobin is None and vital.weight_kg is None and vital.spo2 is None:
-            continue
         chart_rows.append(
             {
                 "label": timezone.localtime(vital.recorded_at).strftime("%d-%m-%y %H:%M"),
-                "hemoglobin": float(vital.hemoglobin) if vital.hemoglobin is not None else None,
-                "weight": float(vital.weight_kg) if vital.weight_kg is not None else None,
+                "bp_systolic": vital.bp_systolic,
+                "bp_diastolic": vital.bp_diastolic,
+                "pr": vital.pr,
                 "spo2": vital.spo2,
+                "weight": float(vital.weight_kg) if vital.weight_kg is not None else None,
+                "hemoglobin": float(vital.hemoglobin) if vital.hemoglobin is not None else None,
             }
         )
     if not chart_rows:
@@ -130,9 +261,12 @@ def _build_vitals_chart_payload(vitals_queryset):
     return {
         "labels": [row["label"] for row in chart_rows],
         "datasets": {
+            "bp_systolic": [row["bp_systolic"] for row in chart_rows],
+            "bp_diastolic": [row["bp_diastolic"] for row in chart_rows],
+            "pr": [row["pr"] for row in chart_rows],
+            "spo2": [row["spo2"] for row in chart_rows],
             "hemoglobin": [row["hemoglobin"] for row in chart_rows],
             "weight": [row["weight"] for row in chart_rows],
-            "spo2": [row["spo2"] for row in chart_rows],
         },
     }
 
@@ -603,13 +737,14 @@ class CaseDetailView(LoginRequiredMixin, DetailView):
         context = super().get_context_data(**kwargs)
         case = self.object
         context["tasks"] = case.tasks.select_related("assigned_user")
-        vitals = list(case.vitals.select_related("created_by", "updated_by").order_by("-recorded_at", "-id"))
-        chart_payload = _build_vitals_chart_payload(reversed(vitals))
+        latest_vital = case.vitals.order_by("-recorded_at", "-id").first()
         context["today"] = timezone.localdate()
         context["activity_logs"] = case.activity_logs.select_related("user", "task")[:50]
         context["call_logs"] = case.call_logs.select_related("staff_user", "task")[:50]
-        context["vitals"] = vitals
-        context["vitals_chart_payload"] = chart_payload
+        context["has_vitals"] = latest_vital is not None
+        context["latest_vitals_recorded_at"] = timezone.localtime(latest_vital.recorded_at) if latest_vital else None
+        context["vitals_summary_metrics"] = _build_latest_vitals_summary(latest_vital)
+        context["vitals_detail_url"] = reverse("patients:case_vitals", kwargs={"pk": case.pk})
         context["task_form"] = TaskForm()
         context["log_form"] = ActivityLogForm()
         call_log_form = CallLogForm()
@@ -626,6 +761,30 @@ class CaseDetailView(LoginRequiredMixin, DetailView):
         if not can_access_case_data(request.user):
             return HttpResponseForbidden("You do not have permission to view case details.")
         return super().dispatch(request, *args, **kwargs)
+
+
+class CaseVitalsDetailView(LoginRequiredMixin, DetailView):
+    model = Case
+    template_name = "patients/vitals_detail.html"
+    context_object_name = "case"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        case = self.object
+        vitals = list(case.vitals.select_related("created_by", "updated_by").order_by("-recorded_at", "-id"))
+        context["vitals"] = vitals
+        context["vitals_trend_payload"] = _build_vitals_trend_payload(reversed(vitals))
+        context["can_vitals_edit"] = has_capability(self.request.user, "task_edit")
+        latest_vital = vitals[0] if vitals else None
+        context["latest_vitals_summary"] = _build_latest_vitals_summary(latest_vital)
+        context["latest_vitals_recorded_at"] = timezone.localtime(latest_vital.recorded_at) if latest_vital else None
+        return context
+
+    def dispatch(self, request, *args, **kwargs):
+        if not can_access_case_data(request.user):
+            return HttpResponseForbidden("You do not have permission to view case vitals.")
+        return super().dispatch(request, *args, **kwargs)
+
 
 class CaseUpdateView(LoginRequiredMixin, UpdateView):
     model = Case

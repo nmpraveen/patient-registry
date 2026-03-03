@@ -1017,7 +1017,7 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(vital.updated_by, editor)
         self.assertEqual(vital.hemoglobin, Decimal("11.2"))
 
-    def test_case_detail_shows_vitals_warning_badge_and_chart_payload(self):
+    def test_case_detail_renders_vitals_summary_card_as_fifth_box(self):
         self.client.force_login(self.user)
         case = Case.objects.create(
             uhid="UH-VITALS-DETAIL",
@@ -1033,18 +1033,10 @@ class MedtrackViewTests(TestCase):
         VitalEntry.objects.create(
             case=case,
             recorded_at=timezone.now() - timedelta(days=1),
-            hemoglobin=Decimal("9.8"),
-            weight_kg=Decimal("60.5"),
+            bp_systolic=120,
+            bp_diastolic=80,
+            pr=78,
             spo2=98,
-            created_by=self.user,
-            updated_by=self.user,
-        )
-        VitalEntry.objects.create(
-            case=case,
-            recorded_at=timezone.now(),
-            hemoglobin=Decimal("14.1"),
-            weight_kg=Decimal("60.8"),
-            spo2=97,
             created_by=self.user,
             updated_by=self.user,
         )
@@ -1052,9 +1044,226 @@ class MedtrackViewTests(TestCase):
         response = self.client.get(reverse("patients:case_detail", kwargs={"pk": case.pk}))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Out of range")
-        self.assertIsNotNone(response.context["vitals_chart_payload"])
-        self.assertEqual(len(response.context["vitals_chart_payload"]["labels"]), 2)
+        self.assertContains(response, reverse("patients:case_vitals", kwargs={"pk": case.pk}))
+        self.assertContains(response, "Open vitals trends")
+        self.assertEqual(response.content.decode().count('class="case-summary-card'), 5)
+
+    def test_case_detail_uses_latest_row_and_na_for_missing_vitals(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-VITALS-LATEST",
+            first_name="Vitals",
+            last_name="Latest",
+            phone_number="9876500203",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=10),
+            created_by=self.user,
+        )
+        VitalEntry.objects.create(
+            case=case,
+            recorded_at=timezone.now() - timedelta(hours=1),
+            hemoglobin=Decimal("11.2"),
+            weight_kg=Decimal("62.0"),
+            spo2=98,
+            created_by=self.user,
+            updated_by=self.user,
+        )
+        VitalEntry.objects.create(
+            case=case,
+            recorded_at=timezone.now(),
+            spo2=96,
+            created_by=self.user,
+            updated_by=self.user,
+        )
+
+        response = self.client.get(reverse("patients:case_detail", kwargs={"pk": case.pk}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "96 %")
+        self.assertContains(response, "N/A")
+        self.assertNotContains(response, "11.2 g/dL")
+
+    def test_case_detail_no_vitals_shows_add_vitals_text_button(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-VITALS-EMPTY",
+            first_name="Vitals",
+            last_name="Empty",
+            phone_number="9876500204",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=10),
+            created_by=self.user,
+        )
+
+        response = self.client.get(reverse("patients:case_detail", kwargs={"pk": case.pk}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, reverse("patients:vitals_create", kwargs={"pk": case.pk}))
+        self.assertContains(response, "Add Vitals")
+        self.assertNotContains(response, "Open vitals trends")
+
+    def test_case_detail_removes_lower_vitals_section(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-VITALS-LOWER-REMOVED",
+            first_name="Vitals",
+            last_name="Removed",
+            phone_number="9876500205",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=10),
+            created_by=self.user,
+        )
+        VitalEntry.objects.create(
+            case=case,
+            recorded_at=timezone.now(),
+            hemoglobin=Decimal("10.2"),
+            created_by=self.user,
+            updated_by=self.user,
+        )
+
+        response = self.client.get(reverse("patients:case_detail", kwargs={"pk": case.pk}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, "Trend (Hemoglobin, Weight, SPO2)")
+        self.assertNotContains(response, 'id="vitals-trend-chart"')
+        self.assertNotContains(response, 'id="vitals-chart-data"')
+
+    def test_case_vitals_page_requires_case_access_permission(self):
+        locked_user = get_user_model().objects.create_user(username="vitals-locked", password="strong-password-123")
+        case = Case.objects.create(
+            uhid="UH-VITALS-403-PAGE",
+            first_name="Vitals",
+            last_name="Denied",
+            phone_number="9876500206",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=10),
+            created_by=self.user,
+        )
+
+        self.client.force_login(locked_user)
+        response = self.client.get(reverse("patients:case_vitals", kwargs={"pk": case.pk}))
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_case_vitals_page_renders_individual_metric_charts(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-VITALS-CHART-PAGE",
+            first_name="Vitals",
+            last_name="Charts",
+            phone_number="9876500207",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=10),
+            created_by=self.user,
+        )
+        VitalEntry.objects.create(
+            case=case,
+            recorded_at=timezone.now() - timedelta(hours=2),
+            bp_systolic=118,
+            bp_diastolic=78,
+            pr=72,
+            spo2=99,
+            weight_kg=Decimal("59.5"),
+            hemoglobin=Decimal("10.9"),
+            created_by=self.user,
+            updated_by=self.user,
+        )
+        VitalEntry.objects.create(
+            case=case,
+            recorded_at=timezone.now(),
+            bp_systolic=124,
+            bp_diastolic=82,
+            pr=88,
+            spo2=97,
+            weight_kg=Decimal("60.0"),
+            hemoglobin=Decimal("11.4"),
+            created_by=self.user,
+            updated_by=self.user,
+        )
+
+        response = self.client.get(reverse("patients:case_vitals", kwargs={"pk": case.pk}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'id="vitals-chart-bp-systolic"')
+        self.assertContains(response, 'id="vitals-chart-bp-diastolic"')
+        self.assertContains(response, 'id="vitals-chart-pr"')
+        self.assertContains(response, 'id="vitals-chart-spo2"')
+        self.assertContains(response, 'id="vitals-chart-weight"')
+        self.assertContains(response, 'id="vitals-chart-hemoglobin"')
+        self.assertContains(response, 'id="vitals-trend-data"')
+        self.assertIsNotNone(response.context["vitals_trend_payload"])
+
+    def test_case_vitals_page_trend_payload_handles_partial_rows(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-VITALS-PARTIAL-PAGE",
+            first_name="Vitals",
+            last_name="Partial",
+            phone_number="9876500208",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=10),
+            created_by=self.user,
+        )
+        VitalEntry.objects.create(
+            case=case,
+            recorded_at=timezone.now() - timedelta(days=1),
+            hemoglobin=Decimal("9.8"),
+            created_by=self.user,
+            updated_by=self.user,
+        )
+        VitalEntry.objects.create(
+            case=case,
+            recorded_at=timezone.now(),
+            spo2=97,
+            created_by=self.user,
+            updated_by=self.user,
+        )
+
+        response = self.client.get(reverse("patients:case_vitals", kwargs={"pk": case.pk}))
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.context["vitals_trend_payload"]
+        self.assertEqual(len(payload["labels"]), 2)
+        self.assertEqual(payload["datasets"]["hemoglobin"], [9.8, None])
+        self.assertEqual(payload["datasets"]["spo2"], [None, 97])
+
+    def test_case_vitals_page_shows_weight_neutral_status(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-VITALS-WEIGHT-NEUTRAL",
+            first_name="Vitals",
+            last_name="Weight",
+            phone_number="9876500209",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=10),
+            created_by=self.user,
+        )
+        VitalEntry.objects.create(
+            case=case,
+            recorded_at=timezone.now(),
+            weight_kg=Decimal("60.5"),
+            created_by=self.user,
+            updated_by=self.user,
+        )
+
+        response = self.client.get(reverse("patients:case_vitals", kwargs={"pk": case.pk}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, '<span class="vitals-status-pill vitals-status-neutral">60.5 kg</span>', html=True)
 
     def test_case_note_add_does_not_require_task_selection(self):
         self.client.force_login(self.user)

@@ -1,0 +1,235 @@
+{% extends 'base.html' %}
+{% block title %}Vitals {{ case.uhid }} | MEDTRACK{% endblock %}
+{% block content %}
+<style>
+  .vitals-chart-wrap {
+    position: relative;
+    height: 240px;
+    width: 100%;
+  }
+
+  .vitals-status-pill {
+    display: inline-block;
+    border-radius: 999px;
+    padding: 0.2rem 0.55rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    border: 1px solid transparent;
+  }
+
+  .vitals-status-low {
+    color: #842029;
+    background: #f8d7da;
+    border-color: #f1aeb5;
+  }
+
+  .vitals-status-normal {
+    color: #0f5132;
+    background: #d1e7dd;
+    border-color: #a3cfbb;
+  }
+
+  .vitals-status-high {
+    color: #664d03;
+    background: #fff3cd;
+    border-color: #ffe69c;
+  }
+
+  .vitals-status-neutral {
+    color: #084298;
+    background: #cfe2ff;
+    border-color: #9ec5fe;
+  }
+
+  .vitals-status-na {
+    color: #41464b;
+    background: #e2e3e5;
+    border-color: #d3d6d8;
+  }
+</style>
+
+<div class="d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between gap-2 mb-3">
+  <div>
+    <h1 class="h4 mb-1">Vitals Trends</h1>
+    <p class="text-muted mb-0">{{ case.full_name }} ({{ case.uhid }})</p>
+  </div>
+  <div class="d-flex gap-2">
+    {% if can_vitals_edit %}
+      <a class="btn btn-outline-primary btn-sm" href="{% url 'patients:vitals_create' case.id %}">Add Vitals</a>
+    {% endif %}
+    <a class="btn btn-outline-secondary btn-sm" href="{% url 'patients:case_detail' case.id %}">Back to Case</a>
+  </div>
+</div>
+
+{% if latest_vitals_summary %}
+  <div class="card mb-3">
+    <div class="card-body">
+      <div class="d-flex align-items-center justify-content-between mb-2">
+        <h2 class="h6 mb-0">Latest Snapshot</h2>
+        {% if latest_vitals_recorded_at %}
+          <small class="text-muted">{{ latest_vitals_recorded_at|date:'d-m-y H:i' }}</small>
+        {% endif %}
+      </div>
+      <div class="row g-2">
+        {% for metric in latest_vitals_summary %}
+          <div class="col-12 col-md-6 col-xl-4">
+            <div class="d-flex align-items-center justify-content-between border rounded px-2 py-1">
+              <span class="small text-muted">{{ metric.label }}</span>
+              <span class="vitals-status-pill vitals-status-{{ metric.status }}">{{ metric.value_display }}</span>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+{% endif %}
+
+{% if vitals_trend_payload %}
+  <div class="row g-3 mb-3">
+    <div class="col-12 col-lg-6">
+      <div class="card"><div class="card-body">
+        <h3 class="h6 mb-2">BP Systolic Trend</h3>
+        <div class="vitals-chart-wrap"><canvas id="vitals-chart-bp-systolic"></canvas></div>
+      </div></div>
+    </div>
+    <div class="col-12 col-lg-6">
+      <div class="card"><div class="card-body">
+        <h3 class="h6 mb-2">BP Diastolic Trend</h3>
+        <div class="vitals-chart-wrap"><canvas id="vitals-chart-bp-diastolic"></canvas></div>
+      </div></div>
+    </div>
+    <div class="col-12 col-lg-6">
+      <div class="card"><div class="card-body">
+        <h3 class="h6 mb-2">Pulse Rate Trend</h3>
+        <div class="vitals-chart-wrap"><canvas id="vitals-chart-pr"></canvas></div>
+      </div></div>
+    </div>
+    <div class="col-12 col-lg-6">
+      <div class="card"><div class="card-body">
+        <h3 class="h6 mb-2">SpO2 Trend</h3>
+        <div class="vitals-chart-wrap"><canvas id="vitals-chart-spo2"></canvas></div>
+      </div></div>
+    </div>
+    <div class="col-12 col-lg-6">
+      <div class="card"><div class="card-body">
+        <h3 class="h6 mb-2">Weight Trend</h3>
+        <div class="vitals-chart-wrap"><canvas id="vitals-chart-weight"></canvas></div>
+      </div></div>
+    </div>
+    <div class="col-12 col-lg-6">
+      <div class="card"><div class="card-body">
+        <h3 class="h6 mb-2">Hemoglobin Trend</h3>
+        <div class="vitals-chart-wrap"><canvas id="vitals-chart-hemoglobin"></canvas></div>
+      </div></div>
+    </div>
+  </div>
+  {{ vitals_trend_payload|json_script:"vitals-trend-data" }}
+{% else %}
+  <div class="card mb-3"><div class="card-body">
+    <p class="text-muted mb-0">No vitals recorded yet.</p>
+  </div></div>
+{% endif %}
+
+<div class="card">
+  <div class="card-body">
+    <h2 class="h5 mb-2">Vitals History</h2>
+    {% if vitals %}
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+          <thead>
+            <tr>
+              <th>Recorded</th>
+              <th>BP</th>
+              <th>PR</th>
+              <th>SpO2</th>
+              <th>WT (kg)</th>
+              <th>Hb</th>
+              <th class="d-none d-md-table-cell">Edited</th>
+              {% if can_vitals_edit %}<th></th>{% endif %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for vital in vitals %}
+              <tr>
+                <td>{{ vital.recorded_at|date:'d-m-y H:i' }}</td>
+                <td>{% if vital.bp_systolic or vital.bp_diastolic %}{{ vital.bp_systolic|default:'-' }}/{{ vital.bp_diastolic|default:'-' }}{% else %}-{% endif %}</td>
+                <td>{{ vital.pr|default:'-' }}</td>
+                <td>{{ vital.spo2|default:'-' }}</td>
+                <td>{{ vital.weight_kg|default:'-' }}</td>
+                <td>{{ vital.hemoglobin|default:'-' }}</td>
+                <td class="d-none d-md-table-cell">{{ vital.updated_at|date:'d-m-y H:i' }} · {{ vital.updated_by|default:'system' }}</td>
+                {% if can_vitals_edit %}
+                  <td><a href="{% url 'patients:vitals_edit' vital.id %}">Edit</a></td>
+                {% endif %}
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="text-muted mb-0">No vitals history yet.</p>
+    {% endif %}
+  </div>
+</div>
+
+{% if vitals_trend_payload %}
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <script>
+    (function() {
+      const dataEl = document.getElementById('vitals-trend-data');
+      if (!dataEl || typeof Chart === 'undefined') return;
+      const payload = JSON.parse(dataEl.textContent || '{}');
+      const labels = payload.labels || [];
+      const datasets = payload.datasets || {};
+      if (!labels.length) return;
+
+      const chartConfigs = [
+        { id: 'vitals-chart-bp-systolic', label: 'BP Systolic', values: datasets.bp_systolic || [], border: '#0d6efd', fill: 'rgba(13, 110, 253, 0.18)' },
+        { id: 'vitals-chart-bp-diastolic', label: 'BP Diastolic', values: datasets.bp_diastolic || [], border: '#6610f2', fill: 'rgba(102, 16, 242, 0.18)' },
+        { id: 'vitals-chart-pr', label: 'Pulse Rate', values: datasets.pr || [], border: '#fd7e14', fill: 'rgba(253, 126, 20, 0.18)' },
+        { id: 'vitals-chart-spo2', label: 'SpO2', values: datasets.spo2 || [], border: '#198754', fill: 'rgba(25, 135, 84, 0.18)' },
+        { id: 'vitals-chart-weight', label: 'Weight', values: datasets.weight || [], border: '#6f42c1', fill: 'rgba(111, 66, 193, 0.18)' },
+        { id: 'vitals-chart-hemoglobin', label: 'Hemoglobin', values: datasets.hemoglobin || [], border: '#dc3545', fill: 'rgba(220, 53, 69, 0.18)' },
+      ];
+
+      chartConfigs.forEach(function(config) {
+        const canvas = document.getElementById(config.id);
+        if (!canvas) return;
+
+        new Chart(canvas, {
+          type: 'line',
+          data: {
+            labels: labels,
+            datasets: [
+              {
+                label: config.label,
+                data: config.values,
+                borderColor: config.border,
+                backgroundColor: config.fill,
+                borderWidth: 2,
+                pointRadius: 2,
+                spanGaps: true,
+                tension: 0.25,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: {
+                display: false,
+              },
+            },
+            scales: {
+              y: {
+                beginAtZero: false,
+              },
+            },
+          },
+        });
+      });
+    })();
+  </script>
+{% endif %}
+{% endblock %}

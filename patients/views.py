@@ -8,6 +8,7 @@ from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.models import Group
+from django.core.management import call_command
 from django.core.exceptions import ValidationError
 from django.db.models import Count, Exists, IntegerField, OuterRef, Q, Subquery
 from django.db.models.functions import Coalesce
@@ -24,6 +25,7 @@ from .forms import (
     CaseForm,
     DepartmentConfigForm,
     RoleSettingForm,
+    SeedMockDataForm,
     TaskForm,
     UserRoleForm,
     VitalEntryForm,
@@ -127,6 +129,14 @@ def is_doctor_admin(user):
     if user.is_superuser:
         return True
     return user.groups.filter(name__in=["Doctor", "Admin"]).exists()
+
+
+def delete_seeded_mock_data():
+    seeded_cases = Case.objects.filter(metadata__source="seed_mock_data")
+    CallLog.objects.filter(case__in=seeded_cases).delete()
+    CaseActivityLog.objects.filter(case__in=seeded_cases).delete()
+    deleted_count, _ = seeded_cases.delete()
+    return deleted_count
 
 
 def can_access_case_data(user):
@@ -1130,6 +1140,67 @@ class ChangelogView(LoginRequiredMixin, View):
 
         context = {"changelog_entries": _load_changelog_entries()}
         return render(request, self.template_name, context)
+
+
+class SeedMockDataSettingsView(LoginRequiredMixin, View):
+    template_name = "patients/settings_seed_mock_data.html"
+
+    def _check_access(self, request):
+        if not has_capability(request.user, "manage_settings"):
+            return HttpResponseForbidden("Only admins can access settings.")
+        return None
+
+    def get(self, request):
+        denied = self._check_access(request)
+        if denied:
+            return denied
+        context = {
+            "form": SeedMockDataForm(initial={"profile": "full"}),
+            "seeded_case_count": Case.objects.filter(metadata__source="seed_mock_data").count(),
+        }
+        return render(request, self.template_name, context)
+
+    def post(self, request):
+        denied = self._check_access(request)
+        if denied:
+            return denied
+
+        action = request.POST.get("action")
+        form = SeedMockDataForm(request.POST)
+        if action == "delete_seeded":
+            delete_seeded_mock_data()
+            messages.success(request, "Deleted seeded mock cases and their linked call/activity logs.")
+            return redirect("patients:settings_seed_mock_data")
+
+        if not form.is_valid():
+            messages.error(request, f"Seed options have errors: {form.errors}")
+            return render(
+                request,
+                self.template_name,
+                {
+                    "form": form,
+                    "seeded_case_count": Case.objects.filter(metadata__source="seed_mock_data").count(),
+                },
+            )
+
+        command_args = ["seed_mock_data"]
+        count = form.cleaned_data.get("count")
+        profile = form.cleaned_data["profile"]
+        if count:
+            command_args.extend(["--count", str(count)])
+        command_args.extend(["--profile", profile])
+        if form.cleaned_data.get("include_vitals"):
+            command_args.append("--include-vitals")
+        if form.cleaned_data.get("include_rch_scenarios"):
+            command_args.append("--include-rch-scenarios")
+        if form.cleaned_data.get("reset_all"):
+            command_args.append("--reset-all")
+        elif action == "reseed":
+            command_args.append("--reset")
+
+        call_command(*command_args)
+        messages.success(request, "Mock data seeding completed.")
+        return redirect("patients:settings_seed_mock_data")
 
 
 class AdminSettingsView(LoginRequiredMixin, View):

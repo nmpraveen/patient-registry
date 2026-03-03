@@ -380,6 +380,22 @@ class DepartmentConfigForm(StyledModelForm):
         return instance
 
 
+class SeedMockDataForm(forms.Form):
+    profile = forms.ChoiceField(choices=[("smoke", "Smoke (12 cases)"), ("full", "Full (30 cases)")], initial="full")
+    count = forms.IntegerField(min_value=1, required=False, help_text="Optional override for case count.")
+    include_vitals = forms.BooleanField(required=False, initial=False)
+    include_rch_scenarios = forms.BooleanField(required=False, initial=False)
+    reset_all = forms.BooleanField(required=False, initial=False, help_text="Delete all case/call/activity data before seeding.")
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["profile"].widget.attrs["class"] = "form-select"
+        self.fields["count"].widget.attrs["class"] = "form-control"
+        for field_name in ["include_vitals", "include_rch_scenarios", "reset_all"]:
+            self.fields[field_name].widget.attrs["class"] = "form-check-input"
+
+
+
 class UserRoleForm(forms.Form):
     def __init__(self, *args, **kwargs):
         ensure_default_role_settings()

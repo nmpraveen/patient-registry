@@ -1,7 +1,9 @@
 from collections import OrderedDict
+from pathlib import Path
 from datetime import timedelta
 from difflib import SequenceMatcher
 
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.contrib.auth.mixins import LoginRequiredMixin
@@ -67,6 +69,34 @@ CASE_DATA_CAPABILITIES = (
     "note_add",
     "manage_settings",
 )
+
+
+
+CHANGELOG_FILE = Path(settings.BASE_DIR) / "CHANGELOG.md"
+
+
+def _load_changelog_entries():
+    if not CHANGELOG_FILE.exists():
+        return []
+
+    entries = []
+    current_entry = None
+
+    for raw_line in CHANGELOG_FILE.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if line.startswith("## "):
+            if current_entry:
+                entries.append(current_entry)
+            current_entry = {"version": line[3:].strip(), "changes": []}
+            continue
+
+        if line.startswith("- ") and current_entry:
+            current_entry["changes"].append(line[2:].strip())
+
+    if current_entry:
+        entries.append(current_entry)
+
+    return entries
 
 CAPABILITY_FIELD_MAP = {
     "case_create": "can_case_create",
@@ -1089,6 +1119,17 @@ class VitalEntryUpdateView(LoginRequiredMixin, View):
                 "show_hb_warning": form.hb_warning,
             },
         )
+
+
+class ChangelogView(LoginRequiredMixin, View):
+    template_name = "patients/changelog.html"
+
+    def get(self, request):
+        if not has_capability(request.user, "manage_settings"):
+            return HttpResponseForbidden("Only admins can access changelog.")
+
+        context = {"changelog_entries": _load_changelog_entries()}
+        return render(request, self.template_name, context)
 
 
 class AdminSettingsView(LoginRequiredMixin, View):

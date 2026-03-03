@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
 from decimal import Decimal
+from pathlib import Path
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
@@ -607,6 +608,33 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(post_response.status_code, 302)
         self.assertTrue(RoleSetting.objects.filter(role_name="Reception").exists())
 
+
+
+    def test_admin_settings_page_shows_changelog_link(self):
+        ensure_default_role_settings()
+        admin_group, _ = Group.objects.get_or_create(name="Admin")
+        self.user.groups.clear()
+        self.user.groups.add(admin_group)
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("patients:settings"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, reverse("patients:changelog"))
+
+    def test_admin_changelog_page_displays_version_entries(self):
+        ensure_default_role_settings()
+        admin_group, _ = Group.objects.get_or_create(name="Admin")
+        self.user.groups.clear()
+        self.user.groups.add(admin_group)
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("patients:changelog"))
+
+        self.assertEqual(response.status_code, 200)
+        app_version = Path("VERSION").read_text(encoding="utf-8").strip()
+        self.assertContains(response, f"Version {app_version}")
+        self.assertContains(response, "Added a changelog page")
 
     def test_create_case_saves_gender_dob_and_place(self):
         self.client.force_login(self.user)
@@ -1868,3 +1896,12 @@ class SeedMockDataCommandTests(TestCase):
 
         non_surgical_cases = seeded_cases.filter(category__name="Non Surgical")
         self.assertGreaterEqual(non_surgical_cases.values("review_frequency").distinct().count(), 3)
+
+
+class LoginPageVersionTests(TestCase):
+    def test_login_page_displays_current_app_version(self):
+        response = self.client.get(reverse("login"))
+        app_version = Path("VERSION").read_text(encoding="utf-8").strip()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, f"Version {app_version}")

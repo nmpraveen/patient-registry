@@ -6,6 +6,7 @@ from unittest.mock import patch
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.core.management import call_command
+from django.core.management.base import CommandError
 from django.db import connection
 from django.test import TestCase
 from django.test.utils import CaptureQueriesContext
@@ -27,6 +28,7 @@ from .models import (
     RoleSetting,
     SurgicalPathway,
     Task,
+    TaskType,
     TaskStatus,
     VitalEntry,
     ensure_default_departments,
@@ -685,6 +687,54 @@ class MedtrackViewTests(TestCase):
             "--include-vitals",
             "--include-rch-scenarios",
             "--reset",
+        )
+
+    @patch("patients.views.call_command")
+    def test_seed_mock_data_settings_reset_all_requires_confirmation(self, call_command_mock):
+        ensure_default_role_settings()
+        admin_group, _ = Group.objects.get_or_create(name="Admin")
+        self.user.groups.clear()
+        self.user.groups.add(admin_group)
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("patients:settings_seed_mock_data"),
+            {
+                "action": "seed",
+                "profile": "smoke",
+                "reset_all": "on",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        call_command_mock.assert_not_called()
+        self.assertContains(response, "Please confirm reset-all before continuing.")
+
+    @patch("patients.views.call_command")
+    def test_seed_mock_data_settings_reset_all_passes_yes_flag_when_confirmed(self, call_command_mock):
+        ensure_default_role_settings()
+        admin_group, _ = Group.objects.get_or_create(name="Admin")
+        self.user.groups.clear()
+        self.user.groups.add(admin_group)
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("patients:settings_seed_mock_data"),
+            {
+                "action": "seed",
+                "profile": "smoke",
+                "reset_all": "on",
+                "confirm_reset_all": "true",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        call_command_mock.assert_called_once_with(
+            "seed_mock_data",
+            "--profile",
+            "smoke",
+            "--reset-all",
+            "--yes-reset-all",
         )
 
     def test_seed_mock_data_settings_delete_seeded_only(self):
@@ -1962,6 +2012,25 @@ class MedtrackViewTests(TestCase):
 
 
 class SeedMockDataCommandTests(TestCase):
+    def _seeded_vitals_snapshot(self):
+        snapshot = {}
+        for case in Case.objects.filter(metadata__source="seed_mock_data").order_by("uhid"):
+            rows = []
+            for vital in case.vitals.order_by("recorded_at", "id"):
+                rows.append(
+                    (
+                        timezone.localtime(vital.recorded_at).strftime("%Y-%m-%d %H:%M"),
+                        vital.bp_systolic,
+                        vital.bp_diastolic,
+                        vital.pr,
+                        vital.spo2,
+                        str(vital.weight_kg),
+                        str(vital.hemoglobin) if vital.hemoglobin is not None else None,
+                    )
+                )
+            snapshot[case.uhid] = rows
+        return snapshot
+
     def test_seed_mock_data_creates_deterministic_scenarios_and_related_records(self):
         call_command(
             "seed_mock_data",
@@ -2009,7 +2078,7 @@ class SeedMockDataCommandTests(TestCase):
         self.assertTrue(Task.objects.filter(case=anc_high_risk, due_date__lt=timezone.localdate()).exists())
         self.assertTrue(Task.objects.filter(case=anc_high_risk, due_date__gt=timezone.localdate()).exists())
 
-        self.assertGreaterEqual(VitalEntry.objects.filter(case=anc_high_risk).count(), 1)
+        self.assertEqual(VitalEntry.objects.filter(case=anc_high_risk).count(), 6)
         self.assertTrue(CallLog.objects.filter(case=anc_high_risk, task__isnull=False).exists())
         self.assertTrue(CallLog.objects.filter(case=anc_high_risk, task__isnull=True).exists())
 
@@ -2053,6 +2122,126 @@ class SeedMockDataCommandTests(TestCase):
         self.assertTrue(CallLog.objects.filter(case=non_seeded_case).exists())
         self.assertTrue(CaseActivityLog.objects.filter(case=non_seeded_case).exists())
         self.assertEqual(Case.objects.filter(metadata__source="seed_mock_data").count(), 2)
+
+    @patch("patients.management.commands.seed_mock_data.sys.stdin.isatty", return_value=False)
+    def test_seed_mock_data_reset_all_requires_yes_flag_in_non_interactive_mode(self, _isatty_mock):
+        ensure_default_departments()
+        surgery = DepartmentConfig.objects.get(name="Surgery")
+        user = get_user_model().objects.create_user(username="reset-all-owner")
+        Case.objects.create(
+            uhid="UH-RESET-ALL-001",
+            first_name="Keep",
+            last_name="Me",
+            phone_number="9777777777",
+            category=surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=9),
+            created_by=user,
+            metadata={"source": "manual_entry"},
+        )
+
+        with self.assertRaises(CommandError):
+            call_command("seed_mock_data", "--count", "2", "--reset-all")
+
+        self.assertTrue(Case.objects.filter(uhid="UH-RESET-ALL-001").exists())
+
+    @patch("patients.management.commands.seed_mock_data.sys.stdin.isatty", return_value=True)
+    @patch("builtins.input", return_value="no")
+    def test_seed_mock_data_reset_all_prompt_aborts_when_not_confirmed(self, _input_mock, _isatty_mock):
+        ensure_default_departments()
+        surgery = DepartmentConfig.objects.get(name="Surgery")
+        user = get_user_model().objects.create_user(username="interactive-reset-owner")
+        Case.objects.create(
+            uhid="UH-RESET-ALL-002",
+            first_name="Abort",
+            last_name="Reset",
+            phone_number="9666666666",
+            category=surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=8),
+            created_by=user,
+            metadata={"source": "manual_entry"},
+        )
+
+        with self.assertRaises(CommandError):
+            call_command("seed_mock_data", "--count", "2", "--reset-all")
+
+        self.assertTrue(Case.objects.filter(uhid="UH-RESET-ALL-002").exists())
+
+    def test_seed_mock_data_reset_all_with_yes_flag_wipes_and_reseeds(self):
+        ensure_default_departments()
+        surgery = DepartmentConfig.objects.get(name="Surgery")
+        user = get_user_model().objects.create_user(username="wipe-reset-owner")
+        Case.objects.create(
+            uhid="UH-RESET-ALL-003",
+            first_name="Wipe",
+            last_name="Me",
+            phone_number="9555555555",
+            category=surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=7),
+            created_by=user,
+            metadata={"source": "manual_entry"},
+        )
+
+        call_command("seed_mock_data", "--profile", "smoke", "--count", "2", "--reset-all", "--yes-reset-all")
+
+        self.assertFalse(Case.objects.filter(uhid="UH-RESET-ALL-003").exists())
+        self.assertEqual(Case.objects.filter(metadata__source="seed_mock_data").count(), 2)
+
+    def test_seed_mock_data_vitals_density_is_profile_based_for_all_seeded_cases(self):
+        call_command("seed_mock_data", "--profile", "smoke", "--count", "4", "--include-vitals", "--reset")
+
+        smoke_cases = Case.objects.filter(metadata__source="seed_mock_data").order_by("uhid")
+        self.assertEqual(smoke_cases.count(), 4)
+        for case in smoke_cases:
+            self.assertEqual(VitalEntry.objects.filter(case=case).count(), 4)
+
+        call_command("seed_mock_data", "--profile", "full", "--count", "4", "--include-vitals", "--reset")
+
+        full_cases = Case.objects.filter(metadata__source="seed_mock_data").order_by("uhid")
+        self.assertEqual(full_cases.count(), 4)
+        for case in full_cases:
+            self.assertEqual(VitalEntry.objects.filter(case=case).count(), 6)
+
+    def test_seed_mock_data_vitals_align_with_past_relevant_task_dates_and_no_future_rows(self):
+        call_command(
+            "seed_mock_data",
+            "--profile",
+            "smoke",
+            "--count",
+            "6",
+            "--include-vitals",
+            "--include-rch-scenarios",
+            "--reset",
+        )
+
+        now = timezone.now()
+        today = timezone.localdate()
+        relevant_task_types = [TaskType.LAB, TaskType.VISIT, TaskType.PROCEDURE]
+        seeded_cases = Case.objects.filter(metadata__source="seed_mock_data").order_by("uhid")
+        for case in seeded_cases:
+            vitals = list(case.vitals.order_by("recorded_at", "id"))
+            self.assertEqual(len(vitals), 4)
+            for vital in vitals:
+                self.assertLessEqual(vital.recorded_at, now)
+            vital_days = {timezone.localtime(vital.recorded_at).date() for vital in vitals}
+            past_task_days = set(
+                case.tasks.filter(task_type__in=relevant_task_types, due_date__lte=today).values_list("due_date", flat=True)
+            )
+            self.assertTrue(vital_days.intersection(past_task_days))
+
+    def test_seed_mock_data_vitals_are_deterministic_across_reset_runs(self):
+        call_command("seed_mock_data", "--profile", "full", "--count", "8", "--include-vitals", "--reset")
+        snapshot_first = self._seeded_vitals_snapshot()
+
+        call_command("seed_mock_data", "--profile", "full", "--count", "8", "--include-vitals", "--reset")
+        snapshot_second = self._seeded_vitals_snapshot()
+
+        self.assertEqual(snapshot_first, snapshot_second)
 
 
 class LoginPageVersionTests(TestCase):

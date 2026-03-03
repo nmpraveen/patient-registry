@@ -1,5 +1,7 @@
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
+from decimal import Decimal
 import random
+import sys
 
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
@@ -16,6 +18,7 @@ from patients.models import (
     Gender,
     ReviewFrequency,
     SurgicalPathway,
+    TaskType,
     TaskStatus,
     VitalEntry,
     build_default_tasks,
@@ -52,7 +55,7 @@ class Command(BaseCommand):
         parser.add_argument(
             "--include-vitals",
             action="store_true",
-            help="Seed vital-entry history for selected cases.",
+            help="Seed vital-entry history for all seeded cases.",
         )
         parser.add_argument(
             "--include-rch-scenarios",
@@ -68,6 +71,11 @@ class Command(BaseCommand):
             "--reset-all",
             action="store_true",
             help="Delete all case data (cases/call logs/activity logs) before seeding",
+        )
+        parser.add_argument(
+            "--yes-reset-all",
+            action="store_true",
+            help="Skip interactive confirmation prompt for --reset-all.",
         )
 
     def _build_uhid(self, profile, index, today):
@@ -236,7 +244,11 @@ class Command(BaseCommand):
             return
         tasks[0].due_date = today - timedelta(days=5)
         tasks[0].status = TaskStatus.SCHEDULED
-        tasks[0].save(update_fields=["due_date", "status", "completed_at", "updated_at"])
+        update_fields = ["due_date", "status", "completed_at", "updated_at"]
+        if tasks[0].task_type == TaskType.CUSTOM:
+            tasks[0].task_type = TaskType.VISIT
+            update_fields.append("task_type")
+        tasks[0].save(update_fields=update_fields)
         if len(tasks) > 1:
             tasks[1].due_date = today
             tasks[1].status = TaskStatus.AWAITING_REPORTS
@@ -254,27 +266,182 @@ class Command(BaseCommand):
                 extra.status = TaskStatus.CANCELLED
                 extra.save(update_fields=["status", "completed_at", "updated_at"])
 
-    def seed_vitals_for_case(self, case, demo_user, today):
-        if case.category.name.upper() == "ANC":
-            samples = [
-                (today - timedelta(days=14), 138, 92, 90, 99, 58.4, 9.2),
-                (today - timedelta(days=4), 132, 88, 86, 99, 58.9, 9.5),
-            ]
+    def _require_reset_all_confirmation(self, yes_reset_all):
+        if yes_reset_all:
+            return
+        if not sys.stdin or not sys.stdin.isatty():
+            raise CommandError("Refusing --reset-all in non-interactive mode without --yes-reset-all.")
+
+        confirmation = input("WARNING: --reset-all deletes ALL case/call/activity data. Type 'yes' to continue: ").strip().lower()
+        if confirmation not in {"y", "yes"}:
+            raise CommandError("Reset-all aborted by user.")
+
+    def _vitals_target_count(self, profile_name):
+        return 4 if profile_name == "smoke" else 6
+
+    def _build_vitals_schedule(self, case, today, target_count):
+        relevant_types = {TaskType.LAB, TaskType.VISIT, TaskType.PROCEDURE}
+        task_rows = list(
+            case.tasks.filter(task_type__in=relevant_types, due_date__lte=today)
+            .order_by("due_date", "id")
+            .values_list("due_date", "task_type")
+        )
+        day_to_types = {}
+        for due_date, task_type in task_rows:
+            day_to_types.setdefault(due_date, set()).add(task_type)
+
+        anchor_days = sorted(day_to_types.keys())
+        if len(anchor_days) >= target_count:
+            selected_days = list(anchor_days[-target_count:])
         else:
-            samples = [
-                (today - timedelta(days=10), 128, 84, 82, 98, 67.1, None),
-                (today - timedelta(days=2), 124, 82, 80, 98, 67.0, None),
-            ]
-        for day, sys, dia, pr, spo2, wt, hb in samples:
+            selected_days = list(anchor_days)
+            cursor = (selected_days[0] if selected_days else today) - timedelta(days=21)
+            while len(selected_days) < target_count:
+                if cursor not in day_to_types:
+                    selected_days.insert(0, cursor)
+                cursor -= timedelta(days=21)
+            selected_days.sort()
+
+        return [(day, day_to_types.get(day, set())) for day in selected_days]
+
+    def _interpolate(self, start, end, point_index, total_points):
+        if total_points <= 1:
+            return float(end)
+        return float(start) + ((float(end) - float(start)) * point_index / (total_points - 1))
+
+    def _clamp(self, value, minimum, maximum):
+        return max(minimum, min(maximum, value))
+
+    def _scenario_vitals_profile(self, case, scenario):
+        category_name = case.category.name.upper()
+        if category_name == "ANC":
+            if scenario == "anc_high_risk":
+                return {
+                    "bp_systolic": (146, 134),
+                    "bp_diastolic": (96, 86),
+                    "pr": (96, 84),
+                    "spo2": (97, 99),
+                    "weight_kg": (56.0, 59.0),
+                    "hemoglobin": (8.7, 9.8),
+                    "hb_lab_only": False,
+                }
+            if scenario == "anc_rch_missing":
+                return {
+                    "bp_systolic": (132, 124),
+                    "bp_diastolic": (88, 80),
+                    "pr": (90, 82),
+                    "spo2": (98, 99),
+                    "weight_kg": (55.0, 57.5),
+                    "hemoglobin": (10.2, 11.1),
+                    "hb_lab_only": False,
+                }
+            return {
+                "bp_systolic": (130, 122),
+                "bp_diastolic": (86, 78),
+                "pr": (88, 80),
+                "spo2": (98, 99),
+                "weight_kg": (56.2, 58.4),
+                "hemoglobin": (10.1, 11.2),
+                "hb_lab_only": False,
+            }
+        if category_name == "SURGERY":
+            if scenario == "surgery_planned":
+                return {
+                    "bp_systolic": (136, 126),
+                    "bp_diastolic": (88, 82),
+                    "pr": (86, 78),
+                    "spo2": (98, 99),
+                    "weight_kg": (66.8, 66.2),
+                    "hemoglobin": (11.9, 12.3),
+                    "hb_lab_only": True,
+                }
+            return {
+                "bp_systolic": (132, 124),
+                "bp_diastolic": (86, 80),
+                "pr": (84, 78),
+                "spo2": (98, 99),
+                "weight_kg": (67.2, 66.8),
+                "hemoglobin": (11.6, 12.0),
+                "hb_lab_only": True,
+            }
+        if scenario == "non_surgical_overdue":
+            return {
+                "bp_systolic": (152, 136),
+                "bp_diastolic": (96, 88),
+                "pr": (92, 84),
+                "spo2": (97, 98),
+                "weight_kg": (69.4, 67.3),
+                "hemoglobin": (11.4, 11.0),
+                "hb_lab_only": True,
+            }
+        return {
+            "bp_systolic": (140, 128),
+            "bp_diastolic": (90, 82),
+            "pr": (88, 80),
+            "spo2": (97, 98),
+            "weight_kg": (68.2, 67.0),
+            "hemoglobin": (11.5, 11.1),
+            "hb_lab_only": True,
+        }
+
+    def _build_vital_values(self, profile, point_index, total_points, task_types, rng):
+        systolic = int(round(self._interpolate(*profile["bp_systolic"], point_index, total_points) + rng.randint(-2, 2)))
+        diastolic = int(round(self._interpolate(*profile["bp_diastolic"], point_index, total_points) + rng.randint(-2, 2)))
+        pulse = int(round(self._interpolate(*profile["pr"], point_index, total_points) + rng.randint(-2, 2)))
+        spo2 = int(round(self._interpolate(*profile["spo2"], point_index, total_points) + rng.randint(-1, 1)))
+        weight = self._interpolate(*profile["weight_kg"], point_index, total_points) + rng.uniform(-0.25, 0.25)
+
+        systolic = self._clamp(systolic, 100, 180)
+        diastolic = self._clamp(diastolic, 60, 110)
+        if diastolic >= systolic:
+            diastolic = max(60, systolic - 12)
+        pulse = self._clamp(pulse, 60, 120)
+        spo2 = self._clamp(spo2, 93, 100)
+        weight = self._clamp(weight, 35, 130)
+
+        hb_value = None
+        hb_start, hb_end = profile["hemoglobin"]
+        should_seed_hb = not profile["hb_lab_only"] or TaskType.LAB in task_types or point_index == total_points - 1
+        if should_seed_hb and hb_start is not None and hb_end is not None:
+            hb_raw = self._interpolate(hb_start, hb_end, point_index, total_points) + rng.uniform(-0.2, 0.2)
+            hb_value = Decimal(f"{self._clamp(hb_raw, 4, 13):.1f}")
+
+        return {
+            "bp_systolic": systolic,
+            "bp_diastolic": diastolic,
+            "pr": pulse,
+            "spo2": spo2,
+            "weight_kg": Decimal(f"{weight:.1f}"),
+            "hemoglobin": hb_value,
+        }
+
+    def _build_recorded_at(self, day, point_index, rng):
+        slots = [(8, 15), (9, 5), (10, 20), (11, 10), (12, 25), (13, 5), (14, 15)]
+        slot_index = (point_index + rng.randint(0, 2)) % len(slots)
+        hour, minute = slots[slot_index]
+        recorded_at = timezone.make_aware(datetime.combine(day, time(hour=hour, minute=minute)))
+        now = timezone.now()
+        if recorded_at > now:
+            recorded_at = now - timedelta(minutes=5)
+        return recorded_at
+
+    def seed_vitals_for_case(self, case, demo_user, today, rng, profile_name):
+        scenario = (case.metadata or {}).get("seed_scenario", "default_mixed")
+        target_count = self._vitals_target_count(profile_name)
+        schedule = self._build_vitals_schedule(case, today, target_count)
+        vitals_profile = self._scenario_vitals_profile(case, scenario)
+
+        for point_index, (day, task_types) in enumerate(schedule):
+            values = self._build_vital_values(vitals_profile, point_index, target_count, task_types, rng)
             VitalEntry.objects.create(
                 case=case,
-                recorded_at=timezone.make_aware(timezone.datetime.combine(day, timezone.datetime.min.time())) + timedelta(hours=9),
-                bp_systolic=sys,
-                bp_diastolic=dia,
-                pr=pr,
-                spo2=spo2,
-                weight_kg=wt,
-                hemoglobin=hb,
+                recorded_at=self._build_recorded_at(day, point_index, rng),
+                bp_systolic=values["bp_systolic"],
+                bp_diastolic=values["bp_diastolic"],
+                pr=values["pr"],
+                spo2=values["spo2"],
+                weight_kg=values["weight_kg"],
+                hemoglobin=values["hemoglobin"],
                 created_by=demo_user,
                 updated_by=demo_user,
             )
@@ -311,11 +478,12 @@ class Command(BaseCommand):
             )
 
     def handle(self, *args, **options):
-        profile = options["profile"]
-        count = options["count"] if options["count"] is not None else (12 if profile == "smoke" else 30)
+        profile_name = options["profile"]
+        count = options["count"] if options["count"] is not None else (12 if profile_name == "smoke" else 30)
         count = max(count, 1)
         reset = options["reset"]
         reset_all = options["reset_all"]
+        yes_reset_all = options["yes_reset_all"]
         include_vitals = options["include_vitals"]
         include_rch_scenarios = options["include_rch_scenarios"]
 
@@ -328,6 +496,7 @@ class Command(BaseCommand):
         non_surgical = DepartmentConfig.objects.get(name="Non Surgical")
 
         if reset_all:
+            self._require_reset_all_confirmation(yes_reset_all)
             CallLog.objects.all().delete()
             CaseActivityLog.objects.all().delete()
             Case.objects.all().delete()
@@ -355,11 +524,11 @@ class Command(BaseCommand):
             named_builders.insert(1, lambda anc, surgery, non_surgical, today, kwargs, _: self.build_anc_rch_missing_case(anc, today, kwargs))
 
         for i in range(1, count + 1):
-            profile = self.mock_profiles[(i - 1) % len(self.mock_profiles)]
-            uhid = self._build_uhid(profile, i, today)
+            mock_profile = self.mock_profiles[(i - 1) % len(self.mock_profiles)]
+            uhid = self._build_uhid(mock_profile, i, today)
             if Case.objects.filter(uhid=uhid).exists():
                 continue
-            kwargs = self._base_case_kwargs(profile, i, today, demo_user)
+            kwargs = self._base_case_kwargs(mock_profile, i, today, demo_user)
 
             if i <= len(named_builders):
                 case, scenario = named_builders[i - 1](anc, surgery, non_surgical, today, kwargs, i)
@@ -375,8 +544,8 @@ class Command(BaseCommand):
             )
 
             self.seed_calls_for_case(case, demo_user, scenario, rng)
-            if include_vitals and scenario in {"anc_high_risk", "non_surgical_overdue", "default_mixed"}:
-                self.seed_vitals_for_case(case, demo_user, today)
+            if include_vitals:
+                self.seed_vitals_for_case(case, demo_user, today, rng, profile_name)
             created += 1
 
         self.stdout.write(self.style.SUCCESS(f"Seeding complete. Created {created} new cases. Total cases: {Case.objects.count()}"))

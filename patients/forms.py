@@ -386,6 +386,7 @@ class SeedMockDataForm(forms.Form):
     include_vitals = forms.BooleanField(required=False, initial=False)
     include_rch_scenarios = forms.BooleanField(required=False, initial=False)
     reset_all = forms.BooleanField(required=False, initial=False, help_text="Delete all case/call/activity data before seeding.")
+    confirm_reset_all = forms.BooleanField(required=False, initial=False, widget=forms.HiddenInput())
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

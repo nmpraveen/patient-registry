@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026.03.03.23.01
+- Added safety confirmation for destructive mock seeding: `seed_mock_data --reset-all` now prompts interactively and requires `--yes-reset-all` in non-interactive runs.
+- Updated the Seed Mock Data settings page to enforce reset-all confirmation before command execution and pass `--yes-reset-all` only after explicit user confirmation.
+- Reworked vitals seeding to generate deterministic, richer timelines (smoke=4 points, full=6 points) aligned to past relevant task dates with realistic OPD-time recordings.
+- Expanded seed/settings tests to cover reset-all guardrails, reset-all UI command wiring, vitals density by profile, vitals date alignment, and deterministic vitals replay across reset runs.
+
 ## 2026.03.03.22.21
 - Added a new admin Settings page at `/patients/settings/seed-mock-data/` to run mock-data seeding directly from the web UI.
 - Added UI controls for seeding options (`profile`, `count`, vitals toggle, ANC RCH scenario toggle, and reset-all toggle) plus Seed/Re-seed/Delete actions.

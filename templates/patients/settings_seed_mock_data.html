@@ -10,8 +10,9 @@
   <div class="col-12 col-lg-8">
     <div class="card"><div class="card-body">
       <h2 class="h6">Seed options</h2>
-      <form method="post" class="mt-3">
+      <form method="post" class="mt-3" id="seed-mock-data-form">
         {% csrf_token %}
+        {{ form.confirm_reset_all }}
         <div class="mb-3">
           <label class="form-label" for="{{ form.profile.id_for_label }}">{{ form.profile.label }}</label>
           {{ form.profile }}
@@ -24,6 +25,9 @@
         <div class="form-check mb-2">{{ form.include_vitals }} <label class="form-check-label" for="{{ form.include_vitals.id_for_label }}">Include vitals history</label></div>
         <div class="form-check mb-2">{{ form.include_rch_scenarios }} <label class="form-check-label" for="{{ form.include_rch_scenarios.id_for_label }}">Include ANC RCH-missing scenarios</label></div>
         <div class="form-check mb-3">{{ form.reset_all }} <label class="form-check-label" for="{{ form.reset_all.id_for_label }}">Reset all case/call/activity data before seeding</label></div>
+        {% if form.reset_all.errors %}
+          <div class="text-danger small mb-3">{{ form.reset_all.errors|striptags }}</div>
+        {% endif %}
 
         <div class="d-flex flex-wrap gap-2">
           <button class="btn btn-primary" type="submit" name="action" value="seed">Seed</button>
@@ -42,4 +46,26 @@
     </div></div>
   </div>
 </div>
+<script>
+  (function() {
+    const form = document.getElementById("seed-mock-data-form");
+    if (!form) return;
+    const resetAllField = document.getElementById("{{ form.reset_all.id_for_label }}");
+    const confirmResetAllField = document.getElementById("{{ form.confirm_reset_all.id_for_label }}");
+    form.addEventListener("submit", function(event) {
+      if (!confirmResetAllField) return;
+      confirmResetAllField.value = "";
+      const submitter = event.submitter;
+      const action = submitter && submitter.value ? submitter.value : "";
+      const requiresResetAllConfirmation = resetAllField && resetAllField.checked && action !== "delete_seeded";
+      if (!requiresResetAllConfirmation) return;
+      const approved = window.confirm("This will delete ALL case/call/activity data before seeding. Continue?");
+      if (!approved) {
+        event.preventDefault();
+        return;
+      }
+      confirmResetAllField.value = "true";
+    });
+  })();
+</script>
 {% endblock %}

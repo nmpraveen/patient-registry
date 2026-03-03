@@ -1194,7 +1194,18 @@ class SeedMockDataSettingsView(LoginRequiredMixin, View):
         if form.cleaned_data.get("include_rch_scenarios"):
             command_args.append("--include-rch-scenarios")
         if form.cleaned_data.get("reset_all"):
-            command_args.append("--reset-all")
+            if not form.cleaned_data.get("confirm_reset_all"):
+                form.add_error("reset_all", "Please confirm reset-all before continuing.")
+                messages.error(request, "Reset-all confirmation is required.")
+                return render(
+                    request,
+                    self.template_name,
+                    {
+                        "form": form,
+                        "seeded_case_count": Case.objects.filter(metadata__source="seed_mock_data").count(),
+                    },
+                )
+            command_args.extend(["--reset-all", "--yes-reset-all"])
         elif action == "reseed":
             command_args.append("--reset")
 

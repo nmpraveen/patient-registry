@@ -20,6 +20,8 @@ Implementation:
 - Prefer existing patterns over new abstractions.
 - Keep diffs small and scoped to the requested feature.
 - Do not silently change core workflows (case creation, task generation, role checks) without stating the behavior change.
+- If your change modifies user-visible behavior or shipped code, update the `VERSION` file to the current UTC timestamp in `year.month.day.hours.min` format (example: `2026.03.03.17.38`) before committing.
+- For each `VERSION` bump, append a matching section to `CHANGELOG.md` with that version header and bullet-pointed change notes.
 
 Verification (do not skip):
 - If you changed models: run `python manage.py makemigrations` and `python manage.py migrate`, and commit migrations.

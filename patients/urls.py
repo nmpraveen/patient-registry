@@ -14,6 +14,7 @@ from .views import (
     VitalEntryUpdateView,
     UniversalCaseSearchView,
     AdminSettingsView,
+    ChangelogView,
     TaskCreateView,
     TaskUpdateView,
 )
@@ -23,6 +24,7 @@ app_name = "patients"
 urlpatterns = [
     path("", DashboardView.as_view(), name="dashboard"),
     path("settings/", AdminSettingsView.as_view(), name="settings"),
+    path("settings/changelog/", ChangelogView.as_view(), name="changelog"),
     path("cases/", CaseListView.as_view(), name="case_list"),
     path("cases/autocomplete/", CaseAutocompleteView.as_view(), name="case_autocomplete"),
     path("cases/universal-search/", UniversalCaseSearchView.as_view(), name="universal_case_search"),

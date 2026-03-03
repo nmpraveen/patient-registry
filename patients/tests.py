@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
@@ -10,7 +11,23 @@ from django.urls import reverse
 from django.utils import timezone
 
 from .forms import CaseForm
-from .models import AncHighRiskReason, CallCommunicationStatus, CallLog, CallOutcome, Case, CaseStatus, DepartmentConfig, RoleSetting, SurgicalPathway, Task, TaskStatus, ensure_default_role_settings
+from .models import (
+    AncHighRiskReason,
+    CallCommunicationStatus,
+    CallLog,
+    CallOutcome,
+    Case,
+    CaseStatus,
+    DepartmentConfig,
+    RCH_REMINDER_INTERVAL_DAYS,
+    RCH_REMINDER_TASK_TITLE,
+    RoleSetting,
+    SurgicalPathway,
+    Task,
+    TaskStatus,
+    VitalEntry,
+    ensure_default_role_settings,
+)
 
 
 class MedtrackModelTests(TestCase):
@@ -335,6 +352,7 @@ class MedtrackViewTests(TestCase):
                 "age": "28",
                 "lmp": timezone.localdate() - timedelta(days=60),
                 "edd": timezone.localdate() + timedelta(days=210),
+                "rch_bypass": "on",
                 "notes": "",
             },
         )
@@ -665,6 +683,7 @@ class MedtrackViewTests(TestCase):
                 "age": "21",
                 "lmp": (timezone.localdate() - timedelta(days=56)).isoformat(),
                 "edd": (timezone.localdate() + timedelta(days=210)).isoformat(),
+                "rch_number": "987654321",
                 "high_risk": "on",
             }
         )
@@ -684,6 +703,7 @@ class MedtrackViewTests(TestCase):
                 "age": "24",
                 "lmp": (timezone.localdate() - timedelta(days=56)).isoformat(),
                 "edd": (timezone.localdate() + timedelta(days=210)).isoformat(),
+                "rch_number": "123456789",
                 "high_risk": "on",
                 "anc_high_risk_reasons": [AncHighRiskReason.ANEMIA, AncHighRiskReason.PIH],
             }
@@ -692,6 +712,349 @@ class MedtrackViewTests(TestCase):
         self.assertTrue(form.is_valid(), form.errors)
         self.assertEqual(form.cleaned_data["anc_high_risk_reasons"], [AncHighRiskReason.ANEMIA, AncHighRiskReason.PIH])
 
+    def test_case_form_requires_rch_number_or_bypass_for_anc(self):
+        form = CaseForm(
+            data={
+                "uhid": "UH-RCH-ANC-1",
+                "first_name": "Rch",
+                "last_name": "Required",
+                "phone_number": "9876500191",
+                "category": self.anc.id,
+                "status": CaseStatus.ACTIVE,
+                "age": "25",
+                "lmp": (timezone.localdate() - timedelta(days=56)).isoformat(),
+                "edd": (timezone.localdate() + timedelta(days=210)).isoformat(),
+            }
+        )
+
+        self.assertFalse(form.is_valid())
+        self.assertIn("rch_number", form.errors)
+
+    def test_case_form_accepts_rch_bypass_without_rch_number(self):
+        form = CaseForm(
+            data={
+                "uhid": "UH-RCH-ANC-2",
+                "first_name": "Rch",
+                "last_name": "Bypass",
+                "phone_number": "9876500192",
+                "category": self.anc.id,
+                "status": CaseStatus.ACTIVE,
+                "age": "25",
+                "lmp": (timezone.localdate() - timedelta(days=56)).isoformat(),
+                "edd": (timezone.localdate() + timedelta(days=210)).isoformat(),
+                "rch_bypass": "on",
+            }
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertTrue(form.cleaned_data["rch_bypass"])
+        self.assertEqual(form.cleaned_data["rch_number"], "")
+
+    def test_case_form_rejects_non_digit_rch_number(self):
+        form = CaseForm(
+            data={
+                "uhid": "UH-RCH-ANC-3",
+                "first_name": "Rch",
+                "last_name": "Invalid",
+                "phone_number": "9876500193",
+                "category": self.anc.id,
+                "status": CaseStatus.ACTIVE,
+                "age": "25",
+                "lmp": (timezone.localdate() - timedelta(days=56)).isoformat(),
+                "edd": (timezone.localdate() + timedelta(days=210)).isoformat(),
+                "rch_number": "RCH12A",
+            }
+        )
+
+        self.assertFalse(form.is_valid())
+        self.assertIn("rch_number", form.errors)
+
+    def test_case_form_forces_bypass_false_when_rch_number_present(self):
+        form = CaseForm(
+            data={
+                "uhid": "UH-RCH-ANC-4",
+                "first_name": "Rch",
+                "last_name": "Reset",
+                "phone_number": "9876500194",
+                "category": self.anc.id,
+                "status": CaseStatus.ACTIVE,
+                "age": "25",
+                "lmp": (timezone.localdate() - timedelta(days=56)).isoformat(),
+                "edd": (timezone.localdate() + timedelta(days=210)).isoformat(),
+                "rch_number": "123456789",
+                "rch_bypass": "on",
+            }
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertFalse(form.cleaned_data["rch_bypass"])
+
+    def test_anc_case_create_with_rch_bypass_schedules_reminder_task(self):
+        self.client.force_login(self.user)
+        response = self.client.post(
+            reverse("patients:case_create"),
+            {
+                "uhid": "UH-RCH-CREATE",
+                "first_name": "Reminder",
+                "last_name": "Create",
+                "phone_number": "9876500195",
+                "category": self.anc.id,
+                "status": CaseStatus.ACTIVE,
+                "age": "26",
+                "lmp": (timezone.localdate() - timedelta(days=56)).isoformat(),
+                "edd": (timezone.localdate() + timedelta(days=210)).isoformat(),
+                "rch_bypass": "on",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        case = Case.objects.get(uhid="UH-RCH-CREATE")
+        reminder = case.tasks.filter(title=RCH_REMINDER_TASK_TITLE, status=TaskStatus.SCHEDULED).first()
+        self.assertIsNotNone(reminder)
+        self.assertEqual(reminder.due_date, timezone.localdate() + timedelta(days=RCH_REMINDER_INTERVAL_DAYS))
+
+    def test_anc_case_update_with_rch_number_cancels_open_rch_reminders(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-RCH-UPDATE",
+            first_name="Reminder",
+            last_name="Cancel",
+            phone_number="9876500196",
+            category=self.anc,
+            status=CaseStatus.ACTIVE,
+            lmp=timezone.localdate() - timedelta(days=56),
+            edd=timezone.localdate() + timedelta(days=210),
+            rch_bypass=True,
+            created_by=self.user,
+        )
+        reminder = Task.objects.create(
+            case=case,
+            title=RCH_REMINDER_TASK_TITLE,
+            due_date=timezone.localdate() + timedelta(days=3),
+            status=TaskStatus.SCHEDULED,
+            created_by=self.user,
+        )
+
+        response = self.client.post(
+            reverse("patients:case_edit", kwargs={"pk": case.pk}),
+            {
+                "uhid": case.uhid,
+                "first_name": case.first_name,
+                "last_name": case.last_name,
+                "phone_number": case.phone_number,
+                "category": self.anc.id,
+                "status": CaseStatus.ACTIVE,
+                "age": "26",
+                "lmp": case.lmp.isoformat(),
+                "edd": case.edd.isoformat(),
+                "rch_number": "9988776655",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        reminder.refresh_from_db()
+        case.refresh_from_db()
+        self.assertEqual(reminder.status, TaskStatus.CANCELLED)
+        self.assertFalse(case.rch_bypass)
+
+    def test_completing_rch_reminder_schedules_next_reminder_when_rch_missing(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-RCH-CHAIN",
+            first_name="Reminder",
+            last_name="Chain",
+            phone_number="9876500197",
+            category=self.anc,
+            status=CaseStatus.ACTIVE,
+            lmp=timezone.localdate() - timedelta(days=56),
+            edd=timezone.localdate() + timedelta(days=210),
+            rch_bypass=True,
+            created_by=self.user,
+        )
+        task = Task.objects.create(
+            case=case,
+            title=RCH_REMINDER_TASK_TITLE,
+            due_date=timezone.localdate(),
+            status=TaskStatus.SCHEDULED,
+            task_type="CALL",
+            created_by=self.user,
+        )
+
+        response = self.client.post(
+            reverse("patients:task_edit", kwargs={"pk": task.pk}),
+            {
+                "title": task.title,
+                "due_date": task.due_date.isoformat(),
+                "status": TaskStatus.COMPLETED,
+                "assigned_user": "",
+                "task_type": task.task_type,
+                "frequency_label": task.frequency_label,
+                "notes": "",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        task.refresh_from_db()
+        next_reminder = (
+            case.tasks.exclude(pk=task.pk)
+            .filter(title=RCH_REMINDER_TASK_TITLE, status=TaskStatus.SCHEDULED)
+            .first()
+        )
+        self.assertIsNotNone(next_reminder)
+        self.assertEqual(
+            next_reminder.due_date,
+            timezone.localtime(task.completed_at).date() + timedelta(days=RCH_REMINDER_INTERVAL_DAYS),
+        )
+
+    def test_vitals_create_requires_task_edit_capability(self):
+        ensure_default_role_settings()
+        caller_group, _ = Group.objects.get_or_create(name="Caller")
+        caller_user = get_user_model().objects.create_user(username="caller-vitals", password="strong-password-123")
+        caller_user.groups.add(caller_group)
+        case = Case.objects.create(
+            uhid="UH-VITALS-403",
+            first_name="Vitals",
+            last_name="NoPerm",
+            phone_number="9876500198",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=10),
+            created_by=self.user,
+        )
+
+        self.client.force_login(caller_user)
+        response = self.client.get(reverse("patients:vitals_create", kwargs={"pk": case.pk}))
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_vitals_create_allows_partial_data_and_shows_hb_warning_inline(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-VITALS-WARN",
+            first_name="Vitals",
+            last_name="Warn",
+            phone_number="9876500199",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=10),
+            created_by=self.user,
+        )
+        response = self.client.post(
+            reverse("patients:vitals_create", kwargs={"pk": case.pk}),
+            {
+                "recorded_at": timezone.localtime(timezone.now()).strftime("%Y-%m-%dT%H:%M"),
+                "hemoglobin": "14.2",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(VitalEntry.objects.filter(case=case, hemoglobin=Decimal("14.2")).exists())
+        self.assertContains(response, "outside expected ANC range")
+
+    def test_vitals_create_rejects_incomplete_bp_pair(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-VITALS-BP",
+            first_name="Vitals",
+            last_name="BP",
+            phone_number="9876500200",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=10),
+            created_by=self.user,
+        )
+        response = self.client.post(
+            reverse("patients:vitals_create", kwargs={"pk": case.pk}),
+            {
+                "recorded_at": timezone.localtime(timezone.now()).strftime("%Y-%m-%dT%H:%M"),
+                "bp_systolic": "120",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(VitalEntry.objects.filter(case=case).exists())
+        self.assertContains(response, "Enter diastolic BP")
+
+    def test_vitals_edit_updates_audit_fields(self):
+        self.client.force_login(self.user)
+        editor = get_user_model().objects.create_user(username="editor", password="strong-password-123")
+        doctor_group, _ = Group.objects.get_or_create(name="Doctor")
+        editor.groups.add(doctor_group)
+        case = Case.objects.create(
+            uhid="UH-VITALS-EDIT",
+            first_name="Vitals",
+            last_name="Edit",
+            phone_number="9876500201",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=10),
+            created_by=self.user,
+        )
+        vital = VitalEntry.objects.create(
+            case=case,
+            recorded_at=timezone.now() - timedelta(hours=1),
+            hemoglobin=Decimal("10.5"),
+            created_by=self.user,
+            updated_by=self.user,
+        )
+
+        self.client.force_login(editor)
+        response = self.client.post(
+            reverse("patients:vitals_edit", kwargs={"pk": vital.pk}),
+            {
+                "recorded_at": timezone.localtime(vital.recorded_at).strftime("%Y-%m-%dT%H:%M"),
+                "hemoglobin": "11.2",
+                "pr": "82",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        vital.refresh_from_db()
+        self.assertEqual(vital.updated_by, editor)
+        self.assertEqual(vital.hemoglobin, Decimal("11.2"))
+
+    def test_case_detail_shows_vitals_warning_badge_and_chart_payload(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-VITALS-DETAIL",
+            first_name="Vitals",
+            last_name="Detail",
+            phone_number="9876500202",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=10),
+            created_by=self.user,
+        )
+        VitalEntry.objects.create(
+            case=case,
+            recorded_at=timezone.now() - timedelta(days=1),
+            hemoglobin=Decimal("9.8"),
+            weight_kg=Decimal("60.5"),
+            spo2=98,
+            created_by=self.user,
+            updated_by=self.user,
+        )
+        VitalEntry.objects.create(
+            case=case,
+            recorded_at=timezone.now(),
+            hemoglobin=Decimal("14.1"),
+            weight_kg=Decimal("60.8"),
+            spo2=97,
+            created_by=self.user,
+            updated_by=self.user,
+        )
+
+        response = self.client.get(reverse("patients:case_detail", kwargs={"pk": case.pk}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Out of range")
+        self.assertIsNotNone(response.context["vitals_chart_payload"])
+        self.assertEqual(len(response.context["vitals_chart_payload"]["labels"]), 2)
 
     def test_case_note_add_does_not_require_task_selection(self):
         self.client.force_login(self.user)

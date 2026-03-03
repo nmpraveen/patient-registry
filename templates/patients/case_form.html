@@ -101,6 +101,15 @@
         </div>
         <div class="card-body row g-3">
           <div class="col-md-6 field-wrap" data-field="diagnosis"><label class="form-label">{{ form.diagnosis.label }}</label>{{ form.diagnosis }}</div>
+          <div class="col-md-6 field-wrap" data-field="rch_number">
+            <label class="form-label">{{ form.rch_number.label }}</label>
+            {{ form.rch_number }}
+          </div>
+          <div class="col-md-6 field-wrap" data-field="rch_bypass">
+            <label class="form-label">{{ form.rch_bypass.label }}</label>
+            {{ form.rch_bypass }}
+            <div class="form-text">If bypassed, a recurring RCH reminder task is scheduled every 2 weeks until captured.</div>
+          </div>
           <div class="col-md-6 field-wrap" data-field="lmp"><label class="form-label">{{ form.lmp.label }}</label>{{ form.lmp }}</div>
           <div class="col-md-6 field-wrap" data-field="edd"><label class="form-label">{{ form.edd.label }}</label>{{ form.edd }}</div>
           <div class="col-md-6 field-wrap" data-field="usg_edd"><label class="form-label">{{ form.usg_edd.label }}</label>{{ form.usg_edd }}</div>
@@ -181,11 +190,11 @@
   const highRiskEl = document.getElementById('id_high_risk');
 
   const fieldsForCategory = {
-    anc: ['lmp', 'edd', 'usg_edd', 'gravida', 'para', 'abortions', 'living', 'high_risk', 'anc_high_risk_reasons'],
+    anc: ['rch_number', 'rch_bypass', 'lmp', 'edd', 'usg_edd', 'gravida', 'para', 'abortions', 'living', 'high_risk', 'anc_high_risk_reasons'],
     surgery: ['surgical_pathway', 'surgery_done', 'surgery_date', 'review_date'],
     nonsurgical: ['review_frequency', 'review_date']
   };
-  const allConditional = ['lmp', 'edd', 'usg_edd', 'surgical_pathway', 'surgery_done', 'surgery_date', 'review_frequency', 'review_date', 'gravida', 'para', 'abortions', 'living', 'high_risk', 'anc_high_risk_reasons'];
+  const allConditional = ['rch_number', 'rch_bypass', 'lmp', 'edd', 'usg_edd', 'surgical_pathway', 'surgery_done', 'surgery_date', 'review_frequency', 'review_date', 'gravida', 'para', 'abortions', 'living', 'high_risk', 'anc_high_risk_reasons'];
   const normalize = (txt) => (txt || '').toLowerCase().replace(/[^a-z]/g, '');
 
   function calculateAgeFromDob(dobValue) {

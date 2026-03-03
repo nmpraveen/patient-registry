@@ -28,6 +28,11 @@ class TaskType(models.TextChoices):
     CUSTOM = "CUSTOM", "Custom"
 
 
+RCH_REMINDER_TASK_TITLE = "Update RCH Number"
+RCH_REMINDER_INTERVAL_DAYS = 14
+RCH_REMINDER_FREQUENCY_LABEL = "RCH reminder"
+
+
 class CallOutcome(models.TextChoices):
     ANSWERED_CONFIRMED_VISIT = "ANSWERED_CONFIRMED_VISIT", "Answered - Confirmed visit"
     ANSWERED_UNCERTAIN = "ANSWERED_UNCERTAIN", "Answered - Uncertain"
@@ -215,6 +220,8 @@ class Case(models.Model):
     referred_by = models.CharField(max_length=255, blank=True)
     high_risk = models.BooleanField(default=False)
     anc_high_risk_reasons = models.JSONField(default=list, blank=True)
+    rch_number = models.CharField(max_length=32, blank=True)
+    rch_bypass = models.BooleanField(default=False)
 
     lmp = models.DateField(blank=True, null=True)
     edd = models.DateField(blank=True, null=True)
@@ -273,6 +280,13 @@ class Case(models.Model):
         if category_name == "ANC" and (not self.lmp or (not self.edd and not self.usg_edd)):
             raise ValidationError("ANC cases require LMP and at least one EDD (LMP-based or USG-based).")
         if category_name == "ANC":
+            self.rch_number = (self.rch_number or "").strip()
+            if self.rch_number and not self.rch_number.isdigit():
+                raise ValidationError({"rch_number": "RCH number must contain digits only."})
+            if not self.rch_number and not self.rch_bypass:
+                raise ValidationError({"rch_number": "Enter RCH number or bypass it for now."})
+            if self.rch_number:
+                self.rch_bypass = False
             g, p, a, l = self.gravida, self.para, self.abortions, self.living
             if None not in (g, p, a, l):
                 if p > g:
@@ -287,6 +301,8 @@ class Case(models.Model):
                 self.anc_high_risk_reasons = []
         else:
             self.anc_high_risk_reasons = []
+            self.rch_number = ""
+            self.rch_bypass = False
         if category_name == "SURGERY":
             if not self.surgical_pathway:
                 raise ValidationError({"surgical_pathway": "Please choose surveillance or planned surgery."})
@@ -357,6 +373,48 @@ class Task(models.Model):
 
     def __str__(self) -> str:
         return self.title
+
+
+class VitalEntry(models.Model):
+    case = models.ForeignKey(Case, on_delete=models.CASCADE, related_name="vitals")
+    recorded_at = models.DateTimeField(default=timezone.now)
+    bp_systolic = models.PositiveSmallIntegerField(blank=True, null=True)
+    bp_diastolic = models.PositiveSmallIntegerField(blank=True, null=True)
+    pr = models.PositiveSmallIntegerField(blank=True, null=True)
+    spo2 = models.PositiveSmallIntegerField(blank=True, null=True)
+    weight_kg = models.DecimalField(max_digits=5, decimal_places=2, blank=True, null=True)
+    hemoglobin = models.DecimalField(max_digits=4, decimal_places=1, blank=True, null=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_vitals",
+    )
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="updated_vitals",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-recorded_at", "-id"]
+        indexes = [
+            models.Index(fields=["case", "-recorded_at"], name="pat_vitals_case_recorded_idx"),
+        ]
+
+    @property
+    def hemoglobin_out_of_range(self):
+        if self.hemoglobin is None:
+            return False
+        return self.hemoglobin < 4 or self.hemoglobin > 13
+
+    def __str__(self) -> str:
+        return f"Vitals for {self.case.uhid} @ {self.recorded_at:%Y-%m-%d %H:%M}"
 
 
 class CaseActivityLog(models.Model):
@@ -439,6 +497,44 @@ def frequency_to_days(freq: str) -> int:
         ReviewFrequency.HALF_YEARLY: 180,
         ReviewFrequency.YEARLY: 365,
     }.get(freq, 30)
+
+
+def is_anc_case(case: Case) -> bool:
+    return bool(case and case.category_id and case.category.name.upper() == "ANC")
+
+
+def open_rch_reminder_queryset(case: Case):
+    return case.tasks.filter(title=RCH_REMINDER_TASK_TITLE, status=TaskStatus.SCHEDULED)
+
+
+def ensure_rch_reminder_task(case: Case, actor, due_date=None):
+    if not is_anc_case(case):
+        return None
+    if case.rch_number or not case.rch_bypass:
+        return None
+    if open_rch_reminder_queryset(case).exists():
+        return None
+    reminder_due_date = due_date or (timezone.localdate() + timedelta(days=RCH_REMINDER_INTERVAL_DAYS))
+    return Task.objects.create(
+        case=case,
+        title=RCH_REMINDER_TASK_TITLE,
+        due_date=reminder_due_date,
+        task_type=TaskType.CALL,
+        frequency_label=RCH_REMINDER_FREQUENCY_LABEL,
+        created_by=actor,
+    )
+
+
+def cancel_open_rch_reminders(case: Case) -> int:
+    reminder_ids = list(open_rch_reminder_queryset(case).values_list("id", flat=True))
+    if not reminder_ids:
+        return 0
+    Task.objects.filter(id__in=reminder_ids).update(
+        status=TaskStatus.CANCELLED,
+        completed_at=None,
+        updated_at=timezone.now(),
+    )
+    return len(reminder_ids)
 
 
 def build_default_tasks(case: Case, actor):

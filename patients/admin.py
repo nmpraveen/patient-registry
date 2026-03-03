@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import CallLog, Case, CaseActivityLog, DepartmentConfig, RoleSetting, Task
+from .models import CallLog, Case, CaseActivityLog, DepartmentConfig, RoleSetting, Task, VitalEntry
 
 
 @admin.register(DepartmentConfig)
@@ -53,3 +53,21 @@ class CallLogAdmin(admin.ModelAdmin):
     list_display = ("id", "case", "task", "outcome", "staff_user", "created_at")
     search_fields = ("case__uhid", "notes", "task__title")
     list_filter = ("outcome", "created_at")
+
+
+@admin.register(VitalEntry)
+class VitalEntryAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "case",
+        "recorded_at",
+        "bp_systolic",
+        "bp_diastolic",
+        "pr",
+        "spo2",
+        "weight_kg",
+        "hemoglobin",
+        "updated_by",
+    )
+    search_fields = ("case__uhid", "case__first_name", "case__last_name")
+    list_filter = ("recorded_at", "case__category")

@@ -1,0 +1,60 @@
+{% extends 'base.html' %}
+{% block title %}{% if is_edit %}Edit{% else %}Add{% endif %} Vitals | MEDTRACK{% endblock %}
+{% block content %}
+<div class="card"><div class="card-body">
+  <div class="d-flex justify-content-between align-items-start mb-3">
+    <div>
+      <h1 class="h5 mb-1">{% if is_edit %}Edit{% else %}Add{% endif %} Vitals</h1>
+      <p class="text-muted small mb-0">{{ case.full_name }} ({{ case.uhid }})</p>
+    </div>
+    <a class="btn btn-outline-secondary btn-sm" href="{% url 'patients:case_detail' case.id %}">Back to Case</a>
+  </div>
+
+  {% if saved_successfully %}
+    <div class="alert alert-success py-2">Vitals saved.</div>
+  {% endif %}
+
+  <form method="post" class="row g-3">{% csrf_token %}
+    {{ form.bp_systolic }}{{ form.bp_diastolic }}
+    <div class="col-12 col-md-6">
+      <label class="form-label">{{ form.recorded_at.label }}</label>
+      {{ form.recorded_at }}
+    </div>
+    <div class="col-6 col-md-3">
+      <label class="form-label">{{ form.bp_preset.label }}</label>
+      {{ form.bp_preset }}
+    </div>
+    <div class="col-6 col-md-4">
+      <label class="form-label">{{ form.pr.label }}</label>
+      {{ form.pr }}
+    </div>
+    <div class="col-6 col-md-4">
+      <label class="form-label">{{ form.spo2.label }}</label>
+      {{ form.spo2 }}
+    </div>
+    <div class="col-6 col-md-4">
+      <label class="form-label">{{ form.weight_kg.label }}</label>
+      {{ form.weight_kg }}
+    </div>
+    <div class="col-6 col-md-4">
+      <label class="form-label">{{ form.hemoglobin.label }}</label>
+      {{ form.hemoglobin }}
+      {% if show_hb_warning %}
+        <div class="form-text text-warning">{{ form.hb_warning_message }}</div>
+      {% endif %}
+    </div>
+
+    {% for field in form %}
+      {% for error in field.errors %}
+        <div class="col-12 text-danger small">{{ field.label }}: {{ error }}</div>
+      {% endfor %}
+    {% endfor %}
+    {% if form.non_field_errors %}
+      <div class="col-12 text-danger small">{{ form.non_field_errors }}</div>
+    {% endif %}
+    <div class="col-12">
+      <button class="btn btn-primary">{% if is_edit %}Save Changes{% else %}Save Vitals{% endif %}</button>
+    </div>
+  </form>
+</div></div>
+{% endblock %}

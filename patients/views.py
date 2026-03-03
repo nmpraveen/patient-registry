@@ -16,7 +16,16 @@ from django.utils import timezone
 from django.views import View
 from django.views.generic import CreateView, DetailView, ListView, UpdateView
 
-from .forms import ActivityLogForm, CallLogForm, CaseForm, DepartmentConfigForm, RoleSettingForm, TaskForm, UserRoleForm
+from .forms import (
+    ActivityLogForm,
+    CallLogForm,
+    CaseForm,
+    DepartmentConfigForm,
+    RoleSettingForm,
+    TaskForm,
+    UserRoleForm,
+    VitalEntryForm,
+)
 from .models import (
     CallCommunicationStatus,
     CallLog,
@@ -24,12 +33,18 @@ from .models import (
     CaseActivityLog,
     CaseStatus,
     DepartmentConfig,
+    RCH_REMINDER_INTERVAL_DAYS,
+    RCH_REMINDER_TASK_TITLE,
     RoleSetting,
     Task,
     TaskStatus,
+    VitalEntry,
     build_default_tasks,
+    cancel_open_rch_reminders,
+    ensure_rch_reminder_task,
     ensure_default_role_settings,
     frequency_to_days,
+    is_anc_case,
 )
 
 NON_SURGICAL_CASE_FILTER = (
@@ -95,6 +110,31 @@ def can_access_case_data(user):
         | Q(can_note_add=True)
         | Q(can_manage_settings=True)
     ).exists()
+
+
+def _build_vitals_chart_payload(vitals_queryset):
+    chart_rows = []
+    for vital in vitals_queryset:
+        if vital.hemoglobin is None and vital.weight_kg is None and vital.spo2 is None:
+            continue
+        chart_rows.append(
+            {
+                "label": timezone.localtime(vital.recorded_at).strftime("%d-%m-%y %H:%M"),
+                "hemoglobin": float(vital.hemoglobin) if vital.hemoglobin is not None else None,
+                "weight": float(vital.weight_kg) if vital.weight_kg is not None else None,
+                "spo2": vital.spo2,
+            }
+        )
+    if not chart_rows:
+        return None
+    return {
+        "labels": [row["label"] for row in chart_rows],
+        "datasets": {
+            "hemoglobin": [row["hemoglobin"] for row in chart_rows],
+            "weight": [row["weight"] for row in chart_rows],
+            "spo2": [row["spo2"] for row in chart_rows],
+        },
+    }
 
 
 class CaseDataAccessMixin:
@@ -540,6 +580,14 @@ class CaseCreateView(LoginRequiredMixin, CreateView):
             self.object.save(update_fields=["review_date", "updated_at", "patient_name"])
         created_tasks = build_default_tasks(self.object, self.request.user)
         CaseActivityLog.objects.create(case=self.object, user=self.request.user, note=f"Case created with {len(created_tasks)} starter task(s)")
+        reminder = ensure_rch_reminder_task(self.object, self.request.user)
+        if reminder:
+            CaseActivityLog.objects.create(
+                case=self.object,
+                task=reminder,
+                user=self.request.user,
+                note=f"RCH reminder scheduled for {reminder.due_date:%d-%m-%Y}.",
+            )
         return response
 
     def get_success_url(self):
@@ -555,9 +603,13 @@ class CaseDetailView(LoginRequiredMixin, DetailView):
         context = super().get_context_data(**kwargs)
         case = self.object
         context["tasks"] = case.tasks.select_related("assigned_user")
+        vitals = list(case.vitals.select_related("created_by", "updated_by").order_by("-recorded_at", "-id"))
+        chart_payload = _build_vitals_chart_payload(reversed(vitals))
         context["today"] = timezone.localdate()
         context["activity_logs"] = case.activity_logs.select_related("user", "task")[:50]
         context["call_logs"] = case.call_logs.select_related("staff_user", "task")[:50]
+        context["vitals"] = vitals
+        context["vitals_chart_payload"] = chart_payload
         context["task_form"] = TaskForm()
         context["log_form"] = ActivityLogForm()
         call_log_form = CallLogForm()
@@ -567,6 +619,7 @@ class CaseDetailView(LoginRequiredMixin, DetailView):
         context["can_task_create"] = has_capability(self.request.user, "task_create")
         context["can_task_edit"] = has_capability(self.request.user, "task_edit")
         context["can_note_add"] = has_capability(self.request.user, "note_add")
+        context["can_vitals_edit"] = has_capability(self.request.user, "task_edit")
         return context
 
     def dispatch(self, request, *args, **kwargs):
@@ -587,6 +640,7 @@ class CaseUpdateView(LoginRequiredMixin, UpdateView):
     def form_valid(self, form):
         case = self.get_object()
         old_status = case.status
+        had_rch_number = bool(case.rch_number)
         new_status = form.cleaned_data["status"]
         grey_list_cutoff = timezone.localdate() - timedelta(days=30)
         has_grey_tasks = case.tasks.exclude(status=TaskStatus.COMPLETED).filter(due_date__lt=grey_list_cutoff).exists()
@@ -595,7 +649,44 @@ class CaseUpdateView(LoginRequiredMixin, UpdateView):
             return self.form_invalid(form)
         if old_status != new_status:
             CaseActivityLog.objects.create(case=case, user=self.request.user, note=f"Case status changed: {old_status} → {new_status}")
-        return super().form_valid(form)
+        response = super().form_valid(form)
+        if not is_anc_case(self.object):
+            cancelled_count = cancel_open_rch_reminders(self.object)
+            if cancelled_count:
+                CaseActivityLog.objects.create(
+                    case=self.object,
+                    user=self.request.user,
+                    note=f"Cancelled {cancelled_count} open RCH reminder task(s) because category is no longer ANC.",
+                )
+            return response
+
+        if self.object.rch_number:
+            cancelled_count = cancel_open_rch_reminders(self.object)
+            if cancelled_count:
+                CaseActivityLog.objects.create(
+                    case=self.object,
+                    user=self.request.user,
+                    note=f"RCH number captured. Cancelled {cancelled_count} open RCH reminder task(s).",
+                )
+        else:
+            reminder = ensure_rch_reminder_task(self.object, self.request.user)
+            if reminder:
+                CaseActivityLog.objects.create(
+                    case=self.object,
+                    task=reminder,
+                    user=self.request.user,
+                    note=f"RCH reminder scheduled for {reminder.due_date:%d-%m-%Y}.",
+                )
+        if had_rch_number and not self.object.rch_number:
+            reminder = ensure_rch_reminder_task(self.object, self.request.user)
+            if reminder:
+                CaseActivityLog.objects.create(
+                    case=self.object,
+                    task=reminder,
+                    user=self.request.user,
+                    note=f"RCH removed. Reminder scheduled for {reminder.due_date:%d-%m-%Y}.",
+                )
+        return response
 
     def get_success_url(self):
         return reverse("patients:case_detail", kwargs={"pk": self.object.pk})
@@ -635,8 +726,25 @@ class TaskUpdateView(LoginRequiredMixin, UpdateView):
         return super().dispatch(request, *args, **kwargs)
 
     def form_valid(self, form):
+        previous_task = self.get_object()
+        previous_status = previous_task.status
         response = super().form_valid(form)
         CaseActivityLog.objects.create(case=self.object.case, task=self.object, user=self.request.user, note=f"Task updated: {self.object.title} ({self.object.status})")
+        if (
+            previous_status != TaskStatus.COMPLETED
+            and self.object.status == TaskStatus.COMPLETED
+            and self.object.title == RCH_REMINDER_TASK_TITLE
+        ):
+            completed_local = timezone.localtime(self.object.completed_at) if self.object.completed_at else timezone.now()
+            next_due_date = completed_local.date() + timedelta(days=RCH_REMINDER_INTERVAL_DAYS)
+            reminder = ensure_rch_reminder_task(self.object.case, self.request.user, due_date=next_due_date)
+            if reminder:
+                CaseActivityLog.objects.create(
+                    case=self.object.case,
+                    task=reminder,
+                    user=self.request.user,
+                    note=f"RCH still pending. Next reminder scheduled for {reminder.due_date:%d-%m-%Y}.",
+                )
         return response
 
     def get_success_url(self):
@@ -682,6 +790,146 @@ class AddCallLogView(LoginRequiredMixin, View):
         else:
             messages.error(request, "Could not log call outcome.")
         return redirect("patients:case_detail", pk=pk)
+
+
+class VitalEntryCreateView(LoginRequiredMixin, View):
+    template_name = "patients/vitals_form.html"
+
+    def _check_access(self, request):
+        if not can_access_case_data(request.user):
+            return HttpResponseForbidden("You do not have permission to access case data.")
+        if not has_capability(request.user, "task_edit"):
+            return HttpResponseForbidden("You do not have permission to add vitals.")
+        return None
+
+    def get(self, request, pk):
+        denied = self._check_access(request)
+        if denied:
+            return denied
+        case = get_object_or_404(Case, pk=pk)
+        form = VitalEntryForm()
+        return render(
+            request,
+            self.template_name,
+            {
+                "form": form,
+                "case": case,
+                "is_edit": False,
+                "show_hb_warning": form.hb_warning,
+            },
+        )
+
+    def post(self, request, pk):
+        denied = self._check_access(request)
+        if denied:
+            return denied
+        case = get_object_or_404(Case, pk=pk)
+        form = VitalEntryForm(request.POST)
+        if form.is_valid():
+            vital = form.save(commit=False)
+            vital.case = case
+            vital.created_by = request.user
+            vital.updated_by = request.user
+            vital.save()
+            CaseActivityLog.objects.create(case=case, user=request.user, note="Vitals entry recorded.")
+            if form.hb_warning:
+                form = VitalEntryForm(instance=vital)
+                form.hb_warning = True
+                return render(
+                    request,
+                    self.template_name,
+                    {
+                        "form": form,
+                        "case": case,
+                        "is_edit": True,
+                        "vital": vital,
+                        "saved_successfully": True,
+                        "show_hb_warning": True,
+                    },
+                )
+            messages.success(request, "Vitals recorded.")
+            return redirect("patients:case_detail", pk=case.pk)
+        return render(
+            request,
+            self.template_name,
+            {
+                "form": form,
+                "case": case,
+                "is_edit": False,
+                "show_hb_warning": form.hb_warning,
+            },
+        )
+
+
+class VitalEntryUpdateView(LoginRequiredMixin, View):
+    template_name = "patients/vitals_form.html"
+
+    def _check_access(self, request):
+        if not can_access_case_data(request.user):
+            return HttpResponseForbidden("You do not have permission to access case data.")
+        if not has_capability(request.user, "task_edit"):
+            return HttpResponseForbidden("You do not have permission to edit vitals.")
+        return None
+
+    def get(self, request, pk):
+        denied = self._check_access(request)
+        if denied:
+            return denied
+        vital = get_object_or_404(VitalEntry.objects.select_related("case"), pk=pk)
+        form = VitalEntryForm(instance=vital)
+        return render(
+            request,
+            self.template_name,
+            {
+                "form": form,
+                "vital": vital,
+                "case": vital.case,
+                "is_edit": True,
+                "show_hb_warning": form.hb_warning,
+            },
+        )
+
+    def post(self, request, pk):
+        denied = self._check_access(request)
+        if denied:
+            return denied
+        vital = get_object_or_404(VitalEntry.objects.select_related("case"), pk=pk)
+        form = VitalEntryForm(request.POST, instance=vital)
+        if form.is_valid():
+            updated_vital = form.save(commit=False)
+            updated_vital.updated_by = request.user
+            if updated_vital.created_by_id is None:
+                updated_vital.created_by = request.user
+            updated_vital.save()
+            CaseActivityLog.objects.create(case=updated_vital.case, user=request.user, note="Vitals entry updated.")
+            if form.hb_warning:
+                form = VitalEntryForm(instance=updated_vital)
+                form.hb_warning = True
+                return render(
+                    request,
+                    self.template_name,
+                    {
+                        "form": form,
+                        "vital": updated_vital,
+                        "case": updated_vital.case,
+                        "is_edit": True,
+                        "saved_successfully": True,
+                        "show_hb_warning": True,
+                    },
+                )
+            messages.success(request, "Vitals updated.")
+            return redirect("patients:case_detail", pk=updated_vital.case.pk)
+        return render(
+            request,
+            self.template_name,
+            {
+                "form": form,
+                "vital": vital,
+                "case": vital.case,
+                "is_edit": True,
+                "show_hb_warning": form.hb_warning,
+            },
+        )
 
 
 class AdminSettingsView(LoginRequiredMixin, View):

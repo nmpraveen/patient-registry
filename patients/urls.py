@@ -9,6 +9,8 @@ from .views import (
     CaseAutocompleteView,
     CaseUpdateView,
     DashboardView,
+    VitalEntryCreateView,
+    VitalEntryUpdateView,
     UniversalCaseSearchView,
     AdminSettingsView,
     TaskCreateView,
@@ -27,7 +29,9 @@ urlpatterns = [
     path("cases/<int:pk>/", CaseDetailView.as_view(), name="case_detail"),
     path("cases/<int:pk>/edit/", CaseUpdateView.as_view(), name="case_edit"),
     path("cases/<int:pk>/tasks/new/", TaskCreateView.as_view(), name="task_create"),
+    path("cases/<int:pk>/vitals/new/", VitalEntryCreateView.as_view(), name="vitals_create"),
     path("tasks/<int:pk>/edit/", TaskUpdateView.as_view(), name="task_edit"),
+    path("vitals/<int:pk>/edit/", VitalEntryUpdateView.as_view(), name="vitals_edit"),
     path("cases/<int:pk>/notes/new/", AddCaseNoteView.as_view(), name="case_note_create"),
     path("cases/<int:pk>/calls/new/", AddCallLogView.as_view(), name="case_call_create"),
 ]

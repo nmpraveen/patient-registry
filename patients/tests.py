@@ -18,6 +18,7 @@ from .models import (
     CallLog,
     CallOutcome,
     Case,
+    CaseActivityLog,
     CaseStatus,
     DepartmentConfig,
     RCH_REMINDER_INTERVAL_DAYS,
@@ -27,6 +28,7 @@ from .models import (
     Task,
     TaskStatus,
     VitalEntry,
+    ensure_default_departments,
     ensure_default_role_settings,
 )
 
@@ -1896,6 +1898,42 @@ class SeedMockDataCommandTests(TestCase):
 
         non_surgical_cases = seeded_cases.filter(category__name="Non Surgical")
         self.assertGreaterEqual(non_surgical_cases.values("review_frequency").distinct().count(), 3)
+
+    def test_seed_mock_data_reset_keeps_non_seeded_cases(self):
+        ensure_default_departments()
+        surgery = DepartmentConfig.objects.get(name="Surgery")
+        user = get_user_model().objects.create_user(username="manual_case_owner")
+
+        non_seeded_case = Case.objects.create(
+            uhid="UH-MANUAL-0001",
+            first_name="Manual",
+            last_name="Patient",
+            phone_number="9888888888",
+            category=surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=7),
+            diagnosis="Follow-up",
+            created_by=user,
+            metadata={"source": "manual_entry"},
+        )
+        CallLog.objects.create(case=non_seeded_case, outcome=CallOutcome.NO_ANSWER, notes="manual", staff_user=user)
+        CaseActivityLog.objects.create(case=non_seeded_case, user=user, note="manual activity")
+
+        call_command("seed_mock_data", "--count", "3")
+        seeded_ids = list(Case.objects.filter(metadata__source="seed_mock_data").values_list("id", flat=True))
+
+        self.assertTrue(seeded_ids)
+        self.assertTrue(CallLog.objects.filter(case_id__in=seeded_ids).exists())
+        self.assertTrue(CaseActivityLog.objects.filter(case_id__in=seeded_ids).exists())
+
+        call_command("seed_mock_data", "--count", "2", "--reset")
+
+        non_seeded_case.refresh_from_db()
+        self.assertEqual(non_seeded_case.metadata.get("source"), "manual_entry")
+        self.assertTrue(CallLog.objects.filter(case=non_seeded_case).exists())
+        self.assertTrue(CaseActivityLog.objects.filter(case=non_seeded_case).exists())
+        self.assertEqual(Case.objects.filter(metadata__source="seed_mock_data").count(), 2)
 
 
 class LoginPageVersionTests(TestCase):

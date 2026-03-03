@@ -41,7 +41,8 @@ docker compose exec web python manage.py seed_mock_data --count 30 --reset
 ```
 
 - `--count` controls how many mock cases to create (default: `30`).
-- `--reset` clears existing case/task/activity data before seeding.
+- `--reset` clears only previously seeded mock cases (and linked call/activity logs) before seeding.
+- `--reset-all` clears all case/task/activity data before seeding.
 
 ## Updating to latest version safely (with backup)
 

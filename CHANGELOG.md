@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026.03.03.22.05
+- Updated `seed_mock_data` reset behavior so `--reset` removes only seeded mock cases (and their call/activity logs) using `metadata.source == "seed_mock_data"`.
+- Added an explicit `--reset-all` flag for full case/call/activity data wipes.
+- Documented the new reset semantics in the README demo-data section.
+- Added management-command test coverage to confirm non-seeded cases survive `--reset`.
+
 ## 2026.03.03.18.09
 - Added a changelog page at `/patients/settings/changelog/` that lists each version and its change notes.
 - Added a "View Changelog" link on the Admin Settings page for quick access.

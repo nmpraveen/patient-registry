@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
@@ -637,6 +638,96 @@ class MedtrackViewTests(TestCase):
         app_version = Path("VERSION").read_text(encoding="utf-8").strip()
         self.assertContains(response, f"Version {app_version}")
         self.assertContains(response, "Added a changelog page")
+
+
+    def test_seed_mock_data_settings_page_access_and_links(self):
+        ensure_default_role_settings()
+        admin_group, _ = Group.objects.get_or_create(name="Admin")
+        self.user.groups.clear()
+        self.user.groups.add(admin_group)
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("patients:settings"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, reverse("patients:settings_seed_mock_data"))
+
+        seed_page = self.client.get(reverse("patients:settings_seed_mock_data"))
+        self.assertEqual(seed_page.status_code, 200)
+        self.assertContains(seed_page, "Seed Mock Data")
+        self.assertContains(seed_page, "Delete all mock data")
+
+    @patch("patients.views.call_command")
+    def test_seed_mock_data_settings_page_runs_seed_command(self, call_command_mock):
+        ensure_default_role_settings()
+        admin_group, _ = Group.objects.get_or_create(name="Admin")
+        self.user.groups.clear()
+        self.user.groups.add(admin_group)
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("patients:settings_seed_mock_data"),
+            {
+                "action": "reseed",
+                "profile": "smoke",
+                "count": "8",
+                "include_vitals": "on",
+                "include_rch_scenarios": "on",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        call_command_mock.assert_called_once_with(
+            "seed_mock_data",
+            "--count",
+            "8",
+            "--profile",
+            "smoke",
+            "--include-vitals",
+            "--include-rch-scenarios",
+            "--reset",
+        )
+
+    def test_seed_mock_data_settings_delete_seeded_only(self):
+        ensure_default_departments()
+        surgery = DepartmentConfig.objects.get(name="Surgery")
+
+        seeded_case = Case.objects.create(
+            uhid="UH-SEED-DEL-1",
+            first_name="Seeded",
+            last_name="Case",
+            phone_number="9888888800",
+            category=surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=7),
+            created_by=self.user,
+            metadata={"source": "seed_mock_data"},
+        )
+        Case.objects.create(
+            uhid="UH-SEED-DEL-2",
+            first_name="Manual",
+            last_name="Case",
+            phone_number="9888888801",
+            category=surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=7),
+            created_by=self.user,
+            metadata={"source": "manual_entry"},
+        )
+        CallLog.objects.create(case=seeded_case, outcome=CallOutcome.NO_ANSWER, notes="seeded", staff_user=self.user)
+
+        ensure_default_role_settings()
+        admin_group, _ = Group.objects.get_or_create(name="Admin")
+        self.user.groups.clear()
+        self.user.groups.add(admin_group)
+        self.client.force_login(self.user)
+
+        response = self.client.post(reverse("patients:settings_seed_mock_data"), {"action": "delete_seeded"})
+
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(Case.objects.filter(metadata__source="seed_mock_data").exists())
+        self.assertTrue(Case.objects.filter(metadata__source="manual_entry").exists())
 
     def test_create_case_saves_gender_dob_and_place(self):
         self.client.force_login(self.user)
@@ -1871,10 +1962,17 @@ class MedtrackViewTests(TestCase):
 
 
 class SeedMockDataCommandTests(TestCase):
-    def test_seed_mock_data_creates_cases_with_believable_identifiers_and_new_fields(self):
-        call_command("seed_mock_data", "--count", "30", "--reset")
+    def test_seed_mock_data_creates_deterministic_scenarios_and_related_records(self):
+        call_command(
+            "seed_mock_data",
+            "--count",
+            "30",
+            "--reset",
+            "--include-rch-scenarios",
+            "--include-vitals",
+        )
 
-        seeded_cases = Case.objects.filter(uhid__startswith="TN-").order_by("uhid")
+        seeded_cases = Case.objects.filter(metadata__source="seed_mock_data").order_by("uhid")
         self.assertEqual(seeded_cases.count(), 30)
 
         for case in seeded_cases:
@@ -1887,10 +1985,17 @@ class SeedMockDataCommandTests(TestCase):
             self.assertIsNotNone(case.age)
             self.assertTrue(case.diagnosis)
             self.assertTrue(case.referred_by)
+            self.assertTrue(case.metadata.get("seed_scenario"))
 
-        anc_cases = seeded_cases.filter(category__name="ANC")
-        self.assertFalse(anc_cases.filter(gender="MALE").exists())
-        self.assertTrue(anc_cases.filter(gravida__isnull=False, para__isnull=False, abortions__isnull=False, living__isnull=False).exists())
+        anc_high_risk = seeded_cases.get(metadata__seed_scenario="anc_high_risk")
+        self.assertTrue(anc_high_risk.high_risk)
+        self.assertTrue(anc_high_risk.anc_high_risk_reasons)
+        self.assertTrue(anc_high_risk.rch_number)
+        self.assertFalse(anc_high_risk.rch_bypass)
+
+        anc_rch_missing = seeded_cases.get(metadata__seed_scenario="anc_rch_missing")
+        self.assertFalse(anc_rch_missing.rch_number)
+        self.assertTrue(anc_rch_missing.rch_bypass)
 
         surgery_cases = seeded_cases.filter(category__name="Surgery")
         self.assertTrue(surgery_cases.filter(surgical_pathway=SurgicalPathway.PLANNED_SURGERY).exists())
@@ -1898,6 +2003,20 @@ class SeedMockDataCommandTests(TestCase):
 
         non_surgical_cases = seeded_cases.filter(category__name="Non Surgical")
         self.assertGreaterEqual(non_surgical_cases.values("review_frequency").distinct().count(), 3)
+
+        self.assertTrue(Task.objects.filter(case=anc_high_risk, status=TaskStatus.AWAITING_REPORTS).exists())
+        self.assertTrue(Task.objects.filter(case=anc_high_risk, status=TaskStatus.COMPLETED).exists())
+        self.assertTrue(Task.objects.filter(case=anc_high_risk, due_date__lt=timezone.localdate()).exists())
+        self.assertTrue(Task.objects.filter(case=anc_high_risk, due_date__gt=timezone.localdate()).exists())
+
+        self.assertGreaterEqual(VitalEntry.objects.filter(case=anc_high_risk).count(), 1)
+        self.assertTrue(CallLog.objects.filter(case=anc_high_risk, task__isnull=False).exists())
+        self.assertTrue(CallLog.objects.filter(case=anc_high_risk, task__isnull=True).exists())
+
+    def test_seed_mock_data_smoke_profile_defaults_to_small_case_count(self):
+        call_command("seed_mock_data", "--profile", "smoke", "--reset")
+
+        self.assertEqual(Case.objects.filter(metadata__source="seed_mock_data").count(), 12)
 
     def test_seed_mock_data_reset_keeps_non_seeded_cases(self):
         ensure_default_departments()

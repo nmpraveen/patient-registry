@@ -15,6 +15,7 @@ from .views import (
     UniversalCaseSearchView,
     AdminSettingsView,
     ChangelogView,
+    SeedMockDataSettingsView,
     TaskCreateView,
     TaskUpdateView,
 )
@@ -25,6 +26,7 @@ urlpatterns = [
     path("", DashboardView.as_view(), name="dashboard"),
     path("settings/", AdminSettingsView.as_view(), name="settings"),
     path("settings/changelog/", ChangelogView.as_view(), name="changelog"),
+    path("settings/seed-mock-data/", SeedMockDataSettingsView.as_view(), name="settings_seed_mock_data"),
     path("cases/", CaseListView.as_view(), name="case_list"),
     path("cases/autocomplete/", CaseAutocompleteView.as_view(), name="case_autocomplete"),
     path("cases/universal-search/", UniversalCaseSearchView.as_view(), name="universal_case_search"),

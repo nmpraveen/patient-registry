@@ -2,7 +2,7 @@ from datetime import date, timedelta
 import random
 
 from django.contrib.auth import get_user_model
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
 from patients.models import (
@@ -40,7 +40,16 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument("--count", type=int, default=30)
-        parser.add_argument("--reset", action="store_true", help="Delete existing case/task/activity data before seeding")
+        parser.add_argument(
+            "--reset",
+            action="store_true",
+            help="Delete previously seeded mock cases and linked call/activity logs before seeding",
+        )
+        parser.add_argument(
+            "--reset-all",
+            action="store_true",
+            help="Delete all case data (cases/call logs/activity logs) before seeding",
+        )
 
     def _build_uhid(self, profile, index, today):
         # Example: TN-MDU-260001 (state-facility-year-sequence)
@@ -58,16 +67,25 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         count = max(options["count"], 1)
         reset = options["reset"]
+        reset_all = options["reset_all"]
+
+        if reset and reset_all:
+            raise CommandError("Use either --reset or --reset-all, not both.")
 
         ensure_default_departments()
         anc = DepartmentConfig.objects.get(name="ANC")
         surgery = DepartmentConfig.objects.get(name="Surgery")
         non_surgical = DepartmentConfig.objects.get(name="Non Surgical")
 
-        if reset:
+        if reset_all:
             CallLog.objects.all().delete()
             CaseActivityLog.objects.all().delete()
             Case.objects.all().delete()
+        elif reset:
+            seeded_cases = Case.objects.filter(metadata__source="seed_mock_data")
+            CallLog.objects.filter(case__in=seeded_cases).delete()
+            CaseActivityLog.objects.filter(case__in=seeded_cases).delete()
+            seeded_cases.delete()
 
         User = get_user_model()
         demo_user, _ = User.objects.get_or_create(username="demo_seed")

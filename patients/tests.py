@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
@@ -428,6 +428,127 @@ class MedtrackViewTests(TestCase):
         response = self.client.get(reverse("patients:case_detail", kwargs={"pk": case.pk}))
 
         self.assertEqual(response.status_code, 200)
+
+    def test_case_detail_task_table_replaces_freq_with_completed_on(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-COMP-COL",
+            first_name="Column",
+            last_name="Check",
+            phone_number="9876504441",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=10),
+            created_by=self.user,
+        )
+        Task.objects.create(
+            case=case,
+            title="Review",
+            due_date=timezone.localdate(),
+            assigned_user=self.user,
+            created_by=self.user,
+        )
+
+        response = self.client.get(reverse("patients:case_detail", kwargs={"pk": case.pk}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, '<th class="d-none d-md-table-cell">Completed On</th>', html=True)
+        self.assertNotContains(response, '<th class="d-none d-md-table-cell">Freq</th>', html=True)
+
+    def test_case_detail_completed_task_shows_completed_at_date(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-COMP-DATE",
+            first_name="Completed",
+            last_name="Timestamp",
+            phone_number="9876504442",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=10),
+            created_by=self.user,
+        )
+        task = Task.objects.create(
+            case=case,
+            title="Completed task",
+            due_date=timezone.localdate() - timedelta(days=2),
+            status=TaskStatus.COMPLETED,
+            assigned_user=self.user,
+            created_by=self.user,
+        )
+        completed_at = timezone.make_aware(datetime(2026, 1, 15, 10, 30))
+        Task.objects.filter(pk=task.pk).update(completed_at=completed_at)
+        expected_date = timezone.localtime(completed_at).strftime("%d-%m-%y")
+
+        response = self.client.get(reverse("patients:case_detail", kwargs={"pk": case.pk}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(
+            response,
+            f'<td class="d-none d-md-table-cell">{expected_date}</td>',
+            html=True,
+        )
+
+    def test_case_detail_completed_task_falls_back_to_due_date_when_completed_at_missing(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-COMP-FALLBACK",
+            first_name="Completed",
+            last_name="Fallback",
+            phone_number="9876504443",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=10),
+            created_by=self.user,
+        )
+        due_date = timezone.localdate() - timedelta(days=3)
+        task = Task.objects.create(
+            case=case,
+            title="Legacy completed task",
+            due_date=due_date,
+            status=TaskStatus.COMPLETED,
+            assigned_user=self.user,
+            created_by=self.user,
+        )
+        Task.objects.filter(pk=task.pk).update(completed_at=None)
+
+        response = self.client.get(reverse("patients:case_detail", kwargs={"pk": case.pk}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(
+            response,
+            f'<td class="d-none d-md-table-cell">{due_date.strftime("%d-%m-%y")}</td>',
+            html=True,
+        )
+
+    def test_case_detail_non_completed_task_shows_dash_for_completed_on(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-COMP-DASH",
+            first_name="Scheduled",
+            last_name="Dash",
+            phone_number="9876504444",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=10),
+            created_by=self.user,
+        )
+        Task.objects.create(
+            case=case,
+            title="Scheduled task",
+            due_date=timezone.localdate() + timedelta(days=1),
+            status=TaskStatus.SCHEDULED,
+            assigned_user=self.user,
+            created_by=self.user,
+        )
+
+        response = self.client.get(reverse("patients:case_detail", kwargs={"pk": case.pk}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, '<td class="d-none d-md-table-cell">-</td>', html=True)
 
     def test_dashboard_invalid_upcoming_days_defaults_to_seven(self):
         self.client.force_login(self.user)

@@ -140,7 +140,7 @@
       <h2 class="h5">Tasks</h2>
       <div class="table-responsive">
         <table class="table table-sm align-middle">
-          <thead><tr><th>Title</th><th>Due</th><th>Status</th><th class="d-none d-md-table-cell">Freq</th><th class="d-none d-md-table-cell">Assigned</th><th></th></tr></thead>
+          <thead><tr><th>Title</th><th>Due</th><th>Status</th><th class="d-none d-md-table-cell">Completed On</th><th class="d-none d-md-table-cell">Assigned</th><th></th></tr></thead>
           <tbody>
           {% for task in tasks %}
             <tr {% if case.category.name|upper == 'ANC' and task.due_date > today %}class="table-secondary"{% endif %}>
@@ -149,7 +149,13 @@
               <td>
                 <span class="task-status-pill status-{{ task.status|slugify }}">{{ task.get_status_display }}</span>
               </td>
-              <td class="d-none d-md-table-cell">{{ task.frequency_label|default:'-' }}</td>
+              <td class="d-none d-md-table-cell">
+                {% if task.status == "COMPLETED" %}
+                  {{ task.completed_at|default:task.due_date|date:'d-m-y' }}
+                {% else %}
+                  -
+                {% endif %}
+              </td>
               <td class="d-none d-md-table-cell">{{ task.assigned_user|default:'-' }}</td>
               <td>
                 {% if can_task_edit %}

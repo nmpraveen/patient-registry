@@ -14,7 +14,7 @@ from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 
-from .forms import CaseForm
+from .forms import CaseForm, DepartmentThemeForm
 from .models import (
     ActivityEventType,
     AncHighRiskReason,
@@ -32,9 +32,18 @@ from .models import (
     Task,
     TaskType,
     TaskStatus,
+    ThemeSettings,
     VitalEntry,
     ensure_default_departments,
     ensure_default_role_settings,
+)
+from .theme import (
+    field_name_to_css_var,
+    flatten_theme_tokens,
+    merge_theme_tokens,
+    mix_colors,
+    normalize_hex_color,
+    rgba_string,
 )
 
 
@@ -125,6 +134,59 @@ class MedtrackModelTests(TestCase):
         self.assertEqual(settings.TIME_ZONE, "Asia/Kolkata")
 
 
+class ThemeSystemTests(TestCase):
+    def test_normalize_hex_color_and_merge_theme_tokens_compute_derived_values(self):
+        self.assertEqual(normalize_hex_color("#ABCDEF"), "#abcdef")
+        with self.assertRaises(ValueError):
+            normalize_hex_color("blue")
+        self.assertEqual(field_name_to_css_var("shell__page_bg"), "--theme-shell-page-bg")
+        self.assertEqual(
+            field_name_to_css_var("case_status__loss_to_follow_up__bg"),
+            "--theme-case-status-loss-to-follow-up-bg",
+        )
+
+        merged = merge_theme_tokens(
+            {
+                "buttons": {"primary": {"bg": "#112233", "text": "#ffffff"}},
+                "vitals_chart": {"bp_systolic": "#112233"},
+            }
+        )
+
+        self.assertEqual(merged["buttons"]["primary"]["border"], mix_colors("#112233", "#ffffff", 0.20))
+        self.assertEqual(merged["buttons"]["primary"]["hover_bg"], mix_colors("#112233", "#ffffff", 0.10))
+        self.assertEqual(merged["vitals_chart"]["bp_systolic_fill"], rgba_string("#112233", 0.18))
+
+    def test_theme_settings_singleton_normalizes_tokens_on_save(self):
+        theme = ThemeSettings(tokens={"shell": {"page_bg": "#ABCDEF"}})
+        theme.save()
+
+        solo = ThemeSettings.get_solo()
+
+        self.assertEqual(solo.pk, 1)
+        self.assertEqual(solo.tokens["shell"]["page_bg"], "#abcdef")
+        self.assertIn("nav", solo.tokens)
+        self.assertEqual(ThemeSettings.objects.count(), 1)
+
+    def test_department_config_theme_defaults_follow_category_name(self):
+        anc = DepartmentConfig.objects.get(name="ANC")
+        custom = DepartmentConfig.objects.create(name="Custom Clinic")
+
+        self.assertEqual(anc.theme_bg_color, "#d1e7dd")
+        self.assertEqual(anc.theme_text_color, "#0f5132")
+        self.assertEqual(custom.theme_bg_color, "#e2e3e5")
+        self.assertEqual(custom.theme_text_color, "#41464b")
+
+    def test_department_theme_form_points_inputs_to_preview_chip_id(self):
+        category = DepartmentConfig.objects.get(name="ANC")
+
+        form = DepartmentThemeForm(instance=category)
+
+        self.assertEqual(
+            form.fields["theme_bg_color"].widget.attrs["data-category-preview"],
+            f"theme-category-{category.pk}-preview",
+        )
+
+
 class MedtrackViewTests(TestCase):
     def setUp(self):
         self.user = get_user_model().objects.create_user(username="doc", password="strong-password-123")
@@ -145,6 +207,36 @@ class MedtrackViewTests(TestCase):
             f"Expected at most {max_queries} queries, but saw {len(captured)}.",
         )
         return response
+
+    def login_as_admin(self):
+        ensure_default_role_settings()
+        admin_group, _ = Group.objects.get_or_create(name="Admin")
+        self.user.groups.clear()
+        self.user.groups.add(admin_group)
+        self.client.force_login(self.user)
+
+    def build_theme_post_data(self, *, token_overrides=None, category_overrides=None):
+        token_values = flatten_theme_tokens(merge_theme_tokens(ThemeSettings.get_solo().tokens))
+        if token_overrides:
+            token_values.update(token_overrides)
+
+        categories = list(DepartmentConfig.objects.order_by("name"))
+        post_data = {"action": "save", **token_values}
+        post_data.update(
+            {
+                "categories-TOTAL_FORMS": str(len(categories)),
+                "categories-INITIAL_FORMS": str(len(categories)),
+                "categories-MIN_NUM_FORMS": "0",
+                "categories-MAX_NUM_FORMS": "1000",
+            }
+        )
+        category_overrides = category_overrides or {}
+        for index, category in enumerate(categories):
+            colors = category_overrides.get(category.name, {})
+            post_data[f"categories-{index}-id"] = str(category.pk)
+            post_data[f"categories-{index}-theme_bg_color"] = colors.get("bg", category.theme_bg_color)
+            post_data[f"categories-{index}-theme_text_color"] = colors.get("text", category.theme_text_color)
+        return post_data
 
     def test_case_list_pagination_is_active(self):
         self.client.force_login(self.user)
@@ -358,7 +450,7 @@ class MedtrackViewTests(TestCase):
         Task.objects.create(case=non_surgical_active, title="Awaiting", due_date=today + timedelta(days=11), status=TaskStatus.AWAITING_REPORTS, created_by=self.user)
         Task.objects.create(case=surgery_active, title="Completed", due_date=today - timedelta(days=1), status=TaskStatus.COMPLETED, created_by=self.user)
 
-        response = self.assert_max_queries(8, reverse("patients:dashboard"), {"upcoming_days": 14})
+        response = self.assert_max_queries(9, reverse("patients:dashboard"), {"upcoming_days": 14})
 
         self.assertEqual(response.context["anc_case_count"], 1)
         self.assertEqual(response.context["surgery_case_count"], 1)
@@ -973,6 +1065,47 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertFalse(CallLog.objects.filter(case=case, notes="Missing task").exists())
 
+    def test_case_list_and_case_detail_render_theme_category_chip_and_real_status_classes(self):
+        self.client.force_login(self.user)
+        self.surgery.theme_bg_color = "#abcdef"
+        self.surgery.theme_text_color = "#123456"
+        self.surgery.save()
+        today = timezone.localdate()
+
+        active_case = Case.objects.create(
+            uhid="UH-THEME-ACTIVE",
+            first_name="Theme",
+            last_name="Active",
+            phone_number="9876504450",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=today + timedelta(days=10),
+            created_by=self.user,
+        )
+        loss_case = Case.objects.create(
+            uhid="UH-THEME-LTFU",
+            first_name="Theme",
+            last_name="Lost",
+            phone_number="9876504451",
+            category=self.surgery,
+            status=CaseStatus.LOSS_TO_FOLLOW_UP,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=today + timedelta(days=12),
+            created_by=self.user,
+        )
+
+        case_list_response = self.client.get(reverse("patients:case_list"))
+        active_detail_response = self.client.get(reverse("patients:case_detail", kwargs={"pk": active_case.pk}))
+        loss_detail_response = self.client.get(reverse("patients:case_detail", kwargs={"pk": loss_case.pk}))
+
+        self.assertEqual(case_list_response.status_code, 200)
+        self.assertContains(case_list_response, "theme-category-chip")
+        self.assertContains(case_list_response, "--theme-category-bg: #abcdef;")
+        self.assertContains(active_detail_response, "pill-status-active")
+        self.assertContains(active_detail_response, "--theme-category-bg: #abcdef;")
+        self.assertContains(loss_detail_response, "pill-status-loss-to-follow-up")
+
     def test_dashboard_invalid_upcoming_days_defaults_to_seven(self):
         self.client.force_login(self.user)
 
@@ -1044,6 +1177,80 @@ class MedtrackViewTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, reverse("patients:changelog"))
+
+    def test_admin_settings_page_shows_theme_link_and_theme_page_requires_manage_settings(self):
+        self.client.force_login(self.user)
+
+        forbidden_get = self.client.get(reverse("patients:settings_theme"))
+        forbidden_post = self.client.post(reverse("patients:settings_theme"), {"action": "restore_defaults"})
+
+        self.assertEqual(forbidden_get.status_code, 403)
+        self.assertEqual(forbidden_post.status_code, 403)
+
+        self.login_as_admin()
+        settings_response = self.client.get(reverse("patients:settings"))
+        theme_response = self.client.get(reverse("patients:settings_theme"))
+
+        self.assertEqual(settings_response.status_code, 200)
+        self.assertContains(settings_response, reverse("patients:settings_theme"))
+        self.assertEqual(theme_response.status_code, 200)
+        self.assertContains(theme_response, "Theme Settings")
+
+    def test_theme_settings_page_saves_global_tokens_and_category_colors(self):
+        self.login_as_admin()
+        anc = DepartmentConfig.objects.get(name="ANC")
+        post_data = self.build_theme_post_data(
+            token_overrides={"nav__bg": "#123456", "shell__page_bg": "#faf0e6"},
+            category_overrides={"ANC": {"bg": "#abcdef", "text": "#123456"}},
+        )
+
+        response = self.client.post(reverse("patients:settings_theme"), post_data, follow=True)
+
+        self.assertEqual(response.status_code, 200)
+        theme_settings = ThemeSettings.get_solo()
+        anc.refresh_from_db()
+        self.assertEqual(theme_settings.tokens["nav"]["bg"], "#123456")
+        self.assertEqual(theme_settings.tokens["shell"]["page_bg"], "#faf0e6")
+        self.assertEqual(anc.theme_bg_color, "#abcdef")
+        self.assertEqual(anc.theme_text_color, "#123456")
+        self.assertContains(response, "--theme-nav-bg: #123456;")
+        self.assertContains(response, "Theme settings saved.")
+
+    def test_theme_settings_restore_defaults_resets_saved_values(self):
+        self.login_as_admin()
+        anc = DepartmentConfig.objects.get(name="ANC")
+        theme_settings = ThemeSettings.get_solo()
+        theme_settings.tokens = {"nav": {"bg": "#123456"}}
+        theme_settings.save()
+        anc.theme_bg_color = "#abcdef"
+        anc.theme_text_color = "#123456"
+        anc.save()
+
+        response = self.client.post(
+            reverse("patients:settings_theme"),
+            {"action": "restore_defaults"},
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        theme_settings.refresh_from_db()
+        anc.refresh_from_db()
+        self.assertEqual(theme_settings.tokens["nav"]["bg"], "#0d6efd")
+        self.assertEqual(anc.theme_bg_color, "#d1e7dd")
+        self.assertEqual(anc.theme_text_color, "#0f5132")
+        self.assertContains(response, "Theme restored to defaults.")
+
+    def test_error_messages_render_as_danger_alerts(self):
+        self.login_as_admin()
+
+        response = self.client.post(
+            reverse("patients:settings"),
+            {"action": "create_role"},
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "alert alert-danger mb-2")
 
     def test_admin_changelog_page_displays_version_entries(self):
         ensure_default_role_settings()
@@ -2311,6 +2518,9 @@ class MedtrackViewTests(TestCase):
 
     def test_universal_case_search_returns_expected_fields_and_compact_format_data(self):
         self.client.force_login(self.user)
+        self.surgery.theme_bg_color = "#abcdef"
+        self.surgery.theme_text_color = "#123456"
+        self.surgery.save()
         case = Case.objects.create(
             uhid="UH-SEARCH-001",
             first_name="Priya",
@@ -2342,7 +2552,10 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(result["village"], "Pune")
         self.assertEqual(result["diagnosis"], "Gallbladder stones")
         self.assertEqual(result["detail_url"], reverse("patients:case_detail", kwargs={"pk": case.pk}))
-        self.assertTrue(any(tag["kind"] == "category" for tag in result["tags"]))
+        category_tag = next(tag for tag in result["tags"] if tag["kind"] == "category")
+        self.assertEqual(category_tag["bg_color"], "#abcdef")
+        self.assertEqual(category_tag["text_color"], "#123456")
+        self.assertEqual(category_tag["border_color"], mix_colors("#abcdef", "#123456", 0.20))
         self.assertTrue(any(tag["kind"] == "high_risk" for tag in result["tags"]))
         self.assertTrue(any(tag["kind"] == "referred" for tag in result["tags"]))
         self.assertTrue(any(tag["kind"] == "ncd" for tag in result["tags"]))

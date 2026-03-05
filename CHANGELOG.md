@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026.03.05.23.03
+- Rebases the global theme system onto the latest `main`, preserving the newer dashboard, case list, and action-first case detail layouts while keeping theme tokens and the admin Theme settings page.
+- Added the global `ThemeSettingsView` back on the rebased branch and restored themed category colors in universal search, case detail, case list, dashboard summary cards, and the shared base shell.
+- Standardized hard-coded status and task colors in the rebased case detail view to theme tokens, kept Django `error` messages mapped to themed danger alerts, and preserved the latest search/nav behavior from upstream.
+- Kept the new `/patients/settings/theme/` workflow, per-category colors, migrations, tests, changelog links, and user-facing Theme page on top of the updated repo.
+
 ## 2026.03.05.21.22
 - Delivered Issue #47 as a single integrated update: action-first case detail workflow with prominent actionable tasks, inline quick task actions, unified clinical timeline filters, and task-linked call logging requirements.
 - Added backend contract support for timeline/event reliability: `CaseActivityLog.event_type` (`SYSTEM`, `TASK`, `NOTE`, `CALL`) with migration backfill, explicit activity typing on writes, and task quick-action endpoints:

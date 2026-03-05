@@ -57,6 +57,7 @@ TEMPLATES = [
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
                 "patient_registry.context_processors.app_version",
+                "patient_registry.context_processors.global_theme",
             ],
         },
     },

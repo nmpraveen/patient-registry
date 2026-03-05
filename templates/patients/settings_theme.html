@@ -1,0 +1,613 @@
+{% extends 'base.html' %}
+{% load theme_tags %}
+{% block title %}Theme | MEDTRACK{% endblock %}
+{% block content %}
+<style>
+  .theme-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+  }
+
+  .theme-preview-shell {
+    border: 1px solid var(--theme-shell-surface-border);
+    border-radius: 1rem;
+    overflow: hidden;
+    background: var(--theme-shell-page-bg);
+    color: var(--theme-shell-page-text);
+    box-shadow: 0 8px 24px var(--theme-shell-shadow);
+    margin-bottom: 1rem;
+  }
+
+  .theme-preview-main {
+    padding: 1rem;
+    background: var(--theme-shell-page-bg);
+  }
+
+  .theme-preview-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 0.85rem;
+  }
+
+  .theme-preview-card {
+    border: 1px solid var(--theme-shell-surface-border);
+    border-radius: 0.85rem;
+    background: var(--theme-shell-surface-bg);
+    color: var(--theme-shell-surface-text);
+    padding: 0.85rem;
+  }
+
+  .theme-preview-card h2 {
+    font-size: 0.95rem;
+    margin-bottom: 0.65rem;
+  }
+
+  .theme-preview-chip-row,
+  .theme-preview-button-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .theme-preview-pill {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    padding: 0.22rem 0.58rem;
+    font-size: 0.74rem;
+    font-weight: 700;
+    border: 1px solid transparent;
+  }
+
+  .theme-preview-pill--case-active {
+    background: var(--theme-case-status-active-bg);
+    color: var(--theme-case-status-active-text);
+    border-color: var(--theme-case-status-active-border);
+  }
+
+  .theme-preview-pill--case-ltfu {
+    background: var(--theme-case-status-loss-to-follow-up-bg);
+    color: var(--theme-case-status-loss-to-follow-up-text);
+    border-color: var(--theme-case-status-loss-to-follow-up-border);
+  }
+
+  .theme-preview-pill--task-scheduled {
+    background: var(--theme-task-status-scheduled-bg);
+    color: var(--theme-task-status-scheduled-text);
+    border-color: var(--theme-task-status-scheduled-border);
+  }
+
+  .theme-preview-pill--task-awaiting {
+    background: var(--theme-task-status-awaiting-reports-bg);
+    color: var(--theme-task-status-awaiting-reports-text);
+    border-color: var(--theme-task-status-awaiting-reports-border);
+  }
+
+  .theme-preview-pill--vitals-low {
+    background: var(--theme-vitals-status-low-bg);
+    color: var(--theme-vitals-status-low-text);
+    border-color: var(--theme-vitals-status-low-border);
+  }
+
+  .theme-preview-pill--vitals-normal {
+    background: var(--theme-vitals-status-normal-bg);
+    color: var(--theme-vitals-status-normal-text);
+    border-color: var(--theme-vitals-status-normal-border);
+  }
+
+  .theme-section-card {
+    border: 1px solid var(--theme-shell-surface-border);
+    border-radius: 1rem;
+    background: var(--theme-shell-surface-bg);
+    margin-bottom: 1rem;
+  }
+
+  .theme-section-card .card-body {
+    padding: 1rem;
+  }
+
+  .theme-field-row {
+    display: grid;
+    grid-template-columns: minmax(180px, 220px) 1fr;
+    gap: 1rem;
+    align-items: start;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid var(--theme-shell-surface-border);
+  }
+
+  .theme-field-row:last-child {
+    border-bottom: 0;
+    padding-bottom: 0;
+  }
+
+  .theme-field-row:first-child {
+    padding-top: 0;
+  }
+
+  .theme-field-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 0.85rem;
+  }
+
+  .theme-color-field label,
+  .theme-category-row label {
+    display: block;
+    font-size: 0.8rem;
+    font-weight: 600;
+    margin-bottom: 0.35rem;
+  }
+
+  .theme-color-field-controls {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.5rem;
+    align-items: center;
+  }
+
+  .theme-color-picker {
+    width: 3rem;
+    min-width: 3rem;
+    height: 2.5rem;
+    padding: 0.2rem;
+  }
+
+  .theme-category-row {
+    display: grid;
+    grid-template-columns: minmax(140px, 220px) minmax(0, 1fr) minmax(0, 1fr) auto;
+    gap: 0.85rem;
+    align-items: center;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid var(--theme-shell-surface-border);
+  }
+
+  .theme-category-row:last-child {
+    border-bottom: 0;
+    padding-bottom: 0;
+  }
+
+  .theme-category-row:first-child {
+    padding-top: 0;
+  }
+
+  .theme-category-name {
+    font-weight: 700;
+  }
+
+  .theme-preview-search-box {
+    border: 1px solid var(--theme-search-dropdown-border);
+    border-radius: 0.85rem;
+    background: var(--theme-search-dropdown-bg);
+    color: var(--theme-search-dropdown-text);
+    padding: 0.75rem;
+  }
+
+  @media (max-width: 767.98px) {
+    .theme-field-row,
+    .theme-category-row {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<div class="theme-toolbar">
+  <div>
+    <h1 class="h4 mb-1">Theme Settings</h1>
+    <p class="text-muted mb-0">Global color controls for layout, status badges, search, charts, and category accents.</p>
+  </div>
+  <div class="d-flex gap-2">
+    <a class="btn btn-outline-secondary btn-sm" href="{% url 'patients:settings' %}">Back to Settings</a>
+    <form method="post" class="m-0">
+      {% csrf_token %}
+      <button class="btn btn-outline-danger btn-sm" type="submit" name="action" value="restore_defaults">Restore Defaults</button>
+    </form>
+  </div>
+</div>
+
+<div class="theme-preview-shell" data-theme-preview-root>
+  <div class="app-nav navbar navbar-dark px-3 py-2">
+    <span class="navbar-brand mb-0 h1 fs-6">MEDTRACK Preview</span>
+    <div class="d-flex gap-2">
+      <button class="btn btn-sm btn-outline-light" type="button">Cases</button>
+      <button class="btn btn-sm btn-light" type="button">Logout</button>
+    </div>
+  </div>
+  <div class="theme-preview-main">
+    <div class="theme-preview-grid">
+      <div class="theme-preview-card">
+        <h2>Dashboard Cards</h2>
+        <div class="row g-2">
+          <div class="col-6">
+            <div class="dashboard-summary-card dashboard-summary-card--today">
+              <div class="card-body py-2">
+                <small>Today's</small>
+                <div class="h5 mb-0">12</div>
+              </div>
+            </div>
+          </div>
+          <div class="col-6">
+            <div class="dashboard-summary-card dashboard-summary-card--upcoming">
+              <div class="card-body py-2">
+                <small>Upcoming</small>
+                <div class="h5 mb-0">18</div>
+              </div>
+            </div>
+          </div>
+          <div class="col-6">
+            <div class="dashboard-summary-card dashboard-summary-card--category" style="{% category_theme_style 'ANC' theme_category_colors %}" data-preview-category="ANC">
+              <div class="card-body py-2">
+                <small>ANC</small>
+                <div class="h5 mb-0">24</div>
+              </div>
+            </div>
+          </div>
+          <div class="col-6">
+            <div class="dashboard-summary-card dashboard-summary-card--category" style="{% category_theme_style 'Surgery' theme_category_colors %}" data-preview-category="SURGERY">
+              <div class="card-body py-2">
+                <small>Surgery</small>
+                <div class="h5 mb-0">9</div>
+              </div>
+            </div>
+          </div>
+          <div class="col-12">
+            <div class="dashboard-summary-card dashboard-summary-card--category" style="{% category_theme_style 'Non Surgical' theme_category_colors %}" data-preview-category="NON SURGICAL">
+              <div class="card-body py-2">
+                <small>Non Surgical</small>
+                <div class="h5 mb-0">33</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="theme-preview-card">
+        <h2>Status Chips</h2>
+        <div class="theme-preview-chip-row mb-3">
+          <span class="theme-preview-pill theme-preview-pill--case-active">Active</span>
+          <span class="theme-preview-pill theme-preview-pill--case-ltfu">Loss To Follow-up</span>
+        </div>
+        <div class="theme-preview-chip-row mb-3">
+          <span class="theme-preview-pill theme-preview-pill--task-scheduled">Scheduled</span>
+          <span class="theme-preview-pill theme-preview-pill--task-awaiting">Awaiting Reports</span>
+        </div>
+        <div class="theme-preview-chip-row">
+          <span class="theme-preview-pill theme-preview-pill--vitals-low">Hb 8.5</span>
+          <span class="theme-preview-pill theme-preview-pill--vitals-normal">SpO2 99%</span>
+        </div>
+      </div>
+
+      <div class="theme-preview-card">
+        <h2>Buttons & Alerts</h2>
+        <div class="theme-preview-button-row mb-3">
+          <button class="btn btn-primary btn-sm" type="button">Primary</button>
+          <button class="btn btn-secondary btn-sm" type="button">Secondary</button>
+          <button class="btn btn-warning btn-sm" type="button">Warning</button>
+          <button class="btn btn-outline-danger btn-sm" type="button">Outline Danger</button>
+        </div>
+        <div class="alert alert-danger py-2 mb-0">Theme preview alert</div>
+      </div>
+
+      <div class="theme-preview-card">
+        <h2>Search & Category Tags</h2>
+        <div class="theme-preview-search-box">
+          <div class="fw-semibold">Priya Sharma, 31, Pune, Gallbladder stones, 9012345678, UH-SEARCH-001</div>
+          <div class="global-search-tags mt-2">
+            <span class="global-search-tag" style="{% category_theme_style 'Surgery' theme_category_colors %}; background: var(--theme-category-bg); color: var(--theme-category-text); border-color: var(--theme-category-border);" data-preview-category-tag="SURGERY">Surgery</span>
+            <span class="global-search-tag">High-risk</span>
+            <span class="global-search-tag">NCD</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<form method="post">
+  {% csrf_token %}
+  <div class="theme-toolbar mb-2">
+    <div class="text-muted small">Use the hex field or the color picker. Preview updates instantly; the live app updates after save.</div>
+    <button class="btn btn-primary" type="submit" name="action" value="save">Save Theme</button>
+  </div>
+
+  {% for section in theme_form_sections %}
+    <section class="theme-section-card">
+      <div class="card-body">
+        <h2 class="h5 mb-3">{{ section.title }}</h2>
+        {% for row in section.rows %}
+          <div class="theme-field-row">
+            <div>
+              <div class="fw-semibold">{{ row.label }}</div>
+            </div>
+            <div class="theme-field-grid">
+              {% for field in row.fields %}
+                <div class="theme-color-field">
+                  <label for="{{ field.bound_field.id_for_label }}">{{ field.label }}</label>
+                  <div class="theme-color-field-controls">
+                    {{ field.bound_field }}
+                    <input
+                      type="color"
+                      class="form-control form-control-color theme-color-picker"
+                      data-sync-target="{{ field.bound_field.id_for_label }}"
+                      value="{{ field.bound_field.value|default_if_none:field.bound_field.initial }}"
+                    />
+                  </div>
+                  {% if field.bound_field.errors %}
+                    <div class="text-danger small mt-1">{{ field.bound_field.errors|striptags }}</div>
+                  {% endif %}
+                </div>
+              {% endfor %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    </section>
+  {% endfor %}
+
+  <section class="theme-section-card">
+    <div class="card-body">
+      <h2 class="h5 mb-3">Categories</h2>
+      {{ department_theme_formset.management_form }}
+      {% for form in department_theme_formset %}
+        {{ form.id }}
+        <div class="theme-category-row" data-category-name="{{ form.instance.name }}">
+          <div class="theme-category-name">{{ form.instance.name }}</div>
+          <div>
+            <label for="{{ form.theme_bg_color.id_for_label }}">Background</label>
+            <div class="theme-color-field-controls">
+              {{ form.theme_bg_color }}
+              <input
+                type="color"
+                class="form-control form-control-color theme-color-picker"
+                data-sync-target="{{ form.theme_bg_color.id_for_label }}"
+                value="{{ form.theme_bg_color.value|default_if_none:form.theme_bg_color.initial }}"
+              />
+            </div>
+            {% if form.theme_bg_color.errors %}
+              <div class="text-danger small mt-1">{{ form.theme_bg_color.errors|striptags }}</div>
+            {% endif %}
+          </div>
+          <div>
+            <label for="{{ form.theme_text_color.id_for_label }}">Text</label>
+            <div class="theme-color-field-controls">
+              {{ form.theme_text_color }}
+              <input
+                type="color"
+                class="form-control form-control-color theme-color-picker"
+                data-sync-target="{{ form.theme_text_color.id_for_label }}"
+                value="{{ form.theme_text_color.value|default_if_none:form.theme_text_color.initial }}"
+              />
+            </div>
+            {% if form.theme_text_color.errors %}
+              <div class="text-danger small mt-1">{{ form.theme_text_color.errors|striptags }}</div>
+            {% endif %}
+          </div>
+          <span
+            class="theme-category-chip"
+            id="theme-category-{{ form.instance.pk }}-preview"
+            style="{% category_theme_style form.instance theme_category_colors %}"
+          >{{ form.instance.name }}</span>
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+</form>
+
+<script>
+  (() => {
+    const previewRoot = document.querySelector("[data-theme-preview-root]");
+    const hexInputs = document.querySelectorAll(".theme-hex-input");
+    const pickerInputs = document.querySelectorAll(".theme-color-picker");
+    const pairPrefixes = [
+      "buttons-primary",
+      "buttons-secondary",
+      "buttons-warning",
+      "buttons-danger",
+      "buttons-light",
+      "alerts-info",
+      "alerts-success",
+      "alerts-warning",
+      "alerts-danger",
+      "alerts-light",
+      "dashboard-today",
+      "dashboard-upcoming",
+      "dashboard-overdue",
+      "case-status-active",
+      "case-status-completed",
+      "case-status-cancelled",
+      "case-status-loss-to-follow-up",
+      "task-status-scheduled",
+      "task-status-awaiting-reports",
+      "task-status-completed",
+      "task-status-cancelled",
+      "vitals-status-low",
+      "vitals-status-normal",
+      "vitals-status-high",
+      "vitals-status-neutral",
+      "vitals-status-na",
+    ];
+    const chartPrefixes = [
+      "bp-systolic",
+      "bp-diastolic",
+      "pulse-rate",
+      "spo2",
+      "weight",
+      "hemoglobin",
+    ];
+
+    function normalizeHex(value) {
+      const normalized = String(value || "").trim().toLowerCase();
+      return /^#[0-9a-f]{6}$/.test(normalized) ? normalized : "";
+    }
+
+    function hexToRgb(hexColor) {
+      return [1, 3, 5].map((start) => Number.parseInt(hexColor.slice(start, start + 2), 16));
+    }
+
+    function rgbToHex(rgb) {
+      return `#${rgb.map((value) => value.toString(16).padStart(2, "0")).join("")}`;
+    }
+
+    function mixColors(baseColor, targetColor, ratio) {
+      const base = hexToRgb(baseColor);
+      const target = hexToRgb(targetColor);
+      const mixed = base.map((channel, index) => Math.round(channel + ((target[index] - channel) * ratio)));
+      return rgbToHex(mixed);
+    }
+
+    function rgbaString(hexColor, alpha) {
+      const [red, green, blue] = hexToRgb(hexColor);
+      return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
+    }
+
+    function canonicalCategoryKey(name) {
+      const collapsed = String(name || "").toUpperCase().replace(/[^A-Z]/g, "");
+      if (collapsed === "ANC") return "ANC";
+      if (collapsed === "SURGERY") return "SURGERY";
+      if (collapsed === "NONSURGICAL") return "NON SURGICAL";
+      return String(name || "").toUpperCase();
+    }
+
+    function readVar(name) {
+      return getComputedStyle(previewRoot).getPropertyValue(name).trim();
+    }
+
+    function setVar(name, value) {
+      if (previewRoot) {
+        previewRoot.style.setProperty(name, value);
+      }
+    }
+
+    function applyDerivedThemeVars() {
+      if (!previewRoot) {
+        return;
+      }
+
+      const shadowColor = normalizeHex(readVar("--theme-shell-shadow-color"));
+      const surfaceBg = normalizeHex(readVar("--theme-shell-surface-bg"));
+      const surfaceText = normalizeHex(readVar("--theme-shell-surface-text"));
+      const shellLink = normalizeHex(readVar("--theme-shell-link"));
+      const searchDropdownBg = normalizeHex(readVar("--theme-search-dropdown-bg"));
+      const searchDropdownText = normalizeHex(readVar("--theme-search-dropdown-text"));
+      const searchTagBg = normalizeHex(readVar("--theme-search-tag-bg"));
+      const searchTagText = normalizeHex(readVar("--theme-search-tag-text"));
+
+      if (shadowColor) {
+        setVar("--theme-shell-shadow", rgbaString(shadowColor, 0.12));
+      }
+      if (surfaceBg && surfaceText) {
+        setVar("--theme-shell-surface-hover-bg", mixColors(surfaceBg, surfaceText, 0.10));
+      }
+      if (shellLink) {
+        setVar("--theme-shell-focus-shadow", rgbaString(shellLink, 0.25));
+      }
+      if (searchDropdownBg && searchDropdownText) {
+        setVar("--theme-search-dropdown-border", mixColors(searchDropdownBg, searchDropdownText, 0.20));
+      }
+      if (searchTagBg && searchTagText) {
+        setVar("--theme-search-tag-border", mixColors(searchTagBg, searchTagText, 0.20));
+      }
+
+      pairPrefixes.forEach((prefix) => {
+        const bg = normalizeHex(readVar(`--theme-${prefix}-bg`));
+        const text = normalizeHex(readVar(`--theme-${prefix}-text`));
+        if (!bg || !text) {
+          return;
+        }
+        setVar(`--theme-${prefix}-border`, mixColors(bg, text, 0.20));
+        setVar(`--theme-${prefix}-hover-bg`, mixColors(bg, text, 0.10));
+        setVar(`--theme-${prefix}-focus-shadow`, rgbaString(bg, 0.25));
+      });
+
+      chartPrefixes.forEach((prefix) => {
+        const lineColor = normalizeHex(readVar(`--theme-vitals-chart-${prefix}`));
+        if (!lineColor) {
+          return;
+        }
+        setVar(`--theme-vitals-chart-${prefix}-fill`, rgbaString(lineColor, 0.18));
+      });
+    }
+
+    function updateCategoryPreview(previewId) {
+      const previewEl = document.getElementById(previewId);
+      if (!previewEl) {
+        return;
+      }
+      const row = previewEl.closest(".theme-category-row");
+      if (!row) {
+        return;
+      }
+      const bgInput = row.querySelector('[data-category-role="bg"]');
+      const textInput = row.querySelector('[data-category-role="text"]');
+      const bgColor = normalizeHex(bgInput?.value);
+      const textColor = normalizeHex(textInput?.value);
+      if (!bgColor || !textColor) {
+        return;
+      }
+      const borderColor = mixColors(bgColor, textColor, 0.20);
+      const hoverBg = mixColors(bgColor, textColor, 0.10);
+      previewEl.style.setProperty("--theme-category-bg", bgColor);
+      previewEl.style.setProperty("--theme-category-text", textColor);
+      previewEl.style.setProperty("--theme-category-border", borderColor);
+      previewEl.style.setProperty("--theme-category-hover-bg", hoverBg);
+
+      const categoryKey = canonicalCategoryKey(row.dataset.categoryName);
+      document.querySelectorAll(`[data-preview-category="${categoryKey}"], [data-preview-category-tag="${categoryKey}"]`).forEach((sample) => {
+        sample.style.setProperty("--theme-category-bg", bgColor);
+        sample.style.setProperty("--theme-category-text", textColor);
+        sample.style.setProperty("--theme-category-border", borderColor);
+        sample.style.setProperty("--theme-category-hover-bg", hoverBg);
+        sample.style.backgroundColor = bgColor;
+        sample.style.color = textColor;
+        sample.style.borderColor = borderColor;
+      });
+    }
+
+    hexInputs.forEach((input) => {
+      const picker = document.querySelector(`.theme-color-picker[data-sync-target="${input.id}"]`);
+      const initialColor = normalizeHex(input.value);
+      if (picker && initialColor) {
+        picker.value = initialColor;
+      }
+
+      input.addEventListener("input", () => {
+        const normalized = normalizeHex(input.value);
+        if (!normalized) {
+          return;
+        }
+        input.value = normalized;
+        if (picker) {
+          picker.value = normalized;
+        }
+        const previewVar = input.dataset.previewVar;
+        if (previewVar) {
+          setVar(previewVar, normalized);
+          applyDerivedThemeVars();
+        }
+        if (input.dataset.categoryPreview) {
+          updateCategoryPreview(input.dataset.categoryPreview);
+        }
+      });
+    });
+
+    pickerInputs.forEach((picker) => {
+      const target = document.getElementById(picker.dataset.syncTarget);
+      if (!target) {
+        return;
+      }
+      picker.addEventListener("input", () => {
+        target.value = picker.value.toLowerCase();
+        target.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    });
+
+    applyDerivedThemeVars();
+    document.querySelectorAll("[data-category-preview]").forEach((input) => {
+      updateCategoryPreview(input.dataset.categoryPreview);
+    });
+  })();
+</script>
+{% endblock %}

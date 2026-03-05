@@ -5,6 +5,8 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 
+from .theme import get_default_category_theme, normalize_hex_color, normalize_theme_tokens
+
 
 class CaseStatus(models.TextChoices):
     ACTIVE = "ACTIVE", "Active"
@@ -112,12 +114,22 @@ class DepartmentConfig(models.Model):
     auto_follow_up_days = models.PositiveIntegerField(default=30)
     predefined_actions = models.JSONField(default=list, blank=True)
     metadata_template = models.JSONField(default=dict, blank=True)
+    theme_bg_color = models.CharField(max_length=7, blank=True, default="")
+    theme_text_color = models.CharField(max_length=7, blank=True, default="")
 
     class Meta:
         ordering = ["name"]
 
     def __str__(self) -> str:
         return self.name
+
+    def save(self, *args, **kwargs):
+        default_theme = get_default_category_theme(self.name)
+        bg_color = (self.theme_bg_color or "").strip()
+        text_color = (self.theme_text_color or "").strip()
+        self.theme_bg_color = normalize_hex_color(bg_color or default_theme["bg"])
+        self.theme_text_color = normalize_hex_color(text_color or default_theme["text"])
+        super().save(*args, **kwargs)
 
 
 class RoleSetting(models.Model):
@@ -141,6 +153,19 @@ class RoleSetting(models.Model):
             "note_add": self.can_note_add,
             "manage_settings": self.can_manage_settings,
         }
+
+
+class ThemeSettings(models.Model):
+    tokens = models.JSONField(default=dict, blank=True)
+
+    def save(self, *args, **kwargs):
+        self.pk = 1
+        self.tokens = normalize_theme_tokens(self.tokens)
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def get_solo(cls):
+        return cls.objects.get_or_create(pk=1)[0]
 
 
 DEFAULT_DEPARTMENTS = [
@@ -195,11 +220,14 @@ DEFAULT_ROLE_SETTINGS = {
 
 def ensure_default_departments():
     for item in DEFAULT_DEPARTMENTS:
+        default_theme = get_default_category_theme(item["name"])
         DepartmentConfig.objects.get_or_create(
             name=item["name"],
             defaults={
                 "predefined_actions": item["predefined_actions"],
                 "metadata_template": item["metadata_template"],
+                "theme_bg_color": default_theme["bg"],
+                "theme_text_color": default_theme["text"],
             },
         )
 

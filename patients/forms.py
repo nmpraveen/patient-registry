@@ -5,6 +5,7 @@ from django import forms
 from django.utils import timezone
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
+from django.forms import modelformset_factory
 
 from .models import (
     AncHighRiskReason,
@@ -16,9 +17,19 @@ from .models import (
     RoleSetting,
     Task,
     TaskStatus,
+    ThemeSettings,
     VitalEntry,
     ensure_default_departments,
     ensure_default_role_settings,
+)
+from .theme import (
+    THEME_FORM_SECTIONS,
+    field_name_to_css_var,
+    flatten_theme_tokens,
+    merge_theme_tokens,
+    normalize_hex_color,
+    theme_field_definitions,
+    unflatten_theme_tokens,
 )
 
 
@@ -384,6 +395,97 @@ class DepartmentConfigForm(StyledModelForm):
         if commit:
             instance.save()
         return instance
+
+
+class ThemeSettingsForm(forms.Form):
+    section_definitions = THEME_FORM_SECTIONS
+
+    def __init__(self, *args, instance=None, **kwargs):
+        self.instance = instance or ThemeSettings.get_solo()
+        super().__init__(*args, **kwargs)
+        initial_tokens = flatten_theme_tokens(merge_theme_tokens(self.instance.tokens))
+        if not self.is_bound:
+            self.initial.update(initial_tokens)
+
+        self.sections = []
+        for section in self.section_definitions:
+            section_rows = []
+            for row in section["rows"]:
+                section_fields = []
+                for field in row["fields"]:
+                    field_name = field["name"]
+                    self.fields[field_name] = forms.CharField(
+                        label=field["label"],
+                        max_length=7,
+                        initial=initial_tokens[field_name],
+                    )
+                    self.fields[field_name].widget.attrs.update(
+                        {
+                            "class": "form-control theme-hex-input",
+                            "maxlength": "7",
+                            "pattern": "^#[0-9a-fA-F]{6}$",
+                            "data-preview-var": field_name_to_css_var(field_name),
+                        }
+                    )
+                    section_fields.append(
+                        {
+                            "name": field_name,
+                            "label": field["label"],
+                            "preview_var": field_name_to_css_var(field_name),
+                            "bound_field": self[field_name],
+                        }
+                    )
+                section_rows.append({"label": row["label"], "fields": section_fields})
+            self.sections.append({"title": section["title"], "rows": section_rows})
+
+    def clean(self):
+        cleaned_data = super().clean()
+        for field_name in theme_field_definitions():
+            try:
+                cleaned_data[field_name] = normalize_hex_color(cleaned_data[field_name])
+            except (KeyError, ValueError) as exc:
+                self.add_error(field_name, str(exc))
+        return cleaned_data
+
+    def save(self):
+        self.instance.tokens = unflatten_theme_tokens(
+            {field_name: self.cleaned_data[field_name] for field_name in theme_field_definitions()}
+        )
+        self.instance.save()
+        return self.instance
+
+
+class DepartmentThemeForm(forms.ModelForm):
+    class Meta:
+        model = DepartmentConfig
+        fields = ["theme_bg_color", "theme_text_color"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        preview_id = f"theme-category-{self.instance.pk or 'new'}-preview"
+        for field_name, role_label in (("theme_bg_color", "bg"), ("theme_text_color", "text")):
+            self.fields[field_name].widget.attrs.update(
+                {
+                    "class": "form-control theme-hex-input",
+                    "maxlength": "7",
+                    "pattern": "^#[0-9a-fA-F]{6}$",
+                    "data-category-preview": preview_id,
+                    "data-category-role": role_label,
+                }
+            )
+
+    def clean_theme_bg_color(self):
+        return normalize_hex_color(self.cleaned_data["theme_bg_color"])
+
+    def clean_theme_text_color(self):
+        return normalize_hex_color(self.cleaned_data["theme_text_color"])
+
+
+DepartmentThemeFormSet = modelformset_factory(
+    DepartmentConfig,
+    form=DepartmentThemeForm,
+    extra=0,
+)
 
 
 class SeedMockDataForm(forms.Form):

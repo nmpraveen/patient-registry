@@ -3,13 +3,13 @@
 {% block content %}
 <style>
   .case-section-card {
-    border: 1px solid var(--app-border);
+    border: 1px solid var(--theme-shell-surface-border);
     border-radius: 0.75rem;
-    background: var(--app-surface-bg);
+    background: var(--theme-shell-surface-bg);
   }
   .case-section-card .card-header {
-    border-bottom: 1px solid var(--app-border);
-    background: var(--app-page-bg);
+    border-bottom: 1px solid var(--theme-shell-surface-border);
+    background: var(--theme-shell-surface-hover-bg);
     border-radius: 0.75rem 0.75rem 0 0;
   }
   .ncd-grid {
@@ -42,14 +42,11 @@
   .autocomplete-panel .list-group-item {
     cursor: pointer;
   }
-  .field-wrap .invalid-feedback {
-    display: block;
-  }
 </style>
 
 <div class="card shadow-sm"><div class="card-body">
   <h1 class="h4 mb-1">{% if object %}Edit Case{% else %}New Case{% endif %}</h1>
-  <p class="text-muted small mb-3">Step 1: choose category - Step 2: complete relevant sections only.</p>
+  <p class="text-muted small mb-3">Step 1: choose category · Step 2: complete relevant sections only.</p>
 
   <form method="post" class="row g-3" id="case-form">{% csrf_token %}
     <div class="col-12">
@@ -269,7 +266,7 @@
 
   function clearValidationFeedback() {
     caseForm?.querySelectorAll('.is-invalid').forEach((input) => input.classList.remove('is-invalid'));
-    caseForm?.querySelectorAll('.invalid-feedback[data-inline-error=\"true\"]').forEach((node) => node.remove());
+    caseForm?.querySelectorAll('.invalid-feedback[data-inline-error="true"]').forEach((node) => node.remove());
   }
 
   function attachInlineError(inputEl, message) {

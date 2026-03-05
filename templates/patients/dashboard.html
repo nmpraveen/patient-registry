@@ -1,69 +1,59 @@
 {% extends 'base.html' %}
+{% load theme_tags %}
 {% block title %}Dashboard | MEDTRACK{% endblock %}
 {% block content %}
-<style>
-  .summary-panel {
-    border: 1px solid var(--app-border);
-    background: var(--app-surface-bg);
-  }
-
-  .summary-panel.today {
-    border-color: var(--app-accent-border);
-    background: var(--app-accent-light);
-    color: var(--app-accent);
-  }
-
-  .summary-panel.upcoming {
-    border-color: var(--app-category-surgery-border);
-    background: var(--app-category-surgery-bg);
-    color: var(--app-category-surgery-text);
-  }
-
-  .summary-panel.overdue {
-    border-color: var(--app-risk-high-border);
-    background: var(--app-risk-high-bg);
-  }
-
-  .summary-panel.overdue .summary-count {
-    color: var(--app-risk-high-text);
-  }
-
-  .overdue-case-card {
-    border-color: var(--app-risk-high-border) !important;
-    background: var(--app-surface-bg);
-  }
-</style>
 <h1 class="h4 mb-3">Dashboard</h1>
 <div class="row g-2 g-md-3 mb-4">
-  <div class="col-6 col-md-2"><div class="card summary-panel today"><div class="card-body py-2 py-md-3"><small>Today's</small><div class="h5 mb-0">{{ today_tasks|length }}</div></div></div></div>
-  <div class="col-6 col-md-2"><div class="card summary-panel upcoming"><div class="card-body py-2 py-md-3"><small>Upcoming</small><div class="h5 mb-0">{{ upcoming_tasks|length }}</div></div></div></div>
-  <div class="col-6 col-md-2"><div class="card summary-panel overdue"><div class="card-body py-2 py-md-3"><small>Overdue</small><div class="h5 mb-0 summary-count">{{ overdue_tasks|length }}</div></div></div></div>
   <div class="col-6 col-md-2">
-    <a class="text-decoration-none d-block h-100" href="{% url 'patients:case_list' %}?status=ACTIVE&category_group=anc" aria-label="View active ANC cases">
-      <div class="card app-category-panel anc h-100">
+    <div class="dashboard-summary-card dashboard-summary-card--today">
+      <div class="card-body py-2 py-md-3">
+        <small>Today's</small>
+        <div class="h5 mb-0">{{ today_tasks|length }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="dashboard-summary-card dashboard-summary-card--upcoming">
+      <div class="card-body py-2 py-md-3">
+        <small>Upcoming</small>
+        <div class="h5 mb-0">{{ upcoming_tasks|length }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="dashboard-summary-card dashboard-summary-card--overdue">
+      <div class="card-body py-2 py-md-3">
+        <small>Overdue</small>
+        <div class="h5 mb-0">{{ overdue_tasks|length }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <a class="dashboard-summary-link d-block h-100" href="{% url 'patients:case_list' %}?status=ACTIVE&category_group=anc" aria-label="View active ANC cases">
+      <div class="dashboard-summary-card dashboard-summary-card--category" style="{% category_theme_style 'ANC' theme_category_colors %}">
         <div class="card-body py-2 py-md-3">
-          <small class="text-body">ANC</small>
-          <div class="h5 mb-0 text-body">{{ anc_case_count }}</div>
+          <small>ANC</small>
+          <div class="h5 mb-0">{{ anc_case_count }}</div>
         </div>
       </div>
     </a>
   </div>
   <div class="col-6 col-md-2">
-    <a class="text-decoration-none d-block h-100" href="{% url 'patients:case_list' %}?status=ACTIVE&category_group=surgery" aria-label="View active Surgery cases">
-      <div class="card app-category-panel surgery h-100">
+    <a class="dashboard-summary-link d-block h-100" href="{% url 'patients:case_list' %}?status=ACTIVE&category_group=surgery" aria-label="View active Surgery cases">
+      <div class="dashboard-summary-card dashboard-summary-card--category" style="{% category_theme_style 'Surgery' theme_category_colors %}">
         <div class="card-body py-2 py-md-3">
-          <small class="text-body">Surgery</small>
-          <div class="h5 mb-0 text-body">{{ surgery_case_count }}</div>
+          <small>Surgery</small>
+          <div class="h5 mb-0">{{ surgery_case_count }}</div>
         </div>
       </div>
     </a>
   </div>
   <div class="col-6 col-md-2">
-    <a class="text-decoration-none d-block h-100" href="{% url 'patients:case_list' %}?status=ACTIVE&category_group=non_surgical" aria-label="View active Non-Surgical cases">
-      <div class="card app-category-panel non-surgical h-100">
+    <a class="dashboard-summary-link d-block h-100" href="{% url 'patients:case_list' %}?status=ACTIVE&category_group=non_surgical" aria-label="View active Non-Surgical cases">
+      <div class="dashboard-summary-card dashboard-summary-card--category" style="{% category_theme_style 'Non Surgical' theme_category_colors %}">
         <div class="card-body py-2 py-md-3">
-          <small class="text-body">Non Surgical</small>
-          <div class="h5 mb-0 text-body">{{ non_surgical_case_count }}</div>
+          <small>Non Surgical</small>
+          <div class="h5 mb-0">{{ non_surgical_case_count }}</div>
         </div>
       </div>
     </a>
@@ -130,10 +120,10 @@
   <div class="col-12 col-lg-6">
     <h2 class="h6">Overdue Tasks</h2>
     {% for card in overdue_cards %}
-      <div class="card mb-3 overdue-case-card shadow-sm">
+      <div class="card mb-3 shadow-sm" style="border-color: var(--theme-dashboard-overdue-border);">
         <div class="card-body py-2 px-3">
           <div class="d-flex align-items-center flex-wrap gap-1 small">
-            <span class="text-danger">{{ card.due_date|date:'M d' }} —</span>
+            <span style="color: var(--theme-dashboard-overdue-text);">{{ card.due_date|date:'M d' }} —</span>
             <a class="fw-semibold text-decoration-none" href="{% url 'patients:case_detail' card.case_id %}">{{ card.patient_name }}</a>
             <span class="text-muted">/ {{ card.diagnosis }} /</span>
             {% if card.high_risk %}<span title="High-risk case" class="text-danger">❗</span>{% endif %}

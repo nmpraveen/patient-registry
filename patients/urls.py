@@ -12,6 +12,7 @@ from .views import (
     DashboardView,
     VitalEntryCreateView,
     VitalEntryUpdateView,
+    ThemeSettingsView,
     UniversalCaseSearchView,
     AdminSettingsView,
     ChangelogView,
@@ -28,6 +29,7 @@ app_name = "patients"
 urlpatterns = [
     path("", DashboardView.as_view(), name="dashboard"),
     path("settings/", AdminSettingsView.as_view(), name="settings"),
+    path("settings/theme/", ThemeSettingsView.as_view(), name="settings_theme"),
     path("settings/changelog/", ChangelogView.as_view(), name="changelog"),
     path("settings/seed-mock-data/", SeedMockDataSettingsView.as_view(), name="settings_seed_mock_data"),
     path("cases/", CaseListView.as_view(), name="case_list"),

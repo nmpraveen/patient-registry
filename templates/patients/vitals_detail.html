@@ -18,33 +18,33 @@
   }
 
   .vitals-status-low {
-    color: #842029;
-    background: #f8d7da;
-    border-color: #f1aeb5;
+    color: var(--theme-vitals-status-low-text);
+    background: var(--theme-vitals-status-low-bg);
+    border-color: var(--theme-vitals-status-low-border);
   }
 
   .vitals-status-normal {
-    color: #0f5132;
-    background: #d1e7dd;
-    border-color: #a3cfbb;
+    color: var(--theme-vitals-status-normal-text);
+    background: var(--theme-vitals-status-normal-bg);
+    border-color: var(--theme-vitals-status-normal-border);
   }
 
   .vitals-status-high {
-    color: #664d03;
-    background: #fff3cd;
-    border-color: #ffe69c;
+    color: var(--theme-vitals-status-high-text);
+    background: var(--theme-vitals-status-high-bg);
+    border-color: var(--theme-vitals-status-high-border);
   }
 
   .vitals-status-neutral {
-    color: #084298;
-    background: #cfe2ff;
-    border-color: #9ec5fe;
+    color: var(--theme-vitals-status-neutral-text);
+    background: var(--theme-vitals-status-neutral-bg);
+    border-color: var(--theme-vitals-status-neutral-border);
   }
 
   .vitals-status-na {
-    color: #41464b;
-    background: #e2e3e5;
-    border-color: #d3d6d8;
+    color: var(--theme-vitals-status-na-text);
+    background: var(--theme-vitals-status-na-bg);
+    border-color: var(--theme-vitals-status-na-border);
   }
 </style>
 
@@ -157,7 +157,7 @@
                 <td>{{ vital.spo2|default:'-' }}</td>
                 <td>{{ vital.weight_kg|default:'-' }}</td>
                 <td>{{ vital.hemoglobin|default:'-' }}</td>
-                <td class="d-none d-md-table-cell">{{ vital.updated_at|date:'d-m-y H:i' }} · {{ vital.updated_by|default:'system' }}</td>
+                <td class="d-none d-md-table-cell">{{ vital.updated_at|date:'d-m-y H:i' }} | {{ vital.updated_by|default:'system' }}</td>
                 {% if can_vitals_edit %}
                   <td><a href="{% url 'patients:vitals_edit' vital.id %}">Edit</a></td>
                 {% endif %}
@@ -184,12 +184,12 @@
       if (!labels.length) return;
 
       const chartConfigs = [
-        { id: 'vitals-chart-bp-systolic', label: 'BP Systolic', values: datasets.bp_systolic || [], border: '#0d6efd', fill: 'rgba(13, 110, 253, 0.18)' },
-        { id: 'vitals-chart-bp-diastolic', label: 'BP Diastolic', values: datasets.bp_diastolic || [], border: '#6610f2', fill: 'rgba(102, 16, 242, 0.18)' },
-        { id: 'vitals-chart-pr', label: 'Pulse Rate', values: datasets.pr || [], border: '#fd7e14', fill: 'rgba(253, 126, 20, 0.18)' },
-        { id: 'vitals-chart-spo2', label: 'SpO2', values: datasets.spo2 || [], border: '#198754', fill: 'rgba(25, 135, 84, 0.18)' },
-        { id: 'vitals-chart-weight', label: 'Weight', values: datasets.weight || [], border: '#6f42c1', fill: 'rgba(111, 66, 193, 0.18)' },
-        { id: 'vitals-chart-hemoglobin', label: 'Hemoglobin', values: datasets.hemoglobin || [], border: '#dc3545', fill: 'rgba(220, 53, 69, 0.18)' },
+        { id: 'vitals-chart-bp-systolic', label: 'BP Systolic', values: datasets.bp_systolic || [], border: '{{ theme_tokens.vitals_chart.bp_systolic }}', fill: '{{ theme_tokens.vitals_chart.bp_systolic_fill }}' },
+        { id: 'vitals-chart-bp-diastolic', label: 'BP Diastolic', values: datasets.bp_diastolic || [], border: '{{ theme_tokens.vitals_chart.bp_diastolic }}', fill: '{{ theme_tokens.vitals_chart.bp_diastolic_fill }}' },
+        { id: 'vitals-chart-pr', label: 'Pulse Rate', values: datasets.pr || [], border: '{{ theme_tokens.vitals_chart.pulse_rate }}', fill: '{{ theme_tokens.vitals_chart.pulse_rate_fill }}' },
+        { id: 'vitals-chart-spo2', label: 'SpO2', values: datasets.spo2 || [], border: '{{ theme_tokens.vitals_chart.spo2 }}', fill: '{{ theme_tokens.vitals_chart.spo2_fill }}' },
+        { id: 'vitals-chart-weight', label: 'Weight', values: datasets.weight || [], border: '{{ theme_tokens.vitals_chart.weight }}', fill: '{{ theme_tokens.vitals_chart.weight_fill }}' },
+        { id: 'vitals-chart-hemoglobin', label: 'Hemoglobin', values: datasets.hemoglobin || [], border: '{{ theme_tokens.vitals_chart.hemoglobin }}', fill: '{{ theme_tokens.vitals_chart.hemoglobin_fill }}' },
       ];
 
       chartConfigs.forEach(function(config) {

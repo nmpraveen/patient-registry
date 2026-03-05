@@ -23,10 +23,12 @@ from .forms import (
     ActivityLogForm,
     CallLogForm,
     CaseForm,
+    DepartmentThemeFormSet,
     DepartmentConfigForm,
     RoleSettingForm,
     SeedMockDataForm,
     TaskForm,
+    ThemeSettingsForm,
     UserRoleForm,
     VitalEntryForm,
 )
@@ -44,6 +46,7 @@ from .models import (
     RoleSetting,
     Task,
     TaskStatus,
+    ThemeSettings,
     VitalEntry,
     build_default_tasks,
     cancel_open_rch_reminders,
@@ -52,6 +55,7 @@ from .models import (
     frequency_to_days,
     is_anc_case,
 )
+from .theme import build_theme_category_colors, get_default_category_theme, resolve_category_theme
 
 NON_SURGICAL_CASE_FILTER = (
     Q(category__name__iexact="Non Surgical")
@@ -840,6 +844,8 @@ class UniversalCaseSearchView(LoginRequiredMixin, CaseDataAccessMixin, View):
                 "ncd_flags",
                 "updated_at",
                 "category__name",
+                "category__theme_bg_color",
+                "category__theme_text_color",
                 "gender",
             )[:150]
         )
@@ -859,6 +865,9 @@ class UniversalCaseSearchView(LoginRequiredMixin, CaseDataAccessMixin, View):
 
         scored.sort(key=lambda row: (-row[0], -row[1].timestamp(), row[2].uhid))
         top_cases = [row[2] for row in scored[: self.max_results]]
+        theme_category_colors = build_theme_category_colors(
+            [case.category for case in top_cases if getattr(case, "category", None) is not None]
+        )
 
         results = []
         for case in top_cases:
@@ -867,9 +876,17 @@ class UniversalCaseSearchView(LoginRequiredMixin, CaseDataAccessMixin, View):
             age = case.age if case.age is not None else "\u2014"
             category = case.category.name
             category_style = _normalized_category_style(category)
+            category_theme = resolve_category_theme(theme_category_colors, case.category)
             gender_style = _normalized_gender_style(case.gender)
             tags = [
-                {"kind": "category", "label": category, "value": category_style},
+                {
+                    "kind": "category",
+                    "label": category,
+                    "value": category_style,
+                    "bg_color": category_theme["bg"],
+                    "text_color": category_theme["text"],
+                    "border_color": category_theme["border"],
+                },
             ]
             if case.gender:
                 tags.append({"kind": "gender", "label": case.get_gender_display(), "value": gender_style})
@@ -1530,6 +1547,73 @@ class SeedMockDataSettingsView(LoginRequiredMixin, View):
         call_command(*command_args)
         messages.success(request, "Mock data seeding completed.")
         return redirect("patients:settings_seed_mock_data")
+
+
+class ThemeSettingsView(LoginRequiredMixin, View):
+    template_name = "patients/settings_theme.html"
+
+    def _check_access(self, request):
+        if not has_capability(request.user, "manage_settings"):
+            return HttpResponseForbidden("Only admins can access settings.")
+        return None
+
+    @staticmethod
+    def _formset_queryset():
+        return DepartmentConfig.objects.order_by("name")
+
+    def _build_context(self, theme_form, department_theme_formset):
+        return {
+            "theme_form": theme_form,
+            "department_theme_formset": department_theme_formset,
+            "theme_form_sections": theme_form.sections,
+        }
+
+    def get(self, request):
+        denied = self._check_access(request)
+        if denied:
+            return denied
+        theme_settings = ThemeSettings.get_solo()
+        theme_form = ThemeSettingsForm(instance=theme_settings)
+        department_theme_formset = DepartmentThemeFormSet(
+            queryset=self._formset_queryset(),
+            prefix="categories",
+        )
+        return render(request, self.template_name, self._build_context(theme_form, department_theme_formset))
+
+    def post(self, request):
+        denied = self._check_access(request)
+        if denied:
+            return denied
+
+        action = request.POST.get("action", "save")
+        if action == "restore_defaults":
+            theme_settings = ThemeSettings.get_solo()
+            theme_settings.tokens = {}
+            theme_settings.save()
+            for department in self._formset_queryset():
+                default_theme = get_default_category_theme(department.name)
+                department.theme_bg_color = default_theme["bg"]
+                department.theme_text_color = default_theme["text"]
+                department.save(update_fields=["theme_bg_color", "theme_text_color"])
+            messages.success(request, "Theme restored to defaults.")
+            return redirect("patients:settings_theme")
+
+        theme_settings = ThemeSettings.get_solo()
+        theme_form = ThemeSettingsForm(request.POST, instance=theme_settings)
+        department_theme_formset = DepartmentThemeFormSet(
+            request.POST,
+            queryset=self._formset_queryset(),
+            prefix="categories",
+        )
+
+        if theme_form.is_valid() and department_theme_formset.is_valid():
+            theme_form.save()
+            department_theme_formset.save()
+            messages.success(request, "Theme settings saved.")
+            return redirect("patients:settings_theme")
+
+        messages.error(request, "Theme settings have errors.")
+        return render(request, self.template_name, self._build_context(theme_form, department_theme_formset))
 
 
 class AdminSettingsView(LoginRequiredMixin, View):

@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load theme_tags %}
 {% block title %}Case {{ case.uhid }} | MEDTRACK{% endblock %}
 {% block content %}
 <style>
@@ -8,12 +9,12 @@
   }
 
   .identity-bar {
-    border: 1px solid #2a4f79;
+    border: 1px solid var(--theme-nav-control-border);
     border-radius: 0.75rem;
-    background: #1e3a5f;
-    color: #ffffff;
+    background: var(--theme-nav-bg);
+    color: var(--theme-nav-text);
     padding: 1rem;
-    box-shadow: 0 8px 20px rgba(9, 24, 45, 0.24);
+    box-shadow: 0 8px 20px var(--theme-shell-shadow);
   }
 
   .identity-main {
@@ -29,11 +30,11 @@
     font-size: 1.35rem;
     font-weight: 700;
     line-height: 1.2;
-    color: #ffffff;
+    color: var(--theme-nav-text);
   }
 
   .identity-uhid {
-    color: #d4e4f7;
+    color: var(--theme-nav-control-text);
     font-size: 0.86rem;
     margin-left: 0.4rem;
     font-weight: 600;
@@ -47,10 +48,42 @@
   }
 
   .identity-chip {
+    display: inline-flex;
+    align-items: center;
     border-radius: 999px;
+    border: 1px solid transparent;
     padding: 0.22rem 0.62rem;
     font-size: 0.78rem;
     white-space: nowrap;
+  }
+
+  .identity-chip.theme-category-chip {
+    padding: 0.22rem 0.62rem;
+    font-size: 0.78rem;
+  }
+
+  .identity-chip.pill-status-active {
+    background: var(--theme-case-status-active-bg);
+    border-color: var(--theme-case-status-active-border);
+    color: var(--theme-case-status-active-text);
+  }
+
+  .identity-chip.pill-status-completed {
+    background: var(--theme-case-status-completed-bg);
+    border-color: var(--theme-case-status-completed-border);
+    color: var(--theme-case-status-completed-text);
+  }
+
+  .identity-chip.pill-status-cancelled {
+    background: var(--theme-case-status-cancelled-bg);
+    border-color: var(--theme-case-status-cancelled-border);
+    color: var(--theme-case-status-cancelled-text);
+  }
+
+  .identity-chip.pill-status-loss-to-follow-up {
+    background: var(--theme-case-status-loss-to-follow-up-bg);
+    border-color: var(--theme-case-status-loss-to-follow-up-border);
+    color: var(--theme-case-status-loss-to-follow-up-text);
   }
 
   .identity-chip-neutral {
@@ -83,17 +116,17 @@
 
   .progress-text {
     font-size: 0.78rem;
-    color: #d4e4f7;
+    color: var(--theme-nav-control-text);
     font-weight: 600;
     margin-bottom: 0.3rem;
   }
 
   .progress-wrap .progress {
-    background: #d8e1eb;
+    background: var(--theme-shell-surface-hover-bg);
   }
 
   .progress-wrap .progress-bar {
-    background: var(--app-success-progress) !important;
+    background: var(--theme-task-status-completed-bg) !important;
   }
 
   .action-grid {
@@ -149,28 +182,43 @@
     padding: 0.2rem 0.55rem;
     font-size: 0.72rem;
     font-weight: 700;
-    color: #fff;
+    border: 1px solid transparent;
     white-space: nowrap;
   }
 
-  .task-status-pill.status-completed { background: var(--app-success-progress); }
-  .task-status-pill.status-scheduled { background: #6b8299; }
+  .task-status-pill.status-completed {
+    background: var(--theme-task-status-completed-bg);
+    border-color: var(--theme-task-status-completed-border);
+    color: var(--theme-task-status-completed-text);
+  }
+
+  .task-status-pill.status-scheduled {
+    background: var(--theme-task-status-scheduled-bg);
+    border-color: var(--theme-task-status-scheduled-border);
+    color: var(--theme-task-status-scheduled-text);
+  }
+
   .task-status-pill.status-awaiting_reports,
   .task-status-pill.status-awaiting-reports,
   .task-status-pill.status-awaiting-results,
-  .task-status-pill.status-awating-results { background: #c79430; }
+  .task-status-pill.status-awating-results {
+    background: var(--theme-task-status-awaiting-reports-bg);
+    border-color: var(--theme-task-status-awaiting-reports-border);
+    color: var(--theme-task-status-awaiting-reports-text);
+  }
+
   .task-status-pill.status-cancelled {
-    background: var(--app-cancelled-bg);
-    border: 1px solid var(--app-cancelled-border);
-    color: var(--app-cancelled-text);
+    background: var(--theme-task-status-cancelled-bg);
+    border-color: var(--theme-task-status-cancelled-border);
+    color: var(--theme-task-status-cancelled-text);
   }
 
   .task-row-completed td {
-    background: var(--app-success-soft) !important;
+    background: var(--theme-alerts-success-bg) !important;
   }
 
   .task-row-overdue td {
-    background: #f9f1f2 !important;
+    background: var(--theme-alerts-danger-bg) !important;
   }
 
   .all-task-filters {
@@ -204,11 +252,11 @@
   }
 
   .task-mobile-card.task-mobile-completed {
-    background: var(--app-success-soft);
+    background: var(--theme-alerts-success-bg);
   }
 
   .task-mobile-card.task-mobile-overdue {
-    background: #f9f1f2;
+    background: var(--theme-alerts-danger-bg);
   }
 
   .task-mobile-title {
@@ -225,7 +273,7 @@
   }
 
   .task-mobile-meta .label {
-    color: var(--app-text-secondary);
+    color: var(--theme-shell-muted-text);
     font-weight: 600;
   }
 
@@ -311,8 +359,8 @@
           <span class="identity-chip identity-chip-neutral phone">{{ case.phone_number }}</span>
           {% if case.referred_by %}<span class="identity-chip identity-chip-neutral">{{ case.referred_by }}</span>{% endif %}
           {% if case.edd %}<span class="identity-chip identity-chip-neutral">EDD {{ case.edd|date:'d M Y' }}</span>{% endif %}
-          <span class="identity-chip {% if case.status == 'CANCELLED' %}app-pill cancelled{% else %}identity-chip-neutral{% endif %}">{{ case.get_status_display }}</span>
-          <span class="identity-chip app-pill {% if case.category.name|lower == 'anc' %}category-anc{% elif case.category.name|lower == 'surgery' %}category-surgery{% elif case.category.name|lower == 'non surgical' or case.category.name|lower == 'non-surgical' or case.category.name|lower == 'nonsurgical' %}category-non-surgical{% else %}category-other{% endif %}">{{ case.category.name }}</span>
+          <span class="identity-chip pill-status-{{ case.status|slugify }}">{{ case.get_status_display }}</span>
+          <span class="identity-chip theme-category-chip {% if case.category.name|lower == 'anc' %}category-anc{% elif case.category.name|lower == 'surgery' %}category-surgery{% elif case.category.name|lower == 'non surgical' or case.category.name|lower == 'non-surgical' or case.category.name|lower == 'nonsurgical' %}category-non-surgical{% else %}category-other{% endif %}" style="{% category_theme_style case.category theme_category_colors %}">{{ case.category.name }}</span>
           {% if case.high_risk %}<span class="identity-chip app-pill high-risk">High-risk</span>{% endif %}
         </div>
       </div>

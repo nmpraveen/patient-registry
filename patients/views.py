@@ -1,6 +1,6 @@
 from collections import OrderedDict
 from pathlib import Path
-from datetime import timedelta
+from datetime import datetime, timedelta
 from difflib import SequenceMatcher
 
 from django.conf import settings
@@ -31,12 +31,14 @@ from .forms import (
     VitalEntryForm,
 )
 from .models import (
+    ActivityEventType,
     CallCommunicationStatus,
     CallLog,
     Case,
     CaseActivityLog,
     CaseStatus,
     DepartmentConfig,
+    Gender,
     RCH_REMINDER_INTERVAL_DAYS,
     RCH_REMINDER_TASK_TITLE,
     RoleSetting,
@@ -75,6 +77,14 @@ CASE_DATA_CAPABILITIES = (
 
 
 CHANGELOG_FILE = Path(settings.BASE_DIR) / "CHANGELOG.md"
+TIMELINE_FILTER_OPTIONS = (
+    ("all", "All"),
+    ("calls", "Calls"),
+    ("tasks", "Tasks"),
+    ("notes", "Notes"),
+)
+TASK_NOTE_MARKER = "[Task:"
+LEGACY_TASK_NOTE_PREFIX = "Task note updated:"
 
 
 def _load_changelog_entries():
@@ -150,6 +160,16 @@ def can_access_case_data(user):
         | Q(can_note_add=True)
         | Q(can_manage_settings=True)
     ).exists()
+
+
+def create_case_activity(*, case, note, user=None, task=None, event_type=ActivityEventType.SYSTEM):
+    return CaseActivityLog.objects.create(
+        case=case,
+        task=task,
+        user=user,
+        event_type=event_type,
+        note=note,
+    )
 
 
 def _metric_status(value, *, low_lt=None, high_gt=None, high_gte=None, neutral=False):
@@ -309,6 +329,141 @@ def _build_vitals_trend_payload(vitals_queryset):
             "weight": [row["weight"] for row in chart_rows],
         },
     }
+
+
+def _normalized_timeline_filter(raw_value):
+    if raw_value in {"all", "calls", "tasks", "notes"}:
+        return raw_value
+    return "all"
+
+
+def _normalized_category_style(category_name):
+    normalized = (category_name or "").strip().lower().replace("-", " ")
+    if normalized == "anc":
+        return "anc"
+    if normalized == "surgery":
+        return "surgery"
+    if normalized in {"non surgical", "nonsurgical"}:
+        return "non-surgical"
+    return "other"
+
+
+def _normalized_gender_style(gender_value):
+    if gender_value == Gender.FEMALE:
+        return "female"
+    if gender_value == Gender.MALE:
+        return "male"
+    return "other"
+
+
+def _case_age_label(case):
+    if case.age is not None:
+        return f"{case.age}Y"
+    if case.date_of_birth:
+        today = timezone.localdate()
+        years = today.year - case.date_of_birth.year - (
+            (today.month, today.day) < (case.date_of_birth.month, case.date_of_birth.day)
+        )
+        return f"{max(years, 0)}Y"
+    return "-"
+
+
+def _group_tasks_by_month(tasks):
+    grouped = OrderedDict()
+    for task in tasks:
+        month_label = task.due_date.strftime("%b %Y")
+        grouped.setdefault(month_label, []).append(task)
+    return [{"label": month, "tasks": items} for month, items in grouped.items()]
+
+
+def _build_actionable_task_sections(tasks, today, prominent_limit=5):
+    open_tasks = [task for task in tasks if task.status not in {TaskStatus.COMPLETED, TaskStatus.CANCELLED}]
+    open_tasks.sort(key=lambda task: (task.due_date, task.id))
+    overdue = [task for task in open_tasks if task.due_date < today]
+    upcoming = [task for task in open_tasks if task.due_date >= today]
+
+    prominent_tasks = list(overdue)
+    remaining_slots = max(prominent_limit - len(prominent_tasks), 0)
+    prominent_tasks.extend(upcoming[:remaining_slots])
+    prominent_ids = {task.id for task in prominent_tasks}
+    remaining_open_tasks = [task for task in open_tasks if task.id not in prominent_ids]
+
+    history_tasks = [task for task in tasks if task.status in {TaskStatus.COMPLETED, TaskStatus.CANCELLED}]
+    history_tasks.sort(key=lambda task: (task.due_date, task.id), reverse=True)
+    for task in history_tasks:
+        if task.status == TaskStatus.COMPLETED and task.completed_at:
+            task.history_date_display = timezone.localtime(task.completed_at).strftime("%d-%m-%y")
+        else:
+            task.history_date_display = task.due_date.strftime("%d-%m-%y")
+    return {
+        "prominent_tasks": prominent_tasks,
+        "remaining_open_groups": _group_tasks_by_month(remaining_open_tasks),
+        "history_groups": _group_tasks_by_month(history_tasks),
+        "open_count": len(open_tasks),
+        "completed_count": len([task for task in tasks if task.status == TaskStatus.COMPLETED]),
+    }
+
+
+def _build_task_call_summary(call_logs):
+    summary_by_task = {}
+    for call in call_logs:
+        if not call.task_id or call.task_id in summary_by_task:
+            continue
+        summary_by_task[call.task_id] = {
+            "outcome": call.get_outcome_display(),
+            "logged_at": timezone.localtime(call.created_at),
+        }
+    return summary_by_task
+
+
+def _build_timeline_entries(*, call_logs, activity_logs, timeline_filter):
+    entries = []
+    if timeline_filter in {"all", "calls"}:
+        for call in call_logs:
+            entries.append(
+                {
+                    "event_type": "CALL",
+                    "event_label": "Call",
+                    "timestamp": call.created_at,
+                    "timestamp_local": timezone.localtime(call.created_at),
+                    "actor": str(call.staff_user) if call.staff_user else "system",
+                    "task_title": call.task.title if call.task_id else "",
+                    "headline": call.get_outcome_display(),
+                    "details": call.notes,
+                }
+            )
+
+    if timeline_filter in {"all", "tasks", "notes"}:
+        for activity in activity_logs:
+            if activity.event_type == ActivityEventType.CALL:
+                continue
+            if timeline_filter == "tasks" and activity.event_type != ActivityEventType.TASK:
+                continue
+            is_task_note = (
+                activity.event_type == ActivityEventType.TASK
+                and activity.task_id is not None
+                and (
+                    TASK_NOTE_MARKER in (activity.note or "")
+                    or (activity.note or "").startswith(LEGACY_TASK_NOTE_PREFIX)
+                )
+            )
+            if timeline_filter == "notes" and activity.event_type != ActivityEventType.NOTE and not is_task_note:
+                continue
+            entries.append(
+                {
+                    "event_type": activity.event_type,
+                    "event_label": "Note" if is_task_note else activity.get_event_type_display(),
+                    "timestamp": activity.created_at,
+                    "timestamp_local": timezone.localtime(activity.created_at),
+                    "actor": str(activity.user) if activity.user else "system",
+                    "task_title": activity.task.title if activity.task_id else "",
+                    "headline": activity.note,
+                    "details": "",
+                }
+            )
+
+    entries.sort(key=lambda item: item["timestamp"], reverse=True)
+    return entries
 
 
 class CaseDataAccessMixin:
@@ -685,6 +840,7 @@ class UniversalCaseSearchView(LoginRequiredMixin, CaseDataAccessMixin, View):
                 "ncd_flags",
                 "updated_at",
                 "category__name",
+                "gender",
             )[:150]
         )
 
@@ -706,19 +862,23 @@ class UniversalCaseSearchView(LoginRequiredMixin, CaseDataAccessMixin, View):
 
         results = []
         for case in top_cases:
-            diagnosis = self._normalized(case.diagnosis) or "—"
-            village = self._normalized(case.place) or "—"
-            age = case.age if case.age is not None else "—"
+            diagnosis = self._normalized(case.diagnosis) or "\u2014"
+            village = self._normalized(case.place) or "\u2014"
+            age = case.age if case.age is not None else "\u2014"
             category = case.category.name
+            category_style = _normalized_category_style(category)
+            gender_style = _normalized_gender_style(case.gender)
             tags = [
-                {"kind": "category", "label": category},
+                {"kind": "category", "label": category, "value": category_style},
             ]
+            if case.gender:
+                tags.append({"kind": "gender", "label": case.get_gender_display(), "value": gender_style})
             if case.high_risk:
-                tags.append({"kind": "high_risk", "label": "High-risk", "icon": "❗"})
+                tags.append({"kind": "high_risk", "label": "High-risk", "icon": "\u2757"})
             if case.referred_by:
-                tags.append({"kind": "referred", "label": "Referred", "icon": "⭐"})
+                tags.append({"kind": "referred", "label": "Referred", "icon": "\u2b50"})
             if case.ncd_flags:
-                tags.append({"kind": "ncd", "label": "NCD", "icon": "🏷️"})
+                tags.append({"kind": "ncd", "label": "NCD", "icon": "\U0001f3f7\ufe0f"})
 
             results.append(
                 {
@@ -753,13 +913,19 @@ class CaseCreateView(LoginRequiredMixin, CreateView):
             self.object.review_date = timezone.localdate() + timedelta(days=frequency_to_days(self.object.review_frequency))
             self.object.save(update_fields=["review_date", "updated_at", "patient_name"])
         created_tasks = build_default_tasks(self.object, self.request.user)
-        CaseActivityLog.objects.create(case=self.object, user=self.request.user, note=f"Case created with {len(created_tasks)} starter task(s)")
+        create_case_activity(
+            case=self.object,
+            user=self.request.user,
+            event_type=ActivityEventType.SYSTEM,
+            note=f"Case created with {len(created_tasks)} starter task(s)",
+        )
         reminder = ensure_rch_reminder_task(self.object, self.request.user)
         if reminder:
-            CaseActivityLog.objects.create(
+            create_case_activity(
                 case=self.object,
                 task=reminder,
                 user=self.request.user,
+                event_type=ActivityEventType.TASK,
                 note=f"RCH reminder scheduled for {reminder.due_date:%d-%m-%Y}.",
             )
         return response
@@ -776,20 +942,45 @@ class CaseDetailView(LoginRequiredMixin, DetailView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         case = self.object
-        context["tasks"] = case.tasks.select_related("assigned_user")
+        tasks = list(case.tasks.select_related("assigned_user").order_by("due_date", "id"))
+        call_logs = list(case.call_logs.select_related("staff_user", "task").order_by("-created_at", "-id"))
+        activity_logs = list(case.activity_logs.select_related("user", "task").order_by("-created_at", "-id")[:200])
         latest_vital = case.vitals.order_by("-recorded_at", "-id").first()
-        context["today"] = timezone.localdate()
-        context["activity_logs"] = case.activity_logs.select_related("user", "task")[:50]
-        context["call_logs"] = case.call_logs.select_related("staff_user", "task")[:50]
+        today = timezone.localdate()
+        task_sections = _build_actionable_task_sections(tasks, today, prominent_limit=5)
+        total_tasks = len(tasks)
+        completed_tasks = task_sections["completed_count"]
+        timeline_filter = _normalized_timeline_filter(self.request.GET.get("timeline", "all"))
+
+        context["today"] = today
+        context["tasks"] = tasks
+        context["prominent_tasks"] = task_sections["prominent_tasks"]
+        context["remaining_open_groups"] = task_sections["remaining_open_groups"]
+        context["history_groups"] = task_sections["history_groups"]
+        task_call_summary = _build_task_call_summary(call_logs)
+        for task in tasks:
+            task.latest_call_summary = task_call_summary.get(task.id)
+        context["task_call_summary"] = task_call_summary
         context["has_vitals"] = latest_vital is not None
         context["latest_vitals_recorded_at"] = timezone.localtime(latest_vital.recorded_at) if latest_vital else None
         context["vitals_summary_metrics"] = _build_latest_vitals_summary(latest_vital)
         context["vitals_detail_url"] = reverse("patients:case_vitals", kwargs={"pk": case.pk})
+        context["case_age_label"] = _case_age_label(case)
+        context["progress_percent"] = round((completed_tasks / total_tasks) * 100) if total_tasks else 0
+        context["progress_class"] = "bg-success" if context["progress_percent"] >= 50 else "bg-warning"
+        context["timeline_filter_options"] = TIMELINE_FILTER_OPTIONS
+        context["timeline_filter"] = timeline_filter
+        context["timeline_entries"] = _build_timeline_entries(
+            call_logs=call_logs,
+            activity_logs=activity_logs,
+            timeline_filter=timeline_filter,
+        )
+        context["timeline_collapsed"] = self.request.GET.get("show_logs") != "1"
+        context["logs_url"] = f"{reverse('patients:case_detail', kwargs={'pk': case.pk})}?show_logs=1#clinical-timeline"
         context["task_form"] = TaskForm()
         context["log_form"] = ActivityLogForm()
         call_log_form = CallLogForm()
         call_log_form.fields["task"].queryset = case.tasks.order_by("due_date", "id")
-        call_log_form.fields["task"].required = False
         context["call_log_form"] = call_log_form
         context["can_task_create"] = has_capability(self.request.user, "task_create")
         context["can_task_edit"] = has_capability(self.request.user, "task_edit")
@@ -847,14 +1038,20 @@ class CaseUpdateView(LoginRequiredMixin, UpdateView):
             form.add_error("status", "Only Doctor/Admin can set Grey List cases to Active or Loss to Follow-up.")
             return self.form_invalid(form)
         if old_status != new_status:
-            CaseActivityLog.objects.create(case=case, user=self.request.user, note=f"Case status changed: {old_status} → {new_status}")
+            create_case_activity(
+                case=case,
+                user=self.request.user,
+                event_type=ActivityEventType.SYSTEM,
+                note=f"Case status changed: {old_status} -> {new_status}",
+            )
         response = super().form_valid(form)
         if not is_anc_case(self.object):
             cancelled_count = cancel_open_rch_reminders(self.object)
             if cancelled_count:
-                CaseActivityLog.objects.create(
+                create_case_activity(
                     case=self.object,
                     user=self.request.user,
+                    event_type=ActivityEventType.TASK,
                     note=f"Cancelled {cancelled_count} open RCH reminder task(s) because category is no longer ANC.",
                 )
             return response
@@ -862,27 +1059,30 @@ class CaseUpdateView(LoginRequiredMixin, UpdateView):
         if self.object.rch_number:
             cancelled_count = cancel_open_rch_reminders(self.object)
             if cancelled_count:
-                CaseActivityLog.objects.create(
+                create_case_activity(
                     case=self.object,
                     user=self.request.user,
+                    event_type=ActivityEventType.TASK,
                     note=f"RCH number captured. Cancelled {cancelled_count} open RCH reminder task(s).",
                 )
         else:
             reminder = ensure_rch_reminder_task(self.object, self.request.user)
             if reminder:
-                CaseActivityLog.objects.create(
+                create_case_activity(
                     case=self.object,
                     task=reminder,
                     user=self.request.user,
+                    event_type=ActivityEventType.TASK,
                     note=f"RCH reminder scheduled for {reminder.due_date:%d-%m-%Y}.",
                 )
         if had_rch_number and not self.object.rch_number:
             reminder = ensure_rch_reminder_task(self.object, self.request.user)
             if reminder:
-                CaseActivityLog.objects.create(
+                create_case_activity(
                     case=self.object,
                     task=reminder,
                     user=self.request.user,
+                    event_type=ActivityEventType.TASK,
                     note=f"RCH removed. Reminder scheduled for {reminder.due_date:%d-%m-%Y}.",
                 )
         return response
@@ -907,11 +1107,110 @@ class TaskCreateView(LoginRequiredMixin, View):
             except ValidationError:
                 messages.error(request, "Could not add task. Please check the inputs.")
             else:
-                CaseActivityLog.objects.create(case=case, task=task, user=request.user, note=f"Task created: {task.title}")
+                create_case_activity(
+                    case=case,
+                    task=task,
+                    user=request.user,
+                    event_type=ActivityEventType.TASK,
+                    note=f"Task created: {task.title}",
+                )
                 messages.success(request, "Task added.")
         else:
             messages.error(request, "Could not add task. Please check the inputs.")
         return redirect("patients:case_detail", pk=pk)
+
+
+class TaskQuickCompleteView(LoginRequiredMixin, View):
+    def post(self, request, pk):
+        if not has_capability(request.user, "task_edit"):
+            return HttpResponseForbidden("You do not have permission to edit tasks.")
+
+        task = get_object_or_404(Task.objects.select_related("case", "case__category"), pk=pk)
+        case = task.case
+        if case.category.name.upper() == "ANC" and task.due_date > timezone.localdate():
+            messages.error(request, "This ANC task is locked until its due date.")
+            return redirect("patients:case_detail", pk=case.pk)
+
+        task.status = TaskStatus.COMPLETED
+        try:
+            task.full_clean()
+            task.save()
+        except ValidationError:
+            messages.error(request, "Could not complete task. Please review task state.")
+        else:
+            create_case_activity(
+                case=case,
+                task=task,
+                user=request.user,
+                event_type=ActivityEventType.TASK,
+                note=f"Task completed: {task.title}",
+            )
+            messages.success(request, "Task marked as completed.")
+        return redirect("patients:case_detail", pk=case.pk)
+
+
+class TaskQuickRescheduleView(LoginRequiredMixin, View):
+    def post(self, request, pk):
+        if not has_capability(request.user, "task_edit"):
+            return HttpResponseForbidden("You do not have permission to edit tasks.")
+
+        task = get_object_or_404(Task.objects.select_related("case"), pk=pk)
+        if task.status == TaskStatus.COMPLETED:
+            messages.error(request, "Completed tasks cannot be rescheduled inline.")
+            return redirect("patients:case_detail", pk=task.case_id)
+
+        due_date_raw = (request.POST.get("due_date") or "").strip()
+        if not due_date_raw:
+            messages.error(request, "Please provide a new due date.")
+            return redirect("patients:case_detail", pk=task.case_id)
+
+        try:
+            new_due_date = datetime.strptime(due_date_raw, "%Y-%m-%d").date()
+        except ValueError:
+            messages.error(request, "Please enter a valid due date.")
+            return redirect("patients:case_detail", pk=task.case_id)
+
+        old_due_date = task.due_date
+        task.due_date = new_due_date
+        try:
+            task.full_clean()
+            task.save()
+        except ValidationError:
+            messages.error(request, "Could not reschedule task. Please check the date.")
+        else:
+            create_case_activity(
+                case=task.case,
+                task=task,
+                user=request.user,
+                event_type=ActivityEventType.TASK,
+                note=f"Task rescheduled: {task.title} ({old_due_date:%d-%m-%Y} -> {new_due_date:%d-%m-%Y})",
+            )
+            messages.success(request, "Task rescheduled.")
+        return redirect("patients:case_detail", pk=task.case_id)
+
+
+class TaskQuickNoteView(LoginRequiredMixin, View):
+    def post(self, request, pk):
+        if not has_capability(request.user, "task_edit"):
+            return HttpResponseForbidden("You do not have permission to edit tasks.")
+
+        task = get_object_or_404(Task.objects.select_related("case"), pk=pk)
+        note_text = (request.POST.get("note") or "").strip()
+        if not note_text:
+            messages.error(request, "Task note cannot be empty.")
+            return redirect("patients:case_detail", pk=task.case_id)
+
+        task.notes = note_text
+        task.save(update_fields=["notes", "updated_at"])
+        create_case_activity(
+            case=task.case,
+            task=task,
+            user=request.user,
+            event_type=ActivityEventType.TASK,
+            note=f"{note_text} [Task: {task.title}]",
+        )
+        messages.success(request, "Task note saved.")
+        return redirect("patients:case_detail", pk=task.case_id)
 
 
 class TaskUpdateView(LoginRequiredMixin, UpdateView):
@@ -928,7 +1227,13 @@ class TaskUpdateView(LoginRequiredMixin, UpdateView):
         previous_task = self.get_object()
         previous_status = previous_task.status
         response = super().form_valid(form)
-        CaseActivityLog.objects.create(case=self.object.case, task=self.object, user=self.request.user, note=f"Task updated: {self.object.title} ({self.object.status})")
+        create_case_activity(
+            case=self.object.case,
+            task=self.object,
+            user=self.request.user,
+            event_type=ActivityEventType.TASK,
+            note=f"Task updated: {self.object.title} ({self.object.status})",
+        )
         if (
             previous_status != TaskStatus.COMPLETED
             and self.object.status == TaskStatus.COMPLETED
@@ -938,10 +1243,11 @@ class TaskUpdateView(LoginRequiredMixin, UpdateView):
             next_due_date = completed_local.date() + timedelta(days=RCH_REMINDER_INTERVAL_DAYS)
             reminder = ensure_rch_reminder_task(self.object.case, self.request.user, due_date=next_due_date)
             if reminder:
-                CaseActivityLog.objects.create(
+                create_case_activity(
                     case=self.object.case,
                     task=reminder,
                     user=self.request.user,
+                    event_type=ActivityEventType.TASK,
                     note=f"RCH still pending. Next reminder scheduled for {reminder.due_date:%d-%m-%Y}.",
                 )
         return response
@@ -960,6 +1266,7 @@ class AddCaseNoteView(LoginRequiredMixin, View):
             log = form.save(commit=False)
             log.case = case
             log.user = request.user
+            log.event_type = ActivityEventType.NOTE
             log.save()
             messages.success(request, "Note added.")
         else:
@@ -979,10 +1286,11 @@ class AddCallLogView(LoginRequiredMixin, View):
             log.case = case
             log.staff_user = request.user
             log.save()
-            CaseActivityLog.objects.create(
+            create_case_activity(
                 case=case,
                 task=log.task,
                 user=request.user,
+                event_type=ActivityEventType.CALL,
                 note=f"Call outcome logged: {log.get_outcome_display()}",
             )
             messages.success(request, "Call outcome logged.")
@@ -1030,7 +1338,12 @@ class VitalEntryCreateView(LoginRequiredMixin, View):
             vital.created_by = request.user
             vital.updated_by = request.user
             vital.save()
-            CaseActivityLog.objects.create(case=case, user=request.user, note="Vitals entry recorded.")
+            create_case_activity(
+                case=case,
+                user=request.user,
+                event_type=ActivityEventType.SYSTEM,
+                note="Vitals entry recorded.",
+            )
             if form.hb_warning:
                 form = VitalEntryForm(instance=vital)
                 form.hb_warning = True
@@ -1100,7 +1413,12 @@ class VitalEntryUpdateView(LoginRequiredMixin, View):
             if updated_vital.created_by_id is None:
                 updated_vital.created_by = request.user
             updated_vital.save()
-            CaseActivityLog.objects.create(case=updated_vital.case, user=request.user, note="Vitals entry updated.")
+            create_case_activity(
+                case=updated_vital.case,
+                user=request.user,
+                event_type=ActivityEventType.SYSTEM,
+                note="Vitals entry updated.",
+            )
             if form.hb_warning:
                 form = VitalEntryForm(instance=updated_vital)
                 form.hb_warning = True

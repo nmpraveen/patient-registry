@@ -8,6 +8,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
 from patients.models import (
+    ActivityEventType,
     AncHighRiskReason,
     CallLog,
     CallOutcome,
@@ -474,6 +475,7 @@ class Command(BaseCommand):
                 case=case,
                 task=call_log.task,
                 user=demo_user,
+                event_type=ActivityEventType.CALL,
                 note=f"Call outcome logged: {call_log.get_outcome_display()}",
             )
 
@@ -540,6 +542,7 @@ class Command(BaseCommand):
             CaseActivityLog.objects.create(
                 case=case,
                 user=demo_user,
+                event_type=ActivityEventType.SYSTEM,
                 note=f"Mock case seeded with scenario '{scenario}' and {len(tasks)} starter tasks",
             )
 

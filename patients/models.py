@@ -55,6 +55,13 @@ class CallCommunicationStatus(models.TextChoices):
     CALL_BACK_LATER = "CALL_BACK_LATER", "Call back later"
 
 
+class ActivityEventType(models.TextChoices):
+    SYSTEM = "SYSTEM", "System"
+    TASK = "TASK", "Task"
+    NOTE = "NOTE", "Note"
+    CALL = "CALL", "Call"
+
+
 class SurgicalPathway(models.TextChoices):
     PLANNED_SURGERY = "PLANNED_SURGERY", "Planned for surgery"
     SURVEILLANCE = "SURVEILLANCE", "Surveillance only"
@@ -421,11 +428,15 @@ class CaseActivityLog(models.Model):
     case = models.ForeignKey(Case, on_delete=models.CASCADE, related_name="activity_logs")
     task = models.ForeignKey(Task, on_delete=models.CASCADE, null=True, blank=True, related_name="activity_logs")
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
+    event_type = models.CharField(max_length=16, choices=ActivityEventType.choices, default=ActivityEventType.SYSTEM)
     note = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["case", "event_type", "-created_at"], name="pat_act_case_type_created_idx"),
+        ]
 
 
 class CallLog(models.Model):

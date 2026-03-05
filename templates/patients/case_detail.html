@@ -2,328 +2,734 @@
 {% block title %}Case {{ case.uhid }} | MEDTRACK{% endblock %}
 {% block content %}
 <style>
-  .case-summary-grid {
+  .patient-shell {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 1rem;
+  }
+
+  .identity-bar {
+    border: 1px solid #2a4f79;
+    border-radius: 0.75rem;
+    background: #1e3a5f;
+    color: #ffffff;
+    padding: 1rem;
+    box-shadow: 0 8px 20px rgba(9, 24, 45, 0.24);
+  }
+
+  .identity-main {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
     gap: 0.75rem;
-    margin-top: 0.75rem;
-    width: 100%;
+    align-items: flex-start;
   }
 
-  @media (min-width: 1200px) {
-    .case-summary-grid {
-      grid-template-columns: repeat(5, minmax(0, 1fr));
-    }
-  }
-
-  .case-summary-card {
-    border: 1px solid #e9ecef;
-    border-radius: 0.5rem;
-    padding: 0.75rem;
-    background: #fff;
-  }
-
-  .case-summary-title {
-    font-size: 0.72rem;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: #6c757d;
-    margin-bottom: 0.35rem;
+  .identity-name {
+    margin: 0;
+    font-size: 1.35rem;
     font-weight: 700;
+    line-height: 1.2;
+    color: #ffffff;
   }
 
-  .summary-item {
-    font-size: 0.88rem;
-    margin: 0 0 0.3rem;
-    line-height: 1.35;
-  }
-
-  .summary-item:last-child {
-    margin-bottom: 0;
-  }
-
-  .summary-label {
-    color: #6c757d;
+  .identity-uhid {
+    color: #d4e4f7;
+    font-size: 0.86rem;
+    margin-left: 0.4rem;
     font-weight: 600;
   }
 
-  .info-pill {
-    display: inline-block;
-    border-radius: 999px;
-    padding: 0.22rem 0.58rem;
-    font-size: 0.74rem;
-    font-weight: 700;
-    margin: 0.15rem 0.35rem 0.15rem 0;
-    white-space: nowrap;
-    border: 1px solid transparent;
+  .identity-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    margin-top: 0.65rem;
   }
 
-  .pill-status-open { background: #cff4fc; color: #055160; border-color: #9eeaf9; }
-  .pill-status-pending { background: #fff3cd; color: #664d03; border-color: #ffe69c; }
-  .pill-status-cancelled { background: #f8d7da; color: #842029; border-color: #f1aeb5; }
-  .pill-status-completed { background: #d1e7dd; color: #0f5132; border-color: #a3cfbb; }
-  .pill-category { background: #e2e3e5; color: #41464b; border-color: #d3d6d8; }
-  .pill-high-risk { background: #f8d7da; color: #842029; border-color: #f1aeb5; }
-  .pill-review { background: #fff3cd; color: #664d03; border-color: #ffe69c; }
-  .pill-pathway { background: #dbeafe; color: #1e3a8a; border-color: #bfdbfe; }
+  .identity-chip {
+    border-radius: 999px;
+    padding: 0.22rem 0.62rem;
+    font-size: 0.78rem;
+    white-space: nowrap;
+  }
 
-  @media (max-width: 575.98px) {
-    .case-summary-grid {
-      grid-template-columns: 1fr;
-    }
+  .identity-chip-neutral {
+    border: 1px solid rgba(255, 255, 255, 0.45);
+    color: #f3f8ff;
+    background: rgba(255, 255, 255, 0.12);
+  }
+
+  .identity-chip.phone {
+    border-color: var(--app-accent-border);
+    color: var(--app-accent);
+    background: var(--app-accent-light);
+  }
+
+  .meta-panel {
+    border-top: 1px solid rgba(255, 255, 255, 0.25);
+    margin-top: 0.9rem;
+    padding-top: 0.8rem;
+  }
+
+  .meta-panel p {
+    margin: 0.15rem 0;
+    font-size: 0.86rem;
+  }
+
+  .progress-wrap {
+    margin-top: 0.85rem;
+    max-width: 360px;
+  }
+
+  .progress-text {
+    font-size: 0.78rem;
+    color: #d4e4f7;
+    font-weight: 600;
+    margin-bottom: 0.3rem;
+  }
+
+  .progress-wrap .progress {
+    background: #d8e1eb;
+  }
+
+  .progress-wrap .progress-bar {
+    background: var(--app-success-progress) !important;
+  }
+
+  .action-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.75rem;
+  }
+
+  .action-card {
+    border: 1px solid var(--app-border);
+    border-radius: 0.75rem;
+    background: var(--app-surface-bg);
+    padding: 0.75rem;
+  }
+
+  .action-card h3 {
+    font-size: 0.95rem;
+    margin-bottom: 0.6rem;
+  }
+
+  .action-card-toggle {
+    width: 100%;
+    text-align: left;
+    font-weight: 600;
+    color: var(--app-text-primary);
+    padding: 0;
+    margin: 0 0 0.6rem;
+    text-decoration: none;
+  }
+
+  .action-card-toggle:hover,
+  .action-card-toggle:focus {
+    color: var(--app-text-primary);
+    text-decoration: none;
+  }
+
+  .action-card-toggle::after {
+    content: "▾";
+    float: right;
+    color: var(--app-text-secondary);
+  }
+
+  .action-card-toggle.collapsed::after {
+    content: "▸";
+  }
+
+  .action-card-content {
+    margin-top: 0.2rem;
   }
 
   .task-status-pill {
-    display: inline-block;
     border-radius: 999px;
-    padding: 0.2rem 0.6rem;
-    font-size: 0.75rem;
-    font-weight: 600;
+    padding: 0.2rem 0.55rem;
+    font-size: 0.72rem;
+    font-weight: 700;
     color: #fff;
     white-space: nowrap;
   }
 
-  .task-status-pill.status-completed { background: #198754; }
-  .task-status-pill.status-scheduled { background: #0d6efd; }
+  .task-status-pill.status-completed { background: var(--app-success-progress); }
+  .task-status-pill.status-scheduled { background: #6b8299; }
   .task-status-pill.status-awaiting_reports,
   .task-status-pill.status-awaiting-reports,
   .task-status-pill.status-awaiting-results,
-  .task-status-pill.status-awating-results { background: #fd7e14; }
-  .task-status-pill.status-cancelled { background: #6c757d; }
-
-  .vitals-summary-card.has-vitals {
-    border-color: #bfdbfe;
-    background: #f8fbff;
+  .task-status-pill.status-awating-results { background: #c79430; }
+  .task-status-pill.status-cancelled {
+    background: var(--app-cancelled-bg);
+    border: 1px solid var(--app-cancelled-border);
+    color: var(--app-cancelled-text);
   }
 
-  .vitals-card-link {
-    display: block;
-    text-decoration: none;
-    color: inherit;
+  .task-row-completed td {
+    background: var(--app-success-soft) !important;
   }
 
-  .vitals-card-link:hover {
-    color: inherit;
+  .task-row-overdue td {
+    background: #f9f1f2 !important;
   }
 
-  .vitals-summary-row {
+  .all-task-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    align-items: center;
+  }
+
+  .task-inline-row td {
+    padding-top: 0;
+    border-top: 0;
+  }
+
+  .task-call-hint {
+    display: inline-block;
+    margin-top: 0.25rem;
+    font-size: 0.72rem;
+  }
+
+  .task-mobile-list {
+    display: grid;
+    gap: 0.65rem;
+  }
+
+  .task-mobile-card {
+    border: 1px solid var(--app-border);
+    border-radius: 0.75rem;
+    background: var(--app-surface-bg);
+    padding: 0.7rem;
+  }
+
+  .task-mobile-card.task-mobile-completed {
+    background: var(--app-success-soft);
+  }
+
+  .task-mobile-card.task-mobile-overdue {
+    background: #f9f1f2;
+  }
+
+  .task-mobile-title {
+    font-weight: 700;
     margin-bottom: 0.45rem;
   }
 
-  .vitals-summary-row:last-child {
-    margin-bottom: 0;
+  .task-mobile-meta {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0.2rem 0.45rem;
+    font-size: 0.84rem;
+    margin-bottom: 0.45rem;
   }
 
-  .vitals-summary-metric {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    font-size: 0.76rem;
-    margin-bottom: 0.2rem;
-    gap: 0.5rem;
-  }
-
-  .vitals-summary-label {
-    color: #495057;
+  .task-mobile-meta .label {
+    color: var(--app-text-secondary);
     font-weight: 600;
   }
 
-  .vitals-summary-value {
-    color: #212529;
-    font-weight: 700;
+  .task-mobile-actions {
+    display: grid;
+    gap: 0.45rem;
+    margin-top: 0.55rem;
   }
 
-  .vitals-summary-bar {
-    height: 0.38rem;
-    border-radius: 999px;
-    background: #e9ecef;
-    overflow: hidden;
+  .timeline-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
   }
 
-  .vitals-summary-fill {
-    display: block;
-    height: 100%;
-    border-radius: inherit;
+  .timeline-item {
+    border-bottom: 1px solid var(--app-border);
+    padding: 0.65rem 0;
   }
 
-  .vitals-status-low { background: #dc3545; }
-  .vitals-status-normal { background: #198754; }
-  .vitals-status-high { background: #fd7e14; }
-  .vitals-status-neutral { background: #0d6efd; }
-  .vitals-status-na { background: #adb5bd; }
+  .timeline-item:last-child {
+    border-bottom: 0;
+    padding-bottom: 0;
+  }
 
-  .vitals-open-hint {
-    display: inline-block;
-    margin-top: 0.15rem;
-    font-size: 0.72rem;
-    color: #0d6efd;
-    font-weight: 600;
+  @media (max-width: 991.98px) {
+    .action-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media (min-width: 768px) {
+    .action-card-content {
+      display: block !important;
+      height: auto !important;
+      visibility: visible !important;
+    }
+  }
+
+  @media (max-width: 767.98px) {
+    .identity-strip {
+      overflow-x: auto;
+      flex-wrap: nowrap;
+      padding-bottom: 0.1rem;
+    }
+
+    .identity-chip {
+      min-height: 44px;
+      display: inline-flex;
+      align-items: center;
+    }
+
+    .btn,
+    .form-control,
+    .form-select {
+      min-height: 44px;
+    }
+
+    .action-card h3 {
+      margin-bottom: 0;
+    }
+
+    .action-card-content {
+      margin-top: 0;
+    }
   }
 </style>
-<div class="d-flex flex-column flex-md-row align-items-start gap-2 gap-md-3 mb-3">
-  <div class="flex-grow-1 w-100">
-    <h1 class="h4 mb-1">{{ case.full_name }} <small class="text-muted">({{ case.uhid }})</small></h1>
-    <div class="mb-1">
-      <span class="info-pill pill-status-{{ case.status|slugify }}">Status: {{ case.get_status_display }}</span>
-      <span class="info-pill pill-category">Category: {{ case.category.name }}</span>
-      {% if case.high_risk %}<span class="info-pill pill-high-risk">High-risk</span>{% endif %}
-      {% if case.review_date %}<span class="info-pill pill-review">Next review: {{ case.review_date }}</span>{% endif %}
-      {% if case.surgical_pathway %}<span class="info-pill pill-pathway">{{ case.get_surgical_pathway_display }}</span>{% endif %}
-    </div>
-    <div class="case-summary-grid">
-      <div class="case-summary-card">
-        <div class="case-summary-title">Identity</div>
-        {% if case.gender %}<p class="summary-item"><span class="summary-label">Gender:</span> {{ case.get_gender_display }}</p>{% endif %}
-        {% if case.date_of_birth %}<p class="summary-item"><span class="summary-label">DOB:</span> {{ case.date_of_birth }}</p>{% endif %}
-        {% if case.place %}<p class="summary-item"><span class="summary-label">Place:</span> {{ case.place }}</p>{% endif %}
-        {% if not case.gender and not case.date_of_birth and not case.place %}<p class="summary-item text-muted">No identity details available.</p>{% endif %}
-      </div>
-      <div class="case-summary-card">
-        <div class="case-summary-title">Contact</div>
-        <p class="summary-item"><span class="summary-label">Phone:</span> {{ case.phone_number }}</p>
-        {% if case.alternate_phone_number %}<p class="summary-item"><span class="summary-label">Alt:</span> {{ case.alternate_phone_number }}</p>{% endif %}
-        {% if case.referred_by %}<p class="summary-item"><span class="summary-label">Referred by:</span> {{ case.referred_by }}</p>{% endif %}
-      </div>
-      <div class="case-summary-card">
-        <div class="case-summary-title">Clinical</div>
-        {% if case.diagnosis %}<p class="summary-item"><span class="summary-label">Diagnosis:</span> {{ case.diagnosis }}</p>{% endif %}
-        {% if case.lmp %}<p class="summary-item"><span class="summary-label">LMP:</span> {{ case.lmp }}</p>{% endif %}
-        {% if case.edd %}<p class="summary-item"><span class="summary-label">EDD:</span> {{ case.edd }}</p>{% endif %}
-        {% if case.usg_edd %}<p class="summary-item"><span class="summary-label">USG-EDD:</span> {{ case.usg_edd }}</p>{% endif %}
-        {% if not case.diagnosis and not case.lmp and not case.edd and not case.usg_edd %}<p class="summary-item text-muted">No clinical details available.</p>{% endif %}
-      </div>
-      <div class="case-summary-card">
-        <div class="case-summary-title">Follow-up</div>
-        {% if case.trimester %}<p class="summary-item"><span class="summary-label">Trimester:</span> {{ case.trimester }}</p>{% endif %}
-        {% if case.gravida %}<p class="summary-item"><span class="summary-label">Obstetric:</span> G{{ case.gravida }} P{{ case.para|default:0 }} A{{ case.abortions|default:0 }} L{{ case.living|default:0 }}</p>{% endif %}
-        {% if case.category.name|upper == 'ANC' %}
-          <p class="summary-item">
-            <span class="summary-label">RCH:</span>
-            {% if case.rch_number %}
-              {{ case.rch_number }}
-            {% elif case.rch_bypass %}
-              Pending (bypassed, reminders active)
-            {% else %}
-              -
-            {% endif %}
-          </p>
-        {% endif %}
-        {% if case.anc_high_risk_reason_labels %}<p class="summary-item"><span class="summary-label">High-risk reasons:</span> {{ case.anc_high_risk_reason_labels|join:", " }}</p>{% endif %}
-        {% if not case.trimester and not case.gravida and not case.anc_high_risk_reason_labels and not case.rch_number and not case.rch_bypass %}<p class="summary-item text-muted">No follow-up flags available.</p>{% endif %}
-      </div>
-      <div class="case-summary-card vitals-summary-card {% if has_vitals %}has-vitals{% endif %}">
-        <div class="d-flex align-items-center justify-content-between mb-1">
-          <div class="case-summary-title mb-0">Vitals</div>
-          {% if latest_vitals_recorded_at %}
-            <small class="text-muted">{{ latest_vitals_recorded_at|date:'d-m-y H:i' }}</small>
+
+<div class="patient-shell">
+  <section class="identity-bar">
+    <div class="identity-main">
+      <div>
+        <h1 class="identity-name">
+          {{ case.full_name }}
+          <span class="identity-uhid">{{ case.uhid }}</span>
+        </h1>
+        <div class="identity-strip">
+          {% if case.gender %}
+            <span class="identity-chip app-pill {% if case.gender == 'FEMALE' %}gender-female{% elif case.gender == 'MALE' %}gender-male{% else %}gender-other{% endif %}">{{ case.get_gender_display }}</span>
           {% endif %}
+          <span class="identity-chip identity-chip-neutral">{{ case_age_label }}</span>
+          {% if case.place %}<span class="identity-chip identity-chip-neutral">{{ case.place }}</span>{% endif %}
+          <span class="identity-chip identity-chip-neutral phone">{{ case.phone_number }}</span>
+          {% if case.referred_by %}<span class="identity-chip identity-chip-neutral">{{ case.referred_by }}</span>{% endif %}
+          {% if case.edd %}<span class="identity-chip identity-chip-neutral">EDD {{ case.edd|date:'d M Y' }}</span>{% endif %}
+          <span class="identity-chip {% if case.status == 'CANCELLED' %}app-pill cancelled{% else %}identity-chip-neutral{% endif %}">{{ case.get_status_display }}</span>
+          <span class="identity-chip app-pill {% if case.category.name|lower == 'anc' %}category-anc{% elif case.category.name|lower == 'surgery' %}category-surgery{% elif case.category.name|lower == 'non surgical' or case.category.name|lower == 'non-surgical' or case.category.name|lower == 'nonsurgical' %}category-non-surgical{% else %}category-other{% endif %}">{{ case.category.name }}</span>
+          {% if case.high_risk %}<span class="identity-chip app-pill high-risk">High-risk</span>{% endif %}
         </div>
-        {% if has_vitals %}
-          <a class="vitals-card-link" href="{{ vitals_detail_url }}">
-            {% for metric in vitals_summary_metrics %}
-              <div class="vitals-summary-row">
-                <div class="vitals-summary-metric">
-                  <span class="vitals-summary-label">{{ metric.label }}</span>
-                  <span class="vitals-summary-value">{{ metric.value_display }}</span>
-                </div>
-                <div class="vitals-summary-bar">
-                  <span
-                    class="vitals-summary-fill vitals-status-{{ metric.status }}"
-                    style="width:{% if metric.status == 'na' %}16{% else %}{{ metric.percent|floatformat:0 }}{% endif %}%"
-                  ></span>
-                </div>
-              </div>
-            {% endfor %}
-            <span class="vitals-open-hint">Open vitals trends</span>
-          </a>
+      </div>
+      <div class="d-flex gap-2">
+        <a class="btn btn-primary btn-sm" href="{% url 'patients:case_edit' case.id %}">Edit Case</a>
+        <a class="btn btn-outline-light btn-sm log-jump" href="{{ logs_url }}">Logs</a>
+      </div>
+    </div>
+
+    <div class="progress-wrap">
+      <div class="progress-text">Task completion: {{ progress_percent }}%</div>
+      <div class="progress" role="progressbar" aria-label="Task completion" aria-valuenow="{{ progress_percent }}" aria-valuemin="0" aria-valuemax="100" style="height:0.5rem;">
+        <div class="progress-bar {{ progress_class }}" style="width: {{ progress_percent }}%"></div>
+      </div>
+    </div>
+
+    <div class="mt-2">
+      <button class="btn btn-sm btn-outline-light" type="button" data-bs-toggle="collapse" data-bs-target="#identity-meta" aria-expanded="false" aria-controls="identity-meta">
+        Show more
+      </button>
+      <div class="collapse meta-panel" id="identity-meta">
+        {% if case.diagnosis %}<p><strong>Diagnosis:</strong> {{ case.diagnosis }}</p>{% endif %}
+        {% if case.lmp %}<p><strong>LMP:</strong> {{ case.lmp }}</p>{% endif %}
+        {% if case.usg_edd %}<p><strong>USG EDD:</strong> {{ case.usg_edd }}</p>{% endif %}
+        {% if case.gravida %}<p><strong>Obstetric:</strong> G{{ case.gravida }} P{{ case.para|default:0 }} A{{ case.abortions|default:0 }} L{{ case.living|default:0 }}</p>{% endif %}
+        {% if case.anc_high_risk_reason_labels %}<p><strong>ANC high-risk reasons:</strong> {{ case.anc_high_risk_reason_labels|join:', ' }}</p>{% endif %}
+        {% if latest_vitals_recorded_at %}
+          <p><strong>Latest vitals:</strong> {{ latest_vitals_recorded_at|date:'d-m-y H:i' }}</p>
         {% else %}
-          <p class="summary-item text-muted mb-2">No vitals recorded.</p>
-          {% if can_vitals_edit %}
-            <a class="btn btn-link btn-sm p-0" href="{% url 'patients:vitals_create' case.id %}">Add Vitals</a>
-          {% endif %}
+          <p><strong>Latest vitals:</strong> Not recorded yet.</p>
+        {% endif %}
+        <a class="btn btn-sm btn-outline-light mt-2" href="{{ vitals_detail_url }}">Open Vitals Trends</a>
+        {% if not has_vitals and can_vitals_edit %}
+          <a class="btn btn-sm btn-light mt-2" href="{% url 'patients:vitals_create' case.id %}">Add Vitals</a>
         {% endif %}
       </div>
     </div>
-  </div>
-  <a class="btn btn-outline-primary btn-sm mt-1 mt-md-0 ms-md-2 flex-shrink-0" href="{% url 'patients:case_edit' case.id %}">Edit Case</a>
-</div>
-<div class="row g-3 g-md-4">
-  <div class="col-12 col-lg-7">
-    <div class="card mb-3"><div class="card-body">
-      <h2 class="h5">Tasks</h2>
-      <div class="table-responsive">
+  </section>
+
+  <section class="card">
+    <div class="card-body">
+      <h2 class="h5 mb-3">Action Center</h2>
+      <div class="action-grid">
+        <div class="action-card">
+          <h3 class="d-none d-md-block">Quick Add Task</h3>
+          <button class="btn btn-link action-card-toggle d-md-none collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#action-card-task" aria-expanded="false" aria-controls="action-card-task">
+            Quick Add Task
+          </button>
+          <div class="collapse action-card-content" id="action-card-task">
+            {% if can_task_create %}
+              <form method="post" action="{% url 'patients:task_create' case.id %}" class="row g-2">
+                {% csrf_token %}
+                <div class="col-12">
+                  <label class="form-label small" for="id_task_title">Task</label>
+                  {{ task_form.title }}
+                </div>
+                <div class="col-12">
+                  <label class="form-label small" for="id_task_due_date">Due date</label>
+                  {{ task_form.due_date }}
+                </div>
+                <input type="hidden" name="status" value="SCHEDULED" />
+                <input type="hidden" name="assigned_user" value="" />
+                <input type="hidden" name="task_type" value="CUSTOM" />
+                <input type="hidden" name="frequency_label" value="" />
+                <input type="hidden" name="notes" value="" />
+                <div class="col-12"><button class="btn btn-primary btn-sm w-100">Add task</button></div>
+              </form>
+            {% else %}
+              <p class="text-muted small mb-0">You do not have permission to add tasks.</p>
+            {% endif %}
+          </div>
+        </div>
+
+        <div class="action-card">
+          <h3 class="d-none d-md-block">Quick Call Log</h3>
+          <button class="btn btn-link action-card-toggle d-md-none collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#action-card-call" aria-expanded="false" aria-controls="action-card-call">
+            Quick Call Log
+          </button>
+          <div class="collapse action-card-content" id="action-card-call">
+            {% if can_note_add %}
+              <form method="post" action="{% url 'patients:case_call_create' case.id %}" class="row g-2">
+                {% csrf_token %}
+                <div class="col-12"><label class="form-label small">{{ call_log_form.task.label }}</label>{{ call_log_form.task }}</div>
+                <div class="col-12"><label class="form-label small">{{ call_log_form.outcome.label }}</label>{{ call_log_form.outcome }}</div>
+                <div class="col-12"><label class="form-label small">{{ call_log_form.notes.label }}</label>{{ call_log_form.notes }}</div>
+                <div class="col-12"><button class="btn btn-warning btn-sm w-100">Log call</button></div>
+              </form>
+            {% else %}
+              <p class="text-muted small mb-0">You do not have permission to log calls.</p>
+            {% endif %}
+          </div>
+        </div>
+
+        <div class="action-card">
+          <h3 class="d-none d-md-block">Quick Note</h3>
+          <button class="btn btn-link action-card-toggle d-md-none collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#action-card-note" aria-expanded="false" aria-controls="action-card-note">
+            Quick Note
+          </button>
+          <div class="collapse action-card-content" id="action-card-note">
+            {% if can_note_add %}
+              <form method="post" action="{% url 'patients:case_note_create' case.id %}" class="row g-2">
+                {% csrf_token %}
+                <div class="col-12">{{ log_form.note }}</div>
+                <div class="col-12"><button class="btn btn-secondary btn-sm w-100">Save note</button></div>
+              </form>
+            {% else %}
+              <p class="text-muted small mb-0">You do not have permission to add notes.</p>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-body">
+      <h2 class="h5 mb-2">Actionable Tasks</h2>
+      <p class="text-muted small mb-3">Overdue plus next open tasks (max 5) are shown first.</p>
+      <div class="table-responsive d-none d-md-block">
         <table class="table table-sm align-middle">
-          <thead><tr><th>Title</th><th>Due</th><th>Status</th><th class="d-none d-md-table-cell">Completed On</th><th class="d-none d-md-table-cell">Assigned</th><th></th></tr></thead>
-          <tbody>
-          {% for task in tasks %}
-            <tr {% if case.category.name|upper == 'ANC' and task.due_date > today %}class="table-secondary"{% endif %}>
-              <td>{{ task.title }}</td>
-              <td>{{ task.due_date|date:'d-m-y' }}</td>
-              <td>
-                <span class="task-status-pill status-{{ task.status|slugify }}">{{ task.get_status_display }}</span>
-              </td>
-              <td class="d-none d-md-table-cell">
-                {% if task.status == "COMPLETED" %}
-                  {{ task.completed_at|default:task.due_date|date:'d-m-y' }}
-                {% else %}
-                  -
-                {% endif %}
-              </td>
-              <td class="d-none d-md-table-cell">{{ task.assigned_user|default:'-' }}</td>
-              <td>
-                {% if can_task_edit %}
-                  {% if case.category.name|upper == 'ANC' and task.due_date > today %}
-                    <span class="text-muted small">Locked until due date</span>
-                  {% else %}
-                    <a href="{% url 'patients:task_edit' task.id %}">Edit</a>
-                  {% endif %}
-                {% else %}-{% endif %}
-              </td>
+          <thead>
+            <tr>
+              <th>Task</th>
+              <th>Due</th>
+              <th>Status</th>
+              <th>Completed On</th>
+              <th>Actions</th>
             </tr>
-          {% empty %}<tr><td colspan="6">No tasks added yet.</td></tr>{% endfor %}
+          </thead>
+          <tbody>
+            {% for task in prominent_tasks %}
+              <tr {% if task.status == 'COMPLETED' %}class="task-row-completed"{% elif task.due_date < today %}class="task-row-overdue"{% elif case.category.name|upper == 'ANC' and task.due_date > today %}class="table-secondary"{% endif %}>
+                <td>
+                  <div class="fw-semibold">{{ task.title }}</div>
+                  {% if task.latest_call_summary %}
+                    <span class="task-call-hint badge text-bg-info">Call: {{ task.latest_call_summary.outcome }} at {{ task.latest_call_summary.logged_at|date:'d-m-y H:i' }}</span>
+                  {% endif %}
+                </td>
+                <td>{{ task.due_date|date:'d-m-y' }}</td>
+                <td><span class="task-status-pill status-{{ task.status|slugify }}">{{ task.get_status_display }}</span></td>
+                <td>{% if task.status == 'COMPLETED' %}{{ task.completed_at|default:task.due_date|date:'d-m-y' }}{% else %}-{% endif %}</td>
+                <td>
+                  {% if can_task_edit %}
+                    {% if case.category.name|upper == 'ANC' and task.due_date > today %}
+                      <span class="text-muted small">Locked until due date</span>
+                    {% else %}
+                      <form method="post" action="{% url 'patients:task_quick_complete' task.id %}" class="d-inline">
+                        {% csrf_token %}
+                        <button class="btn btn-sm btn-primary" type="submit">Complete</button>
+                      </form>
+                    {% endif %}
+                    <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#reschedule-{{ task.id }}" aria-expanded="false" aria-controls="reschedule-{{ task.id }}">Reschedule</button>
+                    <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#note-{{ task.id }}" aria-expanded="false" aria-controls="note-{{ task.id }}">Note</button>
+                  {% else %}
+                    -
+                  {% endif %}
+                </td>
+              </tr>
+              <tr class="task-inline-row">
+                <td colspan="5">
+                  <div class="collapse mb-2" id="reschedule-{{ task.id }}">
+                    <form method="post" action="{% url 'patients:task_quick_reschedule' task.id %}" class="row g-2">
+                      {% csrf_token %}
+                      <div class="col-12 col-md-5">
+                        <input class="form-control form-control-sm" type="date" name="due_date" required />
+                      </div>
+                      <div class="col-12 col-md-3">
+                        <button class="btn btn-sm btn-outline-primary w-100" type="submit">Save date</button>
+                      </div>
+                    </form>
+                  </div>
+                  <div class="collapse" id="note-{{ task.id }}">
+                    <form method="post" action="{% url 'patients:task_quick_note' task.id %}" class="row g-2">
+                      {% csrf_token %}
+                      <div class="col-12 col-md-8">
+                        <textarea class="form-control form-control-sm" name="note" rows="2" required>{{ task.notes }}</textarea>
+                      </div>
+                      <div class="col-12 col-md-3">
+                        <button class="btn btn-sm btn-outline-secondary w-100" type="submit">Save note</button>
+                      </div>
+                    </form>
+                  </div>
+                </td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="5">No open tasks available.</td></tr>
+            {% endfor %}
           </tbody>
         </table>
       </div>
-      {% if can_task_create %}
-      <hr>
-      <h3 class="h6">Add Task</h3>
-      <form method="post" action="{% url 'patients:task_create' case.id %}" class="row g-2">{% csrf_token %}
-        {% for field in task_form %}<div class="col-12 col-md-6"><label class="form-label small">{{ field.label }}</label>{{ field }}</div>{% endfor %}
-        <div class="col-12"><button class="btn btn-primary btn-sm w-100 w-sm-auto">Add Task</button></div>
-      </form>
-      {% endif %}
-    </div></div>
-  </div>
-  <div class="col-12 col-lg-5">
-    <div class="card"><div class="card-body">
-      <h2 class="h5">Call Tracking</h2>
-      {% if can_note_add %}
-      <form method="post" action="{% url 'patients:case_call_create' case.id %}" class="mb-3 row g-2">{% csrf_token %}
-        <div class="col-12"><label class="form-label small">{{ call_log_form.task.label }}</label>{{ call_log_form.task }}</div>
-        <div class="col-12"><label class="form-label small">{{ call_log_form.outcome.label }}</label>{{ call_log_form.outcome }}</div>
-        <div class="col-12"><label class="form-label small">{{ call_log_form.notes.label }}</label>{{ call_log_form.notes }}</div>
-        <div class="col-12"><button class="btn btn-warning btn-sm w-100">Log Call Outcome</button></div>
-      </form>
-      {% endif %}
-      <ul class="list-group list-group-flush mb-3">
-        {% for log in call_logs %}
-          <li class="list-group-item px-0"><small class="text-muted">{{ log.created_at }} · {{ log.staff_user|default:'system' }}{% if log.task %} · {{ log.task.title }}{% endif %}</small><div><strong>{{ log.get_outcome_display }}</strong>{% if log.notes %} — {{ log.notes }}{% endif %}</div></li>
-        {% empty %}<li class="list-group-item px-0">No call attempts logged yet.</li>{% endfor %}
-      </ul>
+      <div class="task-mobile-list actionable-task-mobile-list d-md-none" data-testid="actionable-task-mobile-list">
+        {% for task in prominent_tasks %}
+          <article class="task-mobile-card {% if task.status == 'COMPLETED' %}task-mobile-completed{% elif task.due_date < today and task.status != 'CANCELLED' %}task-mobile-overdue{% endif %}">
+            <div class="task-mobile-title">{{ task.title }}</div>
+            <div class="task-mobile-meta">
+              <span class="label">Due</span><span>{{ task.due_date|date:'d-m-y' }}</span>
+              <span class="label">Status</span><span><span class="task-status-pill status-{{ task.status|slugify }}">{{ task.get_status_display }}</span></span>
+              <span class="label">Completed On</span><span>{% if task.status == 'COMPLETED' %}{{ task.completed_at|default:task.due_date|date:'d-m-y' }}{% else %}-{% endif %}</span>
+              {% if task.latest_call_summary %}
+                <span class="label">Latest Call</span><span>{{ task.latest_call_summary.outcome }} ({{ task.latest_call_summary.logged_at|date:'d-m-y H:i' }})</span>
+              {% endif %}
+            </div>
+            <div class="task-mobile-actions">
+              {% if can_task_edit %}
+                {% if case.category.name|upper == 'ANC' and task.due_date > today %}
+                  <span class="text-muted small">Locked until due date</span>
+                {% else %}
+                  <form method="post" action="{% url 'patients:task_quick_complete' task.id %}">
+                    {% csrf_token %}
+                    <button class="btn btn-sm btn-primary w-100" type="submit">Complete</button>
+                  </form>
+                {% endif %}
+                <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#reschedule-mobile-{{ task.id }}" aria-expanded="false" aria-controls="reschedule-mobile-{{ task.id }}">Reschedule</button>
+                <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#note-mobile-{{ task.id }}" aria-expanded="false" aria-controls="note-mobile-{{ task.id }}">Note</button>
+              {% else %}
+                <span class="text-muted small">You do not have permission to edit tasks.</span>
+              {% endif %}
+            </div>
+            <div class="collapse mt-2" id="reschedule-mobile-{{ task.id }}">
+              <form method="post" action="{% url 'patients:task_quick_reschedule' task.id %}" class="row g-2">
+                {% csrf_token %}
+                <div class="col-12">
+                  <input class="form-control form-control-sm" type="date" name="due_date" required />
+                </div>
+                <div class="col-12">
+                  <button class="btn btn-sm btn-outline-primary w-100" type="submit">Save date</button>
+                </div>
+              </form>
+            </div>
+            <div class="collapse mt-2" id="note-mobile-{{ task.id }}">
+              <form method="post" action="{% url 'patients:task_quick_note' task.id %}" class="row g-2">
+                {% csrf_token %}
+                <div class="col-12">
+                  <textarea class="form-control form-control-sm" name="note" rows="2" required>{{ task.notes }}</textarea>
+                </div>
+                <div class="col-12">
+                  <button class="btn btn-sm btn-outline-secondary w-100" type="submit">Save note</button>
+                </div>
+              </form>
+            </div>
+          </article>
+        {% empty %}
+          <p class="text-muted small mb-0">No open tasks available.</p>
+        {% endfor %}
+      </div>
 
-      <h2 class="h5">Activity Log</h2>
-      {% if can_note_add %}
-      <form method="post" action="{% url 'patients:case_note_create' case.id %}" class="mb-3">{% csrf_token %}
-        <div class="mb-2">{{ log_form.note.label_tag }} {{ log_form.note }}</div>
-        <button class="btn btn-secondary btn-sm w-100">Add Note</button>
-      </form>
-      {% endif %}
-      <ul class="list-group list-group-flush">
-        {% for log in activity_logs %}
-          <li class="list-group-item px-0"><small class="text-muted">{{ log.created_at }} · {{ log.user|default:'system' }}{% if log.task %} · {{ log.task.title }}{% endif %}</small><div>{{ log.note }}</div></li>
-        {% empty %}<li class="list-group-item px-0">No activity yet.</li>{% endfor %}
-      </ul>
-    </div></div>
-  </div>
+      <h3 class="h6 mt-4">All Tasks</h3>
+      <p class="text-muted small mb-2">Filter the full task list without opening separate sections.</p>
+      <div class="all-task-filters mb-3" role="group" aria-label="All tasks filters">
+        <label class="form-check form-check-inline mb-0">
+          <input class="form-check-input" type="checkbox" value="open" data-task-filter checked />
+          <span class="form-check-label">Open</span>
+        </label>
+        <label class="form-check form-check-inline mb-0">
+          <input class="form-check-input" type="checkbox" value="completed" data-task-filter checked />
+          <span class="form-check-label">Completed</span>
+        </label>
+        <label class="form-check form-check-inline mb-0">
+          <input class="form-check-input" type="checkbox" value="cancelled" data-task-filter checked />
+          <span class="form-check-label">Cancelled</span>
+        </label>
+      </div>
+      <div class="table-responsive d-none d-md-block">
+        <table class="table table-sm align-middle" id="all-task-table">
+          <thead>
+            <tr>
+              <th>Task</th>
+              <th>Due</th>
+              <th>Status</th>
+              <th>Completed On</th>
+              <th>Latest Call</th>
+              <th>Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for task in tasks %}
+              <tr
+                data-task-bucket="{% if task.status == 'COMPLETED' %}completed{% elif task.status == 'CANCELLED' %}cancelled{% else %}open{% endif %}"
+                {% if task.status == 'COMPLETED' %}
+                  class="task-row-completed"
+                {% elif task.status != 'CANCELLED' and task.due_date < today %}
+                  class="task-row-overdue"
+                {% endif %}
+              >
+                <td>{{ task.title }}</td>
+                <td>{{ task.due_date|date:'d-m-y' }}</td>
+                <td><span class="task-status-pill status-{{ task.status|slugify }}">{{ task.get_status_display }}</span></td>
+                <td>{% if task.status == 'COMPLETED' %}{{ task.completed_at|default:task.due_date|date:'d-m-y' }}{% else %}-{% endif %}</td>
+                <td>
+                  {% if task.latest_call_summary %}
+                    {{ task.latest_call_summary.outcome }} ({{ task.latest_call_summary.logged_at|date:'d-m-y H:i' }})
+                  {% else %}
+                    -
+                  {% endif %}
+                </td>
+                <td>{{ task.notes|default:"-" }}</td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="6">No tasks available.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="task-mobile-list all-task-mobile-list d-md-none" id="all-task-mobile-list" data-testid="all-task-mobile-list">
+        {% for task in tasks %}
+          <article
+            data-task-bucket="{% if task.status == 'COMPLETED' %}completed{% elif task.status == 'CANCELLED' %}cancelled{% else %}open{% endif %}"
+            class="task-mobile-card {% if task.status == 'COMPLETED' %}task-mobile-completed{% elif task.status != 'CANCELLED' and task.due_date < today %}task-mobile-overdue{% endif %}"
+          >
+            <div class="task-mobile-title">{{ task.title }}</div>
+            <div class="task-mobile-meta">
+              <span class="label">Due</span><span>{{ task.due_date|date:'d-m-y' }}</span>
+              <span class="label">Status</span><span><span class="task-status-pill status-{{ task.status|slugify }}">{{ task.get_status_display }}</span></span>
+              <span class="label">Completed On</span><span>{% if task.status == 'COMPLETED' %}{{ task.completed_at|default:task.due_date|date:'d-m-y' }}{% else %}-{% endif %}</span>
+              <span class="label">Latest Call</span>
+              <span>
+                {% if task.latest_call_summary %}
+                  {{ task.latest_call_summary.outcome }} ({{ task.latest_call_summary.logged_at|date:'d-m-y H:i' }})
+                {% else %}
+                  -
+                {% endif %}
+              </span>
+              <span class="label">Notes</span><span>{{ task.notes|default:"-" }}</span>
+            </div>
+          </article>
+        {% empty %}
+          <p class="text-muted small mb-0">No tasks available.</p>
+        {% endfor %}
+      </div>
+      <p id="all-task-empty" class="text-muted small mb-0 d-none">No tasks match selected filters.</p>
+    </div>
+  </section>
+
+  <section id="clinical-timeline" class="card">
+    <div class="card-header d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2">
+      <h2 class="h5 mb-0">Clinical Timeline</h2>
+      <div class="btn-group btn-group-sm" role="group" aria-label="Timeline filter">
+        {% for key, label in timeline_filter_options %}
+          <a href="{% url 'patients:case_detail' case.id %}?timeline={{ key }}&show_logs=1#clinical-timeline" class="btn {% if timeline_filter == key %}btn-primary{% else %}btn-outline-primary{% endif %}">{{ label }}</a>
+        {% endfor %}
+      </div>
+    </div>
+    <div id="clinical-timeline-body" class="collapse {% if not timeline_collapsed %}show{% endif %}">
+      <div class="card-body">
+        {% if timeline_entries %}
+          <ul class="timeline-list">
+            {% for entry in timeline_entries %}
+              <li class="timeline-item">
+                <div class="d-flex flex-column flex-md-row justify-content-between gap-1">
+                  <div>
+                    <span class="badge {% if entry.event_type == 'CALL' %}text-bg-warning{% elif entry.event_type == 'TASK' %}text-bg-primary{% elif entry.event_type == 'NOTE' %}text-bg-secondary{% else %}text-bg-dark{% endif %}">{{ entry.event_label }}</span>
+                    {% if entry.task_title %}<span class="small text-muted ms-1">Task: {{ entry.task_title }}</span>{% endif %}
+                  </div>
+                  <small class="text-muted">{{ entry.timestamp_local|date:'d-m-y H:i' }} | {{ entry.actor }}</small>
+                </div>
+                <div class="mt-1">{{ entry.headline }}</div>
+                {% if entry.details %}<div class="small text-muted">{{ entry.details }}</div>{% endif %}
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p class="mb-0 text-muted">No timeline entries for this filter.</p>
+        {% endif %}
+      </div>
+    </div>
+  </section>
 </div>
+
+<script>
+(() => {
+  const timeline = document.getElementById('clinical-timeline');
+  const timelineBody = document.getElementById('clinical-timeline-body');
+  if (!timeline || !timelineBody) {
+    return;
+  }
+
+  document.querySelectorAll('.log-jump').forEach((link) => {
+    link.addEventListener('click', (event) => {
+      event.preventDefault();
+      if (!timelineBody.classList.contains('show')) {
+        bootstrap.Collapse.getOrCreateInstance(timelineBody).show();
+      }
+      timeline.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      if (link.getAttribute('href')) {
+        window.history.replaceState({}, '', link.getAttribute('href'));
+      }
+    });
+  });
+
+  const taskFilters = document.querySelectorAll('[data-task-filter]');
+  const allTaskItems = document.querySelectorAll('[data-task-bucket]');
+  const allTaskEmpty = document.getElementById('all-task-empty');
+  if (taskFilters.length && allTaskItems.length) {
+    const updateTaskRows = () => {
+      const selected = new Set(
+        Array.from(taskFilters)
+          .filter((input) => input.checked)
+          .map((input) => input.value),
+      );
+      let visibleCount = 0;
+      allTaskItems.forEach((item) => {
+        const visible = selected.has(item.dataset.taskBucket);
+        item.classList.toggle('d-none', !visible);
+        if (visible) {
+          visibleCount += 1;
+        }
+      });
+      if (allTaskEmpty) {
+        allTaskEmpty.classList.toggle('d-none', visibleCount > 0);
+      }
+    };
+
+    taskFilters.forEach((input) => {
+      input.addEventListener('change', updateTaskRows);
+    });
+    updateTaskRows();
+  }
+})();
+</script>
 {% endblock %}

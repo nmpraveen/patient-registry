@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026.03.05.21.22
+- Delivered Issue #47 as a single integrated update: action-first case detail workflow with prominent actionable tasks, inline quick task actions, unified clinical timeline filters, and task-linked call logging requirements.
+- Added backend contract support for timeline/event reliability: `CaseActivityLog.event_type` (`SYSTEM`, `TASK`, `NOTE`, `CALL`) with migration backfill, explicit activity typing on writes, and task quick-action endpoints:
+  - `/patients/tasks/<pk>/quick-complete/`
+  - `/patients/tasks/<pk>/quick-reschedule/`
+  - `/patients/tasks/<pk>/quick-note/`
+- Updated case detail behavior and rendering:
+  - Query params `timeline=all|calls|tasks|notes` and `show_logs=1` for timeline filter/expansion.
+  - Master task list with status filtering (`open`, `completed`, `cancelled`) and mobile-first card rendering below `768px` while preserving desktop tables.
+  - Mobile action center collapsible panels and improved visibility of inline task actions without horizontal table dependency.
+- Rolled out global semantic theming and base surface updates across shared UI:
+  - Deep navy navigation, cool blue-gray surfaces/borders, and standardized text scale.
+  - Consistent semantic pills/tags for gender, high-risk, categories (ANC/Surgery/Non-surgical), cancelled state, progress, and completed-row styling.
+- Improved case creation and validation UX with inline required-field feedback (`is-invalid` + error text) and first-error scroll/focus behavior.
+- Enforced timezone policy and display consistency by setting `TIME_ZONE = "Asia/Kolkata"` with `USE_TZ=True` (UTC storage preserved).
+- Expanded test coverage for migration/backfill, action-first case detail sections, quick-action permissions/rules, timeline filters, call-task requirement, semantic render classes, mobile/task-list markup, and validation feedback behavior.
+
 ## 2026.03.03.23.01
 - Added safety confirmation for destructive mock seeding: `seed_mock_data --reset-all` now prompts interactively and requires `--yes-reset-all` in non-interactive runs.
 - Updated the Seed Mock Data settings page to enforce reset-all confirmation before command execution and pass `--yes-reset-all` only after explicit user confirmation.

@@ -17,6 +17,9 @@ from .views import (
     ChangelogView,
     SeedMockDataSettingsView,
     TaskCreateView,
+    TaskQuickCompleteView,
+    TaskQuickNoteView,
+    TaskQuickRescheduleView,
     TaskUpdateView,
 )
 
@@ -37,6 +40,9 @@ urlpatterns = [
     path("cases/<int:pk>/tasks/new/", TaskCreateView.as_view(), name="task_create"),
     path("cases/<int:pk>/vitals/new/", VitalEntryCreateView.as_view(), name="vitals_create"),
     path("tasks/<int:pk>/edit/", TaskUpdateView.as_view(), name="task_edit"),
+    path("tasks/<int:pk>/quick-complete/", TaskQuickCompleteView.as_view(), name="task_quick_complete"),
+    path("tasks/<int:pk>/quick-reschedule/", TaskQuickRescheduleView.as_view(), name="task_quick_reschedule"),
+    path("tasks/<int:pk>/quick-note/", TaskQuickNoteView.as_view(), name="task_quick_note"),
     path("vitals/<int:pk>/edit/", VitalEntryUpdateView.as_view(), name="vitals_edit"),
     path("cases/<int:pk>/notes/new/", AddCaseNoteView.as_view(), name="case_note_create"),
     path("cases/<int:pk>/calls/new/", AddCallLogView.as_view(), name="case_call_create"),

@@ -3,13 +3,13 @@
 {% block content %}
 <style>
   .case-section-card {
-    border: 1px solid #d9dee8;
+    border: 1px solid var(--app-border);
     border-radius: 0.75rem;
-    background: #fff;
+    background: var(--app-surface-bg);
   }
   .case-section-card .card-header {
-    border-bottom: 1px solid #e8ecf4;
-    background: #f3f7ff;
+    border-bottom: 1px solid var(--app-border);
+    background: var(--app-page-bg);
     border-radius: 0.75rem 0.75rem 0 0;
   }
   .ncd-grid {
@@ -42,11 +42,14 @@
   .autocomplete-panel .list-group-item {
     cursor: pointer;
   }
+  .field-wrap .invalid-feedback {
+    display: block;
+  }
 </style>
 
 <div class="card shadow-sm"><div class="card-body">
   <h1 class="h4 mb-1">{% if object %}Edit Case{% else %}New Case{% endif %}</h1>
-  <p class="text-muted small mb-3">Step 1: choose category · Step 2: complete relevant sections only.</p>
+  <p class="text-muted small mb-3">Step 1: choose category - Step 2: complete relevant sections only.</p>
 
   <form method="post" class="row g-3" id="case-form">{% csrf_token %}
     <div class="col-12">
@@ -183,6 +186,7 @@
 (function() {
   const categoryEl = document.getElementById('id_category');
   if (!categoryEl) return;
+  const caseForm = document.getElementById('case-form');
 
   const dobEl = document.getElementById('id_date_of_birth');
   const ageEl = document.getElementById('id_age');
@@ -230,7 +234,16 @@
     document.querySelectorAll('.field-wrap[data-field]').forEach((wrapper) => {
       const name = wrapper.dataset.field;
       if (!allConditional.includes(name)) return;
-      wrapper.classList.toggle('d-none', !allowed.has(name));
+      const isVisible = allowed.has(name);
+      wrapper.classList.toggle('d-none', !isVisible);
+      wrapper.querySelectorAll('input, select, textarea').forEach((input) => {
+        if (input.type === 'hidden') return;
+        if (!input.dataset.originalRequired) {
+          input.dataset.originalRequired = input.required ? 'true' : 'false';
+        }
+        input.disabled = !isVisible;
+        input.required = isVisible && input.dataset.originalRequired === 'true';
+      });
     });
     updateAncHighRiskReasonsVisibility();
   }
@@ -252,6 +265,38 @@
     const para = parseInt(document.getElementById('id_para')?.value || '0', 10);
     const living = parseInt(document.getElementById('id_living')?.value || '0', 10);
     document.getElementById('gpla-warning')?.classList.toggle('d-none', !(living > para));
+  }
+
+  function clearValidationFeedback() {
+    caseForm?.querySelectorAll('.is-invalid').forEach((input) => input.classList.remove('is-invalid'));
+    caseForm?.querySelectorAll('.invalid-feedback[data-inline-error=\"true\"]').forEach((node) => node.remove());
+  }
+
+  function attachInlineError(inputEl, message) {
+    if (!inputEl) return;
+    inputEl.classList.add('is-invalid');
+    const fieldWrap = inputEl.closest('.field-wrap') || inputEl.parentElement;
+    if (!fieldWrap) return;
+    const feedback = document.createElement('div');
+    feedback.className = 'invalid-feedback';
+    feedback.dataset.inlineError = 'true';
+    feedback.textContent = message || 'This field is required.';
+    fieldWrap.appendChild(feedback);
+  }
+
+  function applyServerErrors() {
+    const serverErrors = {
+      {% for field in form %}
+        {% if field.errors %}
+          "{{ field.name }}": [{% for error in field.errors %}"{{ error|escapejs }}"{% if not forloop.last %}, {% endif %}{% endfor %}],
+        {% endif %}
+      {% endfor %}
+    };
+    Object.entries(serverErrors).forEach(([fieldName, messages]) => {
+      const inputEl = document.getElementById(`id_${fieldName}`);
+      if (!inputEl || inputEl.disabled) return;
+      attachInlineError(inputEl, messages[0]);
+    });
   }
 
   function initAutocomplete(inputId, fieldName) {
@@ -398,6 +443,31 @@
   document.getElementById('id_para')?.addEventListener('change', updateGPLAWarning);
   document.getElementById('id_living')?.addEventListener('change', updateGPLAWarning);
 
+  caseForm?.addEventListener('submit', (event) => {
+    clearValidationFeedback();
+    let firstInvalid = null;
+    caseForm.querySelectorAll('input, select, textarea').forEach((inputEl) => {
+      if (inputEl.disabled || inputEl.type === 'hidden' || inputEl.offsetParent === null) return;
+      if (!inputEl.required) return;
+      const hasValue = inputEl.type === 'checkbox' ? inputEl.checked : Boolean((inputEl.value || '').trim());
+      if (!hasValue) {
+        attachInlineError(inputEl, 'This field is required.');
+        if (!firstInvalid) {
+          firstInvalid = inputEl;
+        }
+      }
+    });
+
+    if (!caseForm.checkValidity() || firstInvalid) {
+      event.preventDefault();
+      const target = firstInvalid || caseForm.querySelector(':invalid');
+      if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        target.focus();
+      }
+    }
+  });
+
   initAutocomplete('id_place', 'place');
   initAutocomplete('id_diagnosis', 'diagnosis');
   initAutocomplete('id_referred_by', 'referred_by');
@@ -405,6 +475,7 @@
   updateFieldVisibility();
   updateGPLAWarning();
   updateAgeBehavior();
+  applyServerErrors();
 })();
 </script>
 {% endblock %}

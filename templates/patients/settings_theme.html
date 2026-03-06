@@ -46,6 +46,28 @@
     margin-bottom: 0.65rem;
   }
 
+  .theme-preview-case-header {
+    border: 1px solid var(--theme-nav-control-border);
+    border-radius: 0.85rem;
+    background: var(--theme-case-header-bg);
+    color: var(--theme-nav-text);
+    padding: 0.85rem;
+    box-shadow: 0 8px 20px var(--theme-shell-shadow);
+  }
+
+  .theme-preview-case-header-title {
+    font-size: 1rem;
+    font-weight: 700;
+    margin-bottom: 0.3rem;
+  }
+
+  .theme-preview-case-header-meta {
+    color: var(--theme-nav-control-text);
+    font-size: 0.82rem;
+    font-weight: 600;
+    margin-bottom: 0.6rem;
+  }
+
   .theme-preview-chip-row,
   .theme-preview-button-row {
     display: flex;
@@ -277,6 +299,18 @@
         <div class="theme-preview-chip-row">
           <span class="theme-preview-pill theme-preview-pill--vitals-low">Hb 8.5</span>
           <span class="theme-preview-pill theme-preview-pill--vitals-normal">SpO2 99%</span>
+        </div>
+      </div>
+
+      <div class="theme-preview-card">
+        <h2>Case Header</h2>
+        <div class="theme-preview-case-header">
+          <div class="theme-preview-case-header-title">Anitha Balasubramaniam</div>
+          <div class="theme-preview-case-header-meta">TN-SLM-260028</div>
+          <div class="theme-preview-chip-row">
+            <span class="theme-preview-pill theme-preview-pill--case-active">Active</span>
+            <span class="theme-preview-pill" style="{% category_theme_style 'ANC' theme_category_colors %}; background: var(--theme-category-bg); color: var(--theme-category-text); border-color: var(--theme-category-border);">ANC</span>
+          </div>
         </div>
       </div>
 

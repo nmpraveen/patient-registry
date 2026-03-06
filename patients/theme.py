@@ -34,6 +34,9 @@ THEME_DEFAULTS = {
         "logout_bg": "#f8f9fa",
         "logout_text": "#000000",
     },
+    "case_header": {
+        "bg": "#0d6efd",
+    },
     "buttons": {
         "primary": {"bg": "#0d6efd", "text": "#ffffff"},
         "secondary": {"bg": "#6c757d", "text": "#ffffff"},
@@ -129,7 +132,7 @@ CHART_FIELDS = (
 
 THEME_FORM_SECTIONS = [
     {
-        "title": "Shell & Nav",
+        "title": "Shell, Nav & Case Header",
         "rows": [
             {"label": "Page Background", "fields": [{"name": "shell__page_bg", "label": "Color"}]},
             {"label": "Page Text", "fields": [{"name": "shell__page_text", "label": "Color"}]},
@@ -148,6 +151,7 @@ THEME_FORM_SECTIONS = [
             {"label": "Nav Control Hover", "fields": [{"name": "nav__control_hover_bg", "label": "Color"}]},
             {"label": "Nav Logout Background", "fields": [{"name": "nav__logout_bg", "label": "Color"}]},
             {"label": "Nav Logout Text", "fields": [{"name": "nav__logout_text", "label": "Color"}]},
+            {"label": "Case Header Background", "fields": [{"name": "case_header__bg", "label": "Color"}]},
         ],
     },
     {
@@ -347,6 +351,7 @@ def build_theme_css_vars(theme_tokens):
         "--theme-nav-control-hover-bg": theme_tokens["nav"]["control_hover_bg"],
         "--theme-nav-logout-bg": theme_tokens["nav"]["logout_bg"],
         "--theme-nav-logout-text": theme_tokens["nav"]["logout_text"],
+        "--theme-case-header-bg": theme_tokens["case_header"]["bg"],
         "--theme-search-dropdown-bg": theme_tokens["search"]["dropdown_bg"],
         "--theme-search-dropdown-text": theme_tokens["search"]["dropdown_text"],
         "--theme-search-dropdown-border": theme_tokens["search"]["dropdown_border"],

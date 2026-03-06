@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.03.05.23.46
+- Added a dedicated `Case Header Background` theme control so the patient case identity header can be styled independently from the top navigation bar.
+- Updated the case detail page and Theme settings preview to use the new case-header token while preserving existing nav text and control colors.
+- Expanded theme tests to cover the new token mapping, persistence, and case-detail rendering behavior.
+
 ## 2026.03.05.23.03
 - Rebases the global theme system onto the latest `main`, preserving the newer dashboard, case list, and action-first case detail layouts while keeping theme tokens and the admin Theme settings page.
 - Added the global `ThemeSettingsView` back on the rebased branch and restored themed category colors in universal search, case detail, case list, dashboard summary cards, and the shared base shell.

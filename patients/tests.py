@@ -140,6 +140,7 @@ class ThemeSystemTests(TestCase):
         with self.assertRaises(ValueError):
             normalize_hex_color("blue")
         self.assertEqual(field_name_to_css_var("shell__page_bg"), "--theme-shell-page-bg")
+        self.assertEqual(field_name_to_css_var("case_header__bg"), "--theme-case-header-bg")
         self.assertEqual(
             field_name_to_css_var("case_status__loss_to_follow_up__bg"),
             "--theme-case-status-loss-to-follow-up-bg",
@@ -165,6 +166,7 @@ class ThemeSystemTests(TestCase):
         self.assertEqual(solo.pk, 1)
         self.assertEqual(solo.tokens["shell"]["page_bg"], "#abcdef")
         self.assertIn("nav", solo.tokens)
+        self.assertIn("case_header", solo.tokens)
         self.assertEqual(ThemeSettings.objects.count(), 1)
 
     def test_department_config_theme_defaults_follow_category_name(self):
@@ -1106,6 +1108,34 @@ class MedtrackViewTests(TestCase):
         self.assertContains(active_detail_response, "--theme-category-bg: #abcdef;")
         self.assertContains(loss_detail_response, "pill-status-loss-to-follow-up")
 
+    def test_case_detail_uses_dedicated_case_header_theme_variable(self):
+        self.client.force_login(self.user)
+        today = timezone.localdate()
+        case = Case.objects.create(
+            uhid="UH-THEME-HEADER",
+            first_name="Theme",
+            last_name="Header",
+            phone_number="9876504460",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=today + timedelta(days=7),
+            created_by=self.user,
+        )
+        theme_settings = ThemeSettings.get_solo()
+        theme_settings.tokens = {
+            "nav": {"bg": "#123456"},
+            "case_header": {"bg": "#654321"},
+        }
+        theme_settings.save()
+
+        response = self.client.get(reverse("patients:case_detail", kwargs={"pk": case.pk}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "--theme-nav-bg: #123456;")
+        self.assertContains(response, "--theme-case-header-bg: #654321;")
+        self.assertContains(response, "background: var(--theme-case-header-bg);")
+
     def test_dashboard_invalid_upcoming_days_defaults_to_seven(self):
         self.client.force_login(self.user)
 
@@ -1200,7 +1230,11 @@ class MedtrackViewTests(TestCase):
         self.login_as_admin()
         anc = DepartmentConfig.objects.get(name="ANC")
         post_data = self.build_theme_post_data(
-            token_overrides={"nav__bg": "#123456", "shell__page_bg": "#faf0e6"},
+            token_overrides={
+                "nav__bg": "#123456",
+                "case_header__bg": "#654321",
+                "shell__page_bg": "#faf0e6",
+            },
             category_overrides={"ANC": {"bg": "#abcdef", "text": "#123456"}},
         )
 
@@ -1210,10 +1244,12 @@ class MedtrackViewTests(TestCase):
         theme_settings = ThemeSettings.get_solo()
         anc.refresh_from_db()
         self.assertEqual(theme_settings.tokens["nav"]["bg"], "#123456")
+        self.assertEqual(theme_settings.tokens["case_header"]["bg"], "#654321")
         self.assertEqual(theme_settings.tokens["shell"]["page_bg"], "#faf0e6")
         self.assertEqual(anc.theme_bg_color, "#abcdef")
         self.assertEqual(anc.theme_text_color, "#123456")
         self.assertContains(response, "--theme-nav-bg: #123456;")
+        self.assertContains(response, "--theme-case-header-bg: #654321;")
         self.assertContains(response, "Theme settings saved.")
 
     def test_theme_settings_restore_defaults_resets_saved_values(self):

@@ -372,6 +372,27 @@ def _case_age_label(case):
     return "-"
 
 
+def _case_initials(case):
+    parts = [part[0].upper() for part in case.full_name.split() if part]
+    if len(parts) >= 2:
+        return "".join(parts[:2])
+    compact_name = "".join(character for character in case.full_name if character.isalpha()).upper()
+    if len(compact_name) >= 2:
+        return compact_name[:2]
+    if compact_name:
+        return compact_name
+    return "--"
+
+
+def _case_name_size_class(case):
+    name_length = len(case.full_name)
+    if name_length >= 34:
+        return "identity-name--compressed"
+    if name_length >= 24:
+        return "identity-name--compact"
+    return ""
+
+
 def _group_tasks_by_month(tasks):
     grouped = OrderedDict()
     for task in tasks:
@@ -983,6 +1004,10 @@ class CaseDetailView(LoginRequiredMixin, DetailView):
         context["vitals_summary_metrics"] = _build_latest_vitals_summary(latest_vital)
         context["vitals_detail_url"] = reverse("patients:case_vitals", kwargs={"pk": case.pk})
         context["case_age_label"] = _case_age_label(case)
+        context["case_initials"] = _case_initials(case)
+        context["case_name_size_class"] = _case_name_size_class(case)
+        context["completed_task_count"] = completed_tasks
+        context["total_task_count"] = total_tasks
         context["progress_percent"] = round((completed_tasks / total_tasks) * 100) if total_tasks else 0
         context["progress_class"] = "bg-success" if context["progress_percent"] >= 50 else "bg-warning"
         context["timeline_filter_options"] = TIMELINE_FILTER_OPTIONS

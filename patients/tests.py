@@ -1878,7 +1878,133 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, reverse("patients:case_vitals", kwargs={"pk": case.pk}))
         self.assertContains(response, "Open Vitals Trends")
-        self.assertContains(response, "Show more")
+        self.assertContains(response, "Clinical Details")
+        self.assertContains(response, "Task Completion")
+        self.assertContains(response, "Vitals")
+        self.assertContains(response, "BP Systolic")
+        self.assertContains(response, "Hemoglobin")
+
+    def test_case_detail_identity_header_preserves_long_name_without_truncation(self):
+        self.client.force_login(self.user)
+        long_first_name = "Anitha Balasubramanian Lakshmipriya"
+        long_last_name = "Subramaniam Narayanaswamy"
+        case = Case.objects.create(
+            uhid="UH-IDENTITY-LONG-NAME",
+            first_name=long_first_name,
+            last_name=long_last_name,
+            phone_number="9876500211",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=10),
+            created_by=self.user,
+        )
+
+        response = self.client.get(reverse("patients:case_detail", kwargs={"pk": case.pk}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, case.full_name)
+        self.assertEqual(response.context["case_name_size_class"], "identity-name--compressed")
+        self.assertContains(response, "identity-name--compressed")
+        self.assertContains(response, "overflow-wrap: normal;")
+        self.assertContains(response, "word-break: normal;")
+        self.assertContains(response, "grid-template-columns: clamp(25rem, 31vw, 34rem)")
+
+    def test_case_detail_identity_header_renders_redesigned_summary_with_icons(self):
+        self.client.force_login(self.user)
+        today = timezone.localdate()
+        case = Case.objects.create(
+            uhid="UH-IDENTITY-HEADER",
+            first_name="Radha",
+            last_name="Patel",
+            phone_number="9876500209",
+            category=self.anc,
+            status=CaseStatus.ACTIVE,
+            gender="FEMALE",
+            age=28,
+            place="Pune",
+            referred_by="Dr. Mehra",
+            high_risk=True,
+            diagnosis="Gestational diabetes mellitus",
+            lmp=today - timedelta(days=175),
+            edd=today + timedelta(days=105),
+            usg_edd=today + timedelta(days=104),
+            gravida=2,
+            para=1,
+            abortions=0,
+            living=1,
+            anc_high_risk_reasons=[AncHighRiskReason.ANEMIA, AncHighRiskReason.PREVIOUS_LSCS],
+            created_by=self.user,
+        )
+        Task.objects.create(
+            case=case,
+            title="Completed task",
+            due_date=today - timedelta(days=3),
+            status=TaskStatus.COMPLETED,
+            created_by=self.user,
+        )
+        Task.objects.create(
+            case=case,
+            title="Open task",
+            due_date=today + timedelta(days=2),
+            status=TaskStatus.SCHEDULED,
+            created_by=self.user,
+        )
+        VitalEntry.objects.create(
+            case=case,
+            recorded_at=timezone.now(),
+            bp_systolic=118,
+            bp_diastolic=76,
+            pr=82,
+            spo2=98,
+            weight_kg=Decimal("63.4"),
+            hemoglobin=Decimal("10.8"),
+            created_by=self.user,
+            updated_by=self.user,
+        )
+
+        response = self.client.get(reverse("patients:case_detail", kwargs={"pk": case.pk}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["case_initials"], "RP")
+        self.assertEqual(response.context["case_name_size_class"], "")
+        self.assertEqual(response.context["completed_task_count"], 1)
+        self.assertEqual(response.context["total_task_count"], 2)
+        self.assertContains(response, "identity-avatar")
+        self.assertContains(response, "Task Completion")
+        self.assertContains(response, "1 of 2 tasks completed")
+        self.assertContains(response, "Clinical Details")
+        self.assertContains(response, "Gestational diabetes mellitus")
+        self.assertContains(response, "Obstetric Summary")
+        self.assertContains(response, "High-risk Reasons")
+        self.assertContains(response, "Previous LSCS")
+        self.assertContains(response, "#identity-icon-phone")
+        self.assertContains(response, "#identity-icon-referral")
+        self.assertContains(response, "app-pill high-risk")
+        self.assertContains(response, "identity-vitals-panel")
+        self.assertNotContains(response, 'class="identity-vitals-card"')
+        self.assertContains(response, "BP Systolic")
+        self.assertContains(response, "Hemoglobin")
+
+    def test_case_detail_identity_header_shows_empty_clinical_state_for_sparse_case(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-IDENTITY-SPARSE",
+            first_name="Sparse",
+            last_name="Case",
+            phone_number="9876500210",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=10),
+            created_by=self.user,
+        )
+
+        response = self.client.get(reverse("patients:case_detail", kwargs={"pk": case.pk}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Clinical details will appear here as the case record is updated.")
+        self.assertContains(response, "0 of 0 tasks completed")
 
     def test_case_detail_uses_latest_vitals_timestamp(self):
         self.client.force_login(self.user)
@@ -1915,6 +2041,8 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         latest_recorded = timezone.localtime(case.vitals.order_by("-recorded_at").first().recorded_at).strftime("%d-%m-%y %H:%M")
         self.assertContains(response, latest_recorded)
+        self.assertContains(response, "SpO2")
+        self.assertContains(response, "N/A")
 
     def test_case_detail_no_vitals_shows_add_vitals_text_button(self):
         self.client.force_login(self.user)
@@ -1937,6 +2065,8 @@ class MedtrackViewTests(TestCase):
         self.assertContains(response, "Add Vitals")
         self.assertContains(response, reverse("patients:case_vitals", kwargs={"pk": case.pk}))
         self.assertContains(response, "Open Vitals Trends")
+        self.assertContains(response, "No vitals have been recorded for this patient yet.")
+        self.assertContains(response, "No record yet")
 
     def test_case_detail_removes_lower_vitals_section(self):
         self.client.force_login(self.user)
@@ -1965,6 +2095,8 @@ class MedtrackViewTests(TestCase):
         self.assertNotContains(response, "Trend (Hemoglobin, Weight, SPO2)")
         self.assertNotContains(response, 'id="vitals-trend-chart"')
         self.assertNotContains(response, 'id="vitals-chart-data"')
+        self.assertNotContains(response, "Latest vitals:")
+        self.assertNotContains(response, "identity-vitals-strip")
 
     def test_case_vitals_page_requires_case_access_permission(self):
         locked_user = get_user_model().objects.create_user(username="vitals-locked", password="strong-password-123")

@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026.03.06.03.59
+- Fully flattened the case-detail vitals column into the shared header shell so the identity rail, clinical panel, and vitals panel now use one consistent three-section layout.
+- Reworked long patient-name handling with wider rail bounds, sane word wrapping, and length-based name-size classes to avoid aggressive mid-word breaks on desktop and mobile.
+- Updated case-detail render tests for the new long-name sizing helper and the removal of the nested vitals wrapper.
+
+## 2026.03.06.03.51
+- Removed the extra boxed treatment from the case-detail vitals column so the identity rail, clinical section, and vitals section now read as one consistent three-part header.
+- Rebalanced vitals panel padding and stacked-layout separators so the right column aligns visually with the center section on both desktop and smaller breakpoints.
+
+## 2026.03.06.03.43
+- Expanded the case detail identity header into a three-column desktop layout with a wider adaptive name rail for long patient names and a dedicated right-side vitals summary card.
+- Moved the latest-vitals timestamp and actions into the new vitals card, removed the old bottom vitals strip, and reused existing vitals status theme tokens for the metric meters and empty state.
+- Extended case-detail render coverage for long-name wrapping, vitals card rendering, partial vitals `N/A` rows, and the no-vitals empty-state workflow.
+
+## 2026.03.06.03.20
+- Rebuilt the case detail identity header into a split hero layout with a dark identity rail, visible clinical details panel, circular task-completion indicator, and mobile stacked adaptation.
+- Added inline SVG icons, initials avatar rendering, task-count summary context, and a redesigned latest-vitals strip while preserving existing routes, permissions, and case actions.
+- Expanded case detail tests to cover the new identity header content, sparse clinical state, vitals empty state, and header summary context values.
+
 ## 2026.03.05.23.46
 - Added a dedicated `Case Header Background` theme control so the patient case identity header can be styled independently from the top navigation bar.
 - Updated the case detail page and Theme settings preview to use the new case-header token while preserving existing nav text and control colors.

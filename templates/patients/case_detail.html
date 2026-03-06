@@ -9,42 +9,104 @@
   }
 
   .identity-bar {
-    border: 1px solid var(--theme-nav-control-border);
-    border-radius: 0.75rem;
-    background: var(--theme-case-header-bg);
-    color: var(--theme-nav-text);
-    padding: 1rem;
-    box-shadow: 0 8px 20px var(--theme-shell-shadow);
+    display: grid;
+    grid-template-columns: clamp(25rem, 31vw, 34rem) minmax(0, 1.08fr) minmax(16.5rem, 0.82fr);
+    border: 1px solid var(--app-border);
+    border-radius: 1.1rem;
+    background: var(--app-surface-bg);
+    overflow: hidden;
+    box-shadow: 0 12px 30px var(--theme-shell-shadow);
   }
 
-  .identity-main {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: space-between;
-    gap: 0.75rem;
-    align-items: flex-start;
+  .identity-rail {
+    background: var(--theme-case-header-bg);
+    background-image:
+      radial-gradient(circle at top left, rgba(255, 255, 255, 0.12) 0, transparent 55%),
+      linear-gradient(160deg, var(--theme-case-header-bg) 0%, var(--theme-nav-bg) 100%);
+    color: var(--theme-nav-text);
+    padding: 1.25rem;
+    display: grid;
+    gap: 1rem;
+  }
+
+  .identity-avatar {
+    width: 4.25rem;
+    height: 4.25rem;
+    display: inline-grid;
+    place-items: center;
+    border-radius: 1rem;
+    background: linear-gradient(145deg, var(--app-accent) 0%, var(--theme-nav-control-bg) 100%);
+    color: #ffffff;
+    font-size: 1.65rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 12px 26px rgba(0, 0, 0, 0.16);
   }
 
   .identity-name {
     margin: 0;
-    font-size: 1.35rem;
+    max-width: 100%;
+    font-size: clamp(2rem, 1.35rem + 1.45vw, 3rem);
     font-weight: 700;
-    line-height: 1.2;
+    line-height: 1;
     color: var(--theme-nav-text);
+    overflow-wrap: normal;
+    word-break: normal;
+  }
+
+  .identity-name--compact {
+    font-size: clamp(1.48rem, 1.02rem + 0.78vw, 2rem);
+    line-height: 1.02;
+  }
+
+  .identity-name--compressed {
+    font-size: clamp(1.12rem, 0.88rem + 0.5vw, 1.48rem);
+    line-height: 1.08;
   }
 
   .identity-uhid {
-    color: var(--theme-nav-control-text);
-    font-size: 0.86rem;
-    margin-left: 0.4rem;
+    display: block;
+    margin-top: 0.35rem;
+    color: rgba(255, 255, 255, 0.82);
+    font-size: 0.92rem;
     font-weight: 600;
+    letter-spacing: 0.01em;
+  }
+
+  .identity-facts {
+    display: grid;
+    gap: 0.8rem;
+  }
+
+  .identity-fact {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    color: rgba(255, 255, 255, 0.92);
+    font-size: 0.92rem;
+    line-height: 1.35;
+  }
+
+  .identity-icon {
+    width: 1rem;
+    height: 1rem;
+    flex: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    fill: none;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .identity-rail-divider {
+    height: 1px;
+    background: rgba(255, 255, 255, 0.12);
   }
 
   .identity-strip {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.45rem;
-    margin-top: 0.65rem;
+    gap: 0.55rem;
   }
 
   .identity-chip {
@@ -60,6 +122,11 @@
   .identity-chip.theme-category-chip {
     padding: 0.22rem 0.62rem;
     font-size: 0.78rem;
+  }
+
+  .identity-chip.theme-category-chip,
+  .identity-chip.app-pill.high-risk {
+    box-shadow: none;
   }
 
   .identity-chip.pill-status-active {
@@ -86,47 +153,313 @@
     color: var(--theme-case-status-loss-to-follow-up-text);
   }
 
-  .identity-chip-neutral {
-    border: 1px solid rgba(255, 255, 255, 0.45);
-    color: #f3f8ff;
-    background: rgba(255, 255, 255, 0.12);
+  .identity-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
   }
 
-  .identity-chip.phone {
-    border-color: var(--app-accent-border);
-    color: var(--app-accent);
-    background: var(--app-accent-light);
-  }
-
-  .meta-panel {
-    border-top: 1px solid rgba(255, 255, 255, 0.25);
-    margin-top: 0.9rem;
-    padding-top: 0.8rem;
-  }
-
-  .meta-panel p {
-    margin: 0.15rem 0;
-    font-size: 0.86rem;
-  }
-
-  .progress-wrap {
-    margin-top: 0.85rem;
-    max-width: 360px;
-  }
-
-  .progress-text {
-    font-size: 0.78rem;
-    color: var(--theme-nav-control-text);
+  .identity-action-btn {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+    border-radius: 0.75rem;
     font-weight: 600;
-    margin-bottom: 0.3rem;
   }
 
-  .progress-wrap .progress {
+  .identity-panel {
+    display: grid;
+    gap: 1rem;
+    padding: 1.4rem 1.6rem;
+    background: linear-gradient(180deg, var(--app-surface-bg) 0%, var(--theme-shell-page-bg) 100%);
+    min-width: 0;
+  }
+
+  .identity-panel-top {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+
+  .identity-progress-card {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    min-width: 0;
+  }
+
+  .identity-progress-ring {
+    --identity-progress-value: 0;
+    position: relative;
+    width: 4.8rem;
+    height: 4.8rem;
+    border-radius: 50%;
+    flex: none;
+    display: grid;
+    place-items: center;
+    background: conic-gradient(
+      var(--theme-task-status-completed-bg) calc(var(--identity-progress-value) * 1%),
+      var(--theme-shell-surface-hover-bg) 0
+    );
+  }
+
+  .identity-progress-ring::before {
+    content: "";
+    position: absolute;
+    inset: 0.42rem;
+    border-radius: 50%;
+    background: var(--app-surface-bg);
+    border: 1px solid var(--app-border);
+  }
+
+  .identity-progress-value {
+    position: relative;
+    z-index: 1;
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--theme-task-status-completed-bg);
+  }
+
+  .identity-progress-title {
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--app-text-primary);
+  }
+
+  .identity-progress-copy {
+    margin: 0.15rem 0 0;
+    color: var(--app-text-secondary);
+    font-size: 0.92rem;
+  }
+
+  .identity-section-label {
+    margin: 0;
+    font-size: 0.76rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--app-text-secondary);
+  }
+
+  .identity-clinical-block {
+    display: grid;
+    gap: 0;
+  }
+
+  .identity-detail-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.95rem 1.45rem;
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--app-border);
+  }
+
+  .identity-detail-item {
+    min-width: 0;
+  }
+
+  .identity-detail-item--full {
+    grid-column: 1 / -1;
+  }
+
+  .identity-detail-label {
+    margin-bottom: 0.25rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--app-text-secondary);
+  }
+
+  .identity-detail-value {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--app-text-primary);
+    line-height: 1.35;
+    word-break: break-word;
+  }
+
+  .identity-detail-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+  }
+
+  .identity-detail-tag {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 0.45rem;
+    padding: 0.25rem 0.55rem;
+    background: var(--theme-alerts-danger-bg);
+    color: var(--theme-alerts-danger-text);
+    font-size: 0.82rem;
+    font-weight: 600;
+    line-height: 1.2;
+  }
+
+  .identity-detail-empty {
+    color: var(--app-text-secondary);
+    font-size: 0.92rem;
+    line-height: 1.4;
+  }
+
+  .identity-vitals-panel {
+    min-width: 0;
+    display: grid;
+    align-content: start;
+    gap: 1rem;
+    padding: 1.4rem 1.6rem;
+    border-left: 1px solid var(--app-border);
+    background: linear-gradient(180deg, var(--app-surface-bg) 0%, var(--theme-shell-page-bg) 100%);
+  }
+
+  .identity-vitals-card-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+
+  .identity-vitals-title {
+    margin: 0;
+    font-size: 0.78rem;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--app-text-secondary);
+  }
+
+  .identity-vitals-timestamp {
+    margin: 0;
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--app-text-secondary);
+    text-align: right;
+  }
+
+  .identity-vitals-list {
+    display: grid;
+    gap: 0.8rem;
+  }
+
+  .identity-vital-item {
+    display: grid;
+    gap: 0.34rem;
+  }
+
+  .identity-vital-meta {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+
+  .identity-vital-label {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--app-text-primary);
+  }
+
+  .identity-vital-value {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--app-text-primary);
+    white-space: nowrap;
+  }
+
+  .identity-vital-value.status-low {
+    color: var(--theme-vitals-status-low-text);
+  }
+
+  .identity-vital-value.status-normal {
+    color: var(--theme-vitals-status-normal-text);
+  }
+
+  .identity-vital-value.status-high {
+    color: var(--theme-vitals-status-high-text);
+  }
+
+  .identity-vital-value.status-neutral {
+    color: var(--theme-vitals-status-neutral-text);
+  }
+
+  .identity-vital-value.status-na {
+    color: var(--theme-vitals-status-na-text);
+  }
+
+  .identity-vital-meter {
+    height: 0.48rem;
+    border-radius: 999px;
+    overflow: hidden;
     background: var(--theme-shell-surface-hover-bg);
   }
 
-  .progress-wrap .progress-bar {
-    background: var(--theme-task-status-completed-bg) !important;
+  .identity-vital-meter-fill {
+    display: block;
+    height: 100%;
+    width: calc(var(--identity-vital-percent, 0) * 1%);
+    border-radius: inherit;
+    transition: width 180ms ease;
+  }
+
+  .identity-vital-meter-fill.has-value {
+    min-width: 0.85rem;
+  }
+
+  .identity-vital-meter-fill.status-low {
+    background: var(--theme-vitals-status-low-text);
+  }
+
+  .identity-vital-meter-fill.status-normal {
+    background: var(--theme-vitals-status-normal-text);
+  }
+
+  .identity-vital-meter-fill.status-high {
+    background: var(--theme-vitals-status-high-text);
+  }
+
+  .identity-vital-meter-fill.status-neutral {
+    background: var(--theme-vitals-status-neutral-text);
+  }
+
+  .identity-vital-meter-fill.status-na {
+    background: var(--theme-vitals-status-na-text);
+  }
+
+  .identity-vitals-empty {
+    color: var(--app-text-secondary);
+    font-size: 0.94rem;
+    line-height: 1.5;
+  }
+
+  .identity-vitals-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.65rem;
+    flex-wrap: wrap;
+    padding-top: 0.9rem;
+    border-top: 1px solid var(--app-border);
+  }
+
+  .identity-vitals-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    color: var(--app-accent);
+    font-weight: 600;
+    text-decoration: none;
+  }
+
+  .identity-vitals-link:hover,
+  .identity-vitals-link:focus {
+    color: var(--theme-shell-link-hover);
+    text-decoration: none;
   }
 
   .action-grid {
@@ -299,12 +632,6 @@
     padding-bottom: 0;
   }
 
-  @media (max-width: 991.98px) {
-    .action-grid {
-      grid-template-columns: 1fr;
-    }
-  }
-
   @media (min-width: 768px) {
     .action-card-content {
       display: block !important;
@@ -313,17 +640,69 @@
     }
   }
 
+  @media (max-width: 1199.98px) {
+    .identity-bar {
+      grid-template-columns: 1fr;
+    }
+
+    .identity-panel {
+      padding: 1.25rem;
+    }
+
+    .identity-vitals-panel {
+      padding: 1.25rem;
+      border-left: 0;
+      border-top: 1px solid var(--app-border);
+      background: var(--theme-shell-page-bg);
+    }
+  }
+
+  @media (max-width: 991.98px) {
+    .identity-detail-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .action-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
   @media (max-width: 767.98px) {
-    .identity-strip {
-      overflow-x: auto;
-      flex-wrap: nowrap;
-      padding-bottom: 0.1rem;
+    .identity-rail,
+    .identity-panel,
+    .identity-vitals-panel {
+      padding: 1rem;
     }
 
     .identity-chip {
       min-height: 44px;
       display: inline-flex;
       align-items: center;
+    }
+
+    .identity-actions {
+      grid-template-columns: 1fr;
+    }
+
+    .identity-name {
+      font-size: 1.75rem;
+    }
+
+    .identity-name--compact {
+      font-size: 1.42rem;
+    }
+
+    .identity-name--compressed {
+      font-size: 1.12rem;
+      line-height: 1.08;
+    }
+
+    .identity-panel-top {
+      align-items: flex-start;
+    }
+
+    .identity-vitals-footer .btn {
+      width: 100%;
     }
 
     .btn,
@@ -342,62 +721,210 @@
   }
 </style>
 
+<svg aria-hidden="true" style="position:absolute;width:0;height:0;overflow:hidden">
+  <symbol id="identity-icon-person" viewBox="0 0 24 24">
+    <path d="M19 21a7 7 0 0 0-14 0"></path>
+    <circle cx="12" cy="8" r="4"></circle>
+  </symbol>
+  <symbol id="identity-icon-pin" viewBox="0 0 24 24">
+    <path d="M12 21s6-5.2 6-11a6 6 0 1 0-12 0c0 5.8 6 11 6 11z"></path>
+    <circle cx="12" cy="10" r="2.5"></circle>
+  </symbol>
+  <symbol id="identity-icon-phone" viewBox="0 0 24 24">
+    <path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7l.5 3a2 2 0 0 1-.6 1.8l-1.3 1.3a16 16 0 0 0 6.4 6.4l1.3-1.3a2 2 0 0 1 1.8-.6l3 .5A2 2 0 0 1 22 16.9z"></path>
+  </symbol>
+  <symbol id="identity-icon-referral" viewBox="0 0 24 24">
+    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
+    <circle cx="9" cy="7" r="4"></circle>
+    <path d="M19 8v6"></path>
+    <path d="M22 11h-6"></path>
+  </symbol>
+  <symbol id="identity-icon-edit" viewBox="0 0 24 24">
+    <path d="M12 20h9"></path>
+    <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"></path>
+  </symbol>
+  <symbol id="identity-icon-logs" viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="9"></circle>
+    <path d="M12 7v5l3 2"></path>
+  </symbol>
+  <symbol id="identity-icon-vitals" viewBox="0 0 24 24">
+    <path d="M3 12h4l2.2-5 4.1 10 2.3-5H21"></path>
+  </symbol>
+</svg>
+
 <div class="patient-shell">
   <section class="identity-bar">
-    <div class="identity-main">
+    <div class="identity-rail">
+      <div class="identity-avatar">{{ case_initials }}</div>
+
       <div>
-        <h1 class="identity-name">
-          {{ case.full_name }}
-          <span class="identity-uhid">{{ case.uhid }}</span>
-        </h1>
-        <div class="identity-strip">
-          {% if case.gender %}
-            <span class="identity-chip app-pill {% if case.gender == 'FEMALE' %}gender-female{% elif case.gender == 'MALE' %}gender-male{% else %}gender-other{% endif %}">{{ case.get_gender_display }}</span>
-          {% endif %}
-          <span class="identity-chip identity-chip-neutral">{{ case_age_label }}</span>
-          {% if case.place %}<span class="identity-chip identity-chip-neutral">{{ case.place }}</span>{% endif %}
-          <span class="identity-chip identity-chip-neutral phone">{{ case.phone_number }}</span>
-          {% if case.referred_by %}<span class="identity-chip identity-chip-neutral">{{ case.referred_by }}</span>{% endif %}
-          {% if case.edd %}<span class="identity-chip identity-chip-neutral">EDD {{ case.edd|date:'d M Y' }}</span>{% endif %}
-          <span class="identity-chip pill-status-{{ case.status|slugify }}">{{ case.get_status_display }}</span>
-          <span class="identity-chip theme-category-chip {% if case.category.name|lower == 'anc' %}category-anc{% elif case.category.name|lower == 'surgery' %}category-surgery{% elif case.category.name|lower == 'non surgical' or case.category.name|lower == 'non-surgical' or case.category.name|lower == 'nonsurgical' %}category-non-surgical{% else %}category-other{% endif %}" style="{% category_theme_style case.category theme_category_colors %}">{{ case.category.name }}</span>
-          {% if case.high_risk %}<span class="identity-chip app-pill high-risk">High-risk</span>{% endif %}
+        <h1 class="identity-name{% if case_name_size_class %} {{ case_name_size_class }}{% endif %}">{{ case.full_name }}</h1>
+        <span class="identity-uhid">UHID {{ case.uhid }}</span>
+      </div>
+
+      <div class="identity-rail-divider"></div>
+
+      <div class="identity-facts">
+        {% if case.gender or case_age_label != "-" %}
+          <div class="identity-fact">
+            <svg class="identity-icon" aria-hidden="true"><use href="#identity-icon-person"></use></svg>
+            <span>
+              {% if case.gender %}{{ case.get_gender_display }}{% else %}Patient{% endif %}
+              {% if case_age_label != "-" %}&middot; {{ case_age_label }}{% endif %}
+            </span>
+          </div>
+        {% endif %}
+        {% if case.place %}
+          <div class="identity-fact">
+            <svg class="identity-icon" aria-hidden="true"><use href="#identity-icon-pin"></use></svg>
+            <span>{{ case.place }}</span>
+          </div>
+        {% endif %}
+        <div class="identity-fact">
+          <svg class="identity-icon" aria-hidden="true"><use href="#identity-icon-phone"></use></svg>
+          <span>{{ case.phone_number }}</span>
+        </div>
+        {% if case.referred_by %}
+          <div class="identity-fact">
+            <svg class="identity-icon" aria-hidden="true"><use href="#identity-icon-referral"></use></svg>
+            <span>Ref: {{ case.referred_by }}</span>
+          </div>
+        {% endif %}
+      </div>
+
+      <div class="identity-rail-divider"></div>
+
+      <div class="identity-strip">
+        <span class="identity-chip pill-status-{{ case.status|slugify }}">{{ case.get_status_display }}</span>
+        <span class="identity-chip theme-category-chip {% if case.category.name|lower == 'anc' %}category-anc{% elif case.category.name|lower == 'surgery' %}category-surgery{% elif case.category.name|lower == 'non surgical' or case.category.name|lower == 'non-surgical' or case.category.name|lower == 'nonsurgical' %}category-non-surgical{% else %}category-other{% endif %}" style="{% category_theme_style case.category theme_category_colors %}">{{ case.category.name }}</span>
+        {% if case.high_risk %}<span class="identity-chip app-pill high-risk">High-risk</span>{% endif %}
+      </div>
+
+      <div class="identity-actions">
+        <a class="btn btn-primary btn-sm identity-action-btn" href="{% url 'patients:case_edit' case.id %}">
+          <svg class="identity-icon" aria-hidden="true"><use href="#identity-icon-edit"></use></svg>
+          <span>Edit</span>
+        </a>
+        <a class="btn btn-outline-light btn-sm identity-action-btn log-jump" href="{{ logs_url }}">
+          <svg class="identity-icon" aria-hidden="true"><use href="#identity-icon-logs"></use></svg>
+          <span>Logs</span>
+        </a>
+      </div>
+    </div>
+
+    <div class="identity-panel">
+      <div class="identity-panel-top">
+        <div class="identity-progress-card">
+          <div
+            class="identity-progress-ring"
+            style="--identity-progress-value: {{ progress_percent }};"
+            role="progressbar"
+            aria-label="Task completion"
+            aria-valuenow="{{ progress_percent }}"
+            aria-valuemin="0"
+            aria-valuemax="100"
+          >
+            <span class="identity-progress-value">{{ progress_percent }}%</span>
+          </div>
+          <div>
+            <p class="identity-progress-title">Task Completion</p>
+            <p class="identity-progress-copy">{{ completed_task_count }} of {{ total_task_count }} tasks completed</p>
+          </div>
         </div>
       </div>
-      <div class="d-flex gap-2">
-        <a class="btn btn-primary btn-sm" href="{% url 'patients:case_edit' case.id %}">Edit Case</a>
-        <a class="btn btn-outline-light btn-sm log-jump" href="{{ logs_url }}">Logs</a>
+
+      <div class="identity-clinical-block">
+        <p class="identity-section-label">Clinical Details</p>
+        <div class="identity-detail-grid">
+          {% if case.diagnosis %}
+            <div class="identity-detail-item">
+              <div class="identity-detail-label">Diagnosis</div>
+              <div class="identity-detail-value">{{ case.diagnosis }}</div>
+            </div>
+          {% endif %}
+          {% if case.edd %}
+            <div class="identity-detail-item">
+              <div class="identity-detail-label">EDD</div>
+              <div class="identity-detail-value">{{ case.edd|date:'d M Y' }}</div>
+            </div>
+          {% endif %}
+          {% if case.lmp %}
+            <div class="identity-detail-item">
+              <div class="identity-detail-label">LMP</div>
+              <div class="identity-detail-value">{{ case.lmp|date:'d M Y' }}</div>
+            </div>
+          {% endif %}
+          {% if case.usg_edd %}
+            <div class="identity-detail-item">
+              <div class="identity-detail-label">USG EDD</div>
+              <div class="identity-detail-value">{{ case.usg_edd|date:'d M Y' }}</div>
+            </div>
+          {% endif %}
+          {% if case.gravida %}
+            <div class="identity-detail-item">
+              <div class="identity-detail-label">Obstetric Summary</div>
+              <div class="identity-detail-value">G{{ case.gravida }} P{{ case.para|default:0 }} A{{ case.abortions|default:0 }} L{{ case.living|default:0 }}</div>
+            </div>
+          {% endif %}
+          {% if case.anc_high_risk_reason_labels %}
+            <div class="identity-detail-item">
+              <div class="identity-detail-label">High-risk Reasons</div>
+              <div class="identity-detail-tags">
+                {% for reason in case.anc_high_risk_reason_labels %}
+                  <span class="identity-detail-tag">{{ reason }}</span>
+                {% endfor %}
+              </div>
+            </div>
+          {% endif %}
+          {% if not case.diagnosis and not case.edd and not case.lmp and not case.usg_edd and not case.gravida and not case.anc_high_risk_reason_labels %}
+            <div class="identity-detail-item identity-detail-item--full">
+              <div class="identity-detail-empty">Clinical details will appear here as the case record is updated.</div>
+            </div>
+          {% endif %}
+        </div>
       </div>
     </div>
 
-    <div class="progress-wrap">
-      <div class="progress-text">Task completion: {{ progress_percent }}%</div>
-      <div class="progress" role="progressbar" aria-label="Task completion" aria-valuenow="{{ progress_percent }}" aria-valuemin="0" aria-valuemax="100" style="height:0.5rem;">
-        <div class="progress-bar {{ progress_class }}" style="width: {{ progress_percent }}%"></div>
+    <aside class="identity-vitals-panel">
+      <div class="identity-vitals-card-header">
+        <p class="identity-vitals-title">Vitals</p>
+        <p class="identity-vitals-timestamp">
+          {% if latest_vitals_recorded_at %}
+            {{ latest_vitals_recorded_at|date:'d-m-y H:i' }}
+          {% else %}
+            No record yet
+          {% endif %}
+        </p>
       </div>
-    </div>
 
-    <div class="mt-2">
-      <button class="btn btn-sm btn-outline-light" type="button" data-bs-toggle="collapse" data-bs-target="#identity-meta" aria-expanded="false" aria-controls="identity-meta">
-        Show more
-      </button>
-      <div class="collapse meta-panel" id="identity-meta">
-        {% if case.diagnosis %}<p><strong>Diagnosis:</strong> {{ case.diagnosis }}</p>{% endif %}
-        {% if case.lmp %}<p><strong>LMP:</strong> {{ case.lmp }}</p>{% endif %}
-        {% if case.usg_edd %}<p><strong>USG EDD:</strong> {{ case.usg_edd }}</p>{% endif %}
-        {% if case.gravida %}<p><strong>Obstetric:</strong> G{{ case.gravida }} P{{ case.para|default:0 }} A{{ case.abortions|default:0 }} L{{ case.living|default:0 }}</p>{% endif %}
-        {% if case.anc_high_risk_reason_labels %}<p><strong>ANC high-risk reasons:</strong> {{ case.anc_high_risk_reason_labels|join:', ' }}</p>{% endif %}
-        {% if latest_vitals_recorded_at %}
-          <p><strong>Latest vitals:</strong> {{ latest_vitals_recorded_at|date:'d-m-y H:i' }}</p>
-        {% else %}
-          <p><strong>Latest vitals:</strong> Not recorded yet.</p>
-        {% endif %}
-        <a class="btn btn-sm btn-outline-light mt-2" href="{{ vitals_detail_url }}">Open Vitals Trends</a>
+      {% if vitals_summary_metrics %}
+        <div class="identity-vitals-list">
+          {% for metric in vitals_summary_metrics %}
+            <div class="identity-vital-item">
+              <div class="identity-vital-meta">
+                <span class="identity-vital-label">{{ metric.label }}</span>
+                <span class="identity-vital-value status-{{ metric.status }}">{{ metric.value_display }}</span>
+              </div>
+              <div class="identity-vital-meter" aria-hidden="true">
+                <span class="identity-vital-meter-fill status-{{ metric.status }}{% if metric.value_display != 'N/A' %} has-value{% endif %}" style="--identity-vital-percent: {{ metric.percent }};"></span>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="identity-vitals-empty">No vitals have been recorded for this patient yet.</div>
+      {% endif %}
+
+      <div class="identity-vitals-footer">
+        <a class="identity-vitals-link" href="{{ vitals_detail_url }}">
+          <svg class="identity-icon" aria-hidden="true"><use href="#identity-icon-vitals"></use></svg>
+          <span>Open Vitals Trends</span>
+        </a>
         {% if not has_vitals and can_vitals_edit %}
-          <a class="btn btn-sm btn-light mt-2" href="{% url 'patients:vitals_create' case.id %}">Add Vitals</a>
+          <a class="btn btn-sm btn-outline-secondary" href="{% url 'patients:vitals_create' case.id %}">Add Vitals</a>
         {% endif %}
       </div>
-    </div>
+    </aside>
   </section>
 
   <section class="card">

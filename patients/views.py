@@ -135,13 +135,41 @@ def _user_role_settings_queryset(user):
     )
 
 
+def _user_role_settings(user):
+    if user.is_superuser:
+        return []
+    cached_settings = getattr(user, "_cached_role_settings", None)
+    if cached_settings is None:
+        cached_settings = list(
+            _user_role_settings_queryset(user).only(
+                "role_name",
+                "can_case_create",
+                "can_case_edit",
+                "can_task_create",
+                "can_task_edit",
+                "can_note_add",
+                "can_manage_settings",
+            )
+        )
+        user._cached_role_settings = cached_settings
+    return cached_settings
+
+
 def has_capability(user, capability):
     if user.is_superuser:
         return True
     capability_field = CAPABILITY_FIELD_MAP.get(capability)
     if not capability_field:
         return False
-    return _user_role_settings_queryset(user).filter(**{capability_field: True}).exists()
+    capability_cache = getattr(user, "_capability_cache", None)
+    if capability_cache is None:
+        capability_cache = {}
+        user._capability_cache = capability_cache
+    if capability in capability_cache:
+        return capability_cache[capability]
+    allowed = any(getattr(role_setting, capability_field) for role_setting in _user_role_settings(user))
+    capability_cache[capability] = allowed
+    return allowed
 
 
 def is_doctor_admin(user):
@@ -211,13 +239,19 @@ def _truncate_text(value, max_length=42):
 def _can_view_recent_cases(user):
     if user.is_superuser:
         return True
-    return bool(_user_group_names(user) & set(RECENT_CASE_VIEW_ROLES))
+    group_names = _user_group_names(user)
+    if group_names & set(RECENT_CASE_VIEW_ROLES):
+        return True
+    return has_capability(user, "case_edit") and has_capability(user, "task_edit")
 
 
 def _can_edit_recent_cases(user):
     if user.is_superuser:
         return True
-    return bool(_user_group_names(user) & set(RECENT_CASE_EDIT_ROLES))
+    group_names = _user_group_names(user)
+    if group_names and group_names.issubset({"Reception"}):
+        return False
+    return has_capability(user, "case_edit") and has_capability(user, "task_edit")
 
 
 def _user_group_names(user):
@@ -225,7 +259,7 @@ def _user_group_names(user):
         return set()
     cached_names = getattr(user, "_cached_group_names", None)
     if cached_names is None:
-        cached_names = set(user.groups.values_list("name", flat=True))
+        cached_names = {role_setting.role_name for role_setting in _user_role_settings(user)}
         user._cached_group_names = cached_names
     return cached_names
 

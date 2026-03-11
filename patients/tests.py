@@ -560,6 +560,29 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(response.context["recent_cases"][0]["id"], created_case.id)
         self.assertFalse(response.context["recent_cases"][0]["can_edit"])
 
+    def test_dashboard_recent_cases_panel_is_editable_for_full_capability_staff_role(self):
+        RoleSetting.objects.update_or_create(
+            role_name="Staff",
+            defaults={
+                "can_case_create": True,
+                "can_case_edit": True,
+                "can_task_create": True,
+                "can_task_edit": True,
+                "can_note_add": True,
+                "can_manage_settings": False,
+            },
+        )
+        self.login_as_role("Staff", username="staff_recent_panel")
+        created_case = self.create_recent_case(notes="Staff note")
+
+        response = self.client.get(reverse("patients:dashboard"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["show_recent_cases_panel"])
+        self.assertTrue(response.context["can_edit_recent_cases"])
+        self.assertEqual(response.context["recent_cases"][0]["id"], created_case.id)
+        self.assertTrue(response.context["recent_cases"][0]["can_edit"])
+
     def test_recent_cases_api_clamps_limit_and_returns_minimal_payload(self):
         self.client.force_login(self.user)
         base_time = timezone.now()

@@ -2,6 +2,200 @@
 {% load theme_tags %}
 {% block title %}Dashboard | MEDTRACK{% endblock %}
 {% block content %}
+<style>
+  .recent-cases-panel {
+    border: 1px solid var(--theme-shell-surface-border);
+    border-radius: 0.9rem;
+    background:
+      linear-gradient(180deg, var(--theme-shell-surface-hover-bg) 0%, var(--theme-shell-surface-bg) 100%);
+    padding: 1rem;
+    box-shadow: 0 8px 24px var(--theme-shell-shadow);
+  }
+
+  .recent-cases-panel-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 0.85rem;
+  }
+
+  .recent-cases-panel-header p {
+    margin-bottom: 0;
+  }
+
+  .recent-cases-kicker,
+  .recent-case-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    border: 1px solid var(--theme-dashboard-upcoming-border);
+    background: var(--theme-dashboard-upcoming-bg);
+    color: var(--theme-dashboard-upcoming-text);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    line-height: 1;
+    padding: 0.28rem 0.6rem;
+    white-space: nowrap;
+  }
+
+  .recent-case-list {
+    display: grid;
+    gap: 0.65rem;
+  }
+
+  .recent-case-row {
+    width: 100%;
+    border: 1px solid var(--theme-shell-surface-border);
+    border-radius: 0.8rem;
+    background: var(--theme-shell-surface-bg);
+    color: inherit;
+    padding: 0.85rem 0.95rem;
+    text-align: left;
+    transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+  }
+
+  .recent-case-row:hover,
+  .recent-case-row:focus-visible {
+    border-color: var(--theme-dashboard-upcoming-border);
+    box-shadow: 0 10px 26px var(--theme-shell-shadow);
+    transform: translateY(-1px);
+  }
+
+  .recent-case-row-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 0.3rem;
+  }
+
+  .recent-case-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem 0.75rem;
+    color: var(--theme-shell-muted-text);
+    font-size: 0.82rem;
+    margin-bottom: 0.35rem;
+  }
+
+  .recent-case-diagnosis {
+    font-size: 0.92rem;
+    line-height: 1.35;
+  }
+
+  .recent-case-empty {
+    border: 1px dashed var(--theme-shell-surface-border);
+    border-radius: 0.75rem;
+    color: var(--theme-shell-muted-text);
+    padding: 0.9rem 1rem;
+  }
+
+  .recent-case-feedback {
+    margin-bottom: 1rem;
+  }
+
+  .recent-case-overview {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+  }
+
+  .recent-case-overview-card {
+    border: 1px solid var(--theme-shell-surface-border);
+    border-radius: 0.8rem;
+    background: var(--theme-shell-surface-hover-bg);
+    padding: 0.75rem 0.85rem;
+  }
+
+  .recent-case-overview-card .label {
+    color: var(--theme-shell-muted-text);
+    display: block;
+    font-size: 0.76rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    margin-bottom: 0.2rem;
+    text-transform: uppercase;
+  }
+
+  .recent-case-overview-card .value {
+    font-size: 0.98rem;
+    font-weight: 600;
+    line-height: 1.3;
+    word-break: break-word;
+  }
+
+  .recent-case-task-list {
+    display: grid;
+    gap: 0.85rem;
+  }
+
+  .recent-case-task {
+    border: 1px solid var(--theme-shell-surface-border);
+    border-radius: 0.8rem;
+    background: var(--theme-shell-surface-bg);
+    padding: 0.85rem 0.95rem;
+  }
+
+  .recent-case-task-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+
+  .recent-case-task-meta {
+    color: var(--theme-shell-muted-text);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem 0.8rem;
+    font-size: 0.82rem;
+    margin-top: 0.35rem;
+  }
+
+  .recent-case-task-notes {
+    color: var(--theme-shell-muted-text);
+    font-size: 0.84rem;
+    margin-top: 0.45rem;
+    white-space: pre-wrap;
+  }
+
+  .recent-case-task-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    margin-top: 0.7rem;
+  }
+
+  .recent-case-inline-form {
+    display: grid;
+    gap: 0.55rem;
+    margin-top: 0.7rem;
+  }
+
+  .recent-case-inline-form.is-hidden {
+    display: none;
+  }
+
+  .recent-case-modal-muted {
+    color: var(--theme-shell-muted-text);
+    font-size: 0.84rem;
+  }
+
+  @media (max-width: 767.98px) {
+    .recent-case-overview {
+      grid-template-columns: 1fr;
+    }
+
+    .recent-case-row {
+      padding: 0.8rem 0.85rem;
+    }
+  }
+</style>
+
 <h1 class="h4 mb-3">Dashboard</h1>
 <div class="row g-2 g-md-3 mb-4">
   <div class="col-6 col-md-2">
@@ -118,6 +312,41 @@
   </div>
 
   <div class="col-12 col-lg-6">
+    {% if show_recent_cases_panel %}
+      <section class="recent-cases-panel mb-4" data-recent-case-panel>
+        <div class="recent-cases-panel-header">
+          <div>
+            <h2 class="h6 mb-1">Recently Added</h2>
+            <p class="text-muted small">Newest 10 cases for immediate doctor review.</p>
+          </div>
+          <span class="recent-cases-kicker">Recent</span>
+        </div>
+        <div class="recent-case-list" data-recent-case-list>
+          {% for case in recent_cases %}
+            <button
+              type="button"
+              class="recent-case-row"
+              data-recent-case-trigger
+              data-case-id="{{ case.id }}"
+            >
+              <div class="recent-case-row-top">
+                <span class="fw-semibold">{{ case.name }}</span>
+                {% if case.is_new_today %}<span class="recent-case-badge">New</span>{% endif %}
+              </div>
+              <div class="recent-case-meta">
+                <span>{{ case.age_label }}</span>
+                <span>{{ case.gender_label }}</span>
+                <span>Added {{ case.created_at_display }}</span>
+              </div>
+              <div class="recent-case-diagnosis">{{ case.diagnosis_short }}</div>
+            </button>
+          {% empty %}
+            <div class="recent-case-empty">No recent patients added.</div>
+          {% endfor %}
+        </div>
+      </section>
+    {% endif %}
+
     <h2 class="h6">Overdue Tasks</h2>
     {% for card in overdue_cards %}
       <div class="card mb-3 shadow-sm" style="border-color: var(--theme-dashboard-overdue-border);">
@@ -152,4 +381,434 @@
     <p class="mt-3 mb-0 small"><strong>Cases:</strong> Active {{ active_case_count }} · Completed {{ completed_case_count }}</p>
   </div>
 </div>
+
+{% if show_recent_cases_panel %}
+  {{ recent_cases|json_script:"recent-cases-payload" }}
+  <div
+    id="recent-case-endpoints"
+    data-list-url="{% url 'patients:recent_cases' %}"
+    data-update-url-template="{% url 'patients:recent_case_update' 0 %}"
+    data-task-complete-url-template="{% url 'patients:task_quick_complete' 0 %}"
+    data-task-reschedule-url-template="{% url 'patients:task_quick_reschedule' 0 %}"
+    data-task-note-url-template="{% url 'patients:task_quick_note' 0 %}"
+  ></div>
+
+  <div class="modal fade" id="recentCaseModal" tabindex="-1" aria-labelledby="recentCaseModalTitle" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable modal-fullscreen-sm-down">
+      <div class="modal-content">
+        <div class="modal-header">
+          <div>
+            <h2 class="modal-title h5 mb-1" id="recentCaseModalTitle">Recently Added</h2>
+            <p class="text-muted small mb-0" id="recentCaseModalSubtitle"></p>
+          </div>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div id="recent-case-feedback" class="alert recent-case-feedback d-none" role="alert"></div>
+
+          <div class="recent-case-overview">
+            <div class="recent-case-overview-card">
+              <span class="label">Name</span>
+              <span class="value" id="recent-case-name">-</span>
+            </div>
+            <div class="recent-case-overview-card">
+              <span class="label">Age</span>
+              <span class="value" id="recent-case-age">-</span>
+            </div>
+            <div class="recent-case-overview-card">
+              <span class="label">Sex</span>
+              <span class="value" id="recent-case-gender">-</span>
+            </div>
+          </div>
+
+          <form id="recent-case-form" class="row g-3">
+            <div class="col-12">
+              <label class="form-label" for="recent-case-diagnosis">Diagnosis</label>
+              <input class="form-control" id="recent-case-diagnosis" name="diagnosis" />
+            </div>
+            <div class="col-12">
+              <label class="form-label" for="recent-case-notes">Notes</label>
+              <textarea class="form-control" id="recent-case-notes" name="notes" rows="4"></textarea>
+            </div>
+          </form>
+
+          <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-4 mb-2">
+            <div>
+              <h3 class="h6 mb-0">Tasks</h3>
+              <p class="recent-case-modal-muted mb-0">Quick complete, reschedule, or note updates without leaving the dashboard.</p>
+            </div>
+            <a id="recent-case-open-detail" class="btn btn-sm btn-outline-primary" href="#">Open full case</a>
+          </div>
+          <div id="recent-case-task-list" class="recent-case-task-list"></div>
+        </div>
+        <div class="modal-footer">
+          <span id="recent-case-readonly-copy" class="text-muted small me-auto d-none">Reception access is read-only in this panel.</span>
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+          <button type="submit" class="btn btn-primary" id="recent-case-save" form="recent-case-form">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (() => {
+      const payloadEl = document.getElementById("recent-cases-payload");
+      const endpointsEl = document.getElementById("recent-case-endpoints");
+      const rowList = document.querySelector("[data-recent-case-list]");
+      const modalEl = document.getElementById("recentCaseModal");
+      if (!payloadEl || !endpointsEl || !rowList || !modalEl) {
+        return;
+      }
+
+      const initialCases = JSON.parse(payloadEl.textContent || "[]");
+      const caseStore = new Map(initialCases.map((entry) => [entry.id, entry]));
+      const caseOrder = initialCases.map((entry) => entry.id);
+      const listUrl = endpointsEl.dataset.listUrl;
+      const updateUrlTemplate = endpointsEl.dataset.updateUrlTemplate;
+      const taskCompleteUrlTemplate = endpointsEl.dataset.taskCompleteUrlTemplate;
+      const taskRescheduleUrlTemplate = endpointsEl.dataset.taskRescheduleUrlTemplate;
+      const taskNoteUrlTemplate = endpointsEl.dataset.taskNoteUrlTemplate;
+      const recentCaseModal = new bootstrap.Modal(modalEl);
+
+      const feedbackEl = document.getElementById("recent-case-feedback");
+      const titleEl = document.getElementById("recentCaseModalTitle");
+      const subtitleEl = document.getElementById("recentCaseModalSubtitle");
+      const nameEl = document.getElementById("recent-case-name");
+      const ageEl = document.getElementById("recent-case-age");
+      const genderEl = document.getElementById("recent-case-gender");
+      const diagnosisEl = document.getElementById("recent-case-diagnosis");
+      const notesEl = document.getElementById("recent-case-notes");
+      const caseForm = document.getElementById("recent-case-form");
+      const saveButton = document.getElementById("recent-case-save");
+      const readonlyCopyEl = document.getElementById("recent-case-readonly-copy");
+      const openDetailEl = document.getElementById("recent-case-open-detail");
+      const taskListEl = document.getElementById("recent-case-task-list");
+
+      let currentCaseId = null;
+
+      const escapeHtml = (value) =>
+        String(value ?? "")
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#39;");
+
+      const clampReplaceId = (template, id) => template.replace("/0/", `/${id}/`);
+
+      const getCookie = (name) => {
+        const cookieValue = document.cookie
+          .split(";")
+          .map((item) => item.trim())
+          .find((item) => item.startsWith(`${name}=`));
+        if (!cookieValue) {
+          return "";
+        }
+        return decodeURIComponent(cookieValue.split("=").slice(1).join("="));
+      };
+
+      const setFeedback = (message, level) => {
+        feedbackEl.className = `alert recent-case-feedback alert-${level}`;
+        feedbackEl.textContent = message;
+        feedbackEl.classList.remove("d-none");
+      };
+
+      const clearFeedback = () => {
+        feedbackEl.className = "alert recent-case-feedback d-none";
+        feedbackEl.textContent = "";
+      };
+
+      const renderRecentRows = () => {
+        const rows = caseOrder
+          .map((caseId) => caseStore.get(caseId))
+          .filter(Boolean);
+        if (!rows.length) {
+          rowList.innerHTML = '<div class="recent-case-empty">No recent patients added.</div>';
+          return;
+        }
+
+        rowList.innerHTML = rows
+          .map(
+            (entry) => `
+              <button type="button" class="recent-case-row" data-recent-case-trigger data-case-id="${entry.id}">
+                <div class="recent-case-row-top">
+                  <span class="fw-semibold">${escapeHtml(entry.name)}</span>
+                  ${entry.is_new_today ? '<span class="recent-case-badge">New</span>' : ""}
+                </div>
+                <div class="recent-case-meta">
+                  <span>${escapeHtml(entry.age_label)}</span>
+                  <span>${escapeHtml(entry.gender_label)}</span>
+                  <span>Added ${escapeHtml(entry.created_at_display)}</span>
+                </div>
+                <div class="recent-case-diagnosis">${escapeHtml(entry.diagnosis_short)}</div>
+              </button>
+            `,
+          )
+          .join("");
+      };
+
+      const renderTasks = (entry) => {
+        const tasks = Array.isArray(entry.tasks) ? entry.tasks : [];
+        if (!tasks.length) {
+          taskListEl.innerHTML = '<div class="recent-case-empty">No tasks available.</div>';
+          return;
+        }
+
+        taskListEl.innerHTML = tasks
+          .map(
+            (task) => `
+              <article class="recent-case-task" data-task-id="${task.id}">
+                <div class="recent-case-task-top">
+                  <div>
+                    <div class="fw-semibold">${escapeHtml(task.title)}</div>
+                    <div class="recent-case-task-meta">
+                      <span>Due ${escapeHtml(task.due_date_display)}</span>
+                      <span>${escapeHtml(task.status_label)}</span>
+                    </div>
+                  </div>
+                  ${entry.can_edit ? `<a class="btn btn-sm btn-outline-primary" href="${escapeHtml(task.edit_url)}">Edit page</a>` : ""}
+                </div>
+                ${
+                  task.notes
+                    ? `<div class="recent-case-task-notes">Notes: ${escapeHtml(task.notes)}</div>`
+                    : ""
+                }
+                ${
+                  entry.can_edit
+                    ? `
+                      <div class="recent-case-task-actions">
+                        ${
+                          task.can_complete
+                            ? `<button type="button" class="btn btn-sm btn-primary" data-task-action="complete" data-task-id="${task.id}">Complete</button>`
+                            : ""
+                        }
+                        ${
+                          task.can_reschedule
+                            ? `<button type="button" class="btn btn-sm btn-outline-primary" data-task-toggle="reschedule" data-task-id="${task.id}">Reschedule</button>`
+                            : ""
+                        }
+                        ${
+                          task.can_note
+                            ? `<button type="button" class="btn btn-sm btn-outline-secondary" data-task-toggle="note" data-task-id="${task.id}">Note</button>`
+                            : ""
+                        }
+                        ${
+                          task.is_locked_until_due
+                            ? '<span class="recent-case-modal-muted">Locked until due date for ANC.</span>'
+                            : ""
+                        }
+                      </div>
+                      ${
+                        task.can_reschedule
+                          ? `
+                            <form class="recent-case-inline-form is-hidden" data-task-form="reschedule" data-task-id="${task.id}">
+                              <input class="form-control form-control-sm" type="date" name="due_date" value="${escapeHtml(task.due_date)}" required />
+                              <button type="submit" class="btn btn-sm btn-outline-primary align-self-start">Save date</button>
+                            </form>
+                          `
+                          : ""
+                      }
+                      ${
+                        task.can_note
+                          ? `
+                            <form class="recent-case-inline-form is-hidden" data-task-form="note" data-task-id="${task.id}">
+                              <textarea class="form-control form-control-sm" name="note" rows="2" required>${escapeHtml(task.notes || "")}</textarea>
+                              <button type="submit" class="btn btn-sm btn-outline-secondary align-self-start">Save note</button>
+                            </form>
+                          `
+                          : ""
+                      }
+                    `
+                    : ""
+                }
+              </article>
+            `,
+          )
+          .join("");
+      };
+
+      const renderModal = (entry) => {
+        titleEl.textContent = entry.name || "Recently Added";
+        subtitleEl.textContent = entry.can_edit
+          ? "Review and update the minimal case details from the dashboard."
+          : "Read-only recent case snapshot.";
+        nameEl.textContent = entry.name || "-";
+        ageEl.textContent = entry.age_label || "-";
+        genderEl.textContent = entry.gender_label || "-";
+        diagnosisEl.value = entry.diagnosis || "";
+        notesEl.value = entry.notes || "";
+        diagnosisEl.readOnly = !entry.can_edit;
+        notesEl.readOnly = !entry.can_edit;
+        saveButton.classList.toggle("d-none", !entry.can_edit);
+        readonlyCopyEl.classList.toggle("d-none", entry.can_edit);
+        openDetailEl.href = entry.detail_url;
+        renderTasks(entry);
+      };
+
+      const upsertCase = (entry) => {
+        if (!entry || typeof entry.id !== "number") {
+          return;
+        }
+        caseStore.set(entry.id, entry);
+        if (!caseOrder.includes(entry.id)) {
+          caseOrder.push(entry.id);
+        }
+      };
+
+      const fetchRecentCases = async () => {
+        const response = await fetch(`${listUrl}?limit=10`, {
+          headers: { "X-Requested-With": "XMLHttpRequest" },
+        });
+        if (!response.ok) {
+          throw new Error("Could not refresh recent cases.");
+        }
+        const payload = await response.json();
+        const rows = Array.isArray(payload.results) ? payload.results : [];
+        caseStore.clear();
+        caseOrder.splice(0, caseOrder.length, ...rows.map((entry) => entry.id));
+        rows.forEach((entry) => caseStore.set(entry.id, entry));
+        renderRecentRows();
+      };
+
+      const openCaseModal = async (caseId) => {
+        currentCaseId = caseId;
+        clearFeedback();
+        let entry = caseStore.get(caseId);
+        if (!entry || !Array.isArray(entry.tasks)) {
+          await fetchRecentCases();
+          entry = caseStore.get(caseId);
+        }
+        if (!entry) {
+          setFeedback("Could not load the selected case.", "danger");
+          return;
+        }
+        renderModal(entry);
+        recentCaseModal.show();
+      };
+
+      const handleJsonResponse = async (response) => {
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          const errorMessage = payload.message || "Request failed.";
+          throw new Error(errorMessage);
+        }
+        return payload;
+      };
+
+      const postForm = async (url, formData) => {
+        const response = await fetch(url, {
+          method: "POST",
+          headers: {
+            "X-CSRFToken": getCookie("csrftoken"),
+            "X-Requested-With": "XMLHttpRequest",
+            Accept: "application/json",
+          },
+          body: formData,
+        });
+        return handleJsonResponse(response);
+      };
+
+      rowList.addEventListener("click", async (event) => {
+        const trigger = event.target.closest("[data-recent-case-trigger]");
+        if (!trigger) {
+          return;
+        }
+        try {
+          await openCaseModal(Number(trigger.dataset.caseId));
+        } catch (error) {
+          setFeedback(error.message, "danger");
+        }
+      });
+
+      caseForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        if (!currentCaseId) {
+          return;
+        }
+        const entry = caseStore.get(currentCaseId);
+        if (!entry || !entry.can_edit) {
+          return;
+        }
+        clearFeedback();
+        saveButton.disabled = true;
+        try {
+          const payload = await postForm(
+            clampReplaceId(updateUrlTemplate, currentCaseId),
+            new FormData(caseForm),
+          );
+          upsertCase(payload.case);
+          renderRecentRows();
+          renderModal(payload.case);
+          setFeedback(payload.message || "Recent case updated.", "success");
+        } catch (error) {
+          setFeedback(error.message, "danger");
+        } finally {
+          saveButton.disabled = false;
+        }
+      });
+
+      taskListEl.addEventListener("click", async (event) => {
+        const completeButton = event.target.closest("[data-task-action='complete']");
+        if (completeButton) {
+          event.preventDefault();
+          clearFeedback();
+          try {
+            const payload = await postForm(
+              clampReplaceId(taskCompleteUrlTemplate, Number(completeButton.dataset.taskId)),
+              new FormData(),
+            );
+            if (payload.case) {
+              upsertCase(payload.case);
+              renderRecentRows();
+              renderModal(payload.case);
+            }
+            setFeedback(payload.message || "Task updated.", "success");
+          } catch (error) {
+            setFeedback(error.message, "danger");
+          }
+          return;
+        }
+
+        const toggleButton = event.target.closest("[data-task-toggle]");
+        if (!toggleButton) {
+          return;
+        }
+        const taskId = toggleButton.dataset.taskId;
+        const targetType = toggleButton.dataset.taskToggle;
+        taskListEl
+          .querySelectorAll(`[data-task-form='${targetType}'][data-task-id='${taskId}']`)
+          .forEach((form) => form.classList.toggle("is-hidden"));
+      });
+
+      taskListEl.addEventListener("submit", async (event) => {
+        const form = event.target.closest("[data-task-form]");
+        if (!form) {
+          return;
+        }
+        event.preventDefault();
+        clearFeedback();
+        const taskId = Number(form.dataset.taskId);
+        const formType = form.dataset.taskForm;
+        const urlTemplate = formType === "reschedule" ? taskRescheduleUrlTemplate : taskNoteUrlTemplate;
+        const submitButton = form.querySelector("button[type='submit']");
+        submitButton.disabled = true;
+        try {
+          const payload = await postForm(clampReplaceId(urlTemplate, taskId), new FormData(form));
+          if (payload.case) {
+            upsertCase(payload.case);
+            renderRecentRows();
+            renderModal(payload.case);
+          }
+          setFeedback(payload.message || "Task updated.", "success");
+        } catch (error) {
+          setFeedback(error.message, "danger");
+        } finally {
+          submitButton.disabled = false;
+        }
+      });
+
+      renderRecentRows();
+    })();
+  </script>
+{% endif %}
 {% endblock %}

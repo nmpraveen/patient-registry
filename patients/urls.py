@@ -10,6 +10,8 @@ from .views import (
     CaseAutocompleteView,
     CaseUpdateView,
     DashboardView,
+    RecentCasesView,
+    RecentCaseUpdateView,
     VitalEntryCreateView,
     VitalEntryUpdateView,
     ThemeSettingsView,
@@ -28,6 +30,8 @@ app_name = "patients"
 
 urlpatterns = [
     path("", DashboardView.as_view(), name="dashboard"),
+    path("recent/", RecentCasesView.as_view(), name="recent_cases"),
+    path("recent/<int:pk>/", RecentCaseUpdateView.as_view(), name="recent_case_update"),
     path("settings/", AdminSettingsView.as_view(), name="settings"),
     path("settings/theme/", ThemeSettingsView.as_view(), name="settings_theme"),
     path("settings/changelog/", ChangelogView.as_view(), name="changelog"),

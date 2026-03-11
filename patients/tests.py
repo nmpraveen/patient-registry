@@ -25,6 +25,7 @@ from .models import (
     CaseActivityLog,
     CaseStatus,
     DepartmentConfig,
+    Gender,
     RCH_REMINDER_INTERVAL_DAYS,
     RCH_REMINDER_TASK_TITLE,
     RoleSetting,
@@ -191,12 +192,14 @@ class ThemeSystemTests(TestCase):
 
 class MedtrackViewTests(TestCase):
     def setUp(self):
+        ensure_default_role_settings()
         self.user = get_user_model().objects.create_user(username="doc", password="strong-password-123")
         doctor_group, _ = Group.objects.get_or_create(name="Doctor")
         self.user.groups.add(doctor_group)
 
         self.anc, _ = DepartmentConfig.objects.get_or_create(name="ANC")
         self.surgery, _ = DepartmentConfig.objects.get_or_create(name="Surgery")
+        self.case_sequence = 0
 
     def assert_max_queries(self, max_queries, url, params=None):
         with CaptureQueriesContext(connection) as captured:
@@ -216,6 +219,44 @@ class MedtrackViewTests(TestCase):
         self.user.groups.clear()
         self.user.groups.add(admin_group)
         self.client.force_login(self.user)
+
+    def login_as_role(self, role_name, *, username):
+        user = get_user_model().objects.create_user(username=username, password="strong-password-123")
+        group, _ = Group.objects.get_or_create(name=role_name)
+        user.groups.add(group)
+        self.client.force_login(user)
+        return user
+
+    def create_recent_case(
+        self,
+        *,
+        created_at=None,
+        diagnosis="Fresh diagnosis",
+        notes="",
+        first_name="Recent",
+        last_name="Patient",
+        gender=Gender.FEMALE,
+        age=32,
+    ):
+        self.case_sequence += 1
+        case = Case.objects.create(
+            uhid=f"UH-RECENT-{self.case_sequence:03d}",
+            first_name=f"{first_name}{self.case_sequence}",
+            last_name=last_name,
+            phone_number=f"8{self.case_sequence:09d}",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            gender=gender,
+            age=age,
+            diagnosis=diagnosis,
+            notes=notes,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=7),
+            created_by=self.user,
+        )
+        if created_at is not None:
+            Case.objects.filter(pk=case.pk).update(created_at=created_at)
+        return Case.objects.get(pk=case.pk)
 
     def build_theme_post_data(self, *, token_overrides=None, category_overrides=None):
         token_values = flatten_theme_tokens(merge_theme_tokens(ThemeSettings.get_solo().tokens))
@@ -452,11 +493,141 @@ class MedtrackViewTests(TestCase):
         Task.objects.create(case=non_surgical_active, title="Awaiting", due_date=today + timedelta(days=11), status=TaskStatus.AWAITING_REPORTS, created_by=self.user)
         Task.objects.create(case=surgery_active, title="Completed", due_date=today - timedelta(days=1), status=TaskStatus.COMPLETED, created_by=self.user)
 
-        response = self.assert_max_queries(9, reverse("patients:dashboard"), {"upcoming_days": 14})
+        response = self.assert_max_queries(11, reverse("patients:dashboard"), {"upcoming_days": 14})
 
         self.assertEqual(response.context["anc_case_count"], 1)
         self.assertEqual(response.context["surgery_case_count"], 1)
         self.assertEqual(response.context["non_surgical_case_count"], 1)
+
+    def test_dashboard_recent_cases_panel_orders_latest_first_limits_to_ten_and_renders_above_overdue(self):
+        self.client.force_login(self.user)
+        base_time = timezone.now()
+        created_cases = []
+        long_diagnosis = "Very long dashboard diagnosis text that should truncate cleanly in the recent patient list."
+        for index in range(12):
+            created_cases.append(
+                self.create_recent_case(
+                    created_at=base_time - timedelta(minutes=index),
+                    diagnosis=long_diagnosis if index == 0 else f"Diagnosis {index}",
+                    first_name=f"Recent{index}",
+                )
+            )
+
+        response = self.client.get(reverse("patients:dashboard"))
+
+        self.assertEqual(response.status_code, 200)
+        recent_cases = response.context["recent_cases"]
+        self.assertEqual(len(recent_cases), 10)
+        self.assertEqual([entry["id"] for entry in recent_cases], [case.id for case in created_cases[:10]])
+        self.assertTrue(recent_cases[0]["is_new_today"])
+        self.assertTrue(recent_cases[0]["can_edit"])
+        self.assertTrue(recent_cases[0]["diagnosis_short"].endswith("..."))
+        content = response.content.decode()
+        self.assertLess(content.index("Recently Added"), content.index("Overdue Tasks"))
+        self.assertContains(response, "Newest 10 cases for immediate doctor review.")
+        self.assertContains(response, "New")
+
+    def test_dashboard_recent_cases_panel_shows_empty_state_for_doctor(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("patients:dashboard"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["show_recent_cases_panel"])
+        self.assertEqual(response.context["recent_cases"], [])
+        self.assertContains(response, "No recent patients added.")
+
+    def test_dashboard_recent_cases_panel_is_hidden_for_non_recent_roles(self):
+        self.login_as_role("Nurse", username="nurse_recent_panel")
+        self.create_recent_case()
+
+        response = self.client.get(reverse("patients:dashboard"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.context["show_recent_cases_panel"])
+        self.assertFalse(response.context["can_edit_recent_cases"])
+        self.assertNotContains(response, "Recently Added")
+
+    def test_dashboard_recent_cases_panel_is_read_only_for_reception(self):
+        self.login_as_role("Reception", username="reception_recent_panel")
+        created_case = self.create_recent_case(notes="Front desk note")
+
+        response = self.client.get(reverse("patients:dashboard"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["show_recent_cases_panel"])
+        self.assertFalse(response.context["can_edit_recent_cases"])
+        self.assertEqual(response.context["recent_cases"][0]["id"], created_case.id)
+        self.assertFalse(response.context["recent_cases"][0]["can_edit"])
+
+    def test_recent_cases_api_clamps_limit_and_returns_minimal_payload(self):
+        self.client.force_login(self.user)
+        base_time = timezone.now()
+        created_cases = [
+            self.create_recent_case(created_at=base_time - timedelta(minutes=index), diagnosis=f"Diagnosis {index}")
+            for index in range(12)
+        ]
+        Task.objects.create(
+            case=created_cases[0],
+            title="Recent task",
+            due_date=timezone.localdate(),
+            status=TaskStatus.SCHEDULED,
+            notes="Needs review",
+            created_by=self.user,
+        )
+
+        response = self.client.get(
+            reverse("patients:recent_cases"),
+            {"limit": "99"},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(len(payload["results"]), 10)
+        first_result = payload["results"][0]
+        self.assertEqual(first_result["id"], created_cases[0].id)
+        self.assertTrue(
+            {
+                "id",
+                "name",
+                "age_label",
+                "gender_label",
+                "diagnosis",
+                "diagnosis_short",
+                "notes",
+                "created_at",
+                "is_new_today",
+                "can_edit",
+                "detail_url",
+                "tasks",
+            }.issubset(first_result.keys())
+        )
+        self.assertNotIn("phone_number", first_result)
+        self.assertNotIn("place", first_result)
+        self.assertTrue(
+            {
+                "id",
+                "title",
+                "due_date",
+                "status",
+                "status_label",
+                "notes",
+                "can_complete",
+                "can_reschedule",
+                "can_note",
+            }.issubset(first_result["tasks"][0].keys())
+        )
+
+    def test_recent_cases_api_is_forbidden_for_non_recent_roles(self):
+        self.login_as_role("Nurse", username="nurse_recent_api")
+
+        response = self.client.get(
+            reverse("patients:recent_cases"),
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+
+        self.assertEqual(response.status_code, 403)
 
     def test_create_anc_case_autogenerates_tasks(self):
         self.client.force_login(self.user)
@@ -1044,6 +1215,155 @@ class MedtrackViewTests(TestCase):
                 note__icontains="Inline note update",
             ).exists()
         )
+
+    def test_task_quick_actions_return_json_for_ajax_requests_and_keep_redirect_flow(self):
+        self.client.force_login(self.user)
+        case = self.create_recent_case(diagnosis="Task workflow")
+        today = timezone.localdate()
+        reschedule_task = Task.objects.create(
+            case=case,
+            title="Reschedule me",
+            due_date=today + timedelta(days=1),
+            status=TaskStatus.SCHEDULED,
+            created_by=self.user,
+        )
+        note_task = Task.objects.create(
+            case=case,
+            title="Note me",
+            due_date=today,
+            status=TaskStatus.SCHEDULED,
+            created_by=self.user,
+        )
+        complete_task = Task.objects.create(
+            case=case,
+            title="Complete me",
+            due_date=today,
+            status=TaskStatus.SCHEDULED,
+            created_by=self.user,
+        )
+        redirect_task = Task.objects.create(
+            case=case,
+            title="Redirect me",
+            due_date=today,
+            status=TaskStatus.SCHEDULED,
+            created_by=self.user,
+        )
+
+        new_due_date = today + timedelta(days=5)
+        reschedule_response = self.client.post(
+            reverse("patients:task_quick_reschedule", kwargs={"pk": reschedule_task.pk}),
+            {"due_date": new_due_date.isoformat()},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        note_response = self.client.post(
+            reverse("patients:task_quick_note", kwargs={"pk": note_task.pk}),
+            {"note": "Updated from modal"},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        complete_response = self.client.post(
+            reverse("patients:task_quick_complete", kwargs={"pk": complete_task.pk}),
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        redirect_response = self.client.post(
+            reverse("patients:task_quick_note", kwargs={"pk": redirect_task.pk}),
+            {"note": "Classic redirect"},
+        )
+
+        self.assertEqual(reschedule_response.status_code, 200)
+        self.assertEqual(note_response.status_code, 200)
+        self.assertEqual(complete_response.status_code, 200)
+        self.assertEqual(redirect_response.status_code, 302)
+
+        reschedule_task.refresh_from_db()
+        note_task.refresh_from_db()
+        complete_task.refresh_from_db()
+        redirect_task.refresh_from_db()
+
+        self.assertEqual(reschedule_task.due_date, new_due_date)
+        self.assertEqual(note_task.notes, "Updated from modal")
+        self.assertEqual(complete_task.status, TaskStatus.COMPLETED)
+        self.assertEqual(redirect_task.notes, "Classic redirect")
+
+        self.assertIn("case", reschedule_response.json())
+        self.assertEqual(reschedule_response.json()["task"]["due_date"], new_due_date.isoformat())
+        self.assertEqual(note_response.json()["task"]["notes"], "Updated from modal")
+        self.assertEqual(complete_response.json()["task"]["status"], TaskStatus.COMPLETED)
+
+    def test_recent_case_update_persists_changes_and_logs_activity(self):
+        self.client.force_login(self.user)
+        case = self.create_recent_case(diagnosis="Old diagnosis", notes="Old note")
+
+        response = self.client.post(
+            reverse("patients:recent_case_update", kwargs={"pk": case.pk}),
+            {"diagnosis": "Updated diagnosis", "notes": "Updated note"},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        case.refresh_from_db()
+        self.assertEqual(case.diagnosis, "Updated diagnosis")
+        self.assertEqual(case.notes, "Updated note")
+        self.assertEqual(response.json()["case"]["diagnosis"], "Updated diagnosis")
+        self.assertTrue(
+            CaseActivityLog.objects.filter(
+                case=case,
+                event_type=ActivityEventType.SYSTEM,
+                note__icontains="Diagnosis updated",
+            ).exists()
+        )
+        self.assertTrue(
+            CaseActivityLog.objects.filter(
+                case=case,
+                event_type=ActivityEventType.NOTE,
+                note="Updated note",
+            ).exists()
+        )
+
+    def test_recent_case_update_no_op_does_not_add_logs(self):
+        self.client.force_login(self.user)
+        case = self.create_recent_case(diagnosis="Stable diagnosis", notes="Stable note")
+        initial_log_count = case.activity_logs.count()
+
+        response = self.client.post(
+            reverse("patients:recent_case_update", kwargs={"pk": case.pk}),
+            {"diagnosis": "Stable diagnosis", "notes": "Stable note"},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["message"], "No changes to save.")
+        self.assertEqual(case.activity_logs.count(), initial_log_count)
+
+    def test_reception_can_view_recent_cases_but_cannot_mutate(self):
+        self.login_as_role("Reception", username="reception_recent_write")
+        case = self.create_recent_case(diagnosis="Reception case", notes="Read only note")
+        task = Task.objects.create(
+            case=case,
+            title="Read-only task",
+            due_date=timezone.localdate(),
+            status=TaskStatus.SCHEDULED,
+            created_by=self.user,
+        )
+
+        recent_response = self.client.get(
+            reverse("patients:recent_cases"),
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        case_update_response = self.client.post(
+            reverse("patients:recent_case_update", kwargs={"pk": case.pk}),
+            {"diagnosis": "Blocked", "notes": "Blocked"},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        task_update_response = self.client.post(
+            reverse("patients:task_quick_note", kwargs={"pk": task.pk}),
+            {"note": "Blocked task change"},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+
+        self.assertEqual(recent_response.status_code, 200)
+        self.assertFalse(recent_response.json()["results"][0]["can_edit"])
+        self.assertEqual(case_update_response.status_code, 403)
+        self.assertEqual(task_update_response.status_code, 403)
 
     def test_add_call_log_requires_associated_task(self):
         self.client.force_login(self.user)

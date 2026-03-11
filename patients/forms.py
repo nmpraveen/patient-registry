@@ -339,6 +339,16 @@ class CallLogForm(StyledModelForm):
 
 
 
+class RecentCaseUpdateForm(StyledModelForm):
+    class Meta:
+        model = Case
+        fields = ["diagnosis", "notes"]
+        widgets = {
+            "diagnosis": forms.TextInput(attrs={"placeholder": "Enter diagnosis"}),
+            "notes": forms.Textarea(attrs={"rows": 4, "placeholder": "Add case notes"}),
+        }
+
+
 class RoleSettingForm(StyledModelForm):
     class Meta:
         model = RoleSetting

@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.03.11.15.02
+- Added a Doctor/Admin and Reception-only `Recently Added` dashboard panel above overdue work, ordered by newest case creation time and capped to the latest 10 cases.
+- Added `/patients/recent/` and `/patients/recent/<pk>/` JSON endpoints plus a lightweight modal workflow for reviewing recent cases, updating diagnosis/case notes, and keeping activity logs in sync.
+- Extended inline task quick actions to return JSON for AJAX callers while preserving the existing redirect flow, and expanded view tests for the new dashboard, API, permission, and modal/task-action behavior.
+
 ## 2026.03.06.03.59
 - Fully flattened the case-detail vitals column into the shared header shell so the identity rail, clinical panel, and vitals panel now use one consistent three-section layout.
 - Reworked long patient-name handling with wider rail bounds, sane word wrapping, and length-based name-size classes to avoid aggressive mid-word breaks on desktop and mobile.

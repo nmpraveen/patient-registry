@@ -10,7 +10,7 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.models import Group
 from django.core.management import call_command
 from django.core.exceptions import ValidationError
-from django.db.models import Count, Exists, IntegerField, OuterRef, Q, Subquery
+from django.db.models import Count, Exists, IntegerField, OuterRef, Prefetch, Q, Subquery
 from django.db.models.functions import Coalesce
 from django.http import HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -25,6 +25,7 @@ from .forms import (
     CaseForm,
     DepartmentThemeFormSet,
     DepartmentConfigForm,
+    RecentCaseUpdateForm,
     RoleSettingForm,
     SeedMockDataForm,
     TaskForm,
@@ -89,6 +90,10 @@ TIMELINE_FILTER_OPTIONS = (
 )
 TASK_NOTE_MARKER = "[Task:"
 LEGACY_TASK_NOTE_PREFIX = "Task note updated:"
+RECENT_CASE_LIMIT_DEFAULT = 10
+RECENT_CASE_LIMIT_MAX = 10
+RECENT_CASE_VIEW_ROLES = ("Doctor", "Admin", "Reception")
+RECENT_CASE_EDIT_ROLES = ("Doctor", "Admin")
 
 
 def _load_changelog_entries():
@@ -174,6 +179,300 @@ def create_case_activity(*, case, note, user=None, task=None, event_type=Activit
         event_type=event_type,
         note=note,
     )
+
+
+def _request_wants_json(request):
+    if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+        return True
+    return "application/json" in request.headers.get("Accept", "")
+
+
+def _forbidden_response(request, message):
+    if _request_wants_json(request):
+        return JsonResponse({"message": message}, status=403)
+    return HttpResponseForbidden(message)
+
+
+def _clamp_recent_case_limit(raw_limit):
+    try:
+        limit = int(raw_limit)
+    except (TypeError, ValueError):
+        limit = RECENT_CASE_LIMIT_DEFAULT
+    return max(1, min(limit, RECENT_CASE_LIMIT_MAX))
+
+
+def _truncate_text(value, max_length=42):
+    text = (value or "").strip()
+    if len(text) <= max_length:
+        return text
+    return f"{text[: max_length - 3].rstrip()}..."
+
+
+def _can_view_recent_cases(user):
+    if user.is_superuser:
+        return True
+    return bool(_user_group_names(user) & set(RECENT_CASE_VIEW_ROLES))
+
+
+def _can_edit_recent_cases(user):
+    if user.is_superuser:
+        return True
+    return bool(_user_group_names(user) & set(RECENT_CASE_EDIT_ROLES))
+
+
+def _user_group_names(user):
+    if user.is_superuser:
+        return set()
+    cached_names = getattr(user, "_cached_group_names", None)
+    if cached_names is None:
+        cached_names = set(user.groups.values_list("name", flat=True))
+        user._cached_group_names = cached_names
+    return cached_names
+
+
+def _recent_case_task_queryset():
+    return Task.objects.only("id", "case_id", "title", "due_date", "status", "notes").order_by("due_date", "id")
+
+
+def _recent_case_queryset(limit=None, *, include_tasks=True):
+    queryset = (
+        Case.objects.select_related("category")
+        .only(
+            "id",
+            "first_name",
+            "last_name",
+            "patient_name",
+            "age",
+            "date_of_birth",
+            "gender",
+            "diagnosis",
+            "notes",
+            "created_at",
+            "category__id",
+            "category__name",
+        )
+        .order_by("-created_at", "-id")
+    )
+    if include_tasks:
+        queryset = queryset.prefetch_related(Prefetch("tasks", queryset=_recent_case_task_queryset()))
+    if limit is not None:
+        return queryset[:limit]
+    return queryset
+
+
+def _recent_task_action_flags(task, *, category_name, can_edit_tasks, today):
+    is_future_anc = category_name.upper() == "ANC" and task.due_date > today
+    return {
+        "can_complete": can_edit_tasks and task.status != TaskStatus.COMPLETED and not is_future_anc,
+        "can_reschedule": can_edit_tasks and task.status != TaskStatus.COMPLETED,
+        "can_note": can_edit_tasks,
+        "is_locked_until_due": is_future_anc and task.status != TaskStatus.COMPLETED,
+    }
+
+
+def _serialize_recent_task(task, *, category_name, can_edit_tasks, today):
+    action_flags = _recent_task_action_flags(
+        task,
+        category_name=category_name,
+        can_edit_tasks=can_edit_tasks,
+        today=today,
+    )
+    return {
+        "id": task.id,
+        "title": task.title,
+        "due_date": task.due_date.isoformat(),
+        "due_date_display": task.due_date.strftime("%d %b %Y"),
+        "status": task.status,
+        "status_label": task.get_status_display(),
+        "notes": task.notes or "",
+        **action_flags,
+        "edit_url": reverse("patients:task_edit", kwargs={"pk": task.pk}),
+    }
+
+
+def _serialize_recent_case(case, user, *, today=None, can_edit_recent=None, can_edit_tasks=None):
+    if today is None:
+        today = timezone.localdate()
+    created_local = timezone.localtime(case.created_at)
+    diagnosis = (case.diagnosis or case.category.name).strip()
+    if can_edit_recent is None:
+        can_edit_recent = _can_edit_recent_cases(user)
+    if can_edit_tasks is None:
+        can_edit_tasks = can_edit_recent and has_capability(user, "task_edit")
+    category_name = case.category.name
+    tasks = [
+        _serialize_recent_task(task, category_name=category_name, can_edit_tasks=can_edit_tasks, today=today)
+        for task in case.tasks.all()
+    ]
+    return {
+        "id": case.id,
+        "name": case.full_name or case.patient_name,
+        "age_label": _case_age_label(case),
+        "gender_label": case.get_gender_display() if case.gender else "-",
+        "diagnosis": diagnosis,
+        "diagnosis_short": _truncate_text(diagnosis),
+        "notes": case.notes or "",
+        "created_at": created_local.isoformat(),
+        "created_at_display": created_local.strftime("%d %b %Y %H:%M"),
+        "is_new_today": created_local.date() == today,
+        "can_edit": can_edit_recent,
+        "detail_url": reverse("patients:case_detail", kwargs={"pk": case.pk}),
+        "tasks": tasks,
+    }
+
+
+def _serialize_recent_case_summary(case, user, *, today=None, can_edit_recent=None):
+    if today is None:
+        today = timezone.localdate()
+    created_local = timezone.localtime(case.created_at)
+    diagnosis = (case.diagnosis or case.category.name).strip()
+    if can_edit_recent is None:
+        can_edit_recent = _can_edit_recent_cases(user)
+    return {
+        "id": case.id,
+        "name": case.full_name or case.patient_name,
+        "age_label": _case_age_label(case),
+        "gender_label": case.get_gender_display() if case.gender else "-",
+        "diagnosis": diagnosis,
+        "diagnosis_short": _truncate_text(diagnosis),
+        "notes": case.notes or "",
+        "created_at": created_local.isoformat(),
+        "created_at_display": created_local.strftime("%d %b %Y %H:%M"),
+        "is_new_today": created_local.date() == today,
+        "can_edit": can_edit_recent,
+        "detail_url": reverse("patients:case_detail", kwargs={"pk": case.pk}),
+    }
+
+
+def _recent_cases_payload_for_user(user, *, limit=RECENT_CASE_LIMIT_DEFAULT):
+    today = timezone.localdate()
+    can_edit_recent = _can_edit_recent_cases(user)
+    can_edit_tasks = can_edit_recent and has_capability(user, "task_edit")
+    return [
+        _serialize_recent_case(
+            case,
+            user,
+            today=today,
+            can_edit_recent=can_edit_recent,
+            can_edit_tasks=can_edit_tasks,
+        )
+        for case in _recent_case_queryset(limit=limit)
+    ]
+
+
+def _recent_case_summary_payload_for_user(user, *, limit=RECENT_CASE_LIMIT_DEFAULT):
+    today = timezone.localdate()
+    can_edit_recent = _can_edit_recent_cases(user)
+    return [
+        _serialize_recent_case_summary(case, user, today=today, can_edit_recent=can_edit_recent)
+        for case in _recent_case_queryset(limit=limit, include_tasks=False)
+    ]
+
+
+def _recent_case_payload_for_id(case_id, user):
+    today = timezone.localdate()
+    case = get_object_or_404(_recent_case_queryset(include_tasks=True), pk=case_id)
+    can_edit_recent = _can_edit_recent_cases(user)
+    can_edit_tasks = can_edit_recent and has_capability(user, "task_edit")
+    return _serialize_recent_case(
+        case,
+        user,
+        today=today,
+        can_edit_recent=can_edit_recent,
+        can_edit_tasks=can_edit_tasks,
+    )
+
+
+def _task_action_error_response(request, *, case_id, message, status=400):
+    if _request_wants_json(request):
+        return JsonResponse({"message": message}, status=status)
+    messages.error(request, message)
+    return redirect("patients:case_detail", pk=case_id)
+
+
+def _task_action_success_response(request, *, task, message):
+    if _request_wants_json(request):
+        payload = {
+            "message": message,
+            "task": _serialize_recent_task(
+                task,
+                category_name=task.case.category.name,
+                can_edit_tasks=_can_edit_recent_cases(request.user) and has_capability(request.user, "task_edit"),
+                today=timezone.localdate(),
+            ),
+        }
+        if _can_view_recent_cases(request.user):
+            payload["case"] = _recent_case_payload_for_id(task.case_id, request.user)
+        return JsonResponse(payload)
+    messages.success(request, message)
+    return redirect("patients:case_detail", pk=task.case_id)
+
+
+def _complete_task_inline(task, *, user):
+    case = task.case
+    if case.category.name.upper() == "ANC" and task.due_date > timezone.localdate():
+        return False, "This ANC task is locked until its due date."
+
+    task.status = TaskStatus.COMPLETED
+    try:
+        task.full_clean()
+        task.save()
+    except ValidationError:
+        return False, "Could not complete task. Please review task state."
+
+    create_case_activity(
+        case=case,
+        task=task,
+        user=user,
+        event_type=ActivityEventType.TASK,
+        note=f"Task completed: {task.title}",
+    )
+    return True, "Task marked as completed."
+
+
+def _reschedule_task_inline(task, *, due_date_raw, user):
+    if task.status == TaskStatus.COMPLETED:
+        return False, "Completed tasks cannot be rescheduled inline."
+    if not due_date_raw:
+        return False, "Please provide a new due date."
+
+    try:
+        new_due_date = datetime.strptime(due_date_raw, "%Y-%m-%d").date()
+    except ValueError:
+        return False, "Please enter a valid due date."
+
+    old_due_date = task.due_date
+    task.due_date = new_due_date
+    try:
+        task.full_clean()
+        task.save()
+    except ValidationError:
+        return False, "Could not reschedule task. Please check the date."
+
+    create_case_activity(
+        case=task.case,
+        task=task,
+        user=user,
+        event_type=ActivityEventType.TASK,
+        note=f"Task rescheduled: {task.title} ({old_due_date:%d-%m-%Y} -> {new_due_date:%d-%m-%Y})",
+    )
+    return True, "Task rescheduled."
+
+
+def _save_task_note_inline(task, *, note_text, user):
+    if not note_text:
+        return False, "Task note cannot be empty."
+
+    task.notes = note_text
+    task.save(update_fields=["notes", "updated_at"])
+    create_case_activity(
+        case=task.case,
+        task=task,
+        user=user,
+        event_type=ActivityEventType.TASK,
+        note=f"{note_text} [Task: {task.title}]",
+    )
+    return True, "Task note saved."
 
 
 def _metric_status(value, *, low_lt=None, high_gt=None, high_gte=None, neutral=False):
@@ -644,7 +943,67 @@ class DashboardView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
         context["active_case_count"] = case_counts["active_case_count"]
         context["completed_case_count"] = case_counts["completed_case_count"]
         context["upcoming_days"] = upcoming_days
+        context["show_recent_cases_panel"] = _can_view_recent_cases(self.request.user)
+        context["can_edit_recent_cases"] = _can_edit_recent_cases(self.request.user)
+        context["recent_cases"] = (
+            _recent_case_summary_payload_for_user(self.request.user, limit=RECENT_CASE_LIMIT_DEFAULT)
+            if context["show_recent_cases_panel"]
+            else []
+        )
         return context
+
+
+class RecentCasesView(LoginRequiredMixin, CaseDataAccessMixin, View):
+    def get(self, request):
+        if not _can_view_recent_cases(request.user):
+            return _forbidden_response(request, "You do not have permission to view recent cases.")
+
+        limit = _clamp_recent_case_limit(request.GET.get("limit", RECENT_CASE_LIMIT_DEFAULT))
+        return JsonResponse({"results": _recent_cases_payload_for_user(request.user, limit=limit)})
+
+
+class RecentCaseUpdateView(LoginRequiredMixin, CaseDataAccessMixin, View):
+    def post(self, request, pk):
+        if not _can_view_recent_cases(request.user):
+            return _forbidden_response(request, "You do not have permission to view recent cases.")
+        if not _can_edit_recent_cases(request.user):
+            return _forbidden_response(request, "You do not have permission to edit recent cases.")
+
+        case = get_object_or_404(Case.objects.select_related("category"), pk=pk)
+        old_diagnosis = case.diagnosis or ""
+        old_notes = case.notes or ""
+        form = RecentCaseUpdateForm(request.POST, instance=case)
+        if not form.is_valid():
+            return JsonResponse({"message": "Could not save case.", "errors": form.errors.get_json_data()}, status=400)
+
+        new_diagnosis = form.cleaned_data.get("diagnosis", "") or ""
+        new_notes = form.cleaned_data.get("notes", "") or ""
+        diagnosis_changed = old_diagnosis != new_diagnosis
+        notes_changed = old_notes != new_notes
+
+        if diagnosis_changed or notes_changed:
+            form.save()
+            if diagnosis_changed:
+                previous_label = old_diagnosis or "blank"
+                current_label = new_diagnosis or "blank"
+                create_case_activity(
+                    case=case,
+                    user=request.user,
+                    event_type=ActivityEventType.SYSTEM,
+                    note=f"Diagnosis updated: {previous_label} -> {current_label}",
+                )
+            if notes_changed:
+                create_case_activity(
+                    case=case,
+                    user=request.user,
+                    event_type=ActivityEventType.NOTE,
+                    note=new_notes or "Case notes cleared.",
+                )
+            message = "Recent case updated."
+        else:
+            message = "No changes to save."
+
+        return JsonResponse({"message": message, "case": _recent_case_payload_for_id(pk, request.user)})
 
 
 class CaseListView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
@@ -1165,94 +1524,45 @@ class TaskCreateView(LoginRequiredMixin, View):
 class TaskQuickCompleteView(LoginRequiredMixin, View):
     def post(self, request, pk):
         if not has_capability(request.user, "task_edit"):
-            return HttpResponseForbidden("You do not have permission to edit tasks.")
+            return _forbidden_response(request, "You do not have permission to edit tasks.")
 
         task = get_object_or_404(Task.objects.select_related("case", "case__category"), pk=pk)
-        case = task.case
-        if case.category.name.upper() == "ANC" and task.due_date > timezone.localdate():
-            messages.error(request, "This ANC task is locked until its due date.")
-            return redirect("patients:case_detail", pk=case.pk)
-
-        task.status = TaskStatus.COMPLETED
-        try:
-            task.full_clean()
-            task.save()
-        except ValidationError:
-            messages.error(request, "Could not complete task. Please review task state.")
-        else:
-            create_case_activity(
-                case=case,
-                task=task,
-                user=request.user,
-                event_type=ActivityEventType.TASK,
-                note=f"Task completed: {task.title}",
-            )
-            messages.success(request, "Task marked as completed.")
-        return redirect("patients:case_detail", pk=case.pk)
+        success, message = _complete_task_inline(task, user=request.user)
+        if not success:
+            return _task_action_error_response(request, case_id=task.case_id, message=message)
+        return _task_action_success_response(request, task=task, message=message)
 
 
 class TaskQuickRescheduleView(LoginRequiredMixin, View):
     def post(self, request, pk):
         if not has_capability(request.user, "task_edit"):
-            return HttpResponseForbidden("You do not have permission to edit tasks.")
+            return _forbidden_response(request, "You do not have permission to edit tasks.")
 
-        task = get_object_or_404(Task.objects.select_related("case"), pk=pk)
-        if task.status == TaskStatus.COMPLETED:
-            messages.error(request, "Completed tasks cannot be rescheduled inline.")
-            return redirect("patients:case_detail", pk=task.case_id)
-
-        due_date_raw = (request.POST.get("due_date") or "").strip()
-        if not due_date_raw:
-            messages.error(request, "Please provide a new due date.")
-            return redirect("patients:case_detail", pk=task.case_id)
-
-        try:
-            new_due_date = datetime.strptime(due_date_raw, "%Y-%m-%d").date()
-        except ValueError:
-            messages.error(request, "Please enter a valid due date.")
-            return redirect("patients:case_detail", pk=task.case_id)
-
-        old_due_date = task.due_date
-        task.due_date = new_due_date
-        try:
-            task.full_clean()
-            task.save()
-        except ValidationError:
-            messages.error(request, "Could not reschedule task. Please check the date.")
-        else:
-            create_case_activity(
-                case=task.case,
-                task=task,
-                user=request.user,
-                event_type=ActivityEventType.TASK,
-                note=f"Task rescheduled: {task.title} ({old_due_date:%d-%m-%Y} -> {new_due_date:%d-%m-%Y})",
-            )
-            messages.success(request, "Task rescheduled.")
-        return redirect("patients:case_detail", pk=task.case_id)
+        task = get_object_or_404(Task.objects.select_related("case", "case__category"), pk=pk)
+        success, message = _reschedule_task_inline(
+            task,
+            due_date_raw=(request.POST.get("due_date") or "").strip(),
+            user=request.user,
+        )
+        if not success:
+            return _task_action_error_response(request, case_id=task.case_id, message=message)
+        return _task_action_success_response(request, task=task, message=message)
 
 
 class TaskQuickNoteView(LoginRequiredMixin, View):
     def post(self, request, pk):
         if not has_capability(request.user, "task_edit"):
-            return HttpResponseForbidden("You do not have permission to edit tasks.")
+            return _forbidden_response(request, "You do not have permission to edit tasks.")
 
-        task = get_object_or_404(Task.objects.select_related("case"), pk=pk)
-        note_text = (request.POST.get("note") or "").strip()
-        if not note_text:
-            messages.error(request, "Task note cannot be empty.")
-            return redirect("patients:case_detail", pk=task.case_id)
-
-        task.notes = note_text
-        task.save(update_fields=["notes", "updated_at"])
-        create_case_activity(
-            case=task.case,
-            task=task,
+        task = get_object_or_404(Task.objects.select_related("case", "case__category"), pk=pk)
+        success, message = _save_task_note_inline(
+            task,
+            note_text=(request.POST.get("note") or "").strip(),
             user=request.user,
-            event_type=ActivityEventType.TASK,
-            note=f"{note_text} [Task: {task.title}]",
         )
-        messages.success(request, "Task note saved.")
-        return redirect("patients:case_detail", pk=task.case_id)
+        if not success:
+            return _task_action_error_response(request, case_id=task.case_id, message=message)
+        return _task_action_success_response(request, task=task, message=message)
 
 
 class TaskUpdateView(LoginRequiredMixin, UpdateView):

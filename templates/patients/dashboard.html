@@ -452,60 +452,61 @@
 
   <script>
     (() => {
-      const payloadEl = document.getElementById("recent-cases-payload");
-      const endpointsEl = document.getElementById("recent-case-endpoints");
-      const rowList = document.querySelector("[data-recent-case-list]");
-      const modalEl = document.getElementById("recentCaseModal");
-      if (!payloadEl || !endpointsEl || !rowList || !modalEl) {
-        return;
-      }
-
-      const initialCases = JSON.parse(payloadEl.textContent || "[]");
-      const caseStore = new Map(initialCases.map((entry) => [entry.id, entry]));
-      const caseOrder = initialCases.map((entry) => entry.id);
-      const listUrl = endpointsEl.dataset.listUrl;
-      const updateUrlTemplate = endpointsEl.dataset.updateUrlTemplate;
-      const taskCompleteUrlTemplate = endpointsEl.dataset.taskCompleteUrlTemplate;
-      const taskRescheduleUrlTemplate = endpointsEl.dataset.taskRescheduleUrlTemplate;
-      const taskNoteUrlTemplate = endpointsEl.dataset.taskNoteUrlTemplate;
-      const recentCaseModal = new bootstrap.Modal(modalEl);
-
-      const feedbackEl = document.getElementById("recent-case-feedback");
-      const titleEl = document.getElementById("recentCaseModalTitle");
-      const subtitleEl = document.getElementById("recentCaseModalSubtitle");
-      const nameEl = document.getElementById("recent-case-name");
-      const ageEl = document.getElementById("recent-case-age");
-      const genderEl = document.getElementById("recent-case-gender");
-      const diagnosisEl = document.getElementById("recent-case-diagnosis");
-      const notesEl = document.getElementById("recent-case-notes");
-      const caseForm = document.getElementById("recent-case-form");
-      const saveButton = document.getElementById("recent-case-save");
-      const readonlyCopyEl = document.getElementById("recent-case-readonly-copy");
-      const openDetailEl = document.getElementById("recent-case-open-detail");
-      const taskListEl = document.getElementById("recent-case-task-list");
-
-      let currentCaseId = null;
-
-      const escapeHtml = (value) =>
-        String(value ?? "")
-          .replaceAll("&", "&amp;")
-          .replaceAll("<", "&lt;")
-          .replaceAll(">", "&gt;")
-          .replaceAll('"', "&quot;")
-          .replaceAll("'", "&#39;");
-
-      const clampReplaceId = (template, id) => template.replace("/0/", `/${id}/`);
-
-      const getCookie = (name) => {
-        const cookieValue = document.cookie
-          .split(";")
-          .map((item) => item.trim())
-          .find((item) => item.startsWith(`${name}=`));
-        if (!cookieValue) {
-          return "";
+      const initializeRecentCases = () => {
+        const payloadEl = document.getElementById("recent-cases-payload");
+        const endpointsEl = document.getElementById("recent-case-endpoints");
+        const rowList = document.querySelector("[data-recent-case-list]");
+        const modalEl = document.getElementById("recentCaseModal");
+        if (!payloadEl || !endpointsEl || !rowList || !modalEl || !window.bootstrap) {
+          return;
         }
-        return decodeURIComponent(cookieValue.split("=").slice(1).join("="));
-      };
+
+        const initialCases = JSON.parse(payloadEl.textContent || "[]");
+        const caseStore = new Map(initialCases.map((entry) => [entry.id, entry]));
+        const caseOrder = initialCases.map((entry) => entry.id);
+        const listUrl = endpointsEl.dataset.listUrl;
+        const updateUrlTemplate = endpointsEl.dataset.updateUrlTemplate;
+        const taskCompleteUrlTemplate = endpointsEl.dataset.taskCompleteUrlTemplate;
+        const taskRescheduleUrlTemplate = endpointsEl.dataset.taskRescheduleUrlTemplate;
+        const taskNoteUrlTemplate = endpointsEl.dataset.taskNoteUrlTemplate;
+        const recentCaseModal = new window.bootstrap.Modal(modalEl);
+
+        const feedbackEl = document.getElementById("recent-case-feedback");
+        const titleEl = document.getElementById("recentCaseModalTitle");
+        const subtitleEl = document.getElementById("recentCaseModalSubtitle");
+        const nameEl = document.getElementById("recent-case-name");
+        const ageEl = document.getElementById("recent-case-age");
+        const genderEl = document.getElementById("recent-case-gender");
+        const diagnosisEl = document.getElementById("recent-case-diagnosis");
+        const notesEl = document.getElementById("recent-case-notes");
+        const caseForm = document.getElementById("recent-case-form");
+        const saveButton = document.getElementById("recent-case-save");
+        const readonlyCopyEl = document.getElementById("recent-case-readonly-copy");
+        const openDetailEl = document.getElementById("recent-case-open-detail");
+        const taskListEl = document.getElementById("recent-case-task-list");
+
+        let currentCaseId = null;
+
+        const escapeHtml = (value) =>
+          String(value ?? "")
+            .replaceAll("&", "&amp;")
+            .replaceAll("<", "&lt;")
+            .replaceAll(">", "&gt;")
+            .replaceAll('"', "&quot;")
+            .replaceAll("'", "&#39;");
+
+        const clampReplaceId = (template, id) => template.replace("/0/", `/${id}/`);
+
+        const getCookie = (name) => {
+          const cookieValue = document.cookie
+            .split(";")
+            .map((item) => item.trim())
+            .find((item) => item.startsWith(`${name}=`));
+          if (!cookieValue) {
+            return "";
+          }
+          return decodeURIComponent(cookieValue.split("=").slice(1).join("="));
+        };
 
       const setFeedback = (message, level) => {
         feedbackEl.className = `alert recent-case-feedback alert-${level}`;
@@ -708,55 +709,92 @@
         return handleJsonResponse(response);
       };
 
-      rowList.addEventListener("click", async (event) => {
-        const trigger = event.target.closest("[data-recent-case-trigger]");
-        if (!trigger) {
-          return;
-        }
-        try {
-          await openCaseModal(Number(trigger.dataset.caseId));
-        } catch (error) {
-          setFeedback(error.message, "danger");
-        }
-      });
+        rowList.addEventListener("click", async (event) => {
+          const trigger = event.target.closest("[data-recent-case-trigger]");
+          if (!trigger) {
+            return;
+          }
+          try {
+            await openCaseModal(Number(trigger.dataset.caseId));
+          } catch (error) {
+            setFeedback(error.message, "danger");
+          }
+        });
 
-      caseForm.addEventListener("submit", async (event) => {
-        event.preventDefault();
-        if (!currentCaseId) {
-          return;
-        }
-        const entry = caseStore.get(currentCaseId);
-        if (!entry || !entry.can_edit) {
-          return;
-        }
-        clearFeedback();
-        saveButton.disabled = true;
-        try {
-          const payload = await postForm(
-            clampReplaceId(updateUrlTemplate, currentCaseId),
-            new FormData(caseForm),
-          );
-          upsertCase(payload.case);
-          renderRecentRows();
-          renderModal(payload.case);
-          setFeedback(payload.message || "Recent case updated.", "success");
-        } catch (error) {
-          setFeedback(error.message, "danger");
-        } finally {
-          saveButton.disabled = false;
-        }
-      });
-
-      taskListEl.addEventListener("click", async (event) => {
-        const completeButton = event.target.closest("[data-task-action='complete']");
-        if (completeButton) {
+        caseForm.addEventListener("submit", async (event) => {
           event.preventDefault();
+          if (!currentCaseId) {
+            return;
+          }
+          const entry = caseStore.get(currentCaseId);
+          if (!entry || !entry.can_edit) {
+            return;
+          }
           clearFeedback();
+          saveButton.disabled = true;
           try {
             const payload = await postForm(
-              clampReplaceId(taskCompleteUrlTemplate, Number(completeButton.dataset.taskId)),
-              new FormData(),
+              clampReplaceId(updateUrlTemplate, currentCaseId),
+              new FormData(caseForm),
             );
+            upsertCase(payload.case);
+            renderRecentRows();
+            renderModal(payload.case);
+            setFeedback(payload.message || "Recent case updated.", "success");
+          } catch (error) {
+            setFeedback(error.message, "danger");
+          } finally {
+            saveButton.disabled = false;
+          }
+        });
+
+        taskListEl.addEventListener("click", async (event) => {
+          const completeButton = event.target.closest("[data-task-action='complete']");
+          if (completeButton) {
+            event.preventDefault();
+            clearFeedback();
+            try {
+              const payload = await postForm(
+                clampReplaceId(taskCompleteUrlTemplate, Number(completeButton.dataset.taskId)),
+                new FormData(),
+              );
+              if (payload.case) {
+                upsertCase(payload.case);
+                renderRecentRows();
+                renderModal(payload.case);
+              }
+              setFeedback(payload.message || "Task updated.", "success");
+            } catch (error) {
+              setFeedback(error.message, "danger");
+            }
+            return;
+          }
+
+          const toggleButton = event.target.closest("[data-task-toggle]");
+          if (!toggleButton) {
+            return;
+          }
+          const taskId = toggleButton.dataset.taskId;
+          const targetType = toggleButton.dataset.taskToggle;
+          taskListEl
+            .querySelectorAll(`[data-task-form='${targetType}'][data-task-id='${taskId}']`)
+            .forEach((form) => form.classList.toggle("is-hidden"));
+        });
+
+        taskListEl.addEventListener("submit", async (event) => {
+          const form = event.target.closest("[data-task-form]");
+          if (!form) {
+            return;
+          }
+          event.preventDefault();
+          clearFeedback();
+          const taskId = Number(form.dataset.taskId);
+          const formType = form.dataset.taskForm;
+          const urlTemplate = formType === "reschedule" ? taskRescheduleUrlTemplate : taskNoteUrlTemplate;
+          const submitButton = form.querySelector("button[type='submit']");
+          submitButton.disabled = true;
+          try {
+            const payload = await postForm(clampReplaceId(urlTemplate, taskId), new FormData(form));
             if (payload.case) {
               upsertCase(payload.case);
               renderRecentRows();
@@ -765,49 +803,19 @@
             setFeedback(payload.message || "Task updated.", "success");
           } catch (error) {
             setFeedback(error.message, "danger");
+          } finally {
+            submitButton.disabled = false;
           }
-          return;
-        }
+        });
 
-        const toggleButton = event.target.closest("[data-task-toggle]");
-        if (!toggleButton) {
-          return;
-        }
-        const taskId = toggleButton.dataset.taskId;
-        const targetType = toggleButton.dataset.taskToggle;
-        taskListEl
-          .querySelectorAll(`[data-task-form='${targetType}'][data-task-id='${taskId}']`)
-          .forEach((form) => form.classList.toggle("is-hidden"));
-      });
+        renderRecentRows();
+      };
 
-      taskListEl.addEventListener("submit", async (event) => {
-        const form = event.target.closest("[data-task-form]");
-        if (!form) {
-          return;
-        }
-        event.preventDefault();
-        clearFeedback();
-        const taskId = Number(form.dataset.taskId);
-        const formType = form.dataset.taskForm;
-        const urlTemplate = formType === "reschedule" ? taskRescheduleUrlTemplate : taskNoteUrlTemplate;
-        const submitButton = form.querySelector("button[type='submit']");
-        submitButton.disabled = true;
-        try {
-          const payload = await postForm(clampReplaceId(urlTemplate, taskId), new FormData(form));
-          if (payload.case) {
-            upsertCase(payload.case);
-            renderRecentRows();
-            renderModal(payload.case);
-          }
-          setFeedback(payload.message || "Task updated.", "success");
-        } catch (error) {
-          setFeedback(error.message, "danger");
-        } finally {
-          submitButton.disabled = false;
-        }
-      });
-
-      renderRecentRows();
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", initializeRecentCases, { once: true });
+      } else {
+        initializeRecentCases();
+      }
     })();
   </script>
 {% endif %}

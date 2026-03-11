@@ -311,12 +311,24 @@
 
       .app-nav {
         background: var(--theme-nav-bg);
+        border-bottom: 1px solid var(--theme-nav-control-border);
+        box-shadow: 0 10px 24px var(--theme-shell-shadow);
+      }
+
+      .app-nav-shell {
+        gap: 0.9rem;
       }
 
       .app-nav .navbar-brand,
       .app-nav .navbar-toggler,
       .app-nav .navbar-text {
         color: var(--theme-nav-text);
+      }
+
+      .app-nav .navbar-brand {
+        font-size: 1.85rem;
+        font-weight: 700;
+        letter-spacing: -0.03em;
       }
 
       .app-nav .navbar-brand:hover,
@@ -326,6 +338,20 @@
 
       .app-nav .navbar-toggler {
         border-color: var(--theme-nav-control-border);
+      }
+
+      .app-nav .btn,
+      .global-search-input,
+      .search-filter-pill,
+      .dashboard-summary-card {
+        font-family: inherit;
+      }
+
+      .app-nav .btn {
+        min-height: 2.5rem;
+        border-radius: 0.75rem;
+        font-weight: 600;
+        padding-inline: 0.95rem;
       }
 
       .app-nav .btn-outline-light {
@@ -418,29 +444,99 @@
         color: var(--app-cancelled-text);
       }
 
+      .dashboard-summary-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 0.9rem;
+        margin-bottom: 1.75rem;
+      }
+
+      .dashboard-summary-item {
+        min-width: 0;
+      }
+
       .dashboard-summary-link {
+        display: block;
+        height: 100%;
         text-decoration: none;
         color: inherit;
       }
 
+      .dashboard-summary-link:hover,
+      .dashboard-summary-link:focus-visible {
+        color: inherit;
+      }
+
       .dashboard-summary-card {
-        border-radius: 0.75rem;
+        border-radius: 1rem;
         border: 1px solid var(--dashboard-border);
         background: var(--dashboard-bg);
         color: var(--dashboard-text);
         height: 100%;
+        min-height: 136px;
+        overflow: hidden;
+        position: relative;
+        box-shadow: 0 10px 24px var(--theme-shell-shadow);
+        transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
       }
 
+      .dashboard-summary-card::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0.06) 45%, rgba(255, 255, 255, 0) 100%);
+        pointer-events: none;
+      }
+
+      .dashboard-summary-link:hover .dashboard-summary-card,
+      .dashboard-summary-link:focus-visible .dashboard-summary-card {
+        transform: translateY(-2px);
+        box-shadow: 0 14px 30px var(--theme-shell-shadow);
+      }
+
+      .dashboard-summary-card-body,
       .dashboard-summary-card .card-body,
       .dashboard-summary-card.card-body {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        gap: 0.9rem;
+        height: 100%;
+        padding: 1rem 1.05rem;
         background: transparent;
         color: inherit;
       }
 
+      .dashboard-summary-label,
+      .dashboard-summary-card small,
       .dashboard-summary-card .small,
+      .dashboard-summary-value,
       .dashboard-summary-card .h5,
       .dashboard-summary-card .text-danger {
         color: inherit !important;
+      }
+
+      .dashboard-summary-label,
+      .dashboard-summary-card small,
+      .dashboard-summary-card .small {
+        display: block;
+        font-size: 0.76rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        line-height: 1.2;
+        opacity: 0.92;
+        text-transform: uppercase;
+      }
+
+      .dashboard-summary-value,
+      .dashboard-summary-card .h5 {
+        font-size: clamp(1.85rem, 2.4vw, 2.35rem);
+        font-weight: 700;
+        letter-spacing: -0.03em;
+        line-height: 1;
+        margin: 0;
       }
 
       .dashboard-summary-card--today {
@@ -467,31 +563,46 @@
         --dashboard-border: var(--theme-category-border);
       }
 
+      .app-nav-collapse {
+        flex-grow: 1;
+      }
+
+      .app-nav-content {
+        display: flex;
+        flex-direction: column;
+        gap: 0.85rem;
+        width: 100%;
+        padding: 0.85rem 0 0.1rem;
+      }
+
       .global-search-wrap {
         position: relative;
-        width: min(100%, 840px);
-        margin-inline: auto;
+        width: 100%;
+        margin: 0;
       }
 
       .global-search-controls {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        justify-content: center;
-        gap: 0.55rem;
+        display: grid;
+        gap: 0.65rem;
       }
 
       .global-search-input {
-        flex: 1 1 380px;
-        min-width: 250px;
-        max-width: 540px;
+        width: 100%;
+        min-width: 0;
+        max-width: none;
+        min-height: 2.85rem;
+        border-radius: 0.85rem;
+        font-size: 1rem;
+        font-weight: 600;
+        padding-inline: 0.9rem;
       }
 
       .search-filter-pills {
         display: flex;
         flex-wrap: wrap;
-        gap: 0.45rem;
-        justify-content: center;
+        align-items: center;
+        gap: 0.5rem;
+        justify-content: flex-start;
       }
 
       .search-filter-pill {
@@ -505,7 +616,8 @@
         font-size: 0.78rem;
         font-weight: 600;
         letter-spacing: 0.01em;
-        padding: 0.22rem 0.6rem;
+        min-height: 2rem;
+        padding: 0.32rem 0.72rem;
         cursor: pointer;
         transition: background-color 0.15s ease, border-color 0.15s ease;
       }
@@ -529,6 +641,7 @@
 
       .search-filter-pill input {
         appearance: none;
+        flex-shrink: 0;
         width: 0.85rem;
         height: 0.85rem;
         border: 1px solid var(--theme-nav-control-border);
@@ -639,17 +752,114 @@
         padding: 0.7rem 0.75rem;
       }
 
+      .global-nav-actions {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.65rem;
+        width: 100%;
+      }
+
+      .global-nav-actions > * {
+        min-width: 0;
+      }
+
+      .global-nav-actions form {
+        display: flex;
+      }
+
+      .global-nav-actions .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+      }
+
+      @media (min-width: 480px) {
+        .dashboard-summary-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      @media (min-width: 768px) {
+        .app-nav-content {
+          align-items: center;
+          display: grid;
+          gap: 1rem;
+          grid-template-columns: minmax(0, 1fr) auto;
+          padding: 0;
+        }
+
+        .global-nav-actions {
+          align-items: center;
+          display: flex;
+          flex-wrap: wrap;
+          justify-content: flex-end;
+          width: auto;
+        }
+
+        .global-nav-actions form {
+          display: block;
+        }
+
+        .global-nav-actions .btn,
+        .global-nav-actions form {
+          width: auto;
+        }
+
+        .dashboard-summary-grid {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+      }
+
+      @media (min-width: 1200px) {
+        .global-search-controls {
+          align-items: center;
+          display: grid;
+          gap: 0.75rem;
+          grid-template-columns: minmax(260px, 1fr) auto;
+        }
+
+        .global-search-input {
+          min-width: 0;
+        }
+
+        .search-filter-pills {
+          flex-wrap: nowrap;
+          white-space: nowrap;
+        }
+
+        .global-nav-actions {
+          flex-wrap: nowrap;
+        }
+      }
+
+      @media (min-width: 1200px) {
+        .dashboard-summary-grid {
+          grid-template-columns: repeat(6, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 767.98px) {
+        .app-nav .navbar-brand {
+          font-size: 1.65rem;
+        }
+
+        .global-nav-actions .btn,
+        .global-nav-actions form {
+          width: 100%;
+        }
+      }
+
       @media (min-width: 768px) {
         .global-nav-actions {
-          margin-left: auto;
           white-space: nowrap;
         }
       }
     </style>
   </head>
   <body class="app-shell">
-    <nav class="navbar navbar-expand-md navbar-dark app-nav mb-3">
-      <div class="container-fluid container-lg px-3 px-md-0">
+    <nav class="navbar navbar-expand-md navbar-dark app-nav mb-4">
+      <div class="container-fluid container-lg px-3 px-md-0 app-nav-shell">
         <a class="navbar-brand" href="{% url 'patients:dashboard' %}">MEDTRACK</a>
         {% if user.is_authenticated %}
           <button
@@ -663,8 +873,8 @@
           >
             <span class="navbar-toggler-icon"></span>
           </button>
-          <div class="collapse navbar-collapse" id="mainNav">
-            <div class="w-100 d-flex flex-column flex-md-row align-items-md-center gap-2 mt-3 mt-md-0">
+          <div class="collapse navbar-collapse app-nav-collapse mt-3 mt-md-0" id="mainNav">
+            <div class="app-nav-content">
               <div class="global-search-wrap" id="global-search-container">
                 <div class="global-search-controls">
                   <label class="visually-hidden" for="global-case-search-input">Search cases</label>
@@ -684,7 +894,7 @@
                 </div>
                 <div id="global-search-dropdown" class="global-search-dropdown" role="listbox" hidden></div>
               </div>
-              <div class="d-flex flex-column flex-md-row gap-2 mt-1 mt-md-0 global-nav-actions">
+              <div class="global-nav-actions">
                 <a class="btn btn-sm btn-outline-light" href="{% url 'patients:case_list' %}">Cases</a>
                 <a class="btn btn-sm btn-primary" href="{% url 'patients:case_create' %}">New Case</a>
                 <a class="btn btn-sm btn-outline-light" href="{% url 'patients:settings' %}">Settings</a>

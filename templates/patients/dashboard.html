@@ -197,57 +197,57 @@
 </style>
 
 <h1 class="h4 mb-3">Dashboard</h1>
-<div class="row g-2 g-md-3 mb-4">
-  <div class="col-6 col-md-2">
+<div class="dashboard-summary-grid" data-dashboard-summary-grid>
+  <div class="dashboard-summary-item" data-dashboard-summary-item>
     <div class="dashboard-summary-card dashboard-summary-card--today">
-      <div class="card-body py-2 py-md-3">
-        <small>Today's</small>
-        <div class="h5 mb-0">{{ today_tasks|length }}</div>
+      <div class="dashboard-summary-card-body">
+        <span class="dashboard-summary-label">Today's</span>
+        <div class="dashboard-summary-value">{{ today_tasks|length }}</div>
       </div>
     </div>
   </div>
-  <div class="col-6 col-md-2">
+  <div class="dashboard-summary-item" data-dashboard-summary-item>
     <div class="dashboard-summary-card dashboard-summary-card--upcoming">
-      <div class="card-body py-2 py-md-3">
-        <small>Upcoming</small>
-        <div class="h5 mb-0">{{ upcoming_tasks|length }}</div>
+      <div class="dashboard-summary-card-body">
+        <span class="dashboard-summary-label">Upcoming</span>
+        <div class="dashboard-summary-value">{{ upcoming_tasks|length }}</div>
       </div>
     </div>
   </div>
-  <div class="col-6 col-md-2">
+  <div class="dashboard-summary-item" data-dashboard-summary-item>
     <div class="dashboard-summary-card dashboard-summary-card--overdue">
-      <div class="card-body py-2 py-md-3">
-        <small>Overdue</small>
-        <div class="h5 mb-0">{{ overdue_tasks|length }}</div>
+      <div class="dashboard-summary-card-body">
+        <span class="dashboard-summary-label">Overdue</span>
+        <div class="dashboard-summary-value">{{ overdue_tasks|length }}</div>
       </div>
     </div>
   </div>
-  <div class="col-6 col-md-2">
-    <a class="dashboard-summary-link d-block h-100" href="{% url 'patients:case_list' %}?status=ACTIVE&category_group=anc" aria-label="View active ANC cases">
+  <div class="dashboard-summary-item" data-dashboard-summary-item>
+    <a class="dashboard-summary-link" href="{% url 'patients:case_list' %}?status=ACTIVE&category_group=anc" aria-label="View active ANC cases">
       <div class="dashboard-summary-card dashboard-summary-card--category" style="{% category_theme_style 'ANC' theme_category_colors %}">
-        <div class="card-body py-2 py-md-3">
-          <small>ANC</small>
-          <div class="h5 mb-0">{{ anc_case_count }}</div>
+        <div class="dashboard-summary-card-body">
+          <span class="dashboard-summary-label">ANC</span>
+          <div class="dashboard-summary-value">{{ anc_case_count }}</div>
         </div>
       </div>
     </a>
   </div>
-  <div class="col-6 col-md-2">
-    <a class="dashboard-summary-link d-block h-100" href="{% url 'patients:case_list' %}?status=ACTIVE&category_group=surgery" aria-label="View active Surgery cases">
+  <div class="dashboard-summary-item" data-dashboard-summary-item>
+    <a class="dashboard-summary-link" href="{% url 'patients:case_list' %}?status=ACTIVE&category_group=surgery" aria-label="View active Surgery cases">
       <div class="dashboard-summary-card dashboard-summary-card--category" style="{% category_theme_style 'Surgery' theme_category_colors %}">
-        <div class="card-body py-2 py-md-3">
-          <small>Surgery</small>
-          <div class="h5 mb-0">{{ surgery_case_count }}</div>
+        <div class="dashboard-summary-card-body">
+          <span class="dashboard-summary-label">Surgery</span>
+          <div class="dashboard-summary-value">{{ surgery_case_count }}</div>
         </div>
       </div>
     </a>
   </div>
-  <div class="col-6 col-md-2">
-    <a class="dashboard-summary-link d-block h-100" href="{% url 'patients:case_list' %}?status=ACTIVE&category_group=non_surgical" aria-label="View active Non-Surgical cases">
+  <div class="dashboard-summary-item" data-dashboard-summary-item>
+    <a class="dashboard-summary-link" href="{% url 'patients:case_list' %}?status=ACTIVE&category_group=non_surgical" aria-label="View active Non-Surgical cases">
       <div class="dashboard-summary-card dashboard-summary-card--category" style="{% category_theme_style 'Non Surgical' theme_category_colors %}">
-        <div class="card-body py-2 py-md-3">
-          <small>Non Surgical</small>
-          <div class="h5 mb-0">{{ non_surgical_case_count }}</div>
+        <div class="dashboard-summary-card-body">
+          <span class="dashboard-summary-label">Non Surgical</span>
+          <div class="dashboard-summary-value">{{ non_surgical_case_count }}</div>
         </div>
       </div>
     </a>

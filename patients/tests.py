@@ -434,6 +434,8 @@ class MedtrackViewTests(TestCase):
         response = self.client.get(reverse("patients:dashboard"))
 
         self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "data-dashboard-summary-grid")
+        self.assertContains(response, "data-dashboard-summary-item", count=6)
         self.assertContains(response, "?status=ACTIVE&category_group=anc")
         self.assertContains(response, "?status=ACTIVE&category_group=surgery")
         self.assertContains(response, "?status=ACTIVE&category_group=non_surgical")

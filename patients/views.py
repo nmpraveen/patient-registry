@@ -341,6 +341,7 @@ def _serialize_recent_case(case, user, *, today=None, can_edit_recent=None, can_
     return {
         "id": case.id,
         "name": case.full_name or case.patient_name,
+        "first_name": case.first_name or case.full_name or case.patient_name,
         "age_label": _case_age_label(case),
         "gender_label": case.get_gender_display() if case.gender else "-",
         "diagnosis": diagnosis,
@@ -365,6 +366,7 @@ def _serialize_recent_case_summary(case, user, *, today=None, can_edit_recent=No
     return {
         "id": case.id,
         "name": case.full_name or case.patient_name,
+        "first_name": case.first_name or case.full_name or case.patient_name,
         "age_label": _case_age_label(case),
         "gender_label": case.get_gender_display() if case.gender else "-",
         "diagnosis": diagnosis,

@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -521,13 +522,24 @@ class MedtrackViewTests(TestCase):
         recent_cases = response.context["recent_cases"]
         self.assertEqual(len(recent_cases), 10)
         self.assertEqual([entry["id"] for entry in recent_cases], [case.id for case in created_cases[:10]])
+        self.assertEqual(recent_cases[0]["first_name"], created_cases[0].first_name)
         self.assertTrue(recent_cases[0]["is_new_today"])
         self.assertTrue(recent_cases[0]["can_edit"])
         self.assertTrue(recent_cases[0]["diagnosis_short"].endswith("..."))
         content = response.content.decode()
+        section_match = re.search(r'<section[^>]+data-recent-case-panel[^>]*>.*?</section>', content, re.S)
+        self.assertIsNotNone(section_match)
+        section_html = section_match.group(0)
         self.assertLess(content.index("Recently Added"), content.index("Overdue Tasks"))
+        self.assertIn('data-recent-case-state="collapsed"', section_html)
+        self.assertEqual(section_html.count("recent-case-row--collapsed"), 10)
+        self.assertIn("recent-case-collapsed-line", section_html)
+        self.assertIn("recent-case-name--full", section_html)
+        self.assertIn("recent-case-name--short", section_html)
+        self.assertNotIn("recent-case-row--expanded", section_html)
+        self.assertNotIn("recent-case-diagnosis", section_html)
+        self.assertIn(">Expand<", section_html)
         self.assertContains(response, "Newest 10 cases for immediate doctor review.")
-        self.assertContains(response, "New")
 
     def test_dashboard_recent_cases_panel_shows_empty_state_for_doctor(self):
         self.client.force_login(self.user)
@@ -538,6 +550,12 @@ class MedtrackViewTests(TestCase):
         self.assertTrue(response.context["show_recent_cases_panel"])
         self.assertEqual(response.context["recent_cases"], [])
         self.assertContains(response, "No recent patients added.")
+        section_match = re.search(r'<section[^>]+data-recent-case-panel[^>]*>.*?</section>', response.content.decode(), re.S)
+        self.assertIsNotNone(section_match)
+        section_html = section_match.group(0)
+        self.assertIn('data-recent-case-state="collapsed"', section_html)
+        self.assertNotIn("data-recent-case-toggle", section_html)
+        self.assertNotIn(">Expand<", section_html)
 
     def test_dashboard_recent_cases_panel_is_hidden_for_non_recent_roles(self):
         self.login_as_role("Nurse", username="nurse_recent_panel")
@@ -616,6 +634,7 @@ class MedtrackViewTests(TestCase):
             {
                 "id",
                 "name",
+                "first_name",
                 "age_label",
                 "gender_label",
                 "diagnosis",
@@ -628,6 +647,7 @@ class MedtrackViewTests(TestCase):
                 "tasks",
             }.issubset(first_result.keys())
         )
+        self.assertEqual(first_result["first_name"], created_cases[0].first_name)
         self.assertNotIn("phone_number", first_result)
         self.assertNotIn("place", first_result)
         self.assertTrue(

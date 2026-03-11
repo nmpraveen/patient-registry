@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026.03.11.21.16
+- Tightened collapsed `Recently Added` rows into a single desktop metadata line with full-name truncation, a narrower-desktop first-name fallback, and a mobile wrap fallback.
+- Added `first_name` to recent-case dashboard payloads so the collapsed recent list can switch names cleanly without changing routes, permissions, or modal behavior.
+- Reused the recent-card hover lift on `Today's`, `Upcoming`, `Overdue`, and `Awaiting Reports` items while keeping the rest of the dashboard layout unchanged.
+
+## 2026.03.11.20.56
+- Refined `Recently Added` to match the dashboard's existing heading-and-card pattern instead of restyling the surrounding dashboard modules.
+- Changed `Recently Added` to default to a collapsed compact list of 10 recent cases with an inline `Expand` / `Collapse` toggle, while preserving the existing recent-case modal workflow.
+- Updated dashboard view tests to cover the collapsed default render, the expand control, and the empty-state behavior for the refined recent panel.
+
 ## 2026.03.11.15.02
 - Added a Doctor/Admin and Reception-only `Recently Added` dashboard panel above overdue work, ordered by newest case creation time and capped to the latest 10 cases.
 - Added `/patients/recent/` and `/patients/recent/<pk>/` JSON endpoints plus a lightweight modal workflow for reviewing recent cases, updating diagnosis/case notes, and keeping activity logs in sync.

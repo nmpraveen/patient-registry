@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dashboard | MEDTRACK - Navbar Stats</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', -apple-system, sans-serif;
+      min-height: 100vh;
+      background: #f4f5f7;
+      color: #1a1a2e;
+    }
+
+    /* ───────── NAVBAR ───────── */
+    .navbar {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: #1d4ed8;
+      color: #fff;
+    }
+
+    .navbar-top {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 0.65rem 1.5rem;
+      flex-wrap: wrap;
+    }
+
+    .navbar-brand {
+      font-size: 1.2rem;
+      font-weight: 800;
+      color: #fff;
+      letter-spacing: 0.06em;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+
+    .search-bar {
+      flex: 1;
+      max-width: 480px;
+      position: relative;
+    }
+
+    .search-bar input {
+      width: 100%;
+      padding: 0.5rem 1rem 0.5rem 2.3rem;
+      border: none;
+      border-radius: 10px;
+      background: rgba(255,255,255,0.18);
+      color: #fff;
+      font-size: 0.84rem;
+      font-family: inherit;
+      outline: none;
+      transition: background 0.2s;
+    }
+    .search-bar input:focus { background: rgba(255,255,255,0.28); }
+    .search-bar input::placeholder { color: rgba(255,255,255,0.55); }
+    .search-bar .search-icon {
+      position: absolute; left: 0.75rem; top: 50%; transform: translateY(-50%);
+      color: rgba(255,255,255,0.5); font-size: 0.82rem; pointer-events: none;
+    }
+
+    .nav-pills {
+      display: flex;
+      gap: 0.35rem;
+    }
+
+    .nav-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      padding: 0.28rem 0.65rem;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.25);
+      background: rgba(255,255,255,0.1);
+      color: rgba(255,255,255,0.85);
+      font-size: 0.75rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+      text-decoration: none;
+    }
+    .nav-pill:hover { background: rgba(255,255,255,0.2); color: #fff; }
+    .nav-pill .dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      display: inline-block;
+    }
+
+    .nav-actions {
+      margin-left: auto;
+      display: flex;
+      gap: 0.4rem;
+      align-items: center;
+    }
+
+    .btn-nav {
+      padding: 0.35rem 0.8rem;
+      border: 1px solid rgba(255,255,255,0.3);
+      border-radius: 8px;
+      background: transparent;
+      color: rgba(255,255,255,0.9);
+      font-size: 0.78rem;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.15s;
+    }
+    .btn-nav:hover { background: rgba(255,255,255,0.15); color: #fff; }
+    .btn-nav.primary { background: #fff; color: #1d4ed8; border-color: #fff; font-weight: 700; }
+    .btn-nav.primary:hover { background: #e8edfb; }
+
+    /* ───────── STATS BAR (inside navbar) ───────── */
+    .stats-bar {
+      display: flex;
+      align-items: stretch;
+      background: rgba(0,0,0,0.15);
+      border-top: 1px solid rgba(255,255,255,0.08);
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+    }
+    .stats-bar::-webkit-scrollbar { display: none; }
+
+    .stat-item {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.45rem 1rem;
+      text-decoration: none;
+      color: rgba(255,255,255,0.8);
+      border-right: 1px solid rgba(255,255,255,0.06);
+      transition: background 0.15s;
+      white-space: nowrap;
+      position: relative;
+    }
+    .stat-item:last-child { border-right: none; }
+    .stat-item:hover { background: rgba(255,255,255,0.08); color: #fff; }
+
+    .stat-item .stat-accent {
+      position: absolute;
+      left: 0;
+      top: 20%;
+      bottom: 20%;
+      width: 3px;
+      border-radius: 0 2px 2px 0;
+    }
+
+    .stat-item .stat-label {
+      font-size: 0.65rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      opacity: 0.7;
+      line-height: 1.2;
+    }
+
+    .stat-item .stat-value {
+      font-size: 1.15rem;
+      font-weight: 800;
+      line-height: 1;
+      letter-spacing: -0.02em;
+    }
+
+    .stat-item.overdue .stat-value { color: #fca5a5; }
+    .stat-item.today .stat-accent { background: #93c5fd; }
+    .stat-item.upcoming .stat-accent { background: #6ee7b7; }
+    .stat-item.overdue .stat-accent { background: #fca5a5; }
+    .stat-item.anc .stat-accent { background: #c4b5fd; }
+    .stat-item.surgery .stat-accent { background: #fcd34d; }
+    .stat-item.nonsurg .stat-accent { background: #a5b4fc; }
+
+    /* ───────── MOBILE NAVBAR ───────── */
+    .mobile-toggle {
+      display: none;
+      background: none;
+      border: none;
+      color: #fff;
+      font-size: 1.4rem;
+      cursor: pointer;
+      padding: 0.25rem;
+      line-height: 1;
+    }
+
+    @media (max-width: 768px) {
+      .mobile-toggle { display: block; }
+
+      .navbar-top {
+        padding: 0.55rem 1rem;
+        flex-wrap: nowrap;
+      }
+
+      .search-bar { display: none; }
+      .nav-pills { display: none; }
+      .nav-actions { display: none; }
+
+      .navbar-top.expanded .search-bar,
+      .navbar-top.expanded .nav-pills,
+      .navbar-top.expanded .nav-actions {
+        display: flex;
+        width: 100%;
+        order: 10;
+      }
+
+      .navbar-top.expanded {
+        flex-wrap: wrap;
+      }
+
+      .navbar-top.expanded .search-bar { max-width: none; }
+      .navbar-top.expanded .nav-actions { margin-left: 0; }
+
+      .stat-item {
+        min-width: max-content;
+        padding: 0.4rem 0.75rem;
+        gap: 0.35rem;
+      }
+
+      .stat-item .stat-label { font-size: 0.6rem; }
+      .stat-item .stat-value { font-size: 1rem; }
+    }
+
+    /* ───────── MAIN CONTENT ───────── */
+    .main {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 1.25rem 1.5rem;
+    }
+
+    .page-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 1.25rem;
+    }
+
+    .page-title {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: #1a1a2e;
+    }
+
+    .page-date {
+      font-size: 0.82rem;
+      color: #6b7280;
+      font-weight: 500;
+    }
+
+    /* Content panels */
+    .panels {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.25rem;
+    }
+
+    @media (max-width: 768px) {
+      .panels { grid-template-columns: 1fr; }
+      .main { padding: 1rem; }
+    }
+
+    .panel {
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 14px;
+      padding: 1.1rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+
+    .panel-title {
+      font-size: 0.78rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #6b7280;
+      margin-bottom: 0.85rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .panel-title .count-badge {
+      background: #e5e7eb;
+      color: #374151;
+      font-size: 0.68rem;
+      padding: 0.15rem 0.45rem;
+      border-radius: 999px;
+      font-weight: 700;
+    }
+
+    /* Task cards */
+    .task-card {
+      background: #fafafa;
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+      padding: 0.7rem 0.85rem;
+      margin-bottom: 0.5rem;
+      transition: border-color 0.15s, box-shadow 0.15s;
+      cursor: pointer;
+    }
+    .task-card:hover {
+      border-color: #93c5fd;
+      box-shadow: 0 2px 8px rgba(29,78,216,0.08);
+    }
+    .task-card:last-child { margin-bottom: 0; }
+
+    .task-top {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+
+    .task-date {
+      font-size: 0.7rem;
+      color: #9ca3af;
+      font-weight: 600;
+      min-width: 42px;
+    }
+
+    .task-name {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #1a1a2e;
+      text-decoration: none;
+    }
+    .task-name:hover { color: #1d4ed8; }
+
+    .task-diag {
+      font-size: 0.75rem;
+      color: #9ca3af;
+    }
+
+    .task-badges {
+      display: flex;
+      gap: 0.2rem;
+      margin-left: auto;
+    }
+
+    .badge-icon { font-size: 0.72rem; }
+
+    .task-sub {
+      font-size: 0.72rem;
+      color: #9ca3af;
+      margin-top: 0.2rem;
+    }
+
+    .task-card.overdue { border-left: 3px solid #ef4444; }
+    .task-card.overdue .task-date { color: #ef4444; font-weight: 700; }
+
+    .await-item {
+      padding: 0.45rem 0;
+      border-bottom: 1px solid #f3f4f6;
+      font-size: 0.82rem;
+      color: #6b7280;
+    }
+    .await-item:last-child { border-bottom: none; }
+    .await-item a { color: #1d4ed8; text-decoration: none; font-weight: 600; }
+    .await-item a:hover { text-decoration: underline; }
+
+    .empty-state {
+      text-align: center;
+      padding: 1.5rem 1rem;
+      color: #9ca3af;
+      font-size: 0.85rem;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ───────── NAVBAR WITH INTEGRATED STATS ───────── -->
+  <nav class="navbar">
+    <div class="navbar-top" id="navbarTop">
+      <a class="navbar-brand" href="#">MEDTRACK</a>
+
+      <div class="search-bar">
+        <span class="search-icon">&#128269;</span>
+        <input type="search" placeholder="Search UHID / name / phone / diagnosis">
+      </div>
+
+      <div class="nav-pills">
+        <label class="nav-pill"><span class="dot" style="background:#a78bfa"></span> ANC</label>
+        <label class="nav-pill"><span class="dot" style="background:#f87171"></span> Surgery</label>
+        <label class="nav-pill"><span class="dot" style="background:#34d399"></span> Non-surgical</label>
+      </div>
+
+      <div class="nav-actions">
+        <a class="btn-nav" href="#">Cases</a>
+        <a class="btn-nav primary" href="#">+ New Case</a>
+        <a class="btn-nav" href="#">Settings</a>
+        <a class="btn-nav" href="#">Logout</a>
+      </div>
+
+      <button class="mobile-toggle" onclick="document.getElementById('navbarTop').classList.toggle('expanded')" aria-label="Menu">&#9776;</button>
+    </div>
+
+    <!-- Stats bar — second row inside the navbar -->
+    <div class="stats-bar">
+      <a class="stat-item today" href="#">
+        <span class="stat-accent"></span>
+        <span class="stat-label">Today</span>
+        <span class="stat-value">0</span>
+      </a>
+      <a class="stat-item upcoming" href="#">
+        <span class="stat-accent"></span>
+        <span class="stat-label">Upcoming</span>
+        <span class="stat-value">6</span>
+      </a>
+      <a class="stat-item overdue" href="#">
+        <span class="stat-accent"></span>
+        <span class="stat-label">Overdue</span>
+        <span class="stat-value">83</span>
+      </a>
+      <a class="stat-item anc" href="#">
+        <span class="stat-accent"></span>
+        <span class="stat-label">ANC</span>
+        <span class="stat-value">4</span>
+      </a>
+      <a class="stat-item surgery" href="#">
+        <span class="stat-accent"></span>
+        <span class="stat-label">Surgery</span>
+        <span class="stat-value">3</span>
+      </a>
+      <a class="stat-item nonsurg" href="#">
+        <span class="stat-accent"></span>
+        <span class="stat-label">Non Surg</span>
+        <span class="stat-value">3</span>
+      </a>
+    </div>
+  </nav>
+
+  <!-- ───────── MAIN CONTENT ───────── -->
+  <main class="main">
+    <div class="page-header">
+      <h1 class="page-title">Dashboard</h1>
+      <span class="page-date">Wed, 12 Mar 2026</span>
+    </div>
+
+    <!-- NO stat cards section needed — stats are in the navbar! -->
+
+    <div class="panels">
+      <div>
+        <div class="panel">
+          <div class="panel-title">Today's Tasks <span class="count-badge">3</span></div>
+          <div class="task-card">
+            <div class="task-top">
+              <span class="task-date">Mar 12</span>
+              <a class="task-name" href="#">Priya Sharma</a>
+              <span class="task-diag">/ Pregnancy /</span>
+              <div class="task-badges">
+                <span class="badge-icon" title="High-risk">&#10071;</span>
+                <span class="badge-icon" title="Confirmed">&#x1F7E2;&#x1F4DE;</span>
+              </div>
+            </div>
+            <div class="task-sub">ANC Visit Month 7 &bull; Lab Test CBC</div>
+          </div>
+          <div class="task-card">
+            <div class="task-top">
+              <span class="task-date">Mar 12</span>
+              <a class="task-name" href="#">Rajesh Kumar</a>
+              <span class="task-diag">/ Hernia Repair /</span>
+              <div class="task-badges">
+                <span class="badge-icon" title="Not contacted">&#x1F4DE;</span>
+              </div>
+            </div>
+            <div class="task-sub">Pre-op Lab Test</div>
+          </div>
+          <div class="task-card">
+            <div class="task-top">
+              <span class="task-date">Mar 12</span>
+              <a class="task-name" href="#">Meena Devi</a>
+              <span class="task-diag">/ T2DM /</span>
+              <div class="task-badges">
+                <span class="badge-icon" title="Call back">&#x1F7E1;&#x1F4DE;</span>
+              </div>
+            </div>
+            <div class="task-sub">Quarterly Review</div>
+          </div>
+        </div>
+
+        <div class="panel" style="margin-top:1.25rem;">
+          <div class="panel-title">Upcoming <span class="count-badge">6</span></div>
+          <div class="task-card">
+            <div class="task-top">
+              <span class="task-date">Mar 15</span>
+              <a class="task-name" href="#">Lakshmi G</a>
+              <span class="task-diag">/ Pregnancy /</span>
+              <div class="task-badges">
+                <span class="badge-icon" title="Confirmed">&#x1F7E2;&#x1F4DE;</span>
+              </div>
+            </div>
+            <div class="task-sub">ANC Visit Month 5</div>
+          </div>
+          <div class="task-card">
+            <div class="task-top">
+              <span class="task-date">Mar 17</span>
+              <a class="task-name" href="#">Suresh P</a>
+              <span class="task-diag">/ Cataract /</span>
+              <div class="task-badges">
+                <span class="badge-icon" title="Not contacted">&#x1F4DE;</span>
+              </div>
+            </div>
+            <div class="task-sub">Post-op Follow-up &bull; Vision Check</div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="panel">
+          <div class="panel-title">Overdue <span class="count-badge" style="background:#fee2e2;color:#dc2626;">83</span></div>
+          <div class="task-card overdue">
+            <div class="task-top">
+              <span class="task-date">Feb 25</span>
+              <a class="task-name" href="#">Anita B</a>
+              <span class="task-diag">/ Hypertension /</span>
+              <div class="task-badges">
+                <span class="badge-icon" title="Not reachable">&#x1F534;&#x1F4DE; x3</span>
+              </div>
+            </div>
+            <div class="task-sub">Monthly Review &bull; BP Check</div>
+          </div>
+          <div class="task-card overdue">
+            <div class="task-top">
+              <span class="task-date">Feb 20</span>
+              <a class="task-name" href="#">Ravi M</a>
+              <span class="task-diag">/ Appendectomy /</span>
+              <div class="task-badges">
+                <span class="badge-icon" title="Lost follow-up">&#10060;</span>
+              </div>
+            </div>
+            <div class="task-sub">Post-op Wound Check</div>
+          </div>
+          <div class="task-card overdue">
+            <div class="task-top">
+              <span class="task-date">Feb 18</span>
+              <a class="task-name" href="#">Kavitha R</a>
+              <span class="task-diag">/ Pregnancy /</span>
+              <div class="task-badges">
+                <span class="badge-icon" title="High-risk">&#10071;</span>
+              </div>
+            </div>
+            <div class="task-sub">ANC Visit Month 8 &bull; Ultrasound</div>
+          </div>
+        </div>
+
+        <div class="panel" style="margin-top:1.25rem;">
+          <div class="panel-title">Awaiting Reports <span class="count-badge">3</span></div>
+          <div class="await-item"><a href="#">Priya Sharma</a> &mdash; CBC Blood Test</div>
+          <div class="await-item"><a href="#">Rajesh Kumar</a> &mdash; X-ray Chest</div>
+          <div class="await-item"><a href="#">Meena Devi</a> &mdash; HbA1c</div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    // Simple mobile toggle
+    document.querySelector('.mobile-toggle')?.addEventListener('click', function() {
+      document.getElementById('navbarTop').classList.toggle('expanded');
+    });
+  </script>
+</body>
+</html>

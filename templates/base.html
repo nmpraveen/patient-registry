@@ -863,13 +863,6 @@
         width: 100%;
         background: var(--theme-nav-stats-bar-bg, rgba(0, 0, 0, 0.12));
         border-top: 1px solid var(--theme-nav-stats-bar-border, rgba(255, 255, 255, 0.08));
-        overflow-x: auto;
-        -webkit-overflow-scrolling: touch;
-        scrollbar-width: none;
-      }
-
-      .nav-stats-bar::-webkit-scrollbar {
-        display: none;
       }
 
       .nav-stats-item {
@@ -944,6 +937,16 @@
       }
 
       @media (max-width: 767.98px) {
+        .nav-stats-bar {
+          overflow-x: auto;
+          -webkit-overflow-scrolling: touch;
+          scrollbar-width: none;
+        }
+
+        .nav-stats-bar::-webkit-scrollbar {
+          display: none;
+        }
+
         .nav-stats-item {
           min-width: max-content;
           padding: 0.38rem 0.65rem;

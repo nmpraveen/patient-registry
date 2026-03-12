@@ -3,36 +3,38 @@
 {% block title %}Dashboard | MEDTRACK{% endblock %}
 {% block nav_stats_bar %}
 <div class="nav-stats-bar" data-dashboard-summary-grid>
-  <div class="nav-stats-item nav-stats-item--today" data-dashboard-summary-item>
-    <span class="nav-stats-accent"></span>
-    <span class="nav-stats-label">Today</span>
-    <span class="nav-stats-value">{{ today_tasks|length }}</span>
+  <div class="container-fluid container-lg px-3 px-md-0 nav-stats-bar-inner">
+    <div class="nav-stats-item nav-stats-item--today" data-dashboard-summary-item>
+      <span class="nav-stats-accent"></span>
+      <span class="nav-stats-label">Today</span>
+      <span class="nav-stats-value">{{ today_tasks|length }}</span>
+    </div>
+    <div class="nav-stats-item nav-stats-item--upcoming" data-dashboard-summary-item>
+      <span class="nav-stats-accent"></span>
+      <span class="nav-stats-label">Upcoming</span>
+      <span class="nav-stats-value">{{ upcoming_tasks|length }}</span>
+    </div>
+    <div class="nav-stats-item nav-stats-item--overdue" data-dashboard-summary-item>
+      <span class="nav-stats-accent"></span>
+      <span class="nav-stats-label">Overdue</span>
+      <span class="nav-stats-value">{{ overdue_tasks|length }}</span>
+    </div>
+    <a class="nav-stats-item nav-stats-item--category" href="{% url 'patients:case_list' %}?status=ACTIVE&category_group=anc" aria-label="View active ANC cases" style="{% category_theme_style 'ANC' theme_category_colors %}" data-dashboard-summary-item>
+      <span class="nav-stats-accent"></span>
+      <span class="nav-stats-label">ANC</span>
+      <span class="nav-stats-value">{{ anc_case_count }}</span>
+    </a>
+    <a class="nav-stats-item nav-stats-item--category" href="{% url 'patients:case_list' %}?status=ACTIVE&category_group=surgery" aria-label="View active Surgery cases" style="{% category_theme_style 'Surgery' theme_category_colors %}" data-dashboard-summary-item>
+      <span class="nav-stats-accent"></span>
+      <span class="nav-stats-label">Surgery</span>
+      <span class="nav-stats-value">{{ surgery_case_count }}</span>
+    </a>
+    <a class="nav-stats-item nav-stats-item--category" href="{% url 'patients:case_list' %}?status=ACTIVE&category_group=non_surgical" aria-label="View active Non-Surgical cases" style="{% category_theme_style 'Non Surgical' theme_category_colors %}" data-dashboard-summary-item>
+      <span class="nav-stats-accent"></span>
+      <span class="nav-stats-label">Non Surgical</span>
+      <span class="nav-stats-value">{{ non_surgical_case_count }}</span>
+    </a>
   </div>
-  <div class="nav-stats-item nav-stats-item--upcoming" data-dashboard-summary-item>
-    <span class="nav-stats-accent"></span>
-    <span class="nav-stats-label">Upcoming</span>
-    <span class="nav-stats-value">{{ upcoming_tasks|length }}</span>
-  </div>
-  <div class="nav-stats-item nav-stats-item--overdue" data-dashboard-summary-item>
-    <span class="nav-stats-accent"></span>
-    <span class="nav-stats-label">Overdue</span>
-    <span class="nav-stats-value">{{ overdue_tasks|length }}</span>
-  </div>
-  <a class="nav-stats-item nav-stats-item--category" href="{% url 'patients:case_list' %}?status=ACTIVE&category_group=anc" aria-label="View active ANC cases" style="{% category_theme_style 'ANC' theme_category_colors %}" data-dashboard-summary-item>
-    <span class="nav-stats-accent"></span>
-    <span class="nav-stats-label">ANC</span>
-    <span class="nav-stats-value">{{ anc_case_count }}</span>
-  </a>
-  <a class="nav-stats-item nav-stats-item--category" href="{% url 'patients:case_list' %}?status=ACTIVE&category_group=surgery" aria-label="View active Surgery cases" style="{% category_theme_style 'Surgery' theme_category_colors %}" data-dashboard-summary-item>
-    <span class="nav-stats-accent"></span>
-    <span class="nav-stats-label">Surgery</span>
-    <span class="nav-stats-value">{{ surgery_case_count }}</span>
-  </a>
-  <a class="nav-stats-item nav-stats-item--category" href="{% url 'patients:case_list' %}?status=ACTIVE&category_group=non_surgical" aria-label="View active Non-Surgical cases" style="{% category_theme_style 'Non Surgical' theme_category_colors %}" data-dashboard-summary-item>
-    <span class="nav-stats-accent"></span>
-    <span class="nav-stats-label">Non Surgical</span>
-    <span class="nav-stats-value">{{ non_surgical_case_count }}</span>
-  </a>
 </div>
 {% endblock %}
 

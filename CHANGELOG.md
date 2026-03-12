@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026.03.12.18.00
+- Refined the dashboard navbar stats into subtle button-like panels with soft tinted backgrounds, rounded borders, and hover polish while preserving the same layout and counts.
+- Reused the existing Today, Upcoming, Overdue, and category theme colors so each stat is easier to distinguish without introducing a new visual pattern.
+
+## 2026.03.12.17.48
+- Fixed the dashboard navbar regression so the compact stats bar renders as a true second row beneath the main navigation instead of collapsing beside the brand/search/actions row.
+- Rebalanced the shared navbar shell sizing so desktop keeps the intended inline search, category pills, and actions while mobile still shows the brand, menu toggle, and scrollable stats strip cleanly.
+
 ## 2026.03.11.21.16
 - Tightened collapsed `Recently Added` rows into a single desktop metadata line with full-name truncation, a narrower-desktop first-name fallback, and a mobile wrap fallback.
 - Added `first_name` to recent-case dashboard payloads so the collapsed recent list can switch names cleanly without changing routes, permissions, or modal behavior.

@@ -313,10 +313,19 @@
         background: var(--theme-nav-bg);
         border-bottom: 1px solid var(--theme-nav-control-border);
         box-shadow: 0 10px 24px var(--theme-shell-shadow);
+        display: block;
+        padding: 0;
       }
 
       .app-nav-shell {
+        align-items: center;
+        display: flex;
+        flex-wrap: wrap;
         gap: 0.9rem;
+        justify-content: space-between;
+        padding-block: 0.7rem;
+        row-gap: 0.75rem;
+        width: 100%;
       }
 
       .app-nav .navbar-brand,
@@ -564,7 +573,8 @@
       }
 
       .app-nav-collapse {
-        flex-grow: 1;
+        flex: 1 1 100%;
+        min-width: 0;
       }
 
       .app-nav-content {
@@ -781,6 +791,10 @@
       }
 
       @media (min-width: 768px) {
+        .app-nav-collapse {
+          flex: 1 1 auto;
+        }
+
         .app-nav-content {
           align-items: center;
           display: grid;
@@ -858,17 +872,28 @@
 
       /* ── Nav Stats Bar (compact stats inside navbar) ── */
       .nav-stats-bar {
+        display: block;
+        flex-basis: 100%;
         width: 100%;
         background: var(--theme-nav-stats-bar-bg, rgba(0, 0, 0, 0.12));
         border-top: 1px solid var(--theme-nav-stats-bar-border, rgba(255, 255, 255, 0.08));
+        overflow: hidden;
       }
 
       .nav-stats-bar-inner {
         display: flex;
         align-items: stretch;
+        gap: 0.45rem;
+        padding-block: 0.35rem;
+        width: 100%;
       }
 
       .nav-stats-item {
+        --nav-stats-surface: linear-gradient(180deg, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0.07) 100%);
+        --nav-stats-border-color: rgba(255, 255, 255, 0.16);
+        --nav-stats-border-strong: rgba(255, 255, 255, 0.26);
+        --nav-stats-shadow: rgba(6, 18, 43, 0.16);
+        --nav-stats-text-color: var(--theme-nav-text);
         flex: 1;
         min-width: 0;
         display: flex;
@@ -876,21 +901,32 @@
         gap: 0.45rem;
         padding: 0.42rem 0.9rem;
         text-decoration: none;
-        color: var(--theme-nav-text);
-        border-right: 1px solid var(--theme-nav-stats-bar-border, rgba(255, 255, 255, 0.06));
-        transition: background 0.15s;
+        color: var(--nav-stats-text-color);
+        border: 1px solid var(--nav-stats-border-color);
+        border-radius: 0.8rem;
+        background: var(--nav-stats-surface);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 6px 14px var(--nav-stats-shadow);
+        transition: transform 0.15s ease, background 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
         white-space: nowrap;
         position: relative;
-        opacity: 0.85;
+        overflow: hidden;
+        opacity: 0.96;
       }
 
-      .nav-stats-item:last-child {
-        border-right: none;
+      .nav-stats-item::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(90deg, rgba(255, 255, 255, 0.08) 0%, transparent 42%);
+        pointer-events: none;
       }
 
-      .nav-stats-item:hover {
-        background: rgba(255, 255, 255, 0.08);
-        color: var(--theme-nav-text);
+      .nav-stats-item[href]:hover,
+      .nav-stats-item[href]:focus-visible {
+        transform: translateY(-1px);
+        border-color: var(--nav-stats-border-strong);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 10px 20px rgba(6, 18, 43, 0.22);
+        color: var(--nav-stats-text-color);
         opacity: 1;
       }
 
@@ -908,7 +944,7 @@
         font-weight: 700;
         text-transform: uppercase;
         letter-spacing: 0.04em;
-        opacity: 0.7;
+        opacity: 0.74;
         line-height: 1.2;
       }
 
@@ -917,6 +953,41 @@
         font-weight: 800;
         line-height: 1;
         letter-spacing: -0.02em;
+        color: var(--nav-stats-text-color);
+        text-shadow: 0 1px 0 rgba(255, 255, 255, 0.08);
+      }
+
+      .nav-stats-item--today {
+        --nav-stats-surface: linear-gradient(
+          180deg,
+          color-mix(in srgb, var(--theme-dashboard-today-bg) 92%, rgba(255, 255, 255, 0.18)) 0%,
+          color-mix(in srgb, var(--theme-dashboard-today-bg) 84%, transparent) 100%
+        );
+        --nav-stats-border-color: color-mix(in srgb, var(--theme-dashboard-today-border) 70%, rgba(255, 255, 255, 0.18));
+        --nav-stats-border-strong: color-mix(in srgb, var(--theme-dashboard-today-border) 88%, rgba(255, 255, 255, 0.2));
+        --nav-stats-text-color: var(--theme-dashboard-today-text);
+      }
+
+      .nav-stats-item--upcoming {
+        --nav-stats-surface: linear-gradient(
+          180deg,
+          color-mix(in srgb, var(--theme-dashboard-upcoming-bg) 92%, rgba(255, 255, 255, 0.18)) 0%,
+          color-mix(in srgb, var(--theme-dashboard-upcoming-bg) 84%, transparent) 100%
+        );
+        --nav-stats-border-color: color-mix(in srgb, var(--theme-dashboard-upcoming-border) 70%, rgba(255, 255, 255, 0.18));
+        --nav-stats-border-strong: color-mix(in srgb, var(--theme-dashboard-upcoming-border) 88%, rgba(255, 255, 255, 0.2));
+        --nav-stats-text-color: var(--theme-dashboard-upcoming-text);
+      }
+
+      .nav-stats-item--overdue {
+        --nav-stats-surface: linear-gradient(
+          180deg,
+          color-mix(in srgb, var(--theme-dashboard-overdue-bg) 92%, rgba(255, 255, 255, 0.18)) 0%,
+          color-mix(in srgb, var(--theme-dashboard-overdue-bg) 84%, transparent) 100%
+        );
+        --nav-stats-border-color: color-mix(in srgb, var(--theme-dashboard-overdue-border) 74%, rgba(255, 255, 255, 0.18));
+        --nav-stats-border-strong: color-mix(in srgb, var(--theme-dashboard-overdue-border) 90%, rgba(255, 255, 255, 0.2));
+        --nav-stats-text-color: var(--theme-dashboard-overdue-text);
       }
 
       .nav-stats-item--today .nav-stats-accent {
@@ -937,6 +1008,17 @@
 
       .nav-stats-item--category .nav-stats-accent {
         background: var(--theme-category-border);
+      }
+
+      .nav-stats-item--category {
+        --nav-stats-surface: linear-gradient(
+          180deg,
+          color-mix(in srgb, var(--theme-category-bg) 92%, rgba(255, 255, 255, 0.18)) 0%,
+          color-mix(in srgb, var(--theme-category-hover-bg) 82%, transparent) 100%
+        );
+        --nav-stats-border-color: color-mix(in srgb, var(--theme-category-border) 74%, rgba(255, 255, 255, 0.18));
+        --nav-stats-border-strong: color-mix(in srgb, var(--theme-category-border) 92%, rgba(255, 255, 255, 0.2));
+        --nav-stats-text-color: var(--theme-category-text);
       }
 
       @media (max-width: 767.98px) {

@@ -931,12 +931,7 @@
       }
 
       .nav-stats-item .nav-stats-accent {
-        position: absolute;
-        left: 0;
-        top: 20%;
-        bottom: 20%;
-        width: 3px;
-        border-radius: 0 2px 2px 0;
+        display: none;
       }
 
       .nav-stats-item .nav-stats-label {
@@ -990,24 +985,8 @@
         --nav-stats-text-color: var(--theme-dashboard-overdue-text);
       }
 
-      .nav-stats-item--today .nav-stats-accent {
-        background: var(--theme-dashboard-today-border);
-      }
-
-      .nav-stats-item--upcoming .nav-stats-accent {
-        background: var(--theme-dashboard-upcoming-border);
-      }
-
-      .nav-stats-item--overdue .nav-stats-accent {
-        background: var(--theme-dashboard-overdue-border);
-      }
-
       .nav-stats-item--overdue .nav-stats-value {
         color: var(--theme-dashboard-overdue-text);
-      }
-
-      .nav-stats-item--category .nav-stats-accent {
-        background: var(--theme-category-border);
       }
 
       .nav-stats-item--category {

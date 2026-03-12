@@ -83,6 +83,42 @@
     }
     .v3-preview .preview-text { color: #5c4a3a; }
 
+    /* V4 Navbar Stats */
+    .v4-preview {
+      background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 55%, #153eaf 100%);
+      padding: 1.2rem;
+      align-items: flex-start;
+      justify-content: flex-start;
+      flex-direction: column;
+      gap: 0.85rem;
+    }
+    .v4-preview .preview-text { color: rgba(255,255,255,0.96); }
+    .preview-stats {
+      display: flex;
+      gap: 0.4rem;
+      flex-wrap: wrap;
+    }
+    .preview-stats span {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.38rem 0.58rem;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.9);
+      border: 1px solid rgba(255,255,255,0.28);
+      color: #16376e;
+      font-size: 0.7rem;
+      font-weight: 700;
+    }
+    .preview-stats span::before {
+      content: '';
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+      opacity: 0.65;
+    }
+
     .card-body {
       background: #fff;
       border: 1px solid #e2e8f0;
@@ -165,7 +201,7 @@
 <body>
   <div class="container">
     <h1>MEDTRACK UI Design Variations</h1>
-    <p class="subtitle">Three modern design directions for the patient registry system.<br>Each variation includes Login, Dashboard, Case List, and Case Detail pages.</p>
+    <p class="subtitle">Three full-page design directions plus a focused navbar-stats experiment track.<br>Open any mock directly to compare shells, layout density, and styling treatments.</p>
 
     <div class="variation-grid">
       <!-- V1: Glass Morphism -->
@@ -233,6 +269,32 @@
             <a class="card-link" href="v3-warm/dashboard.html">Dashboard</a>
             <a class="card-link" href="v3-warm/case-list.html">Case List</a>
             <a class="card-link" href="v3-warm/case-detail.html">Case Detail</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- V4: Navbar Stats Experiments -->
+      <div class="variation-card">
+        <div class="card-preview v4-preview">
+          <span class="preview-text">MEDTRACK</span>
+          <div class="preview-stats">
+            <span>Today 0</span>
+            <span>Upcoming 17</span>
+            <span>Overdue 61</span>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="card-title">V4: Navbar Stats Experiments</div>
+          <p class="card-desc">A focused mock track for the dashboard navbar stats row, including the original inline-stats concept plus five modern whitespace treatments on one comparison page.</p>
+          <ul class="card-features">
+            <li>Same blue MEDTRACK navbar shell as the current direction</li>
+            <li>Five stat-row presentation options on one page</li>
+            <li>Desktop-first comparison using identical sample counts</li>
+            <li>Useful for choosing density before touching production templates</li>
+          </ul>
+          <div class="card-links">
+            <a class="card-link" href="v4-navbar-stats/dashboard.html">Base Mock</a>
+            <a class="card-link" href="v4-navbar-stats/stats-options.html">5 Options Compare</a>
           </div>
         </div>
       </div>

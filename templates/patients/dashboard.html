@@ -1,6 +1,41 @@
 {% extends 'base.html' %}
 {% load theme_tags %}
 {% block title %}Dashboard | MEDTRACK{% endblock %}
+{% block nav_stats_bar %}
+<div class="nav-stats-bar" data-dashboard-summary-grid>
+  <div class="nav-stats-item nav-stats-item--today" data-dashboard-summary-item>
+    <span class="nav-stats-accent"></span>
+    <span class="nav-stats-label">Today</span>
+    <span class="nav-stats-value">{{ today_tasks|length }}</span>
+  </div>
+  <div class="nav-stats-item nav-stats-item--upcoming" data-dashboard-summary-item>
+    <span class="nav-stats-accent"></span>
+    <span class="nav-stats-label">Upcoming</span>
+    <span class="nav-stats-value">{{ upcoming_tasks|length }}</span>
+  </div>
+  <div class="nav-stats-item nav-stats-item--overdue" data-dashboard-summary-item>
+    <span class="nav-stats-accent"></span>
+    <span class="nav-stats-label">Overdue</span>
+    <span class="nav-stats-value">{{ overdue_tasks|length }}</span>
+  </div>
+  <a class="nav-stats-item nav-stats-item--category" href="{% url 'patients:case_list' %}?status=ACTIVE&category_group=anc" aria-label="View active ANC cases" style="{% category_theme_style 'ANC' theme_category_colors %}" data-dashboard-summary-item>
+    <span class="nav-stats-accent"></span>
+    <span class="nav-stats-label">ANC</span>
+    <span class="nav-stats-value">{{ anc_case_count }}</span>
+  </a>
+  <a class="nav-stats-item nav-stats-item--category" href="{% url 'patients:case_list' %}?status=ACTIVE&category_group=surgery" aria-label="View active Surgery cases" style="{% category_theme_style 'Surgery' theme_category_colors %}" data-dashboard-summary-item>
+    <span class="nav-stats-accent"></span>
+    <span class="nav-stats-label">Surgery</span>
+    <span class="nav-stats-value">{{ surgery_case_count }}</span>
+  </a>
+  <a class="nav-stats-item nav-stats-item--category" href="{% url 'patients:case_list' %}?status=ACTIVE&category_group=non_surgical" aria-label="View active Non-Surgical cases" style="{% category_theme_style 'Non Surgical' theme_category_colors %}" data-dashboard-summary-item>
+    <span class="nav-stats-accent"></span>
+    <span class="nav-stats-label">Non Surgical</span>
+    <span class="nav-stats-value">{{ non_surgical_case_count }}</span>
+  </a>
+</div>
+{% endblock %}
+
 {% block content %}
 <style>
   .recent-case-kicker,
@@ -301,62 +336,6 @@
 </style>
 
 <h1 class="h4 mb-3">Dashboard</h1>
-<div class="dashboard-summary-grid" data-dashboard-summary-grid>
-  <div class="dashboard-summary-item" data-dashboard-summary-item>
-    <div class="dashboard-summary-card dashboard-summary-card--today">
-      <div class="dashboard-summary-card-body">
-        <span class="dashboard-summary-label">Today's</span>
-        <div class="dashboard-summary-value">{{ today_tasks|length }}</div>
-      </div>
-    </div>
-  </div>
-  <div class="dashboard-summary-item" data-dashboard-summary-item>
-    <div class="dashboard-summary-card dashboard-summary-card--upcoming">
-      <div class="dashboard-summary-card-body">
-        <span class="dashboard-summary-label">Upcoming</span>
-        <div class="dashboard-summary-value">{{ upcoming_tasks|length }}</div>
-      </div>
-    </div>
-  </div>
-  <div class="dashboard-summary-item" data-dashboard-summary-item>
-    <div class="dashboard-summary-card dashboard-summary-card--overdue">
-      <div class="dashboard-summary-card-body">
-        <span class="dashboard-summary-label">Overdue</span>
-        <div class="dashboard-summary-value">{{ overdue_tasks|length }}</div>
-      </div>
-    </div>
-  </div>
-  <div class="dashboard-summary-item" data-dashboard-summary-item>
-    <a class="dashboard-summary-link" href="{% url 'patients:case_list' %}?status=ACTIVE&category_group=anc" aria-label="View active ANC cases">
-      <div class="dashboard-summary-card dashboard-summary-card--category" style="{% category_theme_style 'ANC' theme_category_colors %}">
-        <div class="dashboard-summary-card-body">
-          <span class="dashboard-summary-label">ANC</span>
-          <div class="dashboard-summary-value">{{ anc_case_count }}</div>
-        </div>
-      </div>
-    </a>
-  </div>
-  <div class="dashboard-summary-item" data-dashboard-summary-item>
-    <a class="dashboard-summary-link" href="{% url 'patients:case_list' %}?status=ACTIVE&category_group=surgery" aria-label="View active Surgery cases">
-      <div class="dashboard-summary-card dashboard-summary-card--category" style="{% category_theme_style 'Surgery' theme_category_colors %}">
-        <div class="dashboard-summary-card-body">
-          <span class="dashboard-summary-label">Surgery</span>
-          <div class="dashboard-summary-value">{{ surgery_case_count }}</div>
-        </div>
-      </div>
-    </a>
-  </div>
-  <div class="dashboard-summary-item" data-dashboard-summary-item>
-    <a class="dashboard-summary-link" href="{% url 'patients:case_list' %}?status=ACTIVE&category_group=non_surgical" aria-label="View active Non-Surgical cases">
-      <div class="dashboard-summary-card dashboard-summary-card--category" style="{% category_theme_style 'Non Surgical' theme_category_colors %}">
-        <div class="dashboard-summary-card-body">
-          <span class="dashboard-summary-label">Non Surgical</span>
-          <div class="dashboard-summary-value">{{ non_surgical_case_count }}</div>
-        </div>
-      </div>
-    </a>
-  </div>
-</div>
 
 <div class="row g-3 g-md-4">
   <div class="col-12 col-lg-6">

@@ -855,6 +855,108 @@
           white-space: nowrap;
         }
       }
+
+      /* ── Nav Stats Bar (compact stats inside navbar) ── */
+      .nav-stats-bar {
+        display: flex;
+        align-items: stretch;
+        background: var(--theme-nav-stats-bar-bg, rgba(0, 0, 0, 0.12));
+        border-top: 1px solid var(--theme-nav-stats-bar-border, rgba(255, 255, 255, 0.08));
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+      }
+
+      .nav-stats-bar::-webkit-scrollbar {
+        display: none;
+      }
+
+      .nav-stats-item {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        align-items: center;
+        gap: 0.45rem;
+        padding: 0.42rem 0.9rem;
+        text-decoration: none;
+        color: var(--theme-nav-text);
+        border-right: 1px solid var(--theme-nav-stats-bar-border, rgba(255, 255, 255, 0.06));
+        transition: background 0.15s;
+        white-space: nowrap;
+        position: relative;
+        opacity: 0.85;
+      }
+
+      .nav-stats-item:last-child {
+        border-right: none;
+      }
+
+      .nav-stats-item:hover {
+        background: rgba(255, 255, 255, 0.08);
+        color: var(--theme-nav-text);
+        opacity: 1;
+      }
+
+      .nav-stats-item .nav-stats-accent {
+        position: absolute;
+        left: 0;
+        top: 20%;
+        bottom: 20%;
+        width: 3px;
+        border-radius: 0 2px 2px 0;
+      }
+
+      .nav-stats-item .nav-stats-label {
+        font-size: 0.62rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        opacity: 0.7;
+        line-height: 1.2;
+      }
+
+      .nav-stats-item .nav-stats-value {
+        font-size: 1.1rem;
+        font-weight: 800;
+        line-height: 1;
+        letter-spacing: -0.02em;
+      }
+
+      .nav-stats-item--today .nav-stats-accent {
+        background: var(--theme-dashboard-today-border);
+      }
+
+      .nav-stats-item--upcoming .nav-stats-accent {
+        background: var(--theme-dashboard-upcoming-border);
+      }
+
+      .nav-stats-item--overdue .nav-stats-accent {
+        background: var(--theme-dashboard-overdue-border);
+      }
+
+      .nav-stats-item--overdue .nav-stats-value {
+        color: var(--theme-dashboard-overdue-text);
+      }
+
+      .nav-stats-item--category .nav-stats-accent {
+        background: var(--theme-category-border);
+      }
+
+      @media (max-width: 767.98px) {
+        .nav-stats-item {
+          min-width: max-content;
+          padding: 0.38rem 0.65rem;
+          gap: 0.3rem;
+        }
+
+        .nav-stats-item .nav-stats-label {
+          font-size: 0.58rem;
+        }
+
+        .nav-stats-item .nav-stats-value {
+          font-size: 0.95rem;
+        }
+      }
     </style>
   </head>
   <body class="app-shell">
@@ -907,6 +1009,7 @@
           </div>
         {% endif %}
       </div>
+      {% block nav_stats_bar %}{% endblock %}
     </nav>
 
     <main class="container-fluid container-lg px-3 px-md-0 pb-4">

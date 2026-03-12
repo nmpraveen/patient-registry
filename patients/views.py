@@ -56,7 +56,7 @@ from .models import (
     frequency_to_days,
     is_anc_case,
 )
-from .theme import build_theme_category_colors, get_default_category_theme, resolve_category_theme
+from .theme import build_theme_category_colors, get_default_category_theme, mix_colors, resolve_category_theme
 
 NON_SURGICAL_CASE_FILTER = (
     Q(category__name__iexact="Non Surgical")
@@ -853,6 +853,8 @@ class DashboardView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
         "case__high_risk",
         "case__ncd_flags",
         "case__category__name",
+        "case__category__theme_bg_color",
+        "case__category__theme_text_color",
     )
 
     @staticmethod
@@ -907,6 +909,74 @@ class DashboardView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
         for case_id, logs in grouped.items():
             summaries[case_id] = CallLog.summarize_case(logs)
         return summaries
+
+    @staticmethod
+    def _category_theme_payload(category):
+        category_name = getattr(category, "name", "") or ""
+        default_theme = get_default_category_theme(category_name)
+        bg_color = getattr(category, "theme_bg_color", "") or default_theme["bg"]
+        text_color = getattr(category, "theme_text_color", "") or default_theme["text"]
+        return {
+            "name": category_name,
+            "bg_color": bg_color,
+            "text_color": text_color,
+            "dot_color": mix_colors(text_color, bg_color, 0.22),
+        }
+
+    @classmethod
+    def _build_appointment_schedule_days(cls, task_queryset, today, upcoming_days):
+        grouped_tasks = OrderedDict()
+        for task in task_queryset:
+            day_groups = grouped_tasks.setdefault(task.due_date, OrderedDict())
+            day_groups.setdefault(task.case_id, []).append(task)
+
+        schedule_days = []
+        for offset in range(upcoming_days + 1):
+            schedule_date = today + timedelta(days=offset)
+            case_groups = grouped_tasks.get(schedule_date, OrderedDict())
+            category_map = OrderedDict()
+            rows = []
+
+            for grouped in case_groups.values():
+                first_task = grouped[0]
+                case = first_task.case
+                category_theme = cls._category_theme_payload(case.category)
+                category_map.setdefault(case.category.name, category_theme)
+
+                unique_titles = []
+                seen_titles = set()
+                for task in grouped:
+                    if task.title in seen_titles:
+                        continue
+                    seen_titles.add(task.title)
+                    unique_titles.append(task.title)
+
+                rows.append(
+                    {
+                        "case_id": case.id,
+                        "patient_name": case.full_name or case.patient_name,
+                        "diagnosis": case.diagnosis or case.category.name,
+                        "task_titles": unique_titles,
+                        "category_name": category_theme["name"],
+                        "category_bg_color": category_theme["bg_color"],
+                        "category_text_color": category_theme["text_color"],
+                    }
+                )
+
+            rows.sort(key=lambda item: ((item["patient_name"] or "").lower(), item["case_id"]))
+            categories = sorted(category_map.values(), key=lambda item: item["name"].lower())
+            schedule_days.append(
+                {
+                    "date": schedule_date,
+                    "date_key": schedule_date.isoformat(),
+                    "count": len(rows),
+                    "categories": categories,
+                    "rows": rows,
+                    "is_selected": offset == 0,
+                }
+            )
+
+        return schedule_days
 
     def _task_queryset(self):
         return (
@@ -966,6 +1036,11 @@ class DashboardView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
         context["upcoming_tasks"] = upcoming_tasks
         context["overdue_tasks"] = overdue_tasks
         context["awaiting_tasks"] = awaiting_tasks
+        context["appointment_schedule_days"] = self._build_appointment_schedule_days(
+            [*today_tasks, *upcoming_tasks],
+            today,
+            upcoming_days,
+        )
         case_ids = sorted({task.case_id for task in [*today_tasks, *upcoming_tasks, *overdue_tasks]})
         call_summary_by_case = self._build_call_summaries(case_ids)
 

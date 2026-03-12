@@ -119,6 +119,115 @@
       opacity: 0.65;
     }
 
+    /* V5 Upcoming Schedule */
+    .v5-preview {
+      background:
+        radial-gradient(circle at top left, rgba(173, 225, 235, 0.52) 0, rgba(173, 225, 235, 0) 35%),
+        radial-gradient(circle at bottom right, rgba(255, 232, 186, 0.48) 0, rgba(255, 232, 186, 0) 35%),
+        linear-gradient(145deg, #f7fafc 0%, #edf3f8 55%, #e7eef5 100%);
+      padding: 1rem;
+      align-items: stretch;
+      justify-content: center;
+    }
+    .schedule-preview-shell {
+      width: 100%;
+      border-radius: 24px;
+      border: 1px solid rgba(255,255,255,0.78);
+      background: rgba(255,255,255,0.82);
+      box-shadow: 0 18px 42px rgba(26, 52, 86, 0.12);
+      padding: 0.95rem;
+      display: grid;
+      gap: 0.8rem;
+    }
+    .schedule-preview-title {
+      font-size: 1.4rem;
+      line-height: 1;
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      color: #17324f;
+      max-width: 8ch;
+    }
+    .schedule-preview-rail {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 0.45rem;
+    }
+    .schedule-preview-chip {
+      border-radius: 18px;
+      padding: 0.45rem 0.2rem;
+      border: 1px solid rgba(120, 144, 169, 0.2);
+      background: rgba(255,255,255,0.78);
+      color: #6c7a89;
+      text-align: center;
+      font-size: 0.65rem;
+      font-weight: 700;
+      display: grid;
+      gap: 0.18rem;
+      box-shadow: 0 10px 20px rgba(28, 56, 90, 0.06);
+    }
+    .schedule-preview-chip strong {
+      font-size: 1rem;
+      color: #17324f;
+      letter-spacing: -0.04em;
+    }
+    .schedule-preview-chip.active {
+      background: linear-gradient(180deg, #0c6778 0%, #055160 100%);
+      color: rgba(243,253,255,0.85);
+      border-color: rgba(5,81,96,0.52);
+      box-shadow: 0 14px 26px rgba(5,81,96,0.2);
+    }
+    .schedule-preview-chip.active strong {
+      color: #f4feff;
+    }
+    .schedule-preview-dots {
+      display: flex;
+      justify-content: center;
+      gap: 0.18rem;
+      min-height: 6px;
+    }
+    .schedule-preview-dots span {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      display: inline-block;
+      box-shadow: 0 0 0 2px var(--ring, rgba(255,255,255,0.72));
+    }
+    .schedule-preview-list {
+      display: grid;
+      gap: 0.45rem;
+    }
+    .schedule-preview-row {
+      border-radius: 18px;
+      border: 1px solid rgba(145, 167, 191, 0.2);
+      background: rgba(255,255,255,0.88);
+      padding: 0.7rem 0.8rem 0.7rem 1rem;
+      position: relative;
+      text-align: left;
+      box-shadow: 0 10px 20px rgba(30, 55, 86, 0.05);
+    }
+    .schedule-preview-row::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 6px;
+      border-radius: 18px 0 0 18px;
+      background: var(--accent, #cbd5e1);
+    }
+    .schedule-preview-row strong {
+      display: block;
+      color: #17324f;
+      font-size: 0.78rem;
+      margin-bottom: 0.12rem;
+    }
+    .schedule-preview-row span {
+      display: block;
+      color: #6c7a89;
+      font-size: 0.66rem;
+      line-height: 1.4;
+    }
+
     .card-body {
       background: #fff;
       border: 1px solid #e2e8f0;
@@ -295,6 +404,69 @@
           <div class="card-links">
             <a class="card-link" href="v4-navbar-stats/dashboard.html">Base Mock</a>
             <a class="card-link" href="v4-navbar-stats/stats-options.html">5 Options Compare</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- V5: Upcoming Schedule -->
+      <div class="variation-card">
+        <div class="card-preview v5-preview">
+          <div class="schedule-preview-shell">
+            <div class="schedule-preview-title">Upcoming Schedule</div>
+            <div class="schedule-preview-rail">
+              <div class="schedule-preview-chip">
+                <strong>12</strong>
+                <span>Thu</span>
+                <div class="schedule-preview-dots">
+                  <span style="background:#2e9d6d; --ring:#d1e7dd"></span>
+                  <span style="background:#d79b1c; --ring:#fff3cd"></span>
+                  <span style="background:#6f7884; --ring:#e2e3e5"></span>
+                </div>
+              </div>
+              <div class="schedule-preview-chip">
+                <strong>13</strong>
+                <span>Fri</span>
+                <div class="schedule-preview-dots">
+                  <span style="background:#d79b1c; --ring:#fff3cd"></span>
+                </div>
+              </div>
+              <div class="schedule-preview-chip active">
+                <strong>14</strong>
+                <span>Sat</span>
+                <div class="schedule-preview-dots"></div>
+              </div>
+              <div class="schedule-preview-chip">
+                <strong>15</strong>
+                <span>Sun</span>
+                <div class="schedule-preview-dots">
+                  <span style="background:#2e9d6d; --ring:#d1e7dd"></span>
+                  <span style="background:#6f7884; --ring:#e2e3e5"></span>
+                </div>
+              </div>
+            </div>
+            <div class="schedule-preview-list">
+              <div class="schedule-preview-row" style="--accent:#d1e7dd">
+                <strong>Aishwarya Kumar</strong>
+                <span>ANC follow-up • ANC Review • USG</span>
+              </div>
+              <div class="schedule-preview-row" style="--accent:#fff3cd">
+                <strong>Mohammed Ilyas</strong>
+                <span>Post-op wound review • Surgical surveillance</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="card-title">V5: Upcoming Schedule Module</div>
+          <p class="card-desc">A focused standalone mockup for the dashboard upcoming section: scrollable day chips, distinct category dots, and compact day-specific patient rows.</p>
+          <ul class="card-features">
+            <li>Inclusive today-plus-next-seven-day schedule rail</li>
+            <li>One category dot per distinct department on that day</li>
+            <li>Compact clickable rows for diagnosis and merged tasks</li>
+            <li>Designed to port cleanly into the production dashboard</li>
+          </ul>
+          <div class="card-links">
+            <a class="card-link" href="v5-upcoming-schedule/dashboard.html">Open Mock</a>
           </div>
         </div>
       </div>

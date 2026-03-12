@@ -1509,6 +1509,114 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context["upcoming_days"], 7)
 
+    def test_dashboard_upcoming_schedule_renders_inclusive_range_and_today_default(self):
+        self.client.force_login(self.user)
+        today = timezone.localdate()
+        schedule_case = Case.objects.create(
+            uhid="UH-SCHED-001",
+            first_name="Today",
+            last_name="Patient",
+            phone_number="9876504001",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=today + timedelta(days=2),
+            created_by=self.user,
+        )
+        Task.objects.create(case=schedule_case, title="Today review", due_date=today, created_by=self.user)
+        Task.objects.create(case=schedule_case, title="Future review", due_date=today + timedelta(days=2), created_by=self.user)
+        Task.objects.create(
+            case=schedule_case,
+            title="Awaiting",
+            due_date=today + timedelta(days=1),
+            status=TaskStatus.AWAITING_REPORTS,
+            created_by=self.user,
+        )
+
+        response = self.client.get(reverse("patients:dashboard"), {"upcoming_days": 3})
+
+        self.assertEqual(response.status_code, 200)
+        schedule_days = response.context["appointment_schedule_days"]
+        self.assertEqual(len(schedule_days), 4)
+        self.assertEqual(schedule_days[0]["date"], today)
+        self.assertTrue(schedule_days[0]["is_selected"])
+        self.assertEqual(schedule_days[0]["count"], 1)
+        self.assertEqual(schedule_days[1]["count"], 0)
+        self.assertEqual(schedule_days[2]["count"], 1)
+        self.assertContains(response, 'data-upcoming-schedule')
+        self.assertContains(response, 'data-upcoming-day-trigger=', count=4)
+        self.assertContains(response, 'data-upcoming-day-panel=', count=4)
+        empty_label = f"No scheduled patients for {(today + timedelta(days=1)).strftime('%B')} {(today + timedelta(days=1)).day}."
+        self.assertContains(response, empty_label)
+
+    def test_dashboard_upcoming_schedule_groups_rows_and_deduplicates_category_dots(self):
+        self.client.force_login(self.user)
+        today = timezone.localdate()
+        target_date = today + timedelta(days=2)
+        anc_case = Case.objects.create(
+            uhid="UH-SCHED-ANC",
+            first_name="Asha",
+            last_name="ANC",
+            phone_number="9876504002",
+            category=self.anc,
+            status=CaseStatus.ACTIVE,
+            lmp=today - timedelta(days=70),
+            edd=today + timedelta(days=200),
+            created_by=self.user,
+        )
+        surgery_case = Case.objects.create(
+            uhid="UH-SCHED-SURG",
+            first_name="Grouped",
+            last_name="Surgery",
+            phone_number="9876504003",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=target_date,
+            created_by=self.user,
+        )
+        Task.objects.create(case=anc_case, title="ANC Review", due_date=target_date, created_by=self.user)
+        Task.objects.create(case=surgery_case, title="Lab", due_date=target_date, created_by=self.user)
+        Task.objects.create(case=surgery_case, title="ECG", due_date=target_date, created_by=self.user)
+        Task.objects.create(case=surgery_case, title="ECG", due_date=target_date, created_by=self.user)
+
+        response = self.client.get(reverse("patients:dashboard"), {"upcoming_days": 4})
+
+        self.assertEqual(response.status_code, 200)
+        schedule_day = next(day for day in response.context["appointment_schedule_days"] if day["date"] == target_date)
+        self.assertEqual(schedule_day["count"], 2)
+        self.assertEqual([category["name"] for category in schedule_day["categories"]], ["ANC", "Surgery"])
+        grouped_row = next(row for row in schedule_day["rows"] if row["patient_name"] == "Grouped Surgery")
+        self.assertEqual(grouped_row["task_titles"], ["Lab", "ECG"])
+        self.assertContains(response, 'title="ANC"')
+        self.assertContains(response, 'title="Surgery"')
+
+    def test_dashboard_upcoming_schedule_uses_category_theme_colors_for_dots_and_rows(self):
+        self.client.force_login(self.user)
+        today = timezone.localdate()
+        self.surgery.theme_bg_color = "#abcdef"
+        self.surgery.theme_text_color = "#123456"
+        self.surgery.save()
+        case = Case.objects.create(
+            uhid="UH-SCHED-COLOR",
+            first_name="Color",
+            last_name="Patient",
+            phone_number="9876504004",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=today + timedelta(days=3),
+            created_by=self.user,
+        )
+        Task.objects.create(case=case, title="Theme review", due_date=today + timedelta(days=1), created_by=self.user)
+
+        response = self.client.get(reverse("patients:dashboard"), {"upcoming_days": 3})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "--schedule-dot-ring: #abcdef;")
+        self.assertContains(response, f"--schedule-dot-fill: {mix_colors('#123456', '#abcdef', 0.22)};")
+        self.assertContains(response, "--upcoming-category-bg: #abcdef; --upcoming-category-text: #123456;")
+
 
     def test_case_form_bootstraps_categories_when_empty(self):
         DepartmentConfig.objects.all().delete()

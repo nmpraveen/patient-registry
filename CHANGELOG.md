@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.03.12.22.42
+- Replaced the old dashboard `Upcoming` card list with a compact appointment-style schedule module featuring a horizontal date rail, selected-day patient list, and built-in empty states for open days.
+- Added distinct category dots and category pills derived from the configured department theme colors, including stronger dot accents so schedule categories remain readable when theme colors change.
+- Extended dashboard view coverage for the inclusive schedule range, grouped patient rows, and category-theme color propagation in the new schedule section.
+
 ## 2026.03.12.18.17
 - Removed the leftover vertical accent stripe from the dashboard navbar stat buttons so the new rounded button treatment reads cleanly without an extra divider line.
 

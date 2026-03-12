@@ -1,0 +1,849 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Upcoming Schedule Mockup | MEDTRACK</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --shell-bg: #eef3f8;
+      --shell-text: #16324f;
+      --shell-muted: #6d7c8d;
+      --surface-bg: rgba(255, 255, 255, 0.9);
+      --surface-border: rgba(255, 255, 255, 0.65);
+      --surface-shadow: 0 28px 90px rgba(18, 51, 86, 0.16);
+      --surface-shadow-soft: 0 14px 36px rgba(28, 62, 96, 0.12);
+      --chip-bg: rgba(255, 255, 255, 0.78);
+      --chip-border: rgba(123, 147, 173, 0.22);
+      --selected-bg: #055160;
+      --selected-text: #f3fdff;
+      --selected-ring: rgba(5, 81, 96, 0.18);
+      --row-border: rgba(151, 171, 193, 0.24);
+      --row-hover-border: rgba(5, 81, 96, 0.3);
+      --empty-bg: rgba(246, 249, 252, 0.88);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      min-height: 100%;
+    }
+
+    body {
+      font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(173, 225, 235, 0.6) 0, rgba(173, 225, 235, 0) 28%),
+        radial-gradient(circle at bottom right, rgba(255, 232, 186, 0.55) 0, rgba(255, 232, 186, 0) 28%),
+        linear-gradient(160deg, #f6f9fc 0%, #edf3f8 42%, #e8eff5 100%);
+      color: var(--shell-text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem 1.2rem;
+    }
+
+    .stage {
+      width: min(100%, 760px);
+    }
+
+    .stage-caption {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-bottom: 1.2rem;
+      color: var(--shell-muted);
+      font-size: 0.84rem;
+    }
+
+    .stage-caption strong {
+      color: var(--shell-text);
+    }
+
+    .schedule-shell {
+      position: relative;
+      overflow: hidden;
+      border-radius: 30px;
+      border: 1px solid var(--surface-border);
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.94) 0%, rgba(248, 251, 253, 0.92) 100%);
+      box-shadow: var(--surface-shadow);
+      padding: 1.35rem;
+      backdrop-filter: blur(18px);
+    }
+
+    .schedule-shell::before,
+    .schedule-shell::after {
+      content: "";
+      position: absolute;
+      border-radius: 999px;
+      pointer-events: none;
+      filter: blur(2px);
+    }
+
+    .schedule-shell::before {
+      width: 230px;
+      height: 230px;
+      right: -90px;
+      top: -120px;
+      background: radial-gradient(circle, rgba(5, 81, 96, 0.12) 0%, rgba(5, 81, 96, 0) 70%);
+    }
+
+    .schedule-shell::after {
+      width: 280px;
+      height: 280px;
+      left: -130px;
+      bottom: -160px;
+      background: radial-gradient(circle, rgba(255, 206, 92, 0.16) 0%, rgba(255, 206, 92, 0) 70%);
+    }
+
+    .schedule-card {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      gap: 1.1rem;
+    }
+
+    .schedule-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+
+    .schedule-eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      margin-bottom: 0.55rem;
+      border-radius: 999px;
+      background: rgba(5, 81, 96, 0.08);
+      color: var(--selected-bg);
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      padding: 0.42rem 0.7rem;
+      text-transform: uppercase;
+    }
+
+    .schedule-eyebrow::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: currentColor;
+      opacity: 0.65;
+    }
+
+    .schedule-title {
+      margin: 0;
+      font-family: "Manrope", "Inter", sans-serif;
+      font-size: clamp(1.7rem, 3vw, 2.35rem);
+      font-weight: 800;
+      letter-spacing: -0.05em;
+      line-height: 1;
+      max-width: 10ch;
+    }
+
+    .schedule-subtitle {
+      margin: 0.65rem 0 0;
+      color: var(--shell-muted);
+      font-size: 0.9rem;
+      line-height: 1.6;
+      max-width: 42rem;
+    }
+
+    .schedule-meta {
+      display: grid;
+      gap: 0.7rem;
+      justify-items: end;
+      text-align: right;
+    }
+
+    .meta-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      border-radius: 999px;
+      border: 1px solid rgba(5, 81, 96, 0.12);
+      background: rgba(255, 255, 255, 0.72);
+      color: var(--shell-text);
+      font-size: 0.82rem;
+      font-weight: 700;
+      padding: 0.48rem 0.72rem;
+      box-shadow: 0 8px 24px rgba(33, 52, 74, 0.08);
+    }
+
+    .meta-pill--quiet {
+      color: var(--shell-muted);
+      font-weight: 600;
+    }
+
+    .schedule-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+
+    .toolbar-copy {
+      min-width: 0;
+    }
+
+    .toolbar-label {
+      margin: 0;
+      color: var(--shell-muted);
+      font-size: 0.85rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .toolbar-heading {
+      margin: 0.35rem 0 0;
+      font-size: 1.05rem;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+    }
+
+    .toolbar-count {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 3rem;
+      border-radius: 999px;
+      padding: 0.5rem 0.85rem;
+      background: rgba(5, 81, 96, 0.09);
+      color: var(--selected-bg);
+      font-size: 0.84rem;
+      font-weight: 800;
+    }
+
+    .date-strip {
+      display: grid;
+      grid-auto-flow: column;
+      grid-auto-columns: minmax(82px, 1fr);
+      gap: 0.6rem;
+      overflow-x: auto;
+      padding: 0.1rem 0 0.35rem;
+      scrollbar-width: none;
+    }
+
+    .date-strip::-webkit-scrollbar {
+      display: none;
+    }
+
+    .date-chip {
+      border: 1px solid var(--chip-border);
+      border-radius: 22px;
+      background: var(--chip-bg);
+      color: var(--shell-text);
+      padding: 0.72rem 0.45rem 0.58rem;
+      display: grid;
+      gap: 0.34rem;
+      justify-items: center;
+      text-align: center;
+      cursor: pointer;
+      transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+      box-shadow: 0 8px 18px rgba(29, 54, 85, 0.06);
+    }
+
+    .date-chip:hover {
+      transform: translateY(-2px);
+      border-color: rgba(5, 81, 96, 0.22);
+      box-shadow: 0 12px 24px rgba(29, 54, 85, 0.1);
+    }
+
+    .date-chip.is-selected {
+      background: linear-gradient(180deg, #0c6778 0%, var(--selected-bg) 100%);
+      border-color: rgba(5, 81, 96, 0.54);
+      color: var(--selected-text);
+      box-shadow: 0 14px 28px var(--selected-ring);
+    }
+
+    .date-chip.is-selected .date-chip-month,
+    .date-chip.is-selected .date-chip-day {
+      color: rgba(243, 253, 255, 0.8);
+    }
+
+    .date-chip.is-selected .date-dot {
+      box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.2), 0 0 0 5px rgba(255, 255, 255, 0.08);
+    }
+
+    .date-chip-month {
+      font-size: 0.7rem;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--shell-muted);
+    }
+
+    .date-chip-number {
+      font-family: "Manrope", "Inter", sans-serif;
+      font-size: 1.42rem;
+      font-weight: 800;
+      letter-spacing: -0.05em;
+      line-height: 1;
+    }
+
+    .date-chip-day {
+      font-size: 0.88rem;
+      font-weight: 700;
+      color: var(--shell-muted);
+    }
+
+    .date-chip-dots {
+      min-height: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.2rem;
+      flex-wrap: wrap;
+    }
+
+    .date-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: var(--dot-fill, #64748b);
+      box-shadow: 0 0 0 3px var(--dot-ring, rgba(203, 213, 225, 0.7));
+    }
+
+    .appointments-panel {
+      border-radius: 24px;
+      border: 1px solid rgba(220, 228, 238, 0.9);
+      background: linear-gradient(180deg, rgba(251, 253, 255, 0.96) 0%, rgba(245, 249, 252, 0.94) 100%);
+      box-shadow: var(--surface-shadow-soft);
+      padding: 1rem;
+    }
+
+    .appointments-day {
+      display: none;
+      gap: 0.95rem;
+    }
+
+    .appointments-day.is-active {
+      display: grid;
+    }
+
+    .appointments-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 0.2rem 0.15rem 0.35rem;
+    }
+
+    .appointments-date {
+      margin: 0;
+      font-family: "Manrope", "Inter", sans-serif;
+      font-size: clamp(1.45rem, 3vw, 2rem);
+      font-weight: 800;
+      letter-spacing: -0.04em;
+    }
+
+    .appointments-note {
+      margin: 0.3rem 0 0;
+      color: var(--shell-muted);
+      font-size: 0.92rem;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 0.45rem;
+    }
+
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      border-radius: 999px;
+      padding: 0.38rem 0.6rem;
+      background: rgba(255, 255, 255, 0.82);
+      border: 1px solid rgba(198, 210, 224, 0.65);
+      color: var(--shell-muted);
+      font-size: 0.74rem;
+      font-weight: 700;
+    }
+
+    .legend-swatch {
+      width: 9px;
+      height: 9px;
+      border-radius: 999px;
+      background: currentColor;
+    }
+
+    .appointments-list {
+      display: grid;
+      gap: 0.85rem;
+    }
+
+    .appointment-row {
+      position: relative;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 1rem;
+      align-items: start;
+      padding: 0.85rem 0.95rem 0.85rem 1.05rem;
+      border: 1px solid var(--row-border);
+      border-radius: 22px;
+      background: rgba(255, 255, 255, 0.88);
+      box-shadow: 0 6px 16px rgba(35, 61, 91, 0.06);
+      text-decoration: none;
+      color: inherit;
+      transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+      overflow: hidden;
+    }
+
+    .appointment-row::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 8px;
+      background: var(--category-bg, #cad5e1);
+    }
+
+    .appointment-row:hover {
+      transform: translateY(-2px);
+      border-color: var(--row-hover-border);
+      box-shadow: 0 12px 22px rgba(32, 61, 90, 0.1);
+    }
+
+    .appointment-name {
+      margin: 0;
+      font-size: 0.96rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+
+    .appointment-diagnosis {
+      margin: 0.32rem 0 0;
+      color: var(--shell-text);
+      font-size: 0.89rem;
+      font-weight: 600;
+      line-height: 1.45;
+    }
+
+    .appointment-tasks {
+      margin: 0.45rem 0 0;
+      color: var(--shell-muted);
+      font-size: 0.82rem;
+      line-height: 1.45;
+    }
+
+    .appointment-meta {
+      display: grid;
+      justify-items: end;
+      gap: 0.45rem;
+    }
+
+    .category-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      border-radius: 999px;
+      border: 1px solid color-mix(in srgb, var(--category-text, #475569) 18%, white);
+      background: var(--category-bg, #e2e8f0);
+      color: var(--category-text, #334155);
+      font-size: 0.7rem;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      padding: 0.42rem 0.62rem;
+      text-transform: uppercase;
+    }
+
+    .category-pill::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: currentColor;
+      opacity: 0.65;
+    }
+
+    .appointment-arrow {
+      color: var(--shell-muted);
+      font-size: 0.95rem;
+      font-weight: 700;
+      line-height: 1;
+    }
+
+    .appointments-empty {
+      display: grid;
+      gap: 0.8rem;
+      justify-items: start;
+      border-radius: 24px;
+      border: 1px dashed rgba(151, 171, 193, 0.56);
+      background: var(--empty-bg);
+      padding: 1.25rem;
+    }
+
+    .appointments-empty strong {
+      font-size: 1.02rem;
+      letter-spacing: -0.02em;
+    }
+
+    .appointments-empty p {
+      margin: 0;
+      color: var(--shell-muted);
+      line-height: 1.6;
+      max-width: 34rem;
+    }
+
+    .empty-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.92);
+      color: var(--shell-text);
+      border: 1px solid rgba(198, 210, 224, 0.72);
+      padding: 0.52rem 0.8rem;
+      font-size: 0.8rem;
+      font-weight: 700;
+    }
+
+    .footer-note {
+      margin-top: 1rem;
+      color: var(--shell-muted);
+      font-size: 0.84rem;
+      line-height: 1.6;
+      text-align: center;
+    }
+
+    @media (max-width: 900px) {
+      .schedule-shell {
+        padding: 1.25rem;
+        border-radius: 28px;
+      }
+
+      .schedule-header,
+      .appointments-header,
+      .schedule-toolbar {
+        grid-template-columns: 1fr;
+        display: grid;
+      }
+
+      .schedule-meta,
+      .legend {
+        justify-items: start;
+        justify-content: flex-start;
+        text-align: left;
+      }
+
+      .appointments-panel {
+        padding: 1rem;
+      }
+    }
+
+    @media (max-width: 640px) {
+      body {
+        padding: 1rem;
+      }
+
+      .stage-caption {
+        display: grid;
+      }
+
+      .date-strip {
+        grid-auto-columns: minmax(84px, 84px);
+      }
+
+      .appointment-row {
+        grid-template-columns: 1fr;
+      }
+
+      .appointment-meta {
+        justify-items: start;
+      }
+
+      .toolbar-count {
+        justify-self: start;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="stage">
+    <div class="stage-caption">
+      <span><strong>MEDTRACK mockup:</strong> standalone upcoming schedule component with static sample data.</span>
+      <span>Category dots represent distinct departments scheduled on each day.</span>
+    </div>
+
+    <section class="schedule-shell" aria-labelledby="schedule-title">
+      <div class="schedule-card">
+        <header class="schedule-header">
+          <div>
+            <div class="schedule-eyebrow">Dashboard module preview</div>
+            <h1 class="schedule-title" id="schedule-title">Upcoming Schedule</h1>
+            <p class="schedule-subtitle">
+              A contained dashboard section with a scrollable day rail, distinct category dots, and a compact
+              patient list for the selected day. This stays close to the eventual production markup.
+            </p>
+          </div>
+          <div class="schedule-meta">
+            <div class="meta-pill">Today + next 7 days</div>
+            <div class="meta-pill meta-pill--quiet">Static prototype, current MEDTRACK category colors</div>
+          </div>
+        </header>
+
+        <div class="schedule-toolbar">
+          <div class="toolbar-copy">
+            <p class="toolbar-label">Appointments rail</p>
+            <h2 class="toolbar-heading" id="toolbar-heading">Thursday, March 12</h2>
+          </div>
+          <div class="toolbar-count" id="toolbar-count" aria-live="polite">3 scheduled</div>
+        </div>
+
+        <div class="date-strip" id="date-strip" role="tablist" aria-label="Upcoming schedule dates"></div>
+
+        <section class="appointments-panel" aria-labelledby="toolbar-heading">
+          <div class="appointments-day is-active" id="day-panel">
+            <div class="appointments-header">
+              <div>
+                <h3 class="appointments-date" id="appointments-date">Thursday, March 12</h3>
+                <p class="appointments-note" id="appointments-note">Three patients are already scheduled for review.</p>
+              </div>
+              <div class="legend" id="appointments-legend" aria-label="Scheduled categories"></div>
+            </div>
+            <div class="appointments-list" id="appointments-list"></div>
+          </div>
+        </section>
+
+        <p class="footer-note">
+          Clicking a date chip updates the selected state and swaps the patient list without any backend wiring.
+        </p>
+      </div>
+    </section>
+  </main>
+  <script>
+    const categoryTheme = {
+      ANC: { bg: "#d1e7dd", text: "#0f5132", dot: "#2e9d6d" },
+      Surgery: { bg: "#fff3cd", text: "#664d03", dot: "#d79b1c" },
+      "Non Surgical": { bg: "#e2e3e5", text: "#41464b", dot: "#6f7884" },
+    };
+
+    const days = [
+      {
+        id: "2026-03-12",
+        month: "Mar",
+        dayNumber: "12",
+        weekday: "Thu",
+        heading: "Thursday, March 12",
+        note: "Three patients are already scheduled for review.",
+        appointments: [
+          { patient: "Aishwarya Kumar", diagnosis: "ANC follow-up, 28 weeks gestation", tasks: ["ANC Review", "USG follow-up"], category: "ANC", href: "#case-aishwarya-kumar" },
+          { patient: "Mohammed Ilyas", diagnosis: "Post-op wound review after hernia surgery", tasks: ["Surgical surveillance"], category: "Surgery", href: "#case-mohammed-ilyas" },
+          { patient: "Priya Senthil", diagnosis: "Type 2 diabetes medication refill review", tasks: ["Lab follow-up", "Counseling note"], category: "Non Surgical", href: "#case-priya-senthil" },
+        ],
+      },
+      {
+        id: "2026-03-13",
+        month: "Mar",
+        dayNumber: "13",
+        weekday: "Fri",
+        heading: "Friday, March 13",
+        note: "Two scheduled patients, both surgical pathway reviews.",
+        appointments: [
+          { patient: "Latha Raman", diagnosis: "Gallbladder post-op stitch review", tasks: ["Suture check"], category: "Surgery", href: "#case-latha-raman" },
+          { patient: "Rahul Das", diagnosis: "Thyroid nodule surveillance", tasks: ["Lab", "ENT consult note"], category: "Surgery", href: "#case-rahul-das" },
+        ],
+      },
+      {
+        id: "2026-03-14",
+        month: "Mar",
+        dayNumber: "14",
+        weekday: "Sat",
+        heading: "Saturday, March 14",
+        note: "No patients are scheduled for this day yet.",
+        appointments: [],
+      },
+      {
+        id: "2026-03-15",
+        month: "Mar",
+        dayNumber: "15",
+        weekday: "Sun",
+        heading: "Sunday, March 15",
+        note: "Two ANC reviews and one non-surgical follow-up are lined up.",
+        appointments: [
+          { patient: "Divya Nair", diagnosis: "ANC anemia follow-up, third trimester", tasks: ["CBC review", "Diet counseling"], category: "ANC", href: "#case-divya-nair" },
+          { patient: "Sujatha Balan", diagnosis: "ANC blood pressure monitoring", tasks: ["BP review"], category: "ANC", href: "#case-sujatha-balan" },
+          { patient: "Venkatesh Mani", diagnosis: "Chronic thyroid medication check-in", tasks: ["Prescription refill"], category: "Non Surgical", href: "#case-venkatesh-mani" },
+        ],
+      },
+      {
+        id: "2026-03-16",
+        month: "Mar",
+        dayNumber: "16",
+        weekday: "Mon",
+        heading: "Monday, March 16",
+        note: "A mixed day with ANC, surgery, and non-surgical reviews.",
+        appointments: [
+          { patient: "Rohini Selvam", diagnosis: "High-risk ANC follow-up with scan review", tasks: ["ANC Review", "USG report"], category: "ANC", href: "#case-rohini-selvam" },
+          { patient: "Jeevan Peter", diagnosis: "Post-laparoscopy recovery check", tasks: ["Surgical review"], category: "Surgery", href: "#case-jeevan-peter" },
+          { patient: "Meena Krish", diagnosis: "Hypertension medication titration", tasks: ["Vitals review", "Follow-up note"], category: "Non Surgical", href: "#case-meena-krish" },
+        ],
+      },
+      {
+        id: "2026-03-17",
+        month: "Mar",
+        dayNumber: "17",
+        weekday: "Tue",
+        heading: "Tuesday, March 17",
+        note: "Three scheduled patients across ANC and surgery.",
+        appointments: [
+          { patient: "Kavitha Bose", diagnosis: "ANC routine review, fetal movement check", tasks: ["ANC Review"], category: "ANC", href: "#case-kavitha-bose" },
+          { patient: "Arjun Nand", diagnosis: "Breast surgery surveillance review", tasks: ["Consult note"], category: "Surgery", href: "#case-arjun-nand" },
+          { patient: "Saranya Paul", diagnosis: "Post-op pathology discussion", tasks: ["Pathology review", "Counseling"], category: "Surgery", href: "#case-saranya-paul" },
+        ],
+      },
+      {
+        id: "2026-03-18",
+        month: "Mar",
+        dayNumber: "18",
+        weekday: "Wed",
+        heading: "Wednesday, March 18",
+        note: "Distinct categories show as dots below the date chip.",
+        appointments: [
+          { patient: "Nisha Prabhu", diagnosis: "ANC scan review with nutrition counseling", tasks: ["USG follow-up", "Nutrition note"], category: "ANC", href: "#case-nisha-prabhu" },
+          { patient: "Harish Patel", diagnosis: "Surgery surveillance after thyroidectomy", tasks: ["Surgical review"], category: "Surgery", href: "#case-harish-patel" },
+          { patient: "Revathi Moorthy", diagnosis: "Post-op dressing review", tasks: ["Wound check"], category: "Surgery", href: "#case-revathi-moorthy" },
+        ],
+      },
+      {
+        id: "2026-03-19",
+        month: "Mar",
+        dayNumber: "19",
+        weekday: "Thu",
+        heading: "Thursday, March 19",
+        note: "One lighter day with non-surgical follow-ups only.",
+        appointments: [
+          { patient: "Akash Varma", diagnosis: "Diabetes review with repeat fasting sugars", tasks: ["Lab review", "Medication counseling"], category: "Non Surgical", href: "#case-akash-varma" },
+        ],
+      },
+    ];
+
+    const dateStrip = document.getElementById("date-strip");
+    const toolbarHeading = document.getElementById("toolbar-heading");
+    const toolbarCount = document.getElementById("toolbar-count");
+    const appointmentsDate = document.getElementById("appointments-date");
+    const appointmentsNote = document.getElementById("appointments-note");
+    const appointmentsLegend = document.getElementById("appointments-legend");
+    const appointmentsList = document.getElementById("appointments-list");
+
+    const distinctCategories = (appointments) => {
+      const unique = [];
+      const seen = new Set();
+      appointments.forEach((item) => {
+        if (!seen.has(item.category)) {
+          seen.add(item.category);
+          unique.push(item.category);
+        }
+      });
+      return unique;
+    };
+
+    const renderDateChips = () => {
+      dateStrip.innerHTML = days
+        .map((day, index) => {
+          const dots = distinctCategories(day.appointments)
+            .map((category) => {
+              const theme = categoryTheme[category];
+              return `<span class="date-dot" style="--dot-fill:${theme.dot}; --dot-ring:${theme.bg}" title="${category}"></span>`;
+            })
+            .join("");
+
+          return `
+            <button type="button" class="date-chip${index === 0 ? " is-selected" : ""}" data-day-id="${day.id}" role="tab" aria-selected="${index === 0 ? "true" : "false"}" aria-controls="day-panel">
+              <span class="date-chip-month">${day.month}</span>
+              <span class="date-chip-number">${day.dayNumber}</span>
+              <span class="date-chip-day">${day.weekday}</span>
+              <span class="date-chip-dots">${dots}</span>
+            </button>
+          `;
+        })
+        .join("");
+    };
+
+    const renderLegend = (categories) => {
+      appointmentsLegend.innerHTML = categories
+        .map((category) => {
+          const theme = categoryTheme[category];
+          return `<span class="legend-item" style="color:${theme.text}"><span class="legend-swatch" style="background:${theme.bg}"></span>${category}</span>`;
+        })
+        .join("");
+    };
+
+    const renderAppointments = (dayId) => {
+      const selectedDay = days.find((day) => day.id === dayId) || days[0];
+      const categories = distinctCategories(selectedDay.appointments);
+      const count = selectedDay.appointments.length;
+
+      toolbarHeading.textContent = selectedDay.heading;
+      toolbarCount.textContent = count === 1 ? "1 scheduled" : `${count} scheduled`;
+      appointmentsDate.textContent = selectedDay.heading;
+      appointmentsNote.textContent = selectedDay.note;
+      renderLegend(categories);
+
+      if (!count) {
+        appointmentsList.innerHTML = `
+          <div class="appointments-empty">
+            <span class="empty-chip">No scheduled patients</span>
+            <strong>March 14 is currently open.</strong>
+            <p>The rail still shows the day so the dashboard keeps a consistent calendar rhythm across the full window.</p>
+          </div>
+        `;
+        return;
+      }
+
+      appointmentsList.innerHTML = selectedDay.appointments
+        .map((item) => {
+          const theme = categoryTheme[item.category];
+          return `
+            <a class="appointment-row" href="${item.href}" style="--category-bg:${theme.bg}; --category-text:${theme.text}">
+              <div>
+                <p class="appointment-name">${item.patient}</p>
+                <p class="appointment-diagnosis">${item.diagnosis}</p>
+                <p class="appointment-tasks">${item.tasks.join(" • ")}</p>
+              </div>
+              <div class="appointment-meta">
+                <span class="category-pill">${item.category}</span>
+                <span class="appointment-arrow" aria-hidden="true">↗</span>
+              </div>
+            </a>
+          `;
+        })
+        .join("");
+    };
+
+    renderDateChips();
+    renderAppointments(days[0].id);
+
+    dateStrip.addEventListener("click", (event) => {
+      const chip = event.target.closest("[data-day-id]");
+      if (!chip) {
+        return;
+      }
+
+      dateStrip.querySelectorAll("[data-day-id]").forEach((node) => {
+        node.classList.remove("is-selected");
+        node.setAttribute("aria-selected", "false");
+      });
+
+      chip.classList.add("is-selected");
+      chip.setAttribute("aria-selected", "true");
+      renderAppointments(chip.dataset.dayId);
+    });
+  </script>
+</body>
+</html>

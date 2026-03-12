@@ -297,6 +297,312 @@
     font-size: 0.84rem;
   }
 
+  .upcoming-schedule {
+    border: 1px solid var(--theme-shell-surface-border);
+    border-radius: 1rem;
+    background:
+      radial-gradient(circle at top left, color-mix(in srgb, var(--theme-dashboard-upcoming-bg) 35%, transparent) 0%, transparent 34%),
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--theme-shell-surface-bg) 94%, var(--theme-dashboard-upcoming-bg) 6%) 0%,
+        var(--theme-shell-surface-bg) 100%
+      );
+    box-shadow: 0 10px 26px var(--theme-shell-shadow);
+    padding: 1rem;
+  }
+
+  .upcoming-schedule-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.85rem;
+    margin-bottom: 0.85rem;
+  }
+
+  .upcoming-schedule-header h2,
+  .upcoming-schedule-header p {
+    margin-bottom: 0;
+  }
+
+  .upcoming-schedule-kicker {
+    color: var(--theme-dashboard-upcoming-text);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    margin-bottom: 0.35rem;
+    text-transform: uppercase;
+  }
+
+  .upcoming-schedule-kicker::before {
+    content: "";
+    width: 0.45rem;
+    height: 0.45rem;
+    border-radius: 999px;
+    background: var(--theme-dashboard-upcoming-text);
+    opacity: 0.7;
+  }
+
+  .upcoming-schedule-header-copy {
+    color: var(--theme-shell-muted-text);
+    font-size: 0.82rem;
+    margin-top: 0.15rem;
+  }
+
+  .upcoming-schedule-range {
+    background: color-mix(in srgb, var(--theme-dashboard-upcoming-bg) 70%, white);
+    border: 1px solid var(--theme-dashboard-upcoming-border);
+    border-radius: 999px;
+    color: var(--theme-dashboard-upcoming-text);
+    display: inline-flex;
+    font-size: 0.74rem;
+    font-weight: 700;
+    line-height: 1;
+    padding: 0.42rem 0.65rem;
+    white-space: nowrap;
+  }
+
+  .upcoming-schedule-rail {
+    display: grid;
+    gap: 0.55rem;
+    grid-auto-columns: minmax(4.6rem, 1fr);
+    grid-auto-flow: column;
+    overflow-x: auto;
+    padding-bottom: 0.2rem;
+    scrollbar-width: none;
+  }
+
+  .upcoming-schedule-rail::-webkit-scrollbar {
+    display: none;
+  }
+
+  .upcoming-schedule-day {
+    appearance: none;
+    background: color-mix(in srgb, var(--theme-shell-surface-bg) 92%, var(--theme-dashboard-upcoming-bg) 8%);
+    border: 1px solid color-mix(in srgb, var(--theme-shell-surface-border) 82%, var(--theme-dashboard-upcoming-border) 18%);
+    border-radius: 0.9rem;
+    box-shadow: 0 0.35rem 0.8rem var(--theme-shell-shadow);
+    color: var(--theme-shell-page-text);
+    cursor: pointer;
+    display: grid;
+    gap: 0.2rem;
+    justify-items: center;
+    min-width: 0;
+    padding: 0.6rem 0.35rem 0.5rem;
+    text-align: center;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease, background-color 0.15s ease;
+  }
+
+  .upcoming-schedule-day:hover,
+  .upcoming-schedule-day:focus-visible {
+    border-color: var(--theme-dashboard-upcoming-border);
+    box-shadow: 0 0.55rem 1rem var(--theme-shell-shadow);
+    transform: translateY(-1px);
+  }
+
+  .upcoming-schedule-day.is-active {
+    background: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--theme-dashboard-upcoming-text) 12%, var(--theme-dashboard-upcoming-bg)) 0%,
+      var(--theme-dashboard-upcoming-bg) 100%
+    );
+    border-color: var(--theme-dashboard-upcoming-border);
+    color: var(--theme-dashboard-upcoming-text);
+    box-shadow: 0 0.7rem 1.15rem var(--theme-shell-shadow);
+  }
+
+  .upcoming-schedule-day-month {
+    color: var(--theme-shell-muted-text);
+    font-size: 0.63rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .upcoming-schedule-day.is-active .upcoming-schedule-day-month,
+  .upcoming-schedule-day.is-active .upcoming-schedule-day-label {
+    color: color-mix(in srgb, var(--theme-dashboard-upcoming-text) 82%, white);
+  }
+
+  .upcoming-schedule-day-number {
+    font-size: 1.2rem;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    line-height: 1;
+  }
+
+  .upcoming-schedule-day-label {
+    color: var(--theme-shell-muted-text);
+    font-size: 0.77rem;
+    font-weight: 600;
+  }
+
+  .upcoming-schedule-day-dots {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.18rem;
+    justify-content: center;
+    min-height: 0.7rem;
+  }
+
+  .upcoming-schedule-dot {
+    background: var(--schedule-dot-fill, var(--theme-shell-muted-text));
+    border-radius: 999px;
+    box-shadow: 0 0 0 0.18rem var(--schedule-dot-ring, transparent);
+    display: inline-block;
+    height: 0.42rem;
+    width: 0.42rem;
+  }
+
+  .upcoming-schedule-panels {
+    margin-top: 0.85rem;
+  }
+
+  .upcoming-schedule-panel {
+    display: none;
+  }
+
+  .upcoming-schedule-panel.is-active {
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .upcoming-schedule-panel-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.85rem;
+  }
+
+  .upcoming-schedule-panel-title {
+    font-size: 0.98rem;
+    font-weight: 700;
+    margin-bottom: 0.2rem;
+  }
+
+  .upcoming-schedule-panel-copy {
+    color: var(--theme-shell-muted-text);
+    font-size: 0.82rem;
+  }
+
+  .upcoming-schedule-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    justify-content: flex-end;
+  }
+
+  .upcoming-schedule-legend-pill,
+  .upcoming-schedule-open-pill {
+    border-radius: 999px;
+    display: inline-flex;
+    font-size: 0.7rem;
+    font-weight: 700;
+    line-height: 1;
+    padding: 0.38rem 0.58rem;
+    white-space: nowrap;
+  }
+
+  .upcoming-schedule-open-pill {
+    background: color-mix(in srgb, var(--theme-shell-surface-border) 52%, white);
+    border: 1px solid var(--theme-shell-surface-border);
+    color: var(--theme-shell-muted-text);
+  }
+
+  .upcoming-schedule-list {
+    display: grid;
+    gap: 0.65rem;
+  }
+
+  .upcoming-schedule-row {
+    background: color-mix(in srgb, var(--theme-shell-surface-bg) 96%, var(--upcoming-category-bg) 4%);
+    border: 1px solid color-mix(in srgb, var(--theme-shell-surface-border) 86%, var(--upcoming-category-text) 14%);
+    border-radius: 0.9rem;
+    box-shadow: 0 0.35rem 0.85rem var(--theme-shell-shadow);
+    color: inherit;
+    display: grid;
+    gap: 0.7rem;
+    grid-template-columns: minmax(0, 1fr) auto;
+    overflow: hidden;
+    padding: 0.8rem 0.9rem 0.8rem 1rem;
+    position: relative;
+    text-decoration: none;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+  }
+
+  .upcoming-schedule-row::before {
+    background: var(--upcoming-category-bg);
+    content: "";
+    inset: 0 auto 0 0;
+    position: absolute;
+    width: 0.3rem;
+  }
+
+  .upcoming-schedule-row:hover,
+  .upcoming-schedule-row:focus-visible {
+    border-color: var(--theme-dashboard-upcoming-border);
+    box-shadow: 0 0.55rem 1rem var(--theme-shell-shadow);
+    transform: translateY(-1px);
+  }
+
+  .upcoming-schedule-row-main {
+    min-width: 0;
+  }
+
+  .upcoming-schedule-row-name {
+    font-size: 0.95rem;
+    font-weight: 700;
+    line-height: 1.25;
+    margin-bottom: 0.25rem;
+  }
+
+  .upcoming-schedule-row-diagnosis {
+    font-size: 0.86rem;
+    line-height: 1.4;
+    margin-bottom: 0.28rem;
+  }
+
+  .upcoming-schedule-row-tasks {
+    color: var(--theme-shell-muted-text);
+    font-size: 0.79rem;
+    line-height: 1.35;
+  }
+
+  .upcoming-schedule-row-meta {
+    align-items: flex-end;
+    display: grid;
+    gap: 0.45rem;
+    justify-items: end;
+  }
+
+  .upcoming-schedule-row-category {
+    border-radius: 999px;
+    display: inline-flex;
+    font-size: 0.69rem;
+    font-weight: 700;
+    line-height: 1;
+    padding: 0.38rem 0.55rem;
+    white-space: nowrap;
+  }
+
+  .upcoming-schedule-row-open {
+    color: var(--theme-shell-muted-text);
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+
+  .upcoming-schedule-empty {
+    background: color-mix(in srgb, var(--theme-shell-surface-bg) 92%, var(--theme-shell-surface-border) 8%);
+    border: 1px dashed var(--theme-shell-surface-border);
+    border-radius: 0.9rem;
+    color: var(--theme-shell-muted-text);
+    padding: 0.95rem 1rem;
+  }
+
   @media (max-width: 767.98px) {
     .recent-case-row .card-body,
     .recent-case-task {
@@ -323,6 +629,38 @@
 
     .recent-case-overview {
       grid-template-columns: 1fr;
+    }
+
+    .upcoming-schedule {
+      padding: 0.85rem;
+    }
+
+    .upcoming-schedule-header,
+    .upcoming-schedule-panel-header {
+      flex-direction: column;
+    }
+
+    .upcoming-schedule-range,
+    .upcoming-schedule-open-pill {
+      align-self: flex-start;
+    }
+
+    .upcoming-schedule-legend {
+      justify-content: flex-start;
+    }
+
+    .upcoming-schedule-rail {
+      grid-auto-columns: minmax(4rem, 4rem);
+    }
+
+    .upcoming-schedule-row {
+      grid-template-columns: 1fr;
+      padding-right: 0.85rem;
+    }
+
+    .upcoming-schedule-row-meta {
+      align-items: flex-start;
+      justify-items: start;
     }
   }
 
@@ -368,32 +706,105 @@
       <div class="card"><div class="card-body">No tasks due today.</div></div>
     {% endfor %}
 
-    <h2 class="h6 mt-3">Upcoming ({{ upcoming_days }} days)</h2>
-    {% for card in upcoming_cards %}
-      <div class="card mb-3 shadow-sm dashboard-hover-card">
-        <div class="card-body py-2 px-3">
-          <div class="d-flex align-items-center flex-wrap gap-1 small">
-            <span class="text-muted">{{ card.due_date|date:'M d' }} —</span>
-            <a class="fw-semibold text-decoration-none" href="{% url 'patients:case_detail' card.case_id %}">{{ card.patient_name }}</a>
-            <span class="text-muted">/ {{ card.diagnosis }} /</span>
-            {% if card.high_risk %}<span title="High-risk case" class="text-danger">❗</span>{% endif %}
-            {% if card.referred_by %}<span title="Referred by: {{ card.referred_by }}">⭐</span>{% endif %}
-            {% if card.ncd_flags %}<span class="text-muted" title="NCD flags: {{ card.ncd_flags|join:', ' }}">🏷️</span>{% endif %}
-            {% if card.call_status == "CONFIRMED" %}<span title="Confirmed">🟢📞</span>
-            {% elif card.call_status == "NOT_REACHABLE" %}<span title="Not reachable">🔴📞 x{{ card.failed_attempt_count }}</span>
-            {% elif card.call_status == "INVALID_CONTACT" %}<span title="Invalid contact">⚠️📞</span>
-            {% elif card.call_status == "LOST" %}<span title="Lost follow-up">❌</span>
-            {% elif card.call_status == "CALL_BACK_LATER" %}<span title="Call back later">🟡📞</span>
-            {% else %}<span title="Not contacted">📞</span>{% endif %}
-            <a class="text-decoration-none" href="tel:{{ card.phone_number }}" data-bs-toggle="collapse" data-bs-target="#upcoming-phone-{{ forloop.counter }}" aria-expanded="false" aria-controls="upcoming-phone-{{ forloop.counter }}" title="Show and call patient number">☎️</a>
-            <span id="upcoming-phone-{{ forloop.counter }}" class="collapse text-muted">{{ card.phone_number }}</span>
-          </div>
-          <div class="text-muted small mt-1">{{ card.task_titles|join:' • ' }}</div>
+    <section class="upcoming-schedule mt-3" data-upcoming-schedule>
+      <div class="upcoming-schedule-header">
+        <div>
+          <span class="upcoming-schedule-kicker">Upcoming</span>
+          <h2 class="h6">Upcoming Schedule</h2>
+          <p class="upcoming-schedule-header-copy">Scrollable schedule view for today plus the next {{ upcoming_days }} day{{ upcoming_days|pluralize }}.</p>
         </div>
+        <span class="upcoming-schedule-range">Today + {{ upcoming_days }} days</span>
       </div>
-    {% empty %}
-      <div class="card"><div class="card-body">No upcoming tasks.</div></div>
-    {% endfor %}
+
+      <div class="upcoming-schedule-rail" role="tablist" aria-label="Upcoming schedule dates">
+        {% for day in appointment_schedule_days %}
+          <button
+            type="button"
+            class="upcoming-schedule-day{% if day.is_selected %} is-active{% endif %}"
+            data-upcoming-day-trigger="{{ day.date_key }}"
+            role="tab"
+            aria-selected="{% if day.is_selected %}true{% else %}false{% endif %}"
+            aria-controls="upcoming-schedule-panel-{{ day.date_key }}"
+          >
+            <span class="upcoming-schedule-day-month">{{ day.date|date:'M' }}</span>
+            <span class="upcoming-schedule-day-number">{{ day.date|date:'j' }}</span>
+            <span class="upcoming-schedule-day-label">{{ day.date|date:'D' }}</span>
+            <span class="upcoming-schedule-day-dots">
+              {% for category in day.categories %}
+                <span
+                  class="upcoming-schedule-dot"
+                  style="--schedule-dot-fill: {{ category.dot_color }}; --schedule-dot-ring: {{ category.bg_color }};"
+                  title="{{ category.name }}"
+                ></span>
+              {% endfor %}
+            </span>
+          </button>
+        {% endfor %}
+      </div>
+
+      <div class="upcoming-schedule-panels">
+        {% for day in appointment_schedule_days %}
+          <section
+            id="upcoming-schedule-panel-{{ day.date_key }}"
+            class="upcoming-schedule-panel{% if day.is_selected %} is-active{% endif %}"
+            data-upcoming-day-panel="{{ day.date_key }}"
+            role="tabpanel"
+          >
+            <div class="upcoming-schedule-panel-header">
+              <div>
+                <div class="upcoming-schedule-panel-title">{{ day.date|date:'l, F j' }}</div>
+                <div class="upcoming-schedule-panel-copy">
+                  {% if day.count %}
+                    {{ day.count }} patient{{ day.count|pluralize }} scheduled.
+                  {% else %}
+                    No patients scheduled for this day yet.
+                  {% endif %}
+                </div>
+              </div>
+              {% if day.categories %}
+                <div class="upcoming-schedule-legend">
+                  {% for category in day.categories %}
+                    <span
+                      class="upcoming-schedule-legend-pill"
+                      style="background: {{ category.bg_color }}; color: {{ category.text_color }}; border: 1px solid color-mix(in srgb, {{ category.text_color }} 16%, white);"
+                    >{{ category.name }}</span>
+                  {% endfor %}
+                </div>
+              {% else %}
+                <span class="upcoming-schedule-open-pill">Open day</span>
+              {% endif %}
+            </div>
+
+            {% if day.rows %}
+              <div class="upcoming-schedule-list">
+                {% for row in day.rows %}
+                  <a
+                    class="upcoming-schedule-row"
+                    href="{% url 'patients:case_detail' row.case_id %}"
+                    style="--upcoming-category-bg: {{ row.category_bg_color }}; --upcoming-category-text: {{ row.category_text_color }};"
+                  >
+                    <div class="upcoming-schedule-row-main">
+                      <div class="upcoming-schedule-row-name">{{ row.patient_name }}</div>
+                      <div class="upcoming-schedule-row-diagnosis">{{ row.diagnosis }}</div>
+                      <div class="upcoming-schedule-row-tasks">{{ row.task_titles|join:', ' }}</div>
+                    </div>
+                    <div class="upcoming-schedule-row-meta">
+                      <span
+                        class="upcoming-schedule-row-category"
+                        style="background: {{ row.category_bg_color }}; color: {{ row.category_text_color }}; border: 1px solid color-mix(in srgb, {{ row.category_text_color }} 16%, white);"
+                      >{{ row.category_name }}</span>
+                      <span class="upcoming-schedule-row-open">Open</span>
+                    </div>
+                  </a>
+                {% endfor %}
+              </div>
+            {% else %}
+              <div class="upcoming-schedule-empty">No scheduled patients for {{ day.date|date:'F j' }}.</div>
+            {% endif %}
+          </section>
+        {% endfor %}
+      </div>
+    </section>
   </div>
 
   <div class="col-12 col-lg-6">
@@ -475,6 +886,51 @@
     <p class="mt-3 mb-0 small"><strong>Cases:</strong> Active {{ active_case_count }} · Completed {{ completed_case_count }}</p>
   </div>
 </div>
+
+<script>
+  (() => {
+    const initializeUpcomingSchedule = () => {
+      const root = document.querySelector("[data-upcoming-schedule]");
+      if (!root) {
+        return;
+      }
+
+      const triggers = Array.from(root.querySelectorAll("[data-upcoming-day-trigger]"));
+      const panels = Array.from(root.querySelectorAll("[data-upcoming-day-panel]"));
+      if (!triggers.length || !panels.length) {
+        return;
+      }
+
+      const setActiveDay = (dateKey) => {
+        triggers.forEach((trigger) => {
+          const isActive = trigger.dataset.upcomingDayTrigger === dateKey;
+          trigger.classList.toggle("is-active", isActive);
+          trigger.setAttribute("aria-selected", isActive ? "true" : "false");
+        });
+
+        panels.forEach((panel) => {
+          panel.classList.toggle("is-active", panel.dataset.upcomingDayPanel === dateKey);
+        });
+      };
+
+      root.addEventListener("click", (event) => {
+        const trigger = event.target.closest("[data-upcoming-day-trigger]");
+        if (!trigger) {
+          return;
+        }
+
+        setActiveDay(trigger.dataset.upcomingDayTrigger);
+        trigger.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+      });
+    };
+
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", initializeUpcomingSchedule, { once: true });
+    } else {
+      initializeUpcomingSchedule();
+    }
+  })();
+</script>
 
 {% if show_recent_cases_panel %}
   {{ recent_cases|json_script:"recent-cases-payload" }}

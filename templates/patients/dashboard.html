@@ -40,90 +40,237 @@
 
 {% block content %}
 <style>
-  .recent-case-kicker,
-  .recent-case-badge {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 999px;
-    border: 1px solid var(--theme-dashboard-upcoming-border);
-    background: var(--theme-dashboard-upcoming-bg);
-    color: var(--theme-dashboard-upcoming-text);
-    font-size: 0.72rem;
-    font-weight: 700;
-    letter-spacing: 0.02em;
-    line-height: 1;
-    padding: 0.28rem 0.6rem;
-    white-space: nowrap;
+  .dashboard-module {
+    --dashboard-module-bg: var(--theme-dashboard-upcoming-bg);
+    --dashboard-module-text: var(--theme-dashboard-upcoming-text);
+    --dashboard-module-border: var(--theme-dashboard-upcoming-border);
+    border: 1px solid var(--dashboard-module-border);
+    border-radius: 1rem;
+    background:
+      radial-gradient(circle at top left, color-mix(in srgb, var(--dashboard-module-bg) 35%, transparent) 0%, transparent 34%),
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--theme-shell-surface-bg) 94%, var(--dashboard-module-bg) 6%) 0%,
+        var(--theme-shell-surface-bg) 100%
+      );
+    box-shadow: 0 10px 26px var(--theme-shell-shadow);
+    padding: 1rem;
   }
 
-  .recent-case-header {
+  .dashboard-module--today {
+    --dashboard-module-bg: var(--theme-dashboard-today-bg);
+    --dashboard-module-text: var(--theme-dashboard-today-text);
+    --dashboard-module-border: var(--theme-dashboard-today-border);
+  }
+
+  .dashboard-module--recent {
+    --dashboard-module-bg: var(--theme-dashboard-upcoming-bg);
+    --dashboard-module-text: var(--theme-dashboard-upcoming-text);
+    --dashboard-module-border: var(--theme-dashboard-upcoming-border);
+  }
+
+  .dashboard-module--overdue {
+    --dashboard-module-bg: var(--theme-dashboard-overdue-bg);
+    --dashboard-module-text: var(--theme-dashboard-overdue-text);
+    --dashboard-module-border: var(--theme-dashboard-overdue-border);
+  }
+
+  .dashboard-module--awaiting {
+    --dashboard-module-bg: var(--theme-task-status-awaiting-reports-bg);
+    --dashboard-module-text: var(--theme-task-status-awaiting-reports-text);
+    --dashboard-module-border: var(--theme-task-status-awaiting-reports-border);
+  }
+
+  .dashboard-module-header {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
-    gap: 0.75rem;
-    margin-bottom: 0.75rem;
+    gap: 0.85rem;
+    margin-bottom: 0.85rem;
   }
 
-  .recent-case-header p {
+  .dashboard-module-header h2,
+  .dashboard-module-header p {
     margin-bottom: 0;
   }
 
+  .dashboard-module-kicker {
+    color: var(--dashboard-module-text);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    margin-bottom: 0.35rem;
+    text-transform: uppercase;
+  }
+
+  .dashboard-module-kicker::before {
+    content: "";
+    width: 0.45rem;
+    height: 0.45rem;
+    border-radius: 999px;
+    background: var(--dashboard-module-text);
+    opacity: 0.7;
+  }
+
+  .dashboard-module-copy,
+  .recent-case-modal-muted {
+    color: var(--theme-shell-muted-text);
+    font-size: 0.82rem;
+  }
+
+  .dashboard-module-copy {
+    margin-top: 0.15rem;
+  }
+
+  .dashboard-module-badge,
+  .recent-case-badge {
+    align-items: center;
+    background: color-mix(in srgb, var(--dashboard-module-bg, var(--theme-dashboard-upcoming-bg)) 70%, white);
+    border: 1px solid var(--dashboard-module-border, var(--theme-dashboard-upcoming-border));
+    border-radius: 999px;
+    color: var(--dashboard-module-text, var(--theme-dashboard-upcoming-text));
+    display: inline-flex;
+    font-size: 0.74rem;
+    font-weight: 700;
+    justify-content: center;
+    line-height: 1;
+    padding: 0.42rem 0.65rem;
+    white-space: nowrap;
+  }
+
+  .dashboard-module-body,
   .recent-case-list {
     display: grid;
     gap: 0.75rem;
   }
 
-  .dashboard-hover-card,
-  .dashboard-hover-item {
-    transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+  .dashboard-module-empty,
+  .recent-case-empty {
+    background: color-mix(in srgb, var(--theme-shell-surface-bg) 92%, var(--theme-shell-surface-border) 8%);
+    border: 1px dashed var(--theme-shell-surface-border);
+    border-radius: 0.9rem;
+    color: var(--theme-shell-muted-text);
+    padding: 0.95rem 1rem;
   }
 
-  .dashboard-hover-card:hover,
-  .dashboard-hover-card:focus-within,
-  .dashboard-hover-item:hover,
-  .dashboard-hover-item:focus-within {
-    border-color: var(--theme-dashboard-upcoming-border);
-    box-shadow: 0 8px 20px var(--theme-shell-shadow) !important;
+  .dashboard-module-card,
+  .dashboard-module-row,
+  .recent-case-row {
+    background: color-mix(in srgb, var(--theme-shell-surface-bg) 96%, var(--dashboard-module-bg, var(--theme-dashboard-upcoming-bg)) 4%);
+    border: 1px solid color-mix(in srgb, var(--theme-shell-surface-border) 86%, var(--dashboard-module-text, var(--theme-dashboard-upcoming-text)) 14%);
+    border-radius: 0.9rem;
+    box-shadow: 0 0.35rem 0.85rem var(--theme-shell-shadow);
+    color: inherit;
+    overflow: hidden;
+    position: relative;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+  }
+
+  .dashboard-module-card::before,
+  .dashboard-module-row::before,
+  .recent-case-row::before {
+    background: color-mix(in srgb, var(--dashboard-module-text, var(--theme-dashboard-upcoming-text)) 16%, var(--dashboard-module-bg, var(--theme-dashboard-upcoming-bg)));
+    content: "";
+    inset: 0 auto 0 0;
+    pointer-events: none;
+    position: absolute;
+    width: 0.3rem;
+  }
+
+  .dashboard-module-card:hover,
+  .dashboard-module-card:focus-within,
+  .dashboard-module-row:hover,
+  .dashboard-module-row:focus-visible,
+  .recent-case-row:hover,
+  .recent-case-row:focus-visible {
+    border-color: var(--dashboard-module-border, var(--theme-dashboard-upcoming-border));
+    box-shadow: 0 0.55rem 1rem var(--theme-shell-shadow);
     transform: translateY(-1px);
   }
 
-  .dashboard-hover-card--overdue:hover,
-  .dashboard-hover-card--overdue:focus-within {
-    border-color: var(--theme-dashboard-overdue-border) !important;
+  .dashboard-module-card-body {
+    display: grid;
+    gap: 0.6rem;
+    padding: 0.85rem 0.95rem 0.85rem 1rem;
+    position: relative;
+    z-index: 1;
   }
 
-  .dashboard-hover-item {
-    position: relative;
-    z-index: 0;
+  .dashboard-task-card-top,
+  .dashboard-task-card-meta {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem 0.6rem;
+  }
+
+  .dashboard-task-card-date {
+    color: var(--dashboard-module-text);
+    font-size: 0.74rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .dashboard-task-card-name {
+    color: inherit;
+    font-size: 0.95rem;
+    font-weight: 700;
+    line-height: 1.25;
+    text-decoration: none;
+  }
+
+  .dashboard-task-card-name:hover,
+  .dashboard-task-card-name:focus-visible {
+    text-decoration: underline;
+  }
+
+  .dashboard-task-card-diagnosis,
+  .dashboard-task-card-meta {
+    color: var(--theme-shell-muted-text);
+    font-size: 0.82rem;
+  }
+
+  .dashboard-task-card-meta {
+    line-height: 1.35;
+  }
+
+  .dashboard-task-card-call {
+    color: var(--dashboard-module-text);
+    font-weight: 700;
+    text-decoration: none;
+  }
+
+  .dashboard-task-card-call:hover,
+  .dashboard-task-card-call:focus-visible {
+    text-decoration: underline;
+  }
+
+  .dashboard-task-card-tasks {
+    color: var(--theme-shell-muted-text);
+    font-size: 0.79rem;
+    line-height: 1.35;
   }
 
   .recent-case-row {
-    width: 100%;
-    border: 1px solid var(--theme-shell-surface-border);
-    border-radius: 0.75rem;
-    background: var(--bs-body-bg);
-    color: inherit;
+    appearance: none;
     padding: 0;
     text-align: left;
-    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
-    transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
-  }
-
-  .recent-case-row:hover,
-  .recent-case-row:focus-visible {
-    border-color: var(--theme-dashboard-upcoming-border);
-    box-shadow: 0 8px 20px var(--theme-shell-shadow);
-    transform: translateY(-1px);
+    width: 100%;
   }
 
   .recent-case-row .card-body {
-    padding: 0.75rem 0.9rem;
+    padding: 0.8rem 0.95rem 0.8rem 1rem;
+    position: relative;
+    z-index: 1;
   }
 
   .recent-case-row--collapsed .card-body {
-    padding-top: 0.7rem;
-    padding-bottom: 0.7rem;
+    padding-top: 0.75rem;
+    padding-bottom: 0.75rem;
   }
 
   .recent-case-collapsed-line {
@@ -197,18 +344,11 @@
     margin-top: 0.75rem;
   }
 
-  .recent-case-empty,
   .recent-case-overview-card,
   .recent-case-task {
     border: 1px solid var(--theme-shell-surface-border);
     border-radius: 0.8rem;
     background: var(--theme-shell-surface-bg);
-  }
-
-  .recent-case-empty {
-    border-style: dashed;
-    color: var(--theme-shell-muted-text);
-    padding: 0.9rem 1rem;
   }
 
   .recent-case-feedback {
@@ -292,9 +432,70 @@
     display: none;
   }
 
-  .recent-case-modal-muted {
+  .dashboard-awaiting-row {
+    align-items: flex-start;
+    display: grid;
+    gap: 0.75rem;
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding: 0.85rem 0.95rem 0.85rem 1rem;
+    text-decoration: none;
+  }
+
+  .dashboard-awaiting-row-main {
+    min-width: 0;
+  }
+
+  .dashboard-awaiting-row-name {
+    font-size: 0.95rem;
+    font-weight: 700;
+    line-height: 1.25;
+    margin-bottom: 0.2rem;
+  }
+
+  .dashboard-awaiting-row-task {
+    font-size: 0.86rem;
+    line-height: 1.4;
+  }
+
+  .dashboard-awaiting-row-copy {
     color: var(--theme-shell-muted-text);
-    font-size: 0.84rem;
+    font-size: 0.79rem;
+    line-height: 1.35;
+    margin-top: 0.3rem;
+  }
+
+  .dashboard-awaiting-row-meta {
+    align-items: flex-end;
+    display: grid;
+    gap: 0.45rem;
+    justify-items: end;
+  }
+
+  .dashboard-awaiting-row-date {
+    color: var(--dashboard-module-text);
+    font-size: 0.74rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .dashboard-awaiting-row-category {
+    background: var(--theme-category-bg);
+    border: 1px solid var(--theme-category-border);
+    border-radius: 999px;
+    color: var(--theme-category-text);
+    display: inline-flex;
+    font-size: 0.69rem;
+    font-weight: 700;
+    line-height: 1;
+    padding: 0.38rem 0.55rem;
+    white-space: nowrap;
+  }
+
+  .dashboard-case-counts {
+    color: var(--theme-shell-muted-text);
+    font-size: 0.82rem;
+    margin-top: 0.85rem;
   }
 
   .upcoming-schedule {
@@ -604,6 +805,23 @@
   }
 
   @media (max-width: 767.98px) {
+    .dashboard-module,
+    .upcoming-schedule {
+      padding: 0.85rem;
+    }
+
+    .dashboard-module-header,
+    .upcoming-schedule-header,
+    .upcoming-schedule-panel-header {
+      flex-direction: column;
+    }
+
+    .dashboard-module-badge,
+    .upcoming-schedule-range,
+    .upcoming-schedule-open-pill {
+      align-self: flex-start;
+    }
+
     .recent-case-row .card-body,
     .recent-case-task {
       padding: 0.8rem 0.85rem;
@@ -631,18 +849,22 @@
       grid-template-columns: 1fr;
     }
 
-    .upcoming-schedule {
-      padding: 0.85rem;
-    }
-
-    .upcoming-schedule-header,
-    .upcoming-schedule-panel-header {
+    .dashboard-task-card-top {
+      align-items: flex-start;
       flex-direction: column;
+      gap: 0.25rem;
     }
 
-    .upcoming-schedule-range,
-    .upcoming-schedule-open-pill {
-      align-self: flex-start;
+    .dashboard-awaiting-row,
+    .upcoming-schedule-row {
+      grid-template-columns: 1fr;
+      padding-right: 0.85rem;
+    }
+
+    .dashboard-awaiting-row-meta,
+    .upcoming-schedule-row-meta {
+      align-items: flex-start;
+      justify-items: start;
     }
 
     .upcoming-schedule-legend {
@@ -651,16 +873,6 @@
 
     .upcoming-schedule-rail {
       grid-auto-columns: minmax(4rem, 4rem);
-    }
-
-    .upcoming-schedule-row {
-      grid-template-columns: 1fr;
-      padding-right: 0.85rem;
-    }
-
-    .upcoming-schedule-row-meta {
-      align-items: flex-start;
-      justify-items: start;
     }
   }
 
@@ -679,32 +891,45 @@
 
 <div class="row g-3 g-md-4">
   <div class="col-12 col-lg-6">
-    <h2 class="h6">Today's Tasks</h2>
-    {% for card in today_cards %}
-      <div class="card mb-3 shadow-sm dashboard-hover-card">
-        <div class="card-body py-2 px-3">
-          <div class="d-flex align-items-center flex-wrap gap-1 small">
-            <span class="text-muted">{{ card.due_date|date:'M d' }} —</span>
-            <a class="fw-semibold text-decoration-none" href="{% url 'patients:case_detail' card.case_id %}">{{ card.patient_name }}</a>
-            <span class="text-muted">/ {{ card.diagnosis }} /</span>
-            {% if card.high_risk %}<span title="High-risk case" class="text-danger">❗</span>{% endif %}
-            {% if card.referred_by %}<span title="Referred by: {{ card.referred_by }}">⭐</span>{% endif %}
-            {% if card.ncd_flags %}<span class="text-muted" title="NCD flags: {{ card.ncd_flags|join:', ' }}">🏷️</span>{% endif %}
-            {% if card.call_status == "CONFIRMED" %}<span title="Confirmed">🟢📞</span>
-            {% elif card.call_status == "NOT_REACHABLE" %}<span title="Not reachable">🔴📞 x{{ card.failed_attempt_count }}</span>
-            {% elif card.call_status == "INVALID_CONTACT" %}<span title="Invalid contact">⚠️📞</span>
-            {% elif card.call_status == "LOST" %}<span title="Lost follow-up">❌</span>
-            {% elif card.call_status == "CALL_BACK_LATER" %}<span title="Call back later">🟡📞</span>
-            {% else %}<span title="Not contacted">📞</span>{% endif %}
-            <a class="text-decoration-none" href="tel:{{ card.phone_number }}" data-bs-toggle="collapse" data-bs-target="#today-phone-{{ forloop.counter }}" aria-expanded="false" aria-controls="today-phone-{{ forloop.counter }}" title="Show and call patient number">☎️</a>
-            <span id="today-phone-{{ forloop.counter }}" class="collapse text-muted">{{ card.phone_number }}</span>
-          </div>
-          <div class="text-muted small mt-1">{{ card.task_titles|join:' • ' }}</div>
+    <section class="dashboard-module dashboard-module--today" data-dashboard-module="today">
+      <div class="dashboard-module-header">
+        <div>
+          <span class="dashboard-module-kicker">Today</span>
+          <h2 class="h6">Today's Tasks</h2>
+          <p class="dashboard-module-copy">Grouped by patient so due work stays compact and easy to scan.</p>
         </div>
+        <span class="dashboard-module-badge">{{ today_cards|length }} patient{{ today_cards|length|pluralize }}</span>
       </div>
-    {% empty %}
-      <div class="card"><div class="card-body">No tasks due today.</div></div>
-    {% endfor %}
+      <div class="dashboard-module-body">
+        {% for card in today_cards %}
+          <div class="dashboard-module-card">
+            <div class="dashboard-module-card-body">
+              <div class="dashboard-task-card-top">
+                <span class="dashboard-task-card-date">{{ card.due_date|date:'M d' }}</span>
+                <a class="dashboard-task-card-name" href="{% url 'patients:case_detail' card.case_id %}">{{ card.patient_name }}</a>
+                <span class="dashboard-task-card-diagnosis">{{ card.diagnosis }}</span>
+              </div>
+              <div class="dashboard-task-card-meta">
+                {% if card.high_risk %}<span title="High-risk case" class="text-danger">&#10071;</span>{% endif %}
+                {% if card.referred_by %}<span title="Referred by: {{ card.referred_by }}">&#11088;</span>{% endif %}
+                {% if card.ncd_flags %}<span title="NCD flags: {{ card.ncd_flags|join:', ' }}">&#127991;&#65039;</span>{% endif %}
+                {% if card.call_status == "CONFIRMED" %}<span title="Confirmed">&#128994;&#128222;</span>
+                {% elif card.call_status == "NOT_REACHABLE" %}<span title="Not reachable">&#128308;&#128222; x{{ card.failed_attempt_count }}</span>
+                {% elif card.call_status == "INVALID_CONTACT" %}<span title="Invalid contact">&#9888;&#65039;&#128222;</span>
+                {% elif card.call_status == "LOST" %}<span title="Lost follow-up">&#10060;</span>
+                {% elif card.call_status == "CALL_BACK_LATER" %}<span title="Call back later">&#128993;&#128222;</span>
+                {% else %}<span title="Not contacted">&#128222;</span>{% endif %}
+                <a class="dashboard-task-card-call" href="tel:{{ card.phone_number }}" data-bs-toggle="collapse" data-bs-target="#today-phone-{{ forloop.counter }}" aria-expanded="false" aria-controls="today-phone-{{ forloop.counter }}" title="Show and call patient number">Call</a>
+                <span id="today-phone-{{ forloop.counter }}" class="collapse">{{ card.phone_number }}</span>
+              </div>
+              <div class="dashboard-task-card-tasks">{{ card.task_titles|join:' &bull; ' }}</div>
+            </div>
+          </div>
+        {% empty %}
+          <div class="dashboard-module-empty">No tasks due today.</div>
+        {% endfor %}
+      </div>
+    </section>
 
     <section class="upcoming-schedule mt-3" data-upcoming-schedule>
       <div class="upcoming-schedule-header">
@@ -809,13 +1034,14 @@
 
   <div class="col-12 col-lg-6">
     {% if show_recent_cases_panel %}
-      <section class="mb-4" data-recent-case-panel data-recent-case-state="collapsed">
-        <div class="recent-case-header">
+      <section class="dashboard-module dashboard-module--recent mb-4" data-dashboard-module="recent" data-recent-case-panel data-recent-case-state="collapsed">
+        <div class="dashboard-module-header">
           <div>
-            <h2 class="h6 mb-1">Recently Added</h2>
-            <p class="text-muted small">Newest 10 cases for immediate doctor review.</p>
+            <span class="dashboard-module-kicker">Recent</span>
+            <h2 class="h6">Recently Added</h2>
+            <p class="dashboard-module-copy">Newest 10 cases for immediate doctor review.</p>
           </div>
-          <span class="recent-case-kicker">Recent</span>
+          <span class="dashboard-module-badge">{{ recent_cases|length }} shown</span>
         </div>
         <div id="recent-case-list" class="recent-case-list" data-recent-case-list data-recent-case-view="collapsed">
           {% for case in recent_cases %}
@@ -852,38 +1078,74 @@
       </section>
     {% endif %}
 
-    <h2 class="h6">Overdue Tasks</h2>
-    {% for card in overdue_cards %}
-      <div class="card mb-3 shadow-sm dashboard-hover-card dashboard-hover-card--overdue" style="border-color: var(--theme-dashboard-overdue-border);">
-        <div class="card-body py-2 px-3">
-          <div class="d-flex align-items-center flex-wrap gap-1 small">
-            <span style="color: var(--theme-dashboard-overdue-text);">{{ card.due_date|date:'M d' }} —</span>
-            <a class="fw-semibold text-decoration-none" href="{% url 'patients:case_detail' card.case_id %}">{{ card.patient_name }}</a>
-            <span class="text-muted">/ {{ card.diagnosis }} /</span>
-            {% if card.high_risk %}<span title="High-risk case" class="text-danger">❗</span>{% endif %}
-            {% if card.referred_by %}<span title="Referred by: {{ card.referred_by }}">⭐</span>{% endif %}
-            {% if card.ncd_flags %}<span class="text-muted" title="NCD flags: {{ card.ncd_flags|join:', ' }}">🏷️</span>{% endif %}
-            {% if card.call_status == "CONFIRMED" %}<span title="Confirmed">🟢📞</span>
-            {% elif card.call_status == "NOT_REACHABLE" %}<span title="Not reachable">🔴📞 x{{ card.failed_attempt_count }}</span>
-            {% elif card.call_status == "INVALID_CONTACT" %}<span title="Invalid contact">⚠️📞</span>
-            {% elif card.call_status == "LOST" %}<span title="Lost follow-up">❌</span>
-            {% elif card.call_status == "CALL_BACK_LATER" %}<span title="Call back later">🟡📞</span>
-            {% else %}<span title="Not contacted">📞</span>{% endif %}
-            <a class="text-decoration-none" href="tel:{{ card.phone_number }}" data-bs-toggle="collapse" data-bs-target="#overdue-phone-{{ forloop.counter }}" aria-expanded="false" aria-controls="overdue-phone-{{ forloop.counter }}" title="Show and call patient number">☎️</a>
-            <span id="overdue-phone-{{ forloop.counter }}" class="collapse text-muted">{{ card.phone_number }}</span>
-          </div>
-          <div class="text-muted small mt-1">{{ card.task_titles|join:' • ' }}</div>
+    <section class="dashboard-module dashboard-module--overdue" data-dashboard-module="overdue">
+      <div class="dashboard-module-header">
+        <div>
+          <span class="dashboard-module-kicker">Overdue</span>
+          <h2 class="h6">Overdue Tasks</h2>
+          <p class="dashboard-module-copy">Oldest missed work grouped by patient to keep follow-up clear.</p>
         </div>
+        <span class="dashboard-module-badge">{{ overdue_cards|length }} patient{{ overdue_cards|length|pluralize }}</span>
       </div>
-    {% empty %}
-      <div class="card"><div class="card-body">No overdue tasks.</div></div>
-    {% endfor %}
+      <div class="dashboard-module-body">
+        {% for card in overdue_cards %}
+          <div class="dashboard-module-card">
+            <div class="dashboard-module-card-body">
+              <div class="dashboard-task-card-top">
+                <span class="dashboard-task-card-date">{{ card.due_date|date:'M d' }}</span>
+                <a class="dashboard-task-card-name" href="{% url 'patients:case_detail' card.case_id %}">{{ card.patient_name }}</a>
+                <span class="dashboard-task-card-diagnosis">{{ card.diagnosis }}</span>
+              </div>
+              <div class="dashboard-task-card-meta">
+                {% if card.high_risk %}<span title="High-risk case" class="text-danger">&#10071;</span>{% endif %}
+                {% if card.referred_by %}<span title="Referred by: {{ card.referred_by }}">&#11088;</span>{% endif %}
+                {% if card.ncd_flags %}<span title="NCD flags: {{ card.ncd_flags|join:', ' }}">&#127991;&#65039;</span>{% endif %}
+                {% if card.call_status == "CONFIRMED" %}<span title="Confirmed">&#128994;&#128222;</span>
+                {% elif card.call_status == "NOT_REACHABLE" %}<span title="Not reachable">&#128308;&#128222; x{{ card.failed_attempt_count }}</span>
+                {% elif card.call_status == "INVALID_CONTACT" %}<span title="Invalid contact">&#9888;&#65039;&#128222;</span>
+                {% elif card.call_status == "LOST" %}<span title="Lost follow-up">&#10060;</span>
+                {% elif card.call_status == "CALL_BACK_LATER" %}<span title="Call back later">&#128993;&#128222;</span>
+                {% else %}<span title="Not contacted">&#128222;</span>{% endif %}
+                <a class="dashboard-task-card-call" href="tel:{{ card.phone_number }}" data-bs-toggle="collapse" data-bs-target="#overdue-phone-{{ forloop.counter }}" aria-expanded="false" aria-controls="overdue-phone-{{ forloop.counter }}" title="Show and call patient number">Call</a>
+                <span id="overdue-phone-{{ forloop.counter }}" class="collapse">{{ card.phone_number }}</span>
+              </div>
+              <div class="dashboard-task-card-tasks">{{ card.task_titles|join:' &bull; ' }}</div>
+            </div>
+          </div>
+        {% empty %}
+          <div class="dashboard-module-empty">No overdue tasks.</div>
+        {% endfor %}
+      </div>
+    </section>
 
-    <h2 class="h6">Awaiting Reports</h2>
-    <ul class="list-group">
-      {% for task in awaiting_tasks %}<li class="list-group-item small dashboard-hover-item"><a href="{% url 'patients:case_detail' task.case_id %}">{{ task.case.full_name }}</a> — {{ task.title }}</li>{% empty %}<li class="list-group-item">No awaiting-report tasks.</li>{% endfor %}
-    </ul>
-    <p class="mt-3 mb-0 small"><strong>Cases:</strong> Active {{ active_case_count }} · Completed {{ completed_case_count }}</p>
+    <section class="dashboard-module dashboard-module--awaiting mt-4" data-dashboard-module="awaiting">
+      <div class="dashboard-module-header">
+        <div>
+          <span class="dashboard-module-kicker">Reports</span>
+          <h2 class="h6">Awaiting Reports</h2>
+          <p class="dashboard-module-copy">Per-task report follow-up without changing the current dashboard order.</p>
+        </div>
+        <span class="dashboard-module-badge">{{ awaiting_tasks|length }} task{{ awaiting_tasks|length|pluralize }}</span>
+      </div>
+      <div class="dashboard-module-body">
+        {% for task in awaiting_tasks %}
+          <a class="dashboard-module-row dashboard-awaiting-row" href="{% url 'patients:case_detail' task.case_id %}">
+            <div class="dashboard-awaiting-row-main">
+              <div class="dashboard-awaiting-row-name">{{ task.case.full_name }}</div>
+              <div class="dashboard-awaiting-row-task">{{ task.title }}</div>
+              <div class="dashboard-awaiting-row-copy">{{ task.case.diagnosis|default:task.case.category.name }}</div>
+            </div>
+            <div class="dashboard-awaiting-row-meta">
+              <span class="dashboard-awaiting-row-date">{{ task.due_date|date:'M d' }}</span>
+              <span class="dashboard-awaiting-row-category" style="{% category_theme_style task.case.category.name theme_category_colors %}">{{ task.case.category.name }}</span>
+            </div>
+          </a>
+        {% empty %}
+          <div class="dashboard-module-empty">No awaiting-report tasks.</div>
+        {% endfor %}
+      </div>
+      <p class="dashboard-case-counts mb-0"><strong>Cases:</strong> Active {{ active_case_count }} &middot; Completed {{ completed_case_count }}</p>
+    </section>
   </div>
 </div>
 

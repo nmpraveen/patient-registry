@@ -501,6 +501,10 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(response.context["anc_case_count"], 1)
         self.assertEqual(response.context["surgery_case_count"], 1)
         self.assertEqual(response.context["non_surgical_case_count"], 1)
+        self.assertContains(response, 'data-dashboard-module="today"')
+        self.assertContains(response, 'data-dashboard-module="recent"')
+        self.assertContains(response, 'data-dashboard-module="overdue"')
+        self.assertContains(response, 'data-dashboard-module="awaiting"')
 
     def test_dashboard_recent_cases_panel_orders_latest_first_limits_to_ten_and_renders_above_overdue(self):
         self.client.force_login(self.user)
@@ -531,6 +535,7 @@ class MedtrackViewTests(TestCase):
         self.assertIsNotNone(section_match)
         section_html = section_match.group(0)
         self.assertLess(content.index("Recently Added"), content.index("Overdue Tasks"))
+        self.assertIn('data-dashboard-module="recent"', section_html)
         self.assertIn('data-recent-case-state="collapsed"', section_html)
         self.assertEqual(section_html.count("recent-case-row--collapsed"), 10)
         self.assertIn("recent-case-collapsed-line", section_html)
@@ -2838,6 +2843,8 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Awaiting Reports")
         self.assertContains(response, "Upload report")
+        self.assertContains(response, 'data-dashboard-module="awaiting"')
+        self.assertContains(response, "dashboard-awaiting-row")
 
     def test_dashboard_card_contains_referral_high_risk_and_ncd_flags(self):
         self.client.force_login(self.user)

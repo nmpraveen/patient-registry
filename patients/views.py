@@ -15,7 +15,19 @@ from django.contrib.auth.models import Group
 from django.contrib.auth.views import LoginView
 from django.core.management import call_command
 from django.core.exceptions import ValidationError
-from django.db.models import Count, Exists, IntegerField, OuterRef, Prefetch, Q, Subquery
+from django.db.models import (
+    BooleanField,
+    Case as QueryCase,
+    Count,
+    Exists,
+    IntegerField,
+    OuterRef,
+    Prefetch,
+    Q,
+    Subquery,
+    Value,
+    When,
+)
 from django.db.models.functions import Coalesce
 from django.http import HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -895,6 +907,119 @@ def _normalized_gender_style(gender_value):
     return "other"
 
 
+def _normalized_search_category_group(raw_value):
+    normalized = (raw_value or "").strip().lower().replace("-", "_")
+    if normalized == "surgical":
+        return "surgery"
+    if normalized in CASE_CATEGORY_GROUP_FILTERS:
+        return normalized
+    return ""
+
+
+def _normalized_search_category_groups(raw_values):
+    groups = []
+    for raw_value in raw_values:
+        normalized = _normalized_search_category_group(raw_value)
+        if normalized and normalized not in groups:
+            groups.append(normalized)
+    return groups
+
+
+def _case_search_direct_query(query):
+    return (
+        Q(uhid__icontains=query)
+        | Q(first_name__icontains=query)
+        | Q(last_name__icontains=query)
+        | Q(patient_name__icontains=query)
+        | Q(phone_number__icontains=query)
+        | Q(diagnosis__icontains=query)
+        | Q(place__icontains=query)
+    )
+
+
+def _matching_case_note_activity_queryset(query):
+    return CaseActivityLog.objects.filter(
+        case_id=OuterRef("pk"),
+        event_type=ActivityEventType.NOTE,
+        note__icontains=query,
+    )
+
+
+def _matching_call_note_queryset(query):
+    return CallLog.objects.filter(
+        case_id=OuterRef("pk"),
+        notes__icontains=query,
+    )
+
+
+def _extract_search_snippet(text, query, radius=72):
+    normalized_text = " ".join((text or "").split())
+    normalized_query = " ".join((query or "").split()).lower()
+    if not normalized_text or not normalized_query:
+        return ""
+
+    lower_text = normalized_text.lower()
+    match_index = lower_text.find(normalized_query)
+    if match_index < 0:
+        return ""
+
+    start = max(match_index - radius, 0)
+    end = min(match_index + len(normalized_query) + radius, len(normalized_text))
+    prefix = "..." if start > 0 else ""
+    suffix = "..." if end < len(normalized_text) else ""
+    return f"{prefix}{normalized_text[start:end].strip()}{suffix}"
+
+
+def _attach_case_search_snippets(cases, query):
+    note_activity_case_ids = [
+        case.id
+        for case in cases
+        if getattr(case, "search_matches_note_activity", False)
+        and not getattr(case, "search_matches_case_notes", False)
+    ]
+    latest_note_by_case = {}
+    latest_call_note_by_case = {}
+    call_note_case_ids = [
+        case.id
+        for case in cases
+        if getattr(case, "search_matches_call_notes", False)
+        and not getattr(case, "search_matches_case_notes", False)
+        and not getattr(case, "search_matches_note_activity", False)
+    ]
+
+    if note_activity_case_ids:
+        matching_logs = (
+            CaseActivityLog.objects.filter(
+                case_id__in=note_activity_case_ids,
+                event_type=ActivityEventType.NOTE,
+                note__icontains=query,
+            )
+            .only("case_id", "note", "created_at")
+            .order_by("case_id", "-created_at", "-id")
+        )
+        for log in matching_logs:
+            latest_note_by_case.setdefault(log.case_id, log.note)
+
+    if call_note_case_ids:
+        matching_call_logs = (
+            CallLog.objects.filter(case_id__in=call_note_case_ids, notes__icontains=query)
+            .only("case_id", "notes", "created_at")
+            .order_by("case_id", "-created_at", "-id")
+        )
+        for log in matching_call_logs:
+            latest_call_note_by_case.setdefault(log.case_id, log.notes)
+
+    for case in cases:
+        snippet = ""
+        if getattr(case, "search_matches_case_notes", False):
+            snippet = _extract_search_snippet(case.notes, query)
+        elif getattr(case, "search_matches_note_activity", False):
+            snippet = _extract_search_snippet(latest_note_by_case.get(case.id, ""), query)
+        elif getattr(case, "search_matches_call_notes", False):
+            snippet = _extract_search_snippet(latest_call_note_by_case.get(case.id, ""), query)
+        case.search_note_snippet = snippet
+
+
 def _case_age_label(case):
     if case.age is not None:
         return f"{case.age}Y"
@@ -1342,7 +1467,9 @@ class CaseListView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
                 "gender",
                 "date_of_birth",
                 "place",
+                "diagnosis",
                 "phone_number",
+                "notes",
                 "status",
                 "updated_at",
                 "category__id",
@@ -1353,24 +1480,50 @@ class CaseListView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
         q = self.request.GET.get("q", "").strip()
         status = self.request.GET.get("status", "").strip()
         category = self.request.GET.get("category", "").strip()
-        category_group = self.request.GET.get("category_group", "").strip()
+        category_groups = _normalized_search_category_groups(self.request.GET.getlist("category_group"))
         assigned_user = self.request.GET.get("assigned_user", "").strip()
         due_start = self.request.GET.get("due_start", "").strip()
         due_end = self.request.GET.get("due_end", "").strip()
 
         if q:
-            queryset = queryset.filter(
-                Q(uhid__icontains=q)
-                | Q(phone_number__icontains=q)
-                | Q(first_name__icontains=q)
-                | Q(last_name__icontains=q)
-                | Q(patient_name__icontains=q)
-                | Q(place__icontains=q)
+            direct_query = _case_search_direct_query(q)
+            note_activity_matches = Exists(_matching_case_note_activity_queryset(q))
+            call_note_matches = Exists(_matching_call_note_queryset(q))
+            queryset = queryset.annotate(
+                search_matches_direct=QueryCase(
+                    When(direct_query, then=Value(True)),
+                    default=Value(False),
+                    output_field=BooleanField(),
+                ),
+                search_matches_case_notes=QueryCase(
+                    When(notes__icontains=q, then=Value(True)),
+                    default=Value(False),
+                    output_field=BooleanField(),
+                ),
+                search_matches_note_activity=note_activity_matches,
+                search_matches_call_notes=call_note_matches,
+            ).filter(
+                Q(search_matches_direct=True)
+                | Q(search_matches_case_notes=True)
+                | Q(search_matches_note_activity=True)
+                | Q(search_matches_call_notes=True)
+            ).annotate(
+                search_rank=QueryCase(
+                    When(search_matches_direct=True, then=Value(4)),
+                    When(search_matches_case_notes=True, then=Value(3)),
+                    When(search_matches_note_activity=True, then=Value(2)),
+                    When(search_matches_call_notes=True, then=Value(1)),
+                    default=Value(0),
+                    output_field=IntegerField(),
+                ),
             )
         if status:
             queryset = queryset.filter(status=status)
-        if category_group in CASE_CATEGORY_GROUP_FILTERS:
-            queryset = queryset.filter(CASE_CATEGORY_GROUP_FILTERS[category_group])
+        if category_groups:
+            category_group_query = Q()
+            for group in category_groups:
+                category_group_query |= CASE_CATEGORY_GROUP_FILTERS[group]
+            queryset = queryset.filter(category_group_query)
         if category:
             queryset = queryset.filter(category_id=category)
         if assigned_user:
@@ -1386,20 +1539,35 @@ class CaseListView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
                 Exists(Task.objects.filter(case_id=OuterRef("pk"), due_date__lte=due_end))
             )
 
+        if q:
+            queryset = queryset.order_by("-search_rank", "-updated_at", "uhid")
         return queryset
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        q = self.request.GET.get("q", "").strip()
+        raw_category_groups = _normalized_search_category_groups(self.request.GET.getlist("category_group"))
+        search_mode = bool(q)
+        selected_category_groups = raw_category_groups or (list(CASE_CATEGORY_GROUP_FILTERS.keys()) if search_mode else [])
+        cases = list(context["cases"])
+        if search_mode and cases:
+            _attach_case_search_snippets(cases, q)
+            context["cases"] = cases
+            if context.get("page_obj") is not None:
+                context["page_obj"].object_list = cases
         context["filters"] = {
             k: self.request.GET.get(k, "")
             for k in ["q", "status", "category", "category_group", "assigned_user", "due_start", "due_end"]
         }
+        context["filters"]["category_groups"] = selected_category_groups
         context["case_statuses"] = CaseStatus.choices
         context["categories"] = DepartmentConfig.objects.only("id", "name")
         context["users"] = get_user_model().objects.only("id", "username").order_by("username")
         query_params = self.request.GET.copy()
         query_params.pop("page", None)
         context["filter_querystring"] = query_params.urlencode()
+        context["search_mode"] = search_mode
+        context["search_total_count"] = context["paginator"].count if context.get("paginator") is not None else len(cases)
         return context
 
 
@@ -1460,6 +1628,7 @@ class UniversalCaseSearchView(LoginRequiredMixin, CaseDataAccessMixin, View):
     max_results = 10
     category_filters = {
         "anc": Q(category__name__iexact="ANC"),
+        "surgery": Q(category__name__iexact="Surgery"),
         "surgical": Q(category__name__iexact="Surgery"),
         "non_surgical": (
             Q(category__name__iexact="Non Surgical")
@@ -1507,18 +1676,22 @@ class UniversalCaseSearchView(LoginRequiredMixin, CaseDataAccessMixin, View):
 
         selected_categories = request.GET.getlist("category")
         category_query = self._category_query(selected_categories)
-        base_query = (
-            Q(uhid__icontains=query)
-            | Q(first_name__icontains=query)
-            | Q(last_name__icontains=query)
-            | Q(patient_name__icontains=query)
-            | Q(phone_number__icontains=query)
-            | Q(diagnosis__icontains=query)
-        )
+        direct_query = _case_search_direct_query(query)
+        note_activity_matches = Exists(_matching_case_note_activity_queryset(query))
+        call_note_matches = Exists(_matching_call_note_queryset(query))
 
         cases = list(
             Case.objects.select_related("category")
-            .filter(base_query)
+            .annotate(
+                search_matches_note_activity=note_activity_matches,
+                search_matches_call_notes=call_note_matches,
+            )
+            .filter(
+                direct_query
+                | Q(notes__icontains=query)
+                | Q(search_matches_note_activity=True)
+                | Q(search_matches_call_notes=True)
+            )
             .filter(category_query)
             .only(
                 "id",
@@ -1529,6 +1702,7 @@ class UniversalCaseSearchView(LoginRequiredMixin, CaseDataAccessMixin, View):
                 "age",
                 "place",
                 "diagnosis",
+                "notes",
                 "phone_number",
                 "high_risk",
                 "referred_by",
@@ -1541,21 +1715,68 @@ class UniversalCaseSearchView(LoginRequiredMixin, CaseDataAccessMixin, View):
             )[:150]
         )
 
+        matching_note_logs = {}
+        note_activity_case_ids = [case.id for case in cases if getattr(case, "search_matches_note_activity", False)]
+        if note_activity_case_ids:
+            activity_logs = (
+                CaseActivityLog.objects.filter(
+                    case_id__in=note_activity_case_ids,
+                    event_type=ActivityEventType.NOTE,
+                    note__icontains=query,
+                )
+                .only("case_id", "note", "created_at")
+                .order_by("case_id", "-created_at", "-id")
+            )
+            for log in activity_logs:
+                matching_note_logs.setdefault(log.case_id, []).append(log.note)
+
+        matching_call_logs = {}
+        call_note_case_ids = [case.id for case in cases if getattr(case, "search_matches_call_notes", False)]
+        if call_note_case_ids:
+            call_logs = (
+                CallLog.objects.filter(case_id__in=call_note_case_ids, notes__icontains=query)
+                .only("case_id", "notes", "created_at")
+                .order_by("case_id", "-created_at", "-id")
+            )
+            for log in call_logs:
+                matching_call_logs.setdefault(log.case_id, []).append(log.notes)
+
         scored = []
         for case in cases:
             full_name = case.full_name or case.patient_name
-            top_score = max(
+            structured_score = max(
                 self._score_value(query, case.uhid),
                 self._score_value(query, full_name),
                 self._score_value(query, case.phone_number),
                 self._score_value(query, case.diagnosis),
+                self._score_value(query, case.place),
             )
-            if top_score <= 0:
-                continue
-            scored.append((top_score, case.updated_at, case))
+            case_notes_score = min(self._score_value(query, case.notes), 80)
+            note_activity_score = 0
+            for note_text in matching_note_logs.get(case.id, []):
+                note_activity_score = max(note_activity_score, min(self._score_value(query, note_text), 65))
+            call_notes_score = 0
+            for note_text in matching_call_logs.get(case.id, []):
+                call_notes_score = max(call_notes_score, min(self._score_value(query, note_text), 55))
 
-        scored.sort(key=lambda row: (-row[0], -row[1].timestamp(), row[2].uhid))
-        top_cases = [row[2] for row in scored[: self.max_results]]
+            if structured_score > 0:
+                match_rank = 4
+                top_score = structured_score
+            elif case_notes_score > 0:
+                match_rank = 3
+                top_score = case_notes_score
+            elif note_activity_score > 0:
+                match_rank = 2
+                top_score = note_activity_score
+            elif call_notes_score > 0:
+                match_rank = 1
+                top_score = call_notes_score
+            else:
+                continue
+            scored.append((match_rank, top_score, case.updated_at, case))
+
+        scored.sort(key=lambda row: (-row[0], -row[1], -row[2].timestamp(), row[3].uhid))
+        top_cases = [row[3] for row in scored[: self.max_results]]
         theme_category_colors = build_theme_category_colors(
             [case.category for case in top_cases if getattr(case, "category", None) is not None]
         )

@@ -2,10 +2,27 @@
 {% load theme_tags %}
 {% block title %}Cases | MEDTRACK{% endblock %}
 {% block content %}
-<h1 class="h4 h3-md mb-3">Case List</h1>
+{% if search_mode %}
+  <div class="d-flex flex-wrap align-items-end justify-content-between gap-2 mb-3">
+    <div>
+      <p class="text-muted text-uppercase small fw-semibold mb-1">Search Results</p>
+      <h1 class="h4 h3-md mb-1">Results for "{{ filters.q }}"</h1>
+      <p class="text-muted mb-0">{{ search_total_count }} matching case{{ search_total_count|pluralize }}</p>
+    </div>
+  </div>
+{% else %}
+  <h1 class="h4 h3-md mb-3">Case List</h1>
+{% endif %}
 <form class="row g-2 mb-3" method="get">
-  {% if filters.category_group %}<input type="hidden" name="category_group" value="{{ filters.category_group }}">{% endif %}
-  <div class="col-12 col-md-3"><input class="form-control" name="q" value="{{ filters.q }}" placeholder="UHID / Phone / Name"></div>
+  <div class="col-12 col-lg-4"><input class="form-control" name="q" value="{{ filters.q }}" placeholder="UHID / Phone / Name / Diagnosis / Place / Case Notes / Call Notes"></div>
+  <div class="col-12">
+    <div class="d-flex flex-wrap align-items-center gap-2">
+      <span class="small text-muted">Search categories</span>
+      <label class="search-filter-pill search-filter-category" style="{% category_theme_style 'ANC' theme_category_colors %}"><input type="checkbox" name="category_group" value="anc" {% if 'anc' in filters.category_groups %}checked{% endif %}> ANC</label>
+      <label class="search-filter-pill search-filter-category" style="{% category_theme_style 'Surgery' theme_category_colors %}"><input type="checkbox" name="category_group" value="surgery" {% if 'surgery' in filters.category_groups %}checked{% endif %}> Surgery</label>
+      <label class="search-filter-pill search-filter-category" style="{% category_theme_style 'Non Surgical' theme_category_colors %}"><input type="checkbox" name="category_group" value="non_surgical" {% if 'non_surgical' in filters.category_groups %}checked{% endif %}> Non-surgical</label>
+    </div>
+  </div>
   <div class="col-6 col-md-2"><select class="form-select" name="status"><option value="">All statuses</option>{% for value,label in case_statuses %}<option value="{{ value }}" {% if filters.status == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
   <div class="col-6 col-md-2"><select class="form-select" name="category"><option value="">All categories</option>{% for item in categories %}<option value="{{ item.id }}" {% if filters.category == item.id|stringformat:'s' %}selected{% endif %}>{{ item.name }}</option>{% endfor %}</select></div>
   <div class="col-6 col-md-2"><select class="form-select" name="assigned_user"><option value="">Any assignee</option>{% for u in users %}<option value="{{ u.id }}" {% if filters.assigned_user == u.id|stringformat:'s' %}selected{% endif %}>{{ u.username }}</option>{% endfor %}</select></div>
@@ -16,32 +33,64 @@
 
 <div class="d-none d-md-block table-responsive">
   <table class="table table-striped table-sm align-middle">
-    <thead><tr><th>UHID</th><th>Name</th><th>Gender</th><th>DOB</th><th>Place</th><th>Phone</th><th>Category</th><th>Status</th><th>Tasks</th></tr></thead>
+    <thead>
+      {% if search_mode %}
+        <tr><th>UHID</th><th>Name</th><th>Diagnosis</th><th>Place</th><th>Phone</th><th>Category</th><th>Status</th><th>Tasks</th><th>Matching Note</th></tr>
+      {% else %}
+        <tr><th>UHID</th><th>Name</th><th>Gender</th><th>DOB</th><th>Place</th><th>Phone</th><th>Category</th><th>Status</th><th>Tasks</th></tr>
+      {% endif %}
+    </thead>
     <tbody>
       {% for case in cases %}
         <tr>
-          <td><a href="{% url 'patients:case_detail' case.id %}">{{ case.uhid }}</a></td>
-          <td>{{ case.full_name }}</td>
-          <td>
-            {% if case.gender == 'FEMALE' %}
-              <span class="app-pill gender-female">{{ case.get_gender_display }}</span>
-            {% elif case.gender == 'MALE' %}
-              <span class="app-pill gender-male">{{ case.get_gender_display }}</span>
-            {% elif case.gender %}
-              <span class="app-pill gender-other">{{ case.get_gender_display }}</span>
-            {% else %}
-              -
-            {% endif %}
-          </td>
-          <td>{{ case.date_of_birth|default:"-" }}</td>
-          <td>{{ case.place|default:"-" }}</td>
-          <td>{{ case.phone_number }}</td>
-          <td><span class="theme-category-chip {% if case.category.name|lower == 'anc' %}category-anc{% elif case.category.name|lower == 'surgery' %}category-surgery{% elif case.category.name|lower == 'non surgical' or case.category.name|lower == 'non-surgical' or case.category.name|lower == 'nonsurgical' %}category-non-surgical{% else %}category-other{% endif %}" style="{% category_theme_style case.category theme_category_colors %}">{{ case.category.name }}</span></td>
-          <td>{{ case.get_status_display }}</td>
-          <td>{{ case.task_count }}</td>
+          {% if search_mode %}
+            <td><a href="{% url 'patients:case_detail' case.id %}">{{ case.uhid }}</a></td>
+            <td>
+              <div class="fw-semibold">{{ case.full_name }}</div>
+              <div class="small text-muted">
+                {% if case.gender == 'FEMALE' %}
+                  <span class="app-pill gender-female">{{ case.get_gender_display }}</span>
+                {% elif case.gender == 'MALE' %}
+                  <span class="app-pill gender-male">{{ case.get_gender_display }}</span>
+                {% elif case.gender %}
+                  <span class="app-pill gender-other">{{ case.get_gender_display }}</span>
+                {% else %}
+                  -
+                {% endif %}
+                - {{ case.date_of_birth|default:"-" }}
+              </div>
+            </td>
+            <td>{{ case.diagnosis|default:"-" }}</td>
+            <td>{{ case.place|default:"-" }}</td>
+            <td>{{ case.phone_number }}</td>
+            <td><span class="theme-category-chip {% if case.category.name|lower == 'anc' %}category-anc{% elif case.category.name|lower == 'surgery' %}category-surgery{% elif case.category.name|lower == 'non surgical' or case.category.name|lower == 'non-surgical' or case.category.name|lower == 'nonsurgical' %}category-non-surgical{% else %}category-other{% endif %}" style="{% category_theme_style case.category theme_category_colors %}">{{ case.category.name }}</span></td>
+            <td>{{ case.get_status_display }}</td>
+            <td>{{ case.task_count }}</td>
+            <td class="small text-muted">{{ case.search_note_snippet|default:"-" }}</td>
+          {% else %}
+            <td><a href="{% url 'patients:case_detail' case.id %}">{{ case.uhid }}</a></td>
+            <td>{{ case.full_name }}</td>
+            <td>
+              {% if case.gender == 'FEMALE' %}
+                <span class="app-pill gender-female">{{ case.get_gender_display }}</span>
+              {% elif case.gender == 'MALE' %}
+                <span class="app-pill gender-male">{{ case.get_gender_display }}</span>
+              {% elif case.gender %}
+                <span class="app-pill gender-other">{{ case.get_gender_display }}</span>
+              {% else %}
+                -
+              {% endif %}
+            </td>
+            <td>{{ case.date_of_birth|default:"-" }}</td>
+            <td>{{ case.place|default:"-" }}</td>
+            <td>{{ case.phone_number }}</td>
+            <td><span class="theme-category-chip {% if case.category.name|lower == 'anc' %}category-anc{% elif case.category.name|lower == 'surgery' %}category-surgery{% elif case.category.name|lower == 'non surgical' or case.category.name|lower == 'non-surgical' or case.category.name|lower == 'nonsurgical' %}category-non-surgical{% else %}category-other{% endif %}" style="{% category_theme_style case.category theme_category_colors %}">{{ case.category.name }}</span></td>
+            <td>{{ case.get_status_display }}</td>
+            <td>{{ case.task_count }}</td>
+          {% endif %}
         </tr>
       {% empty %}
-        <tr><td colspan="9">No cases found.</td></tr>
+        <tr><td colspan="9">{% if search_mode %}No matching cases found.{% else %}No cases found.{% endif %}</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -65,6 +114,12 @@
           - {{ case.date_of_birth|default:"-" }}
         </div>
         <div class="small text-muted">{{ case.place|default:"-" }} - {{ case.phone_number }}</div>
+        {% if search_mode %}
+          <div class="small mt-1">{{ case.diagnosis|default:"-" }}</div>
+          {% if case.search_note_snippet %}
+            <div class="small text-muted mt-1">{{ case.search_note_snippet }}</div>
+          {% endif %}
+        {% endif %}
         <div class="small d-flex flex-wrap align-items-center gap-2">
           <span class="theme-category-chip {% if case.category.name|lower == 'anc' %}category-anc{% elif case.category.name|lower == 'surgery' %}category-surgery{% elif case.category.name|lower == 'non surgical' or case.category.name|lower == 'non-surgical' or case.category.name|lower == 'nonsurgical' %}category-non-surgical{% else %}category-other{% endif %}" style="{% category_theme_style case.category theme_category_colors %}">{{ case.category.name }}</span>
           <span>{{ case.get_status_display }}</span>
@@ -73,7 +128,7 @@
       </div>
     </div>
   {% empty %}
-    <div class="alert alert-light">No cases found.</div>
+    <div class="alert alert-light">{% if search_mode %}No matching cases found.{% else %}No cases found.{% endif %}</div>
   {% endfor %}
 </div>
 

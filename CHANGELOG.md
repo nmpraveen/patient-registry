@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026.03.15.21.14
+- Extended case search so `CallLog.notes` are searchable alongside direct case fields, case notes, and timeline note entries in both the navbar autocomplete and the full case search results page.
+- Updated the search UI copy to explicitly call out case-note and call-note matching.
+- Added regression coverage for call-note-only matches in both the full results page and the navbar search ranking.
+
+## 2026.03.15.19.35
+- Expanded global case search to include place, case notes, and timeline note entries, while keeping quick top-result navigation and adding a `View all results` handoff into the full cases page.
+- Upgraded the existing case list into a search-results experience for keyword queries with multi-select category pills, result counts, diagnosis visibility, and matching note snippets from either case notes or note logs.
+- Added coverage for the expanded search scope, note-result ordering, repeated category-group filters, and the authenticated layout's full-results search handoff.
+
 ## 2026.03.15.18.46
 - Fixed the live WebAuthn registration and authentication verification flow to use the current `webauthn` library API instead of the removed `parse_raw(...)` helper, which was causing device registration to fail after the passkey prompt.
 - Improved device verification page error messages so cancelled or blocked iPhone passkey prompts show clearer guidance instead of a generic request failure.

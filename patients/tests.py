@@ -537,6 +537,179 @@ class MedtrackViewTests(TestCase):
         self.assertIn("category_group=anc", anc_response.context["filter_querystring"])
         self.assertIn("category_group=non_surgical", non_surgical_response.context["filter_querystring"])
 
+    def test_case_list_search_matches_diagnosis_case_notes_and_note_logs_without_duplicates(self):
+        self.client.force_login(self.user)
+        base_time = timezone.now()
+
+        direct_case = Case.objects.create(
+            uhid="UH-SEARCH-LIST-DIRECT",
+            first_name="Direct",
+            last_name="Match",
+            phone_number="8011111111",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            diagnosis="Needle biopsy follow-up",
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=7),
+            created_by=self.user,
+        )
+        case_notes_case = Case.objects.create(
+            uhid="UH-SEARCH-LIST-NOTES",
+            first_name="Case",
+            last_name="Notes",
+            phone_number="8022222222",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            notes="Needle follow-up summary in case notes for dressing review.",
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=7),
+            created_by=self.user,
+        )
+        activity_case = Case.objects.create(
+            uhid="UH-SEARCH-LIST-ACTIVITY",
+            first_name="Timeline",
+            last_name="Notes",
+            phone_number="8033333333",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            diagnosis="Routine review",
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=7),
+            created_by=self.user,
+        )
+        mixed_case = Case.objects.create(
+            uhid="UH-SEARCH-LIST-MIXED",
+            first_name="Mixed",
+            last_name="Signals",
+            phone_number="8044444444",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            diagnosis="Needle dressing change",
+            notes="Needle note kept in case summary.",
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=7),
+            created_by=self.user,
+        )
+        call_notes_case = Case.objects.create(
+            uhid="UH-SEARCH-LIST-CALL",
+            first_name="Call",
+            last_name="Notes",
+            phone_number="8055555555",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            diagnosis="Callback review",
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=7),
+            created_by=self.user,
+        )
+
+        older_log = CaseActivityLog.objects.create(
+            case=activity_case,
+            user=self.user,
+            event_type=ActivityEventType.NOTE,
+            note="Older needle timeline note for initial review.",
+        )
+        newer_log = CaseActivityLog.objects.create(
+            case=activity_case,
+            user=self.user,
+            event_type=ActivityEventType.NOTE,
+            note="Latest needle timeline note for revised review plan.",
+        )
+        CaseActivityLog.objects.create(
+            case=mixed_case,
+            user=self.user,
+            event_type=ActivityEventType.NOTE,
+            note="Needle note that should not duplicate this case in results.",
+        )
+        CallLog.objects.create(
+            case=call_notes_case,
+            outcome=CallOutcome.NO_ANSWER,
+            notes="Needle call note from outreach follow-up.",
+            staff_user=self.user,
+        )
+
+        Case.objects.filter(pk=direct_case.pk).update(updated_at=base_time - timedelta(days=3))
+        Case.objects.filter(pk=case_notes_case.pk).update(updated_at=base_time - timedelta(days=1))
+        Case.objects.filter(pk=activity_case.pk).update(updated_at=base_time)
+        Case.objects.filter(pk=mixed_case.pk).update(updated_at=base_time - timedelta(days=2))
+        Case.objects.filter(pk=call_notes_case.pk).update(updated_at=base_time + timedelta(days=1))
+        CaseActivityLog.objects.filter(pk=older_log.pk).update(created_at=base_time - timedelta(days=2))
+        CaseActivityLog.objects.filter(pk=newer_log.pk).update(created_at=base_time - timedelta(hours=1))
+
+        response = self.client.get(reverse("patients:case_list"), {"q": "needle"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["search_mode"])
+        self.assertEqual(response.context["search_total_count"], 5)
+        ordered_ids = [case.id for case in response.context["cases"]]
+        self.assertLess(ordered_ids.index(direct_case.id), ordered_ids.index(case_notes_case.id))
+        self.assertLess(ordered_ids.index(mixed_case.id), ordered_ids.index(case_notes_case.id))
+        self.assertLess(ordered_ids.index(case_notes_case.id), ordered_ids.index(activity_case.id))
+        self.assertLess(ordered_ids.index(activity_case.id), ordered_ids.index(call_notes_case.id))
+        self.assertEqual(ordered_ids.count(mixed_case.id), 1)
+        case_notes_result = next(case for case in response.context["cases"] if case.id == case_notes_case.id)
+        activity_result = next(case for case in response.context["cases"] if case.id == activity_case.id)
+        call_result = next(case for case in response.context["cases"] if case.id == call_notes_case.id)
+        self.assertIn("Needle follow-up summary in case notes", case_notes_result.search_note_snippet)
+        self.assertIn("Latest needle timeline note", activity_result.search_note_snippet)
+        self.assertIn("Needle call note from outreach follow-up.", call_result.search_note_snippet)
+        self.assertContains(response, 'Results for "needle"')
+
+    def test_case_list_search_supports_multiple_category_group_filters(self):
+        self.client.force_login(self.user)
+        non_surgical, _ = DepartmentConfig.objects.get_or_create(name="Non Surgical")
+        today = timezone.localdate()
+
+        anc_case = Case.objects.create(
+            uhid="UH-SEARCH-MULTI-ANC",
+            first_name="Harbor",
+            last_name="Anc",
+            phone_number="8055555555",
+            category=self.anc,
+            status=CaseStatus.ACTIVE,
+            place="Harbor Town",
+            lmp=today - timedelta(days=60),
+            edd=today + timedelta(days=210),
+            created_by=self.user,
+        )
+        surgery_case = Case.objects.create(
+            uhid="UH-SEARCH-MULTI-SURG",
+            first_name="Harbor",
+            last_name="Surgery",
+            phone_number="8066666666",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            place="Harbor Town",
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=today + timedelta(days=7),
+            created_by=self.user,
+        )
+        non_surgical_case = Case.objects.create(
+            uhid="UH-SEARCH-MULTI-NS",
+            first_name="Harbor",
+            last_name="Medicine",
+            phone_number="8077777777",
+            category=non_surgical,
+            status=CaseStatus.ACTIVE,
+            place="Harbor Town",
+            review_date=today + timedelta(days=7),
+            created_by=self.user,
+        )
+
+        response = self.client.get(
+            reverse("patients:case_list"),
+            {"q": "harbor", "category_group": ["anc", "non_surgical"]},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        result_ids = {case.id for case in response.context["cases"]}
+        self.assertEqual(result_ids, {anc_case.id, non_surgical_case.id})
+        self.assertNotIn(surgery_case.id, result_ids)
+        self.assertEqual(response.context["filters"]["category_groups"], ["anc", "non_surgical"])
+        self.assertIn("category_group=anc", response.context["filter_querystring"])
+        self.assertIn("category_group=non_surgical", response.context["filter_querystring"])
+        self.assertContains(response, 'Results for "harbor"')
+
     def test_dashboard_category_cards_link_to_active_case_filters(self):
         self.client.force_login(self.user)
 
@@ -3548,6 +3721,85 @@ class MedtrackViewTests(TestCase):
         dashboard_response = self.client.get(reverse("patients:dashboard"))
         self.assertContains(dashboard_response, 'data-tag-kind="high_risk"')
 
+    def test_universal_case_search_matches_place_case_notes_and_note_logs_with_direct_results_ranked_first(self):
+        self.client.force_login(self.user)
+        base_time = timezone.now()
+
+        direct_case = Case.objects.create(
+            uhid="UH-SEARCH-PLACE",
+            first_name="Direct",
+            last_name="Place",
+            phone_number="9666666661",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            place="Mango Camp",
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=6),
+            created_by=self.user,
+        )
+        case_notes_case = Case.objects.create(
+            uhid="UH-SEARCH-CASE-NOTE",
+            first_name="Case",
+            last_name="Note",
+            phone_number="9666666662",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            notes="Mango follow-up note saved in the case summary.",
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=6),
+            created_by=self.user,
+        )
+        activity_case = Case.objects.create(
+            uhid="UH-SEARCH-ACTIVITY-NOTE",
+            first_name="Timeline",
+            last_name="Note",
+            phone_number="9666666663",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            diagnosis="Routine review",
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=6),
+            created_by=self.user,
+        )
+        call_case = Case.objects.create(
+            uhid="UH-SEARCH-CALL-NOTE",
+            first_name="Call",
+            last_name="Note",
+            phone_number="9666666664",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            diagnosis="Callback review",
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=6),
+            created_by=self.user,
+        )
+        CaseActivityLog.objects.create(
+            case=activity_case,
+            user=self.user,
+            event_type=ActivityEventType.NOTE,
+            note="Mango timeline note recorded after review.",
+        )
+        CallLog.objects.create(
+            case=call_case,
+            outcome=CallOutcome.NO_ANSWER,
+            notes="Mango call note recorded after outreach attempt.",
+            staff_user=self.user,
+        )
+
+        Case.objects.filter(pk=direct_case.pk).update(updated_at=base_time - timedelta(days=3))
+        Case.objects.filter(pk=case_notes_case.pk).update(updated_at=base_time - timedelta(days=1))
+        Case.objects.filter(pk=activity_case.pk).update(updated_at=base_time)
+        Case.objects.filter(pk=call_case.pk).update(updated_at=base_time + timedelta(days=1))
+
+        response = self.client.get(
+            reverse("patients:universal_case_search"),
+            {"q": "mango", "category": ["surgical"]},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        ordered_ids = [item["id"] for item in response.json()["results"]]
+        self.assertEqual(ordered_ids[:4], [direct_case.id, case_notes_case.id, activity_case.id, call_case.id])
+
     def test_universal_case_search_applies_multiple_category_filters(self):
         self.client.force_login(self.user)
         non_surgical, _ = DepartmentConfig.objects.get_or_create(name="Non Surgical")
@@ -3633,6 +3885,17 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         ordered_ids = [item["id"] for item in response.json()["results"]]
         self.assertEqual(ordered_ids[:2], [newer_case.id, older_case.id])
+
+    def test_authenticated_layout_search_script_includes_full_results_handoff(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("patients:dashboard"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "View all results")
+        self.assertContains(response, reverse("patients:case_list"))
+        self.assertContains(response, "category_group")
+        self.assertContains(response, "diagnosis / place / case notes / call notes")
 
 
 class SeedMockDataCommandTests(TestCase):

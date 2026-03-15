@@ -711,6 +711,11 @@
         background: var(--theme-search-result-hover-bg);
       }
 
+      .global-search-action {
+        border-top: 1px solid var(--theme-search-dropdown-border);
+        font-weight: 600;
+      }
+
       .global-search-tags {
         display: flex;
         align-items: center;
@@ -1052,7 +1057,7 @@
                     id="global-case-search-input"
                     type="search"
                     class="form-control form-control-sm global-search-input"
-                    placeholder="Search UHID / name / phone / diagnosis"
+                    placeholder="Search UHID / name / phone / diagnosis / place / case notes / call notes"
                     autocomplete="off"
                     aria-label="Search cases"
                   />
@@ -1125,6 +1130,26 @@
             return "other";
           };
 
+          const resultsCategoryValue = (value) => {
+            if (value === "surgical") {
+              return "surgery";
+            }
+            return value;
+          };
+
+          const buildResultsUrl = (query, categories) => {
+            const params = new URLSearchParams({ q: query });
+            const categoryGroups = [];
+            categories.forEach((category) => {
+              const normalized = resultsCategoryValue(category);
+              if (normalized && !categoryGroups.includes(normalized)) {
+                categoryGroups.push(normalized);
+              }
+            });
+            categoryGroups.forEach((group) => params.append("category_group", group));
+            return `{% url 'patients:case_list' %}?${params.toString()}`;
+          };
+
           const closeDropdown = () => {
             dropdown.hidden = true;
             activeIndex = -1;
@@ -1144,7 +1169,16 @@
             return values;
           };
 
-          const renderResults = (results) => {
+          const appendResultsPageAction = (query, categories) => {
+            const action = document.createElement("button");
+            action.type = "button";
+            action.className = "global-search-item global-search-action";
+            action.dataset.resultsPage = buildResultsUrl(query, categories);
+            action.textContent = "View all results";
+            dropdown.appendChild(action);
+          };
+
+          const renderResults = (results, query, categories) => {
             currentResults = results;
             activeIndex = -1;
             dropdown.replaceChildren();
@@ -1153,6 +1187,7 @@
               emptyState.className = "global-search-empty";
               emptyState.textContent = "No matching cases.";
               dropdown.appendChild(emptyState);
+              appendResultsPageAction(query, categories);
               openDropdown();
               return;
             }
@@ -1206,6 +1241,7 @@
               row.appendChild(tags);
               dropdown.appendChild(row);
             });
+            appendResultsPageAction(query, categories);
             openDropdown();
           };
 
@@ -1241,7 +1277,7 @@
             if (myRequest !== requestId) {
               return;
             }
-            renderResults(payload.results || []);
+            renderResults(payload.results || [], query, categories);
           };
 
           let timer = null;
@@ -1256,6 +1292,11 @@
           categoryCheckboxes.forEach((box) => box.addEventListener("change", debouncedSearch));
 
           dropdown.addEventListener("click", (event) => {
+            const resultsPageAction = event.target.closest("[data-results-page]");
+            if (resultsPageAction) {
+              window.location.assign(resultsPageAction.dataset.resultsPage);
+              return;
+            }
             const row = event.target.closest("[data-index]");
             if (!row) {
               return;
@@ -1267,6 +1308,20 @@
           });
 
           input.addEventListener("keydown", (event) => {
+            const query = input.value.trim();
+            const categories = selectedCategories();
+            if (event.key === "Enter") {
+              if (activeIndex >= 0 && currentResults[activeIndex]) {
+                event.preventDefault();
+                window.location.assign(currentResults[activeIndex].detail_url);
+                return;
+              }
+              if (query.length >= 2 && categories.length) {
+                event.preventDefault();
+                window.location.assign(buildResultsUrl(query, categories));
+              }
+              return;
+            }
             if (dropdown.hidden || !currentResults.length) {
               return;
             }
@@ -1276,12 +1331,6 @@
             } else if (event.key === "ArrowUp") {
               event.preventDefault();
               activeIndex = Math.max(activeIndex - 1, 0);
-            } else if (event.key === "Enter") {
-              if (activeIndex >= 0 && currentResults[activeIndex]) {
-                event.preventDefault();
-                window.location.assign(currentResults[activeIndex].detail_url);
-              }
-              return;
             } else if (event.key === "Escape") {
               closeDropdown();
               return;
@@ -1289,7 +1338,7 @@
               return;
             }
 
-            dropdown.querySelectorAll(".global-search-item").forEach((item, index) => {
+            dropdown.querySelectorAll("[data-index]").forEach((item, index) => {
               item.classList.toggle("active", index === activeIndex);
             });
           });

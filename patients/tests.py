@@ -1,4 +1,6 @@
 import re
+import hashlib
+import json
 from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -26,10 +28,16 @@ from .models import (
     CaseActivityLog,
     CaseStatus,
     DepartmentConfig,
+    DeviceApprovalPolicy,
+    DEVICE_APPROVAL_MAX_APPROVED,
     Gender,
     RCH_REMINDER_INTERVAL_DAYS,
     RCH_REMINDER_TASK_TITLE,
     RoleSetting,
+    STAFF_PILOT_ROLE_NAME,
+    STAFF_ROLE_NAME,
+    StaffDeviceCredential,
+    StaffDeviceCredentialStatus,
     SurgicalPathway,
     Task,
     TaskType,
@@ -227,6 +235,106 @@ class MedtrackViewTests(TestCase):
         user.groups.add(group)
         self.client.force_login(user)
         return user
+
+    def enable_device_access_for(self, *users):
+        policy = DeviceApprovalPolicy.get_solo()
+        policy.enabled = True
+        policy.save()
+        policy.target_users.set(users)
+        return policy
+
+    def create_device_credential(
+        self,
+        *,
+        user,
+        status=StaffDeviceCredentialStatus.APPROVED,
+        credential_id="credential-1",
+        device_label="Ward desktop",
+        trusted_token=None,
+    ):
+        credential = StaffDeviceCredential.objects.create(
+            user=user,
+            status=status,
+            device_label=device_label,
+            credential_id=credential_id,
+            public_key="public-key",
+            sign_count=1,
+            user_agent="Test Browser",
+            approved_at=timezone.now() if status == StaffDeviceCredentialStatus.APPROVED else None,
+            last_used_at=timezone.now() if status == StaffDeviceCredentialStatus.APPROVED else None,
+        )
+        if trusted_token:
+            credential.trusted_token_hash = hashlib.sha256(trusted_token.encode("utf-8")).hexdigest()
+            credential.trusted_token_created_at = timezone.now()
+            credential.save(update_fields=["trusted_token_hash", "trusted_token_created_at"])
+        return credential
+
+    def fake_registration_webauthn_deps(self, *, credential_id=b"registration-credential", public_key=b"public-key"):
+        class DummyRegistrationCredential:
+            @staticmethod
+            def parse_raw(value):
+                return value
+
+        class DummyDescriptor:
+            def __init__(self, **kwargs):
+                self.kwargs = kwargs
+
+        class DummyCredentialType:
+            PUBLIC_KEY = "public-key"
+
+        options = type("FakeOptions", (), {"challenge": b"register-challenge"})()
+        verification = type(
+            "FakeRegistrationVerification",
+            (),
+            {
+                "credential_id": credential_id,
+                "credential_public_key": public_key,
+                "sign_count": 4,
+                "credential_device_type": "single_device",
+                "credential_backed_up": False,
+                "aaguid": "",
+            },
+        )()
+        return {
+            "RegistrationCredential": DummyRegistrationCredential,
+            "PublicKeyCredentialDescriptor": DummyDescriptor,
+            "PublicKeyCredentialType": DummyCredentialType,
+            "base64url_to_bytes": lambda value: b"decoded",
+            "generate_registration_options": lambda **kwargs: options,
+            "options_to_json": lambda options: json.dumps({"challenge": "register-challenge", "user": {"id": "1"}}),
+            "verify_registration_response": lambda **kwargs: verification,
+        }
+
+    def fake_authentication_webauthn_deps(self, *, new_sign_count=11):
+        class DummyAuthenticationCredential:
+            @staticmethod
+            def parse_raw(value):
+                return value
+
+        class DummyDescriptor:
+            def __init__(self, **kwargs):
+                self.kwargs = kwargs
+
+        class DummyCredentialType:
+            PUBLIC_KEY = "public-key"
+
+        class DummyUserVerificationRequirement:
+            REQUIRED = "required"
+
+        options = type("FakeOptions", (), {"challenge": b"auth-challenge"})()
+        verification = type("FakeAuthenticationVerification", (), {"new_sign_count": new_sign_count})()
+        return {
+            "AuthenticationCredential": DummyAuthenticationCredential,
+            "PublicKeyCredentialDescriptor": DummyDescriptor,
+            "PublicKeyCredentialType": DummyCredentialType,
+            "UserVerificationRequirement": DummyUserVerificationRequirement,
+            "base64url_to_bytes": lambda value: b"decoded",
+            "generate_authentication_options": lambda **kwargs: options,
+            "options_to_json": lambda options: json.dumps(
+                {"challenge": "auth-challenge", "allowCredentials": [{"id": "approved-credential", "type": "public-key"}]}
+            ),
+            "verify_authentication_response": lambda **kwargs: verification,
+        }
 
     def create_recent_case(
         self,
@@ -1703,6 +1811,236 @@ class MedtrackViewTests(TestCase):
         self.assertContains(settings_response, reverse("patients:settings_theme"))
         self.assertEqual(theme_response.status_code, 200)
         self.assertContains(theme_response, "Theme Settings")
+
+    def test_admin_settings_page_shows_device_access_link_and_page_requires_manage_settings(self):
+        pending_user = get_user_model().objects.create_user(username="pilot-target", password="strong-password-123")
+        pending_device = self.create_device_credential(
+            user=pending_user,
+            status=StaffDeviceCredentialStatus.PENDING,
+            credential_id="pending-device",
+            device_label="Pilot browser",
+        )
+
+        self.client.force_login(self.user)
+        forbidden_get = self.client.get(reverse("patients:settings_device_access"))
+        forbidden_post = self.client.post(
+            reverse("patients:settings_device_access"),
+            {"action": "revoke_device", "credential_id": pending_device.pk},
+        )
+
+        self.assertEqual(forbidden_get.status_code, 403)
+        self.assertEqual(forbidden_post.status_code, 403)
+
+        self.login_as_admin()
+        settings_response = self.client.get(reverse("patients:settings"))
+        device_response = self.client.get(reverse("patients:settings_device_access"))
+
+        self.assertEqual(settings_response.status_code, 200)
+        self.assertContains(settings_response, reverse("patients:settings_device_access"))
+        self.assertEqual(device_response.status_code, 200)
+        self.assertContains(device_response, "Device Access")
+
+    def test_device_access_page_can_save_selected_target_users(self):
+        pilot_user = get_user_model().objects.create_user(username="pilot-user", password="strong-password-123")
+
+        self.login_as_admin()
+        response = self.client.post(
+            reverse("patients:settings_device_access"),
+            {
+                "action": "save_policy",
+                "enabled": "on",
+                "target_users": [str(pilot_user.pk)],
+            },
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        policy = DeviceApprovalPolicy.get_solo()
+        self.assertTrue(policy.enabled)
+        self.assertEqual(list(policy.target_users.order_by("pk")), [pilot_user])
+        self.assertContains(response, "Device approval pilot settings saved.")
+
+    def test_device_access_page_clones_staff_pilot_role_from_staff(self):
+        RoleSetting.objects.update_or_create(
+            role_name=STAFF_ROLE_NAME,
+            defaults={
+                "can_case_create": True,
+                "can_case_edit": True,
+                "can_task_create": True,
+                "can_task_edit": False,
+                "can_note_add": True,
+                "can_manage_settings": False,
+            },
+        )
+
+        self.login_as_admin()
+        response = self.client.post(reverse("patients:settings_device_access"), {"action": "clone_staff_pilot"})
+
+        self.assertEqual(response.status_code, 302)
+        staff_role = RoleSetting.objects.get(role_name=STAFF_ROLE_NAME)
+        pilot_role = RoleSetting.objects.get(role_name=STAFF_PILOT_ROLE_NAME)
+        self.assertEqual(pilot_role.field_capabilities(), staff_role.field_capabilities())
+        self.assertTrue(Group.objects.filter(name=STAFF_PILOT_ROLE_NAME).exists())
+
+    def test_non_targeted_user_login_still_works_normally(self):
+        response = self.client.post(
+            reverse("login"),
+            {"username": self.user.username, "password": "strong-password-123"},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, reverse("patients:dashboard"))
+        self.assertEqual(int(self.client.session["_auth_user_id"]), self.user.pk)
+
+    def test_targeted_user_login_redirects_to_device_verification(self):
+        pilot_user = get_user_model().objects.create_user(username="pilot-login", password="strong-password-123")
+        Group.objects.get_or_create(name=STAFF_PILOT_ROLE_NAME)[0]
+        self.enable_device_access_for(pilot_user)
+
+        response = self.client.post(
+            reverse("login"),
+            {"username": pilot_user.username, "password": "strong-password-123"},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, reverse("login_device_verification"))
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    def test_device_registration_creates_pending_credential_without_login(self):
+        pilot_user = get_user_model().objects.create_user(username="pilot-register", password="strong-password-123")
+        self.enable_device_access_for(pilot_user)
+        self.client.post(reverse("login"), {"username": pilot_user.username, "password": "strong-password-123"})
+
+        deps = self.fake_registration_webauthn_deps(credential_id=b"pending-registration-device")
+        with patch("patients.views._load_webauthn_dependencies", return_value=deps):
+            options_response = self.client.post(reverse("login_device_register_options"))
+            verify_response = self.client.post(
+                reverse("login_device_register_verify"),
+                data=json.dumps(
+                    {
+                        "device_label": "Pilot ward PC",
+                        "credential": {"id": "pending-registration-device", "type": "public-key"},
+                    }
+                ),
+                content_type="application/json",
+            )
+
+        self.assertEqual(options_response.status_code, 200)
+        self.assertEqual(verify_response.status_code, 200)
+        credential = StaffDeviceCredential.objects.get(user=pilot_user)
+        self.assertEqual(credential.status, StaffDeviceCredentialStatus.PENDING)
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    def test_targeted_user_with_trusted_device_cookie_can_log_in(self):
+        pilot_user = get_user_model().objects.create_user(username="pilot-cookie", password="strong-password-123")
+        self.enable_device_access_for(pilot_user)
+        credential = self.create_device_credential(
+            user=pilot_user,
+            credential_id="approved-cookie-device",
+            trusted_token="trusted-cookie-token",
+        )
+        self.client.cookies[settings.DEVICE_APPROVAL_TRUST_COOKIE_NAME] = f"{credential.pk}:trusted-cookie-token"
+
+        response = self.client.post(
+            reverse("login"),
+            {"username": pilot_user.username, "password": "strong-password-123"},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, reverse("patients:dashboard"))
+        self.assertEqual(int(self.client.session["_auth_user_id"]), pilot_user.pk)
+
+    def test_targeted_user_without_trusted_cookie_is_redirected_even_if_device_is_approved(self):
+        pilot_user = get_user_model().objects.create_user(username="pilot-no-cookie", password="strong-password-123")
+        self.enable_device_access_for(pilot_user)
+        self.create_device_credential(user=pilot_user, credential_id="approved-no-cookie")
+
+        response = self.client.post(
+            reverse("login"),
+            {"username": pilot_user.username, "password": "strong-password-123"},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, reverse("login_device_verification"))
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    def test_revoked_device_cookie_no_longer_bypasses_targeted_login(self):
+        pilot_user = get_user_model().objects.create_user(username="pilot-revoked", password="strong-password-123")
+        self.enable_device_access_for(pilot_user)
+        revoked = self.create_device_credential(
+            user=pilot_user,
+            status=StaffDeviceCredentialStatus.REVOKED,
+            credential_id="revoked-device",
+            trusted_token="revoked-token",
+        )
+        self.client.cookies[settings.DEVICE_APPROVAL_TRUST_COOKIE_NAME] = f"{revoked.pk}:revoked-token"
+
+        response = self.client.post(
+            reverse("login"),
+            {"username": pilot_user.username, "password": "strong-password-123"},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, reverse("login_device_verification"))
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    def test_device_authentication_verification_logs_in_targeted_user_and_sets_cookie(self):
+        pilot_user = get_user_model().objects.create_user(username="pilot-verify", password="strong-password-123")
+        self.enable_device_access_for(pilot_user)
+        credential = self.create_device_credential(user=pilot_user, credential_id="approved-credential")
+        self.client.post(reverse("login"), {"username": pilot_user.username, "password": "strong-password-123"})
+
+        deps = self.fake_authentication_webauthn_deps(new_sign_count=9)
+        with patch("patients.views._load_webauthn_dependencies", return_value=deps):
+            options_response = self.client.post(reverse("login_device_authenticate_options"))
+            verify_response = self.client.post(
+                reverse("login_device_authenticate_verify"),
+                data=json.dumps({"credential": {"id": credential.credential_id, "type": "public-key"}}),
+                content_type="application/json",
+            )
+
+        self.assertEqual(options_response.status_code, 200)
+        self.assertEqual(verify_response.status_code, 200)
+        credential.refresh_from_db()
+        self.assertEqual(int(self.client.session["_auth_user_id"]), pilot_user.pk)
+        self.assertTrue(credential.trusted_token_hash)
+        self.assertEqual(credential.sign_count, 9)
+        self.assertIn(settings.DEVICE_APPROVAL_TRUST_COOKIE_NAME, verify_response.cookies)
+
+    def test_device_registration_is_blocked_after_three_approved_devices(self):
+        pilot_user = get_user_model().objects.create_user(username="pilot-cap", password="strong-password-123")
+        self.enable_device_access_for(pilot_user)
+        for index in range(DEVICE_APPROVAL_MAX_APPROVED):
+            self.create_device_credential(user=pilot_user, credential_id=f"approved-cap-{index}")
+
+        self.client.post(reverse("login"), {"username": pilot_user.username, "password": "strong-password-123"})
+        response = self.client.post(reverse("login_device_register_options"))
+
+        self.assertEqual(response.status_code, 400)
+        self.assertContains(response, "already has", status_code=400)
+
+    def test_admin_cannot_approve_fourth_device_for_user(self):
+        pilot_user = get_user_model().objects.create_user(username="pilot-approve-cap", password="strong-password-123")
+        for index in range(DEVICE_APPROVAL_MAX_APPROVED):
+            self.create_device_credential(user=pilot_user, credential_id=f"approved-limit-{index}")
+        pending = self.create_device_credential(
+            user=pilot_user,
+            status=StaffDeviceCredentialStatus.PENDING,
+            credential_id="pending-limit",
+            device_label="Overflow browser",
+        )
+
+        self.login_as_admin()
+        response = self.client.post(
+            reverse("patients:settings_device_access"),
+            {"action": "approve_device", "credential_id": pending.pk},
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        pending.refresh_from_db()
+        self.assertEqual(pending.status, StaffDeviceCredentialStatus.PENDING)
+        self.assertContains(response, "already has 3 approved devices")
 
     def test_theme_settings_page_saves_global_tokens_and_category_colors(self):
         self.login_as_admin()

@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026.03.15.18.46
+- Fixed the live WebAuthn registration and authentication verification flow to use the current `webauthn` library API instead of the removed `parse_raw(...)` helper, which was causing device registration to fail after the passkey prompt.
+- Improved device verification page error messages so cancelled or blocked iPhone passkey prompts show clearer guidance instead of a generic request failure.
+
+## 2026.03.15.18.15
+- Added a pilot device-approval login flow with WebAuthn-backed device registration, trusted-browser cookies, and admin approval gating for selected users without changing the default login path for everyone else.
+- Added a new Device Access admin settings page to save pilot target users, review pending and approved devices, approve or revoke browsers, and clone `Staff` permissions into a `Staff Pilot` role for safer rollout testing.
+- Added device-approval models, migration coverage, login/device view tests, and setup documentation for the required WebAuthn relying-party configuration.
+
 ## 2026.03.13.00.19
 - Restyled the dashboard's `Today's Tasks`, `Recently Added`, `Overdue Tasks`, and `Awaiting Reports` sections into the same framed, tinted module system introduced for `Upcoming Schedule`, while preserving the current layout, ordering, and interactions.
 - Rebuilt today and overdue patient group cards plus awaiting-report rows with shared dashboard module accents derived from existing theme tokens, including the awaiting-report task status palette and category pills for report follow-up rows.

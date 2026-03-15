@@ -1,0 +1,155 @@
+{% extends 'base.html' %}
+{% block title %}Device Access | MEDTRACK{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <div>
+    <h1 class="h4 mb-1">Device Access</h1>
+    <p class="text-muted mb-0">Pilot device approval for selected users, with room to expand to role-based targeting later.</p>
+  </div>
+  <a class="btn btn-outline-primary btn-sm" href="{% url 'patients:settings' %}">Back to Settings</a>
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-12 col-lg-7">
+    <div class="card h-100">
+      <div class="card-body">
+        <h2 class="h6">Pilot Targeting</h2>
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="save_policy" />
+          <div class="form-check mb-3">
+            {{ policy_form.enabled }}
+            <label class="form-check-label" for="{{ policy_form.enabled.id_for_label }}">{{ policy_form.enabled.label }}</label>
+          </div>
+          <div class="mb-2">
+            {{ policy_form.target_users.label_tag }}
+            {{ policy_form.target_users }}
+            {% if policy_form.target_users.help_text %}
+              <div class="form-text">{{ policy_form.target_users.help_text }}</div>
+            {% endif %}
+            {% if policy_form.target_users.errors %}
+              <div class="text-danger small mt-1">{{ policy_form.target_users.errors|striptags }}</div>
+            {% endif %}
+          </div>
+          <button class="btn btn-primary btn-sm">Save Device Policy</button>
+        </form>
+      </div>
+    </div>
+  </div>
+  <div class="col-12 col-lg-5">
+    <div class="card h-100">
+      <div class="card-body">
+        <h2 class="h6">Pilot Role Helper</h2>
+        <p class="text-muted small">
+          This app still gives each user one primary role/group. Use <strong>{{ staff_pilot_role_name }}</strong> to test
+          device approval without changing the real <strong>{{ staff_role_name }}</strong> role.
+        </p>
+        <form method="post" class="mb-3">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="clone_staff_pilot" />
+          <button class="btn btn-outline-primary btn-sm">Create / Refresh {{ staff_pilot_role_name }}</button>
+        </form>
+        <div class="small text-muted">
+          Approved device cap per user: {{ max_approved_devices }}.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card mb-3">
+  <div class="card-body">
+    <h2 class="h6">Pending Devices</h2>
+    <div class="table-responsive">
+      <table class="table table-sm align-middle mb-0">
+        <thead>
+          <tr>
+            <th>User</th>
+            <th>Device</th>
+            <th>Created</th>
+            <th>Last Used</th>
+            <th class="text-end">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for credential in pending_devices %}
+            <tr>
+              <td>{{ credential.user.username }}</td>
+              <td>
+                <div>{{ credential.device_label }}</div>
+                <div class="text-muted small">{{ credential.user_agent|truncatechars:70 }}</div>
+              </td>
+              <td>{{ credential.created_at|date:"Y-m-d H:i" }}</td>
+              <td>{{ credential.last_used_at|date:"Y-m-d H:i"|default:"-" }}</td>
+              <td class="text-end">
+                <div class="d-inline-flex gap-2">
+                  <form method="post">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="approve_device" />
+                    <input type="hidden" name="credential_id" value="{{ credential.pk }}" />
+                    <button class="btn btn-primary btn-sm">Approve</button>
+                  </form>
+                  <form method="post">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="revoke_device" />
+                    <input type="hidden" name="credential_id" value="{{ credential.pk }}" />
+                    <button class="btn btn-outline-danger btn-sm">Revoke</button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+          {% empty %}
+            <tr>
+              <td colspan="5" class="text-muted">No pending device registrations.</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body">
+    <h2 class="h6">Approved Devices</h2>
+    <div class="table-responsive">
+      <table class="table table-sm align-middle mb-0">
+        <thead>
+          <tr>
+            <th>User</th>
+            <th>Device</th>
+            <th>Approved</th>
+            <th>Last Used</th>
+            <th class="text-end">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for credential in approved_devices %}
+            <tr>
+              <td>{{ credential.user.username }}</td>
+              <td>
+                <div>{{ credential.device_label }}</div>
+                <div class="text-muted small">{{ credential.user_agent|truncatechars:70 }}</div>
+              </td>
+              <td>{{ credential.approved_at|date:"Y-m-d H:i"|default:"-" }}</td>
+              <td>{{ credential.last_used_at|date:"Y-m-d H:i"|default:"-" }}</td>
+              <td class="text-end">
+                <form method="post" class="d-inline">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="revoke_device" />
+                  <input type="hidden" name="credential_id" value="{{ credential.pk }}" />
+                  <button class="btn btn-outline-danger btn-sm">Revoke</button>
+                </form>
+              </td>
+            </tr>
+          {% empty %}
+            <tr>
+              <td colspan="5" class="text-muted">No approved devices yet.</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

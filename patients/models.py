@@ -33,6 +33,9 @@ class TaskType(models.TextChoices):
 RCH_REMINDER_TASK_TITLE = "Update RCH Number"
 RCH_REMINDER_INTERVAL_DAYS = 14
 RCH_REMINDER_FREQUENCY_LABEL = "RCH reminder"
+STAFF_ROLE_NAME = "Staff"
+STAFF_PILOT_ROLE_NAME = "Staff Pilot"
+DEVICE_APPROVAL_MAX_APPROVED = 3
 
 
 class CallOutcome(models.TextChoices):
@@ -154,6 +157,16 @@ class RoleSetting(models.Model):
             "manage_settings": self.can_manage_settings,
         }
 
+    def field_capabilities(self):
+        return {
+            "can_case_create": self.can_case_create,
+            "can_case_edit": self.can_case_edit,
+            "can_task_create": self.can_task_create,
+            "can_task_edit": self.can_task_edit,
+            "can_note_add": self.can_note_add,
+            "can_manage_settings": self.can_manage_settings,
+        }
+
 
 class ThemeSettings(models.Model):
     tokens = models.JSONField(default=dict, blank=True)
@@ -166,6 +179,85 @@ class ThemeSettings(models.Model):
     @classmethod
     def get_solo(cls):
         return cls.objects.get_or_create(pk=1)[0]
+
+
+class DeviceApprovalPolicy(models.Model):
+    enabled = models.BooleanField(default=False)
+    target_users = models.ManyToManyField(settings.AUTH_USER_MODEL, blank=True, related_name="device_approval_policies")
+    target_groups = models.ManyToManyField("auth.Group", blank=True, related_name="device_approval_policies")
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def save(self, *args, **kwargs):
+        self.pk = 1
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def get_solo(cls):
+        return cls.objects.get_or_create(pk=1)[0]
+
+    def targets_user(self, user) -> bool:
+        if not self.enabled or not getattr(user, "is_authenticated", False):
+            return False
+        return self.target_users.filter(pk=user.pk).exists()
+
+
+class StaffDeviceCredentialStatus(models.TextChoices):
+    PENDING = "PENDING", "Pending"
+    APPROVED = "APPROVED", "Approved"
+    REVOKED = "REVOKED", "Revoked"
+
+
+class StaffDeviceCredential(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="device_credentials")
+    status = models.CharField(
+        max_length=16,
+        choices=StaffDeviceCredentialStatus.choices,
+        default=StaffDeviceCredentialStatus.PENDING,
+    )
+    device_label = models.CharField(max_length=120)
+    credential_id = models.CharField(max_length=255, unique=True)
+    public_key = models.TextField()
+    sign_count = models.PositiveIntegerField(default=0)
+    credential_type = models.CharField(max_length=32, blank=True)
+    aaguid = models.CharField(max_length=64, blank=True)
+    transports = models.JSONField(default=list, blank=True)
+    authenticator_attachment = models.CharField(max_length=32, blank=True)
+    device_type = models.CharField(max_length=32, blank=True)
+    backed_up = models.BooleanField(default=False)
+    user_agent = models.TextField(blank=True)
+    trusted_token_hash = models.CharField(max_length=128, blank=True, default="")
+    trusted_token_created_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    approved_at = models.DateTimeField(null=True, blank=True)
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="approved_device_credentials",
+    )
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    revoked_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="revoked_device_credentials",
+    )
+    last_used_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["user__username", "status", "-created_at"]
+        indexes = [
+            models.Index(fields=["user", "status"], name="pat_dev_user_status_idx"),
+        ]
+
+    def clear_trusted_token(self):
+        self.trusted_token_hash = ""
+        self.trusted_token_created_at = None
+
+    def __str__(self) -> str:
+        return f"{self.user} - {self.device_label}"
 
 
 DEFAULT_DEPARTMENTS = [
@@ -235,6 +327,15 @@ def ensure_default_departments():
 def ensure_default_role_settings():
     for role_name, perms in DEFAULT_ROLE_SETTINGS.items():
         RoleSetting.objects.get_or_create(role_name=role_name, defaults=perms)
+
+
+def clone_role_setting(source_role_name=STAFF_ROLE_NAME, target_role_name=STAFF_PILOT_ROLE_NAME):
+    source = RoleSetting.objects.get(role_name=source_role_name)
+    target, _ = RoleSetting.objects.update_or_create(
+        role_name=target_role_name,
+        defaults=source.field_capabilities(),
+    )
+    return target
 
 class Case(models.Model):
     uhid = models.CharField(max_length=64, unique=True)

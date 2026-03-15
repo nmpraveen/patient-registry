@@ -1,0 +1,281 @@
+{% extends 'base.html' %}
+{% block title %}Verify Device | MEDTRACK{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-8 col-xl-7">
+    <div class="card shadow-sm">
+      <div class="card-body p-4">
+        <h1 class="h4 mb-2">Verify This Device</h1>
+        <p class="text-muted mb-4">
+          {{ pending_user.username }} is enrolled in the device approval pilot. Use an approved device or register this browser
+          for admin approval before finishing sign-in.
+        </p>
+
+        <div id="device-status" class="alert alert-secondary" role="status">
+          Waiting for your choice.
+        </div>
+
+        <div class="row g-3 mb-4">
+          <div class="col-md-6">
+            <div class="border rounded p-3 h-100">
+              <h2 class="h6">Approved Device</h2>
+              <p class="text-muted small mb-3">
+                Approved devices on this account: {{ approved_device_count }} / {{ max_approved_devices }}.
+              </p>
+              <button
+                id="verify-device-button"
+                type="button"
+                class="btn btn-primary w-100"
+                {% if not has_approved_devices %}disabled{% endif %}
+              >
+                Verify Approved Device
+              </button>
+              {% if not has_approved_devices %}
+                <div class="text-muted small mt-2">No approved device is available yet for this account.</div>
+              {% endif %}
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="border rounded p-3 h-100">
+              <h2 class="h6">Register This Browser</h2>
+              <label class="form-label" for="device-label">Device label</label>
+              <input
+                id="device-label"
+                type="text"
+                class="form-control mb-3"
+                maxlength="120"
+                placeholder="Ward desktop, office laptop, phone"
+              />
+              <button
+                id="register-device-button"
+                type="button"
+                class="btn btn-outline-primary w-100"
+                {% if not can_register_device %}disabled{% endif %}
+              >
+                Register Browser for Approval
+              </button>
+              {% if not can_register_device %}
+                <div class="text-muted small mt-2">
+                  This account already has the maximum number of approved devices. Ask an admin to revoke one first.
+                </div>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+
+        {% if pending_devices %}
+          <div class="border rounded p-3 mb-3">
+            <h2 class="h6">Pending Approval</h2>
+            <ul class="mb-0">
+              {% for credential in pending_devices %}
+                <li>
+                  {{ credential.device_label }} <span class="text-muted">registered {{ credential.created_at|date:"Y-m-d H:i" }}</span>
+                </li>
+              {% endfor %}
+            </ul>
+          </div>
+        {% endif %}
+
+        <div class="small text-muted">
+          This page needs a browser and device that support WebAuthn / passkeys. If you close this page, sign in again to restart the flow.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  (() => {
+    const csrfToken = "{{ csrf_token }}";
+    const statusEl = document.getElementById("device-status");
+    const verifyButton = document.getElementById("verify-device-button");
+    const registerButton = document.getElementById("register-device-button");
+    const deviceLabelInput = document.getElementById("device-label");
+
+    const setStatus = (message, level = "secondary") => {
+      statusEl.className = `alert alert-${level}`;
+      statusEl.textContent = message;
+    };
+
+    const isWebAuthnAvailable = Boolean(window.PublicKeyCredential && navigator.credentials);
+
+    if (!isWebAuthnAvailable) {
+      setStatus("This browser does not support passkeys / WebAuthn.", "danger");
+      if (verifyButton) verifyButton.disabled = true;
+      if (registerButton) registerButton.disabled = true;
+      return;
+    }
+
+    const decodeBase64url = (value) => {
+      const padding = "=".repeat((4 - (value.length % 4)) % 4);
+      const base64 = (value + padding).replace(/-/g, "+").replace(/_/g, "/");
+      const binary = atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let index = 0; index < binary.length; index += 1) {
+        bytes[index] = binary.charCodeAt(index);
+      }
+      return bytes.buffer;
+    };
+
+    const encodeBase64url = (value) => {
+      const bytes = value instanceof ArrayBuffer ? new Uint8Array(value) : new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+      let binary = "";
+      bytes.forEach((byte) => {
+        binary += String.fromCharCode(byte);
+      });
+      return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+    };
+
+    const credentialToJSON = (value) => {
+      if (value instanceof ArrayBuffer) {
+        return encodeBase64url(value);
+      }
+      if (ArrayBuffer.isView(value)) {
+        return encodeBase64url(value);
+      }
+      if (Array.isArray(value)) {
+        return value.map((item) => credentialToJSON(item));
+      }
+      if (value && typeof value === "object") {
+        const result = {};
+        Object.keys(value).forEach((key) => {
+          result[key] = credentialToJSON(value[key]);
+        });
+        return result;
+      }
+      return value;
+    };
+
+    const creationOptionsFromJSON = (options) => {
+      if (window.PublicKeyCredential.parseCreationOptionsFromJSON) {
+        return window.PublicKeyCredential.parseCreationOptionsFromJSON(options);
+      }
+      const publicKey = JSON.parse(JSON.stringify(options));
+      publicKey.challenge = decodeBase64url(publicKey.challenge);
+      publicKey.user.id = decodeBase64url(publicKey.user.id);
+      if (publicKey.excludeCredentials) {
+        publicKey.excludeCredentials = publicKey.excludeCredentials.map((credential) => ({
+          ...credential,
+          id: decodeBase64url(credential.id),
+        }));
+      }
+      return publicKey;
+    };
+
+    const requestOptionsFromJSON = (options) => {
+      if (window.PublicKeyCredential.parseRequestOptionsFromJSON) {
+        return window.PublicKeyCredential.parseRequestOptionsFromJSON(options);
+      }
+      const publicKey = JSON.parse(JSON.stringify(options));
+      publicKey.challenge = decodeBase64url(publicKey.challenge);
+      if (publicKey.allowCredentials) {
+        publicKey.allowCredentials = publicKey.allowCredentials.map((credential) => ({
+          ...credential,
+          id: decodeBase64url(credential.id),
+        }));
+      }
+      return publicKey;
+    };
+
+    const postJson = async (url, payload = {}) => {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": csrfToken,
+        },
+        body: JSON.stringify(payload),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.message || "Request failed.");
+      }
+      return data;
+    };
+
+    const describeWebAuthnError = (error, fallbackMessage) => {
+      const message = error?.message || "";
+      if (error?.name === "NotAllowedError") {
+        return "The passkey prompt was cancelled or blocked by the device/browser. If iPhone asks to save the passkey, allow it to continue.";
+      }
+      if (error?.name === "InvalidStateError") {
+        return "This device already has a passkey for this account. Ask an admin to approve it, or use Verify Approved Device after approval.";
+      }
+      if (error?.name === "SecurityError") {
+        return "This browser blocked passkey registration in the current security context. Reload the page and try again from the HTTPS tunnel link.";
+      }
+      return message || fallbackMessage;
+    };
+
+    const toggleButtons = (disabled) => {
+      if (verifyButton) verifyButton.disabled = disabled || verifyButton.dataset.locked === "true";
+      if (registerButton) registerButton.disabled = disabled || registerButton.dataset.locked === "true";
+    };
+
+    if (verifyButton && verifyButton.disabled) {
+      verifyButton.dataset.locked = "true";
+    }
+    if (registerButton && registerButton.disabled) {
+      registerButton.dataset.locked = "true";
+    }
+
+    if (registerButton) {
+      registerButton.addEventListener("click", async () => {
+        const deviceLabel = (deviceLabelInput.value || "").trim();
+        if (!deviceLabel) {
+          setStatus("Enter a device label before registering this browser.", "warning");
+          deviceLabelInput.focus();
+          return;
+        }
+
+        toggleButtons(true);
+        setStatus("Requesting registration options...", "secondary");
+
+        try {
+          const options = await postJson("{% url 'login_device_register_options' %}");
+          const credential = await navigator.credentials.create({
+            publicKey: creationOptionsFromJSON(options),
+          });
+          const credentialJson = credential.toJSON ? credential.toJSON() : credentialToJSON(credential);
+          credentialJson.authenticatorAttachment = credential.authenticatorAttachment || "";
+          if (credential.response && credential.response.getTransports) {
+            credentialJson.transports = credential.response.getTransports();
+          }
+          const result = await postJson("{% url 'login_device_register_verify' %}", {
+            device_label: deviceLabel,
+            credential: credentialJson,
+          });
+          setStatus(result.message || "Device registered. Await admin approval.", "info");
+        } catch (error) {
+          setStatus(describeWebAuthnError(error, "Device registration failed."), "danger");
+        } finally {
+          toggleButtons(false);
+        }
+      });
+    }
+
+    if (verifyButton) {
+      verifyButton.addEventListener("click", async () => {
+        toggleButtons(true);
+        setStatus("Requesting verification options...", "secondary");
+
+        try {
+          const options = await postJson("{% url 'login_device_authenticate_options' %}");
+          const assertion = await navigator.credentials.get({
+            publicKey: requestOptionsFromJSON(options),
+          });
+          const assertionJson = assertion.toJSON ? assertion.toJSON() : credentialToJSON(assertion);
+          const result = await postJson("{% url 'login_device_authenticate_verify' %}", {
+            credential: assertionJson,
+          });
+          setStatus(result.message || "Device verified. Redirecting...", "success");
+          window.location.assign(result.redirect_url || "{% url 'patients:dashboard' %}");
+        } catch (error) {
+          setStatus(describeWebAuthnError(error, "Device verification failed."), "danger");
+          toggleButtons(false);
+        }
+      });
+    }
+  })();
+</script>
+{% endblock %}

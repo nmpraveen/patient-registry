@@ -13,6 +13,7 @@ from .models import (
     Case,
     CaseActivityLog,
     DepartmentConfig,
+    DeviceApprovalPolicy,
     NonCommunicableDisease,
     RoleSetting,
     Task,
@@ -513,6 +514,24 @@ class SeedMockDataForm(forms.Form):
         for field_name in ["include_vitals", "include_rch_scenarios", "reset_all"]:
             self.fields[field_name].widget.attrs["class"] = "form-check-input"
 
+
+class DeviceApprovalPolicyForm(forms.ModelForm):
+    target_users = forms.ModelMultipleChoiceField(
+        queryset=get_user_model().objects.none(),
+        required=False,
+        widget=forms.SelectMultiple(attrs={"class": "form-select", "size": 10}),
+        help_text="Only selected users will require approved devices during the pilot.",
+    )
+
+    class Meta:
+        model = DeviceApprovalPolicy
+        fields = ["enabled", "target_users"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        User = get_user_model()
+        self.fields["enabled"].widget.attrs["class"] = "form-check-input"
+        self.fields["target_users"].queryset = User.objects.order_by("username")
 
 
 class UserRoleForm(forms.Form):

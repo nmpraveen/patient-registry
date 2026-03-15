@@ -1,21 +1,28 @@
+import hashlib
+import json
+import secrets
+from base64 import urlsafe_b64encode
 from collections import OrderedDict
-from pathlib import Path
 from datetime import datetime, timedelta
 from difflib import SequenceMatcher
+from pathlib import Path
 
 from django.conf import settings
 from django.contrib import messages
-from django.contrib.auth import get_user_model
+from django.contrib.auth import get_user_model, login as auth_login
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.models import Group
+from django.contrib.auth.views import LoginView
 from django.core.management import call_command
 from django.core.exceptions import ValidationError
 from django.db.models import Count, Exists, IntegerField, OuterRef, Prefetch, Q, Subquery
 from django.db.models.functions import Coalesce
 from django.http import HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
-from django.urls import reverse
+from django.urls import reverse, reverse_lazy
+from django.utils.crypto import constant_time_compare
 from django.utils import timezone
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views import View
 from django.views.generic import CreateView, DetailView, ListView, UpdateView
 
@@ -25,6 +32,7 @@ from .forms import (
     CaseForm,
     DepartmentThemeFormSet,
     DepartmentConfigForm,
+    DeviceApprovalPolicyForm,
     RecentCaseUpdateForm,
     RoleSettingForm,
     SeedMockDataForm,
@@ -41,16 +49,23 @@ from .models import (
     CaseActivityLog,
     CaseStatus,
     DepartmentConfig,
+    DeviceApprovalPolicy,
+    DEVICE_APPROVAL_MAX_APPROVED,
     Gender,
     RCH_REMINDER_INTERVAL_DAYS,
     RCH_REMINDER_TASK_TITLE,
     RoleSetting,
+    STAFF_PILOT_ROLE_NAME,
+    STAFF_ROLE_NAME,
+    StaffDeviceCredential,
+    StaffDeviceCredentialStatus,
     Task,
     TaskStatus,
     ThemeSettings,
     VitalEntry,
     build_default_tasks,
     cancel_open_rch_reminders,
+    clone_role_setting,
     ensure_rch_reminder_task,
     ensure_default_role_settings,
     frequency_to_days,
@@ -94,6 +109,191 @@ RECENT_CASE_LIMIT_DEFAULT = 10
 RECENT_CASE_LIMIT_MAX = 10
 RECENT_CASE_VIEW_ROLES = ("Doctor", "Admin", "Reception")
 RECENT_CASE_EDIT_ROLES = ("Doctor", "Admin")
+PENDING_DEVICE_LOGIN_SESSION_KEY = "device_access_pending_login"
+DEVICE_REGISTRATION_STATE_SESSION_KEY = "device_access_registration_state"
+DEVICE_AUTHENTICATION_STATE_SESSION_KEY = "device_access_authentication_state"
+
+
+def _bytes_to_base64url(value):
+    return urlsafe_b64encode(value).rstrip(b"=").decode("ascii")
+
+
+def _load_webauthn_dependencies():
+    from webauthn import (
+        generate_authentication_options,
+        generate_registration_options,
+        options_to_json,
+        verify_authentication_response,
+        verify_registration_response,
+    )
+    from webauthn.helpers import base64url_to_bytes
+    from webauthn.helpers.structs import (
+        AuthenticationCredential,
+        PublicKeyCredentialDescriptor,
+        PublicKeyCredentialType,
+        RegistrationCredential,
+        UserVerificationRequirement,
+    )
+
+    return {
+        "AuthenticationCredential": AuthenticationCredential,
+        "PublicKeyCredentialDescriptor": PublicKeyCredentialDescriptor,
+        "PublicKeyCredentialType": PublicKeyCredentialType,
+        "RegistrationCredential": RegistrationCredential,
+        "UserVerificationRequirement": UserVerificationRequirement,
+        "base64url_to_bytes": base64url_to_bytes,
+        "generate_authentication_options": generate_authentication_options,
+        "generate_registration_options": generate_registration_options,
+        "options_to_json": options_to_json,
+        "verify_authentication_response": verify_authentication_response,
+        "verify_registration_response": verify_registration_response,
+    }
+
+
+def _safe_redirect_target(request, value):
+    fallback = reverse_lazy(settings.LOGIN_REDIRECT_URL)
+    if value and url_has_allowed_host_and_scheme(
+        value,
+        allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
+    ):
+        return value
+    return str(fallback)
+
+
+def _pending_device_login_state(request):
+    state = request.session.get(PENDING_DEVICE_LOGIN_SESSION_KEY)
+    if not isinstance(state, dict):
+        return None
+    return state
+
+
+def _set_pending_device_login(request, *, user, backend, redirect_to):
+    request.session[PENDING_DEVICE_LOGIN_SESSION_KEY] = {
+        "user_id": user.pk,
+        "backend": backend or settings.AUTHENTICATION_BACKENDS[0],
+        "redirect_to": _safe_redirect_target(request, redirect_to),
+    }
+
+
+def _clear_pending_device_login(request):
+    request.session.pop(PENDING_DEVICE_LOGIN_SESSION_KEY, None)
+    request.session.pop(DEVICE_REGISTRATION_STATE_SESSION_KEY, None)
+    request.session.pop(DEVICE_AUTHENTICATION_STATE_SESSION_KEY, None)
+
+
+def _pending_device_login_user(request):
+    state = _pending_device_login_state(request)
+    if not state:
+        return None
+    User = get_user_model()
+    return User.objects.filter(pk=state.get("user_id")).first()
+
+
+def _device_policy():
+    return DeviceApprovalPolicy.get_solo()
+
+
+def _is_device_approval_target_user(user):
+    if not getattr(user, "is_authenticated", False):
+        return False
+    return _device_policy().targets_user(user)
+
+
+def _approved_device_queryset(user):
+    return StaffDeviceCredential.objects.filter(user=user, status=StaffDeviceCredentialStatus.APPROVED)
+
+
+def _approved_device_count(user):
+    return _approved_device_queryset(user).count()
+
+
+def _can_register_device(user):
+    return _approved_device_count(user) < DEVICE_APPROVAL_MAX_APPROVED
+
+
+def _trusted_device_cookie_name():
+    return settings.DEVICE_APPROVAL_TRUST_COOKIE_NAME
+
+
+def _trusted_device_token_hash(token):
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _default_origin_for_request(request):
+    scheme = "https" if request.is_secure() or settings.SESSION_COOKIE_SECURE else "http"
+    return f"{scheme}://{request.get_host()}"
+
+
+def _expected_webauthn_origin(request):
+    origin = _default_origin_for_request(request)
+    allowed_origins = getattr(settings, "WEBAUTHN_ALLOWED_ORIGINS", [])
+    if allowed_origins and origin not in allowed_origins:
+        return allowed_origins[0]
+    return origin
+
+
+def _expected_webauthn_rp_id(request):
+    configured_rp_id = getattr(settings, "WEBAUTHN_RP_ID", "").strip()
+    if configured_rp_id:
+        return configured_rp_id
+    return request.get_host().split(":", 1)[0]
+
+
+def _set_trusted_device_cookie(response, credential):
+    token = secrets.token_urlsafe(32)
+    credential.trusted_token_hash = _trusted_device_token_hash(token)
+    credential.trusted_token_created_at = timezone.now()
+    credential.save(update_fields=["trusted_token_hash", "trusted_token_created_at"])
+    response.set_cookie(
+        _trusted_device_cookie_name(),
+        f"{credential.pk}:{token}",
+        max_age=settings.DEVICE_APPROVAL_TRUST_COOKIE_AGE,
+        httponly=True,
+        samesite="Lax",
+        secure=settings.SESSION_COOKIE_SECURE,
+    )
+
+
+def _get_trusted_device_credential(request, user):
+    raw_cookie = request.COOKIES.get(_trusted_device_cookie_name(), "")
+    if ":" not in raw_cookie:
+        return None
+
+    credential_pk, token = raw_cookie.split(":", 1)
+    if not credential_pk.isdigit() or not token:
+        return None
+
+    credential = StaffDeviceCredential.objects.filter(
+        pk=int(credential_pk),
+        user=user,
+        status=StaffDeviceCredentialStatus.APPROVED,
+    ).first()
+    if not credential or not credential.trusted_token_hash:
+        return None
+    if not constant_time_compare(credential.trusted_token_hash, _trusted_device_token_hash(token)):
+        return None
+    return credential
+
+
+def _credential_descriptor_from_record(credential, deps):
+    return deps["PublicKeyCredentialDescriptor"](
+        id=deps["base64url_to_bytes"](credential.credential_id),
+        type=deps["PublicKeyCredentialType"].PUBLIC_KEY,
+    )
+
+
+def _pending_device_json_error(message, status=400):
+    return JsonResponse({"message": message}, status=status)
+
+
+def _parse_request_json(request):
+    if not request.body:
+        return {}
+    try:
+        return json.loads(request.body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
 
 
 def _load_changelog_entries():
@@ -1910,6 +2110,348 @@ class VitalEntryUpdateView(LoginRequiredMixin, View):
                 "show_hb_warning": form.hb_warning,
             },
         )
+
+class DeviceAwareLoginView(LoginView):
+    template_name = "registration/login.html"
+
+    def form_valid(self, form):
+        user = form.get_user()
+        if not _is_device_approval_target_user(user):
+            return super().form_valid(form)
+
+        trusted_credential = _get_trusted_device_credential(self.request, user)
+        if trusted_credential:
+            trusted_credential.last_used_at = timezone.now()
+            trusted_credential.save(update_fields=["last_used_at"])
+            return super().form_valid(form)
+
+        _set_pending_device_login(
+            self.request,
+            user=user,
+            backend=getattr(user, "backend", None),
+            redirect_to=self.get_success_url(),
+        )
+        messages.info(
+            self.request,
+            "This account requires an approved device. Verify or register this browser to continue.",
+        )
+        return redirect("login_device_verification")
+
+
+class DeviceVerificationView(View):
+    template_name = "registration/device_verification.html"
+
+    def get(self, request):
+        user = _pending_device_login_user(request)
+        if not user:
+            messages.error(request, "Your login session expired. Sign in again.")
+            return redirect("login")
+
+        pending_devices = StaffDeviceCredential.objects.filter(
+            user=user,
+            status=StaffDeviceCredentialStatus.PENDING,
+        ).order_by("-created_at")
+        approved_devices = _approved_device_queryset(user).order_by("-last_used_at", "-approved_at", "-created_at")
+        context = {
+            "pending_user": user,
+            "pending_devices": pending_devices,
+            "approved_devices": approved_devices,
+            "approved_device_count": approved_devices.count(),
+            "max_approved_devices": DEVICE_APPROVAL_MAX_APPROVED,
+            "can_register_device": _can_register_device(user),
+            "has_approved_devices": approved_devices.exists(),
+        }
+        return render(request, self.template_name, context)
+
+
+class DeviceRegistrationOptionsView(View):
+    def post(self, request):
+        user = _pending_device_login_user(request)
+        if not user:
+            return _pending_device_json_error("Your login session expired. Sign in again.", status=403)
+        if not _is_device_approval_target_user(user):
+            return _pending_device_json_error("This account no longer requires device approval. Sign in again.", status=403)
+        if not _can_register_device(user):
+            return _pending_device_json_error(
+                f"This account already has {DEVICE_APPROVAL_MAX_APPROVED} approved devices. Ask an admin to revoke one first.",
+                status=400,
+            )
+
+        deps = _load_webauthn_dependencies()
+        registered_credentials = StaffDeviceCredential.objects.filter(user=user).exclude(
+            status=StaffDeviceCredentialStatus.REVOKED
+        )
+        options = deps["generate_registration_options"](
+            rp_id=_expected_webauthn_rp_id(request),
+            rp_name=settings.WEBAUTHN_RP_NAME,
+            user_id=str(user.pk).encode("utf-8"),
+            user_name=user.username,
+            user_display_name=user.get_full_name() or user.username,
+            exclude_credentials=[_credential_descriptor_from_record(record, deps) for record in registered_credentials],
+        )
+        request.session[DEVICE_REGISTRATION_STATE_SESSION_KEY] = {
+            "user_id": user.pk,
+            "challenge": _bytes_to_base64url(options.challenge),
+        }
+        return JsonResponse(json.loads(deps["options_to_json"](options)))
+
+
+class DeviceRegistrationVerifyView(View):
+    def post(self, request):
+        user = _pending_device_login_user(request)
+        state = request.session.get(DEVICE_REGISTRATION_STATE_SESSION_KEY)
+        if not user or not state or state.get("user_id") != user.pk:
+            return _pending_device_json_error("Your device registration session expired. Sign in again.", status=403)
+
+        payload = _parse_request_json(request)
+        if payload is None:
+            return _pending_device_json_error("Invalid registration payload.")
+        if not _can_register_device(user):
+            return _pending_device_json_error(
+                f"This account already has {DEVICE_APPROVAL_MAX_APPROVED} approved devices. Ask an admin to revoke one first.",
+                status=400,
+            )
+
+        device_label = (payload.get("device_label") or "").strip()
+        if not device_label:
+            device_label = f"{user.username} browser"
+        credential_payload = payload.get("credential")
+        if not isinstance(credential_payload, dict):
+            return _pending_device_json_error("Missing credential registration data.")
+
+        deps = _load_webauthn_dependencies()
+        try:
+            verification = deps["verify_registration_response"](
+                credential=credential_payload,
+                expected_challenge=deps["base64url_to_bytes"](state["challenge"]),
+                expected_origin=_expected_webauthn_origin(request),
+                expected_rp_id=_expected_webauthn_rp_id(request),
+                require_user_verification=True,
+            )
+        except Exception as exc:
+            return _pending_device_json_error(f"Device registration could not be verified: {exc}")
+
+        credential_id = _bytes_to_base64url(verification.credential_id)
+        existing = StaffDeviceCredential.objects.filter(credential_id=credential_id).first()
+        if existing and existing.user_id != user.pk:
+            return _pending_device_json_error("That device is already registered to another user.")
+        if existing and existing.status == StaffDeviceCredentialStatus.APPROVED:
+            return _pending_device_json_error("This device is already approved. Use device verification instead.")
+        if existing and existing.status == StaffDeviceCredentialStatus.PENDING:
+            return JsonResponse({"message": "This device is already awaiting admin approval.", "status": "PENDING"})
+
+        aaguid = getattr(verification, "aaguid", "") or ""
+        if isinstance(aaguid, bytes):
+            aaguid = _bytes_to_base64url(aaguid)
+        transports = credential_payload.get("transports") or []
+        if not isinstance(transports, list):
+            transports = []
+
+        device = existing or StaffDeviceCredential(user=user, credential_id=credential_id)
+        device.user = user
+        device.status = StaffDeviceCredentialStatus.PENDING
+        device.device_label = device_label[:120]
+        device.public_key = _bytes_to_base64url(verification.credential_public_key)
+        device.sign_count = getattr(verification, "sign_count", 0) or 0
+        device.credential_type = (credential_payload.get("type") or "public-key")[:32]
+        device.aaguid = str(aaguid)[:64]
+        device.transports = transports
+        device.authenticator_attachment = (credential_payload.get("authenticatorAttachment") or "")[:32]
+        device.device_type = str(getattr(verification, "credential_device_type", "") or "")[:32]
+        device.backed_up = bool(getattr(verification, "credential_backed_up", False))
+        device.user_agent = request.META.get("HTTP_USER_AGENT", "")
+        device.approved_at = None
+        device.approved_by = None
+        device.revoked_at = None
+        device.revoked_by = None
+        device.last_used_at = None
+        device.clear_trusted_token()
+        device.save()
+        request.session.pop(DEVICE_REGISTRATION_STATE_SESSION_KEY, None)
+        return JsonResponse(
+            {
+                "message": "Device registered. An admin must approve it before you can sign in from this browser.",
+                "status": StaffDeviceCredentialStatus.PENDING,
+            }
+        )
+
+
+class DeviceAuthenticationOptionsView(View):
+    def post(self, request):
+        user = _pending_device_login_user(request)
+        if not user:
+            return _pending_device_json_error("Your login session expired. Sign in again.", status=403)
+
+        approved_devices = list(_approved_device_queryset(user).order_by("id"))
+        if not approved_devices:
+            return _pending_device_json_error("No approved devices are available for this account yet.", status=400)
+
+        deps = _load_webauthn_dependencies()
+        options = deps["generate_authentication_options"](
+            rp_id=_expected_webauthn_rp_id(request),
+            allow_credentials=[_credential_descriptor_from_record(record, deps) for record in approved_devices],
+            user_verification=deps["UserVerificationRequirement"].REQUIRED,
+        )
+        request.session[DEVICE_AUTHENTICATION_STATE_SESSION_KEY] = {
+            "user_id": user.pk,
+            "challenge": _bytes_to_base64url(options.challenge),
+        }
+        return JsonResponse(json.loads(deps["options_to_json"](options)))
+
+
+class DeviceAuthenticationVerifyView(View):
+    def post(self, request):
+        user = _pending_device_login_user(request)
+        login_state = _pending_device_login_state(request)
+        auth_state = request.session.get(DEVICE_AUTHENTICATION_STATE_SESSION_KEY)
+        if not user or not login_state or not auth_state or auth_state.get("user_id") != user.pk:
+            return _pending_device_json_error("Your device verification session expired. Sign in again.", status=403)
+
+        payload = _parse_request_json(request)
+        if payload is None:
+            return _pending_device_json_error("Invalid verification payload.")
+        credential_payload = payload.get("credential")
+        if not isinstance(credential_payload, dict):
+            return _pending_device_json_error("Missing credential verification data.")
+
+        credential_id = credential_payload.get("id")
+        if not credential_id:
+            return _pending_device_json_error("Missing credential identifier.")
+
+        device = _approved_device_queryset(user).filter(credential_id=credential_id).first()
+        if not device:
+            return _pending_device_json_error("That device is not approved for this account.", status=403)
+
+        deps = _load_webauthn_dependencies()
+        try:
+            verification = deps["verify_authentication_response"](
+                credential=credential_payload,
+                expected_challenge=deps["base64url_to_bytes"](auth_state["challenge"]),
+                expected_rp_id=_expected_webauthn_rp_id(request),
+                expected_origin=_expected_webauthn_origin(request),
+                credential_public_key=deps["base64url_to_bytes"](device.public_key),
+                credential_current_sign_count=device.sign_count,
+                require_user_verification=True,
+            )
+        except Exception as exc:
+            return _pending_device_json_error(f"Device verification failed: {exc}")
+
+        device.sign_count = getattr(verification, "new_sign_count", device.sign_count)
+        device.last_used_at = timezone.now()
+        device.user_agent = request.META.get("HTTP_USER_AGENT", "")
+        device.save(update_fields=["sign_count", "last_used_at", "user_agent"])
+
+        redirect_to = login_state.get("redirect_to") or reverse("patients:dashboard")
+        backend = login_state.get("backend") or settings.AUTHENTICATION_BACKENDS[0]
+        _clear_pending_device_login(request)
+        auth_login(request, user, backend=backend)
+        response = JsonResponse({"message": "Device verified.", "redirect_url": redirect_to})
+        _set_trusted_device_cookie(response, device)
+        return response
+
+
+class DeviceAccessSettingsView(LoginRequiredMixin, View):
+    template_name = "patients/settings_device_access.html"
+
+    def _check_access(self, request):
+        if not has_capability(request.user, "manage_settings"):
+            return HttpResponseForbidden("Only admins can access settings.")
+        return None
+
+    def _build_context(self, policy_form):
+        return {
+            "policy_form": policy_form,
+            "pending_devices": StaffDeviceCredential.objects.select_related("user").filter(
+                status=StaffDeviceCredentialStatus.PENDING
+            ).order_by("user__username", "-created_at"),
+            "approved_devices": StaffDeviceCredential.objects.select_related("user").filter(
+                status=StaffDeviceCredentialStatus.APPROVED
+            ).order_by("user__username", "-approved_at", "-created_at"),
+            "max_approved_devices": DEVICE_APPROVAL_MAX_APPROVED,
+            "staff_role_name": STAFF_ROLE_NAME,
+            "staff_pilot_role_name": STAFF_PILOT_ROLE_NAME,
+        }
+
+    def get(self, request):
+        denied = self._check_access(request)
+        if denied:
+            return denied
+        return render(request, self.template_name, self._build_context(DeviceApprovalPolicyForm(instance=_device_policy())))
+
+    def post(self, request):
+        denied = self._check_access(request)
+        if denied:
+            return denied
+
+        action = request.POST.get("action", "save_policy")
+        policy = _device_policy()
+
+        if action == "save_policy":
+            form = DeviceApprovalPolicyForm(request.POST, instance=policy)
+            if form.is_valid():
+                form.save()
+                messages.success(request, "Device approval pilot settings saved.")
+                return redirect("patients:settings_device_access")
+            messages.error(request, "Device approval settings have errors.")
+            return render(request, self.template_name, self._build_context(form))
+
+        if action == "clone_staff_pilot":
+            try:
+                pilot_role = clone_role_setting()
+            except RoleSetting.DoesNotExist:
+                messages.error(request, f"Source role {STAFF_ROLE_NAME} does not exist yet.")
+            else:
+                Group.objects.get_or_create(name=pilot_role.role_name)
+                messages.success(request, f"Created or refreshed the {pilot_role.role_name} role from {STAFF_ROLE_NAME}.")
+            return redirect("patients:settings_device_access")
+
+        credential = get_object_or_404(StaffDeviceCredential.objects.select_related("user"), pk=request.POST.get("credential_id"))
+        if action == "approve_device":
+            if credential.status != StaffDeviceCredentialStatus.APPROVED and _approved_device_count(credential.user) >= DEVICE_APPROVAL_MAX_APPROVED:
+                messages.error(
+                    request,
+                    f"{credential.user.username} already has {DEVICE_APPROVAL_MAX_APPROVED} approved devices. Revoke one before approving another.",
+                )
+                return redirect("patients:settings_device_access")
+            credential.status = StaffDeviceCredentialStatus.APPROVED
+            credential.approved_at = timezone.now()
+            credential.approved_by = request.user
+            credential.revoked_at = None
+            credential.revoked_by = None
+            credential.clear_trusted_token()
+            credential.save(
+                update_fields=[
+                    "status",
+                    "approved_at",
+                    "approved_by",
+                    "revoked_at",
+                    "revoked_by",
+                    "trusted_token_hash",
+                    "trusted_token_created_at",
+                ]
+            )
+            messages.success(request, f"Approved {credential.device_label} for {credential.user.username}.")
+            return redirect("patients:settings_device_access")
+
+        if action == "revoke_device":
+            credential.status = StaffDeviceCredentialStatus.REVOKED
+            credential.revoked_at = timezone.now()
+            credential.revoked_by = request.user
+            credential.clear_trusted_token()
+            credential.save(
+                update_fields=[
+                    "status",
+                    "revoked_at",
+                    "revoked_by",
+                    "trusted_token_hash",
+                    "trusted_token_created_at",
+                ]
+            )
+            messages.success(request, f"Revoked {credential.device_label} for {credential.user.username}.")
+            return redirect("patients:settings_device_access")
+
+        messages.error(request, "Unknown device access action.")
+        return redirect("patients:settings_device_access")
 
 
 class ChangelogView(LoginRequiredMixin, View):

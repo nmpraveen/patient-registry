@@ -24,6 +24,12 @@ CSRF_TRUSTED_ORIGINS = [
     if origin.strip()
 ]
 
+WEBAUTHN_ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in env("WEBAUTHN_ALLOWED_ORIGINS", default="").split(",")
+    if origin.strip()
+]
+
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
@@ -109,6 +115,10 @@ LOGOUT_REDIRECT_URL = "login"
 
 SESSION_COOKIE_AGE = env.int("SESSION_TIMEOUT_SECONDS", default=1800)
 SESSION_EXPIRE_AT_BROWSER_CLOSE = False
+DEVICE_APPROVAL_TRUST_COOKIE_NAME = env("DEVICE_APPROVAL_TRUST_COOKIE_NAME", default="medtrack_trusted_device")
+DEVICE_APPROVAL_TRUST_COOKIE_AGE = env.int("DEVICE_APPROVAL_TRUST_COOKIE_AGE", default=315360000)
+WEBAUTHN_RP_ID = env("WEBAUTHN_RP_ID", default="")
+WEBAUTHN_RP_NAME = env("WEBAUTHN_RP_NAME", default="MEDTRACK")
 
 # Deployment hardening toggles (set secure values in production environment).
 SECURE_SSL_REDIRECT = env.bool("SECURE_SSL_REDIRECT", default=False)

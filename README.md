@@ -32,6 +32,22 @@ Open:
 - `http://localhost:8000/patients/`
 - `http://localhost:8000/patients/settings/` (admin role/settings page)
 
+## Device approval pilot
+
+The login flow now supports an admin-approved device pilot for selected users:
+
+- Admin page: `http://localhost:8000/patients/settings/device-access/`
+- Pilot helper: clones `Staff` into `Staff Pilot`
+- V1 targeting: selected users only, managed from Device Access settings
+
+For WebAuthn / passkeys outside localhost, configure these env vars and serve the app over HTTPS:
+
+```bash
+WEBAUTHN_RP_ID=your-hostname.example.org
+WEBAUTHN_RP_NAME=MEDTRACK
+WEBAUTHN_ALLOWED_ORIGINS=https://your-hostname.example.org
+```
+
 ## Demo data (30 mock cases)
 
 To quickly see the app with sample records:

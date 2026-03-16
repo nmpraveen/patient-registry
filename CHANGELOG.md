@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026.03.16.13.52
+- Added backup-scheduler controls to the Database Management page so admins can enable automatic patient-data backups as `1 per day`, `2 per day` at `00:00` and `12:00`, or custom `HH:MM` timings.
+- Added persistent scheduler status on the page, including last backup time/result, last trigger type, last backup file, and the next scheduled backup time.
+- Added a built-in background scheduler with DB-backed schedule state, due-run locking, status updates for manual/scheduled/import-safety backups, migration coverage, and automated tests for schedule save/validation and automatic backup execution.
+
+## 2026.03.16.13.28
+- Added an admin-only `Database Management` settings page for exporting patient-data ZIP bundles, importing validated patient-data bundles, and creating server-side patient-data backups.
+- Introduced the patient-data bundle format (`patient_data.json` + `manifest.json`) with SHA-256 integrity checks, UHID-based case identity, duplicate-UHID validation, null-safe missing-user imports, and safety backups before destructive imports.
+- Added the `backup_patient_data` management command for scheduled patient-data backups with retention pruning, updated the README with backup guidance, and expanded automated coverage for bundle export/import, rollback safety, and backup pruning.
+
 ## 2026.03.15.21.14
 - Extended case search so `CallLog.notes` are searchable alongside direct case fields, case notes, and timeline note entries in both the navbar autocomplete and the full case search results page.
 - Updated the search UI copy to explicitly call out case-note and call-note matching.

@@ -1,7 +1,10 @@
+import io
 import re
 import hashlib
 import json
-from datetime import datetime, timedelta
+import tempfile
+import zipfile
+from datetime import datetime, time as dt_time, timedelta
 from decimal import Decimal
 from pathlib import Path
 from unittest.mock import patch
@@ -9,6 +12,7 @@ from unittest.mock import patch
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.db import connection
@@ -18,6 +22,8 @@ from django.urls import reverse
 from django.utils import timezone
 
 from .forms import CaseForm, DepartmentThemeForm
+from . import database_bundle
+from . import backup_scheduler
 from .models import (
     ActivityEventType,
     AncHighRiskReason,
@@ -31,6 +37,10 @@ from .models import (
     DeviceApprovalPolicy,
     DEVICE_APPROVAL_MAX_APPROVED,
     Gender,
+    PatientDataBackupSchedule,
+    PatientDataBackupScheduleMode,
+    PatientDataBackupStatus,
+    PatientDataBackupTrigger,
     RCH_REMINDER_INTERVAL_DAYS,
     RCH_REMINDER_TASK_TITLE,
     RoleSetting,
@@ -366,6 +376,76 @@ class MedtrackViewTests(TestCase):
         if created_at is not None:
             Case.objects.filter(pk=case.pk).update(created_at=created_at)
         return Case.objects.get(pk=case.pk)
+
+    def create_bundle_case(
+        self,
+        *,
+        uhid,
+        first_name="Bundle",
+        last_name="Patient",
+        phone_number="9000000001",
+        category=None,
+        created_by=None,
+        **overrides,
+    ):
+        category = category or self.surgery
+        created_by = created_by or self.user
+        defaults = {
+            "uhid": uhid,
+            "first_name": first_name,
+            "last_name": last_name,
+            "phone_number": phone_number,
+            "category": category,
+            "status": CaseStatus.ACTIVE,
+            "created_by": created_by,
+        }
+        category_name = category.name.upper()
+        if category_name == "ANC":
+            defaults.update(
+                {
+                    "lmp": timezone.localdate() - timedelta(days=70),
+                    "edd": timezone.localdate() + timedelta(days=200),
+                }
+            )
+        elif category_name == "SURGERY":
+            defaults.update(
+                {
+                    "surgical_pathway": SurgicalPathway.SURVEILLANCE,
+                    "review_date": timezone.localdate() + timedelta(days=7),
+                }
+            )
+        else:
+            defaults.update({"review_date": timezone.localdate() + timedelta(days=7)})
+        defaults.update(overrides)
+        return Case.objects.create(**defaults)
+
+    def build_patient_bundle_bytes(self):
+        archive_bytes, _, _ = database_bundle.create_bundle_archive()
+        return archive_bytes
+
+    def rewrite_bundle(self, bundle_bytes, *, payload_mutator=None, manifest_mutator=None, refresh_manifest=True):
+        with zipfile.ZipFile(io.BytesIO(bundle_bytes), "r") as bundle_zip:
+            payload = json.loads(bundle_zip.read(database_bundle.PATIENT_DATA_FILENAME).decode("utf-8"))
+            manifest = json.loads(bundle_zip.read(database_bundle.MANIFEST_FILENAME).decode("utf-8"))
+
+        if payload_mutator:
+            payload_mutator(payload)
+
+        patient_data_bytes = json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False).encode("utf-8")
+        if refresh_manifest:
+            manifest["counts"] = database_bundle.compute_payload_counts(payload)
+            manifest["patient_data_sha256"] = hashlib.sha256(patient_data_bytes).hexdigest()
+        if manifest_mutator:
+            manifest_mutator(manifest)
+
+        archive = io.BytesIO()
+        with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as bundle_zip:
+            bundle_zip.writestr(database_bundle.PATIENT_DATA_FILENAME, patient_data_bytes)
+            bundle_zip.writestr(
+                database_bundle.MANIFEST_FILENAME,
+                json.dumps(manifest, indent=2, sort_keys=True, ensure_ascii=False).encode("utf-8"),
+            )
+        return archive.getvalue()
 
     def build_theme_post_data(self, *, token_overrides=None, category_overrides=None):
         token_values = flatten_theme_tokens(merge_theme_tokens(ThemeSettings.get_solo().tokens))
@@ -2012,6 +2092,427 @@ class MedtrackViewTests(TestCase):
         self.assertContains(settings_response, reverse("patients:settings_device_access"))
         self.assertEqual(device_response.status_code, 200)
         self.assertContains(device_response, "Device Access")
+
+    def test_admin_settings_page_shows_database_link_and_page_requires_manage_settings(self):
+        self.client.force_login(self.user)
+
+        forbidden_get = self.client.get(reverse("patients:settings_database"))
+        forbidden_post = self.client.post(reverse("patients:settings_database"), {"action": "backup"})
+
+        self.assertEqual(forbidden_get.status_code, 403)
+        self.assertEqual(forbidden_post.status_code, 403)
+
+        self.login_as_admin()
+        settings_response = self.client.get(reverse("patients:settings"))
+        database_response = self.client.get(reverse("patients:settings_database"))
+
+        self.assertEqual(settings_response.status_code, 200)
+        self.assertContains(settings_response, reverse("patients:settings_database"))
+        self.assertEqual(database_response.status_code, 200)
+        self.assertContains(database_response, "Database Management")
+        self.assertContains(database_response, database_bundle.IMPORT_CONFIRMATION_PHRASE)
+        self.assertContains(database_response, "Automatic backup scheduler")
+
+    def test_database_management_export_returns_zip_bundle(self):
+        self.login_as_admin()
+        case = self.create_bundle_case(uhid="UH-EXPORT-001", phone_number="9000000101")
+        task = Task.objects.create(case=case, title="Export review", due_date=timezone.localdate(), created_by=self.user)
+        VitalEntry.objects.create(case=case, recorded_at=timezone.now(), pr=76, created_by=self.user, updated_by=self.user)
+        CaseActivityLog.objects.create(case=case, task=task, user=self.user, note="Export note")
+        CallLog.objects.create(case=case, task=task, outcome=CallOutcome.NO_ANSWER, notes="Export call", staff_user=self.user)
+
+        response = self.client.post(reverse("patients:settings_database"), {"action": "export"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/zip")
+        self.assertIn("attachment;", response["Content-Disposition"])
+        with zipfile.ZipFile(io.BytesIO(response.content), "r") as bundle_zip:
+            manifest = json.loads(bundle_zip.read(database_bundle.MANIFEST_FILENAME).decode("utf-8"))
+            patient_data_bytes = bundle_zip.read(database_bundle.PATIENT_DATA_FILENAME)
+            payload = json.loads(patient_data_bytes.decode("utf-8"))
+        self.assertEqual(manifest["counts"]["cases"], 1)
+        self.assertEqual(manifest["counts"]["tasks"], 1)
+        self.assertEqual(manifest["counts"]["vitals"], 1)
+        self.assertEqual(manifest["counts"]["activity_logs"], 1)
+        self.assertEqual(manifest["counts"]["call_logs"], 1)
+        self.assertEqual(manifest["patient_data_sha256"], hashlib.sha256(patient_data_bytes).hexdigest())
+        self.assertEqual(payload["cases"][0]["uhid"], "UH-EXPORT-001")
+
+    def test_database_management_backup_action_writes_bundle_and_shows_success(self):
+        self.login_as_admin()
+        self.create_bundle_case(uhid="UH-BACKUP-001", phone_number="9000000102")
+
+        with tempfile.TemporaryDirectory() as temp_dir, patch(
+            "patients.database_bundle.default_backup_dir", return_value=Path(temp_dir)
+        ):
+            response = self.client.post(reverse("patients:settings_database"), {"action": "backup"}, follow=True)
+
+            self.assertEqual(response.status_code, 200)
+            backup_paths = sorted(Path(temp_dir).glob("patient-data-bundle-*.zip"))
+            self.assertEqual(len(backup_paths), 1)
+            self.assertContains(response, "Saved patient-data backup to")
+            self.assertContains(response, str(backup_paths[0]))
+            schedule = PatientDataBackupSchedule.get_solo()
+            self.assertEqual(schedule.last_backup_status, PatientDataBackupStatus.SUCCESS)
+            self.assertEqual(schedule.last_backup_trigger, PatientDataBackupTrigger.MANUAL)
+
+    def test_database_management_schedule_save_persists_and_shows_next_backup(self):
+        self.login_as_admin()
+
+        response = self.client.post(
+            reverse("patients:settings_database"),
+            {
+                "action": "save_schedule",
+                "enabled": "on",
+                "schedule_mode": PatientDataBackupScheduleMode.DAILY,
+                "daily_time": "09:30",
+                "custom_times_text": "",
+            },
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        schedule = PatientDataBackupSchedule.get_solo()
+        self.assertTrue(schedule.enabled)
+        self.assertEqual(schedule.schedule_mode, PatientDataBackupScheduleMode.DAILY)
+        self.assertEqual(schedule.daily_time.strftime("%H:%M"), "09:30")
+        self.assertContains(response, "Automatic backup schedule saved.")
+        self.assertContains(response, "Current schedule:")
+
+    def test_database_management_schedule_validates_custom_times(self):
+        self.login_as_admin()
+
+        response = self.client.post(
+            reverse("patients:settings_database"),
+            {
+                "action": "save_schedule",
+                "enabled": "on",
+                "schedule_mode": PatientDataBackupScheduleMode.CUSTOM,
+                "daily_time": "09:00",
+                "custom_times_text": "09:00, 25:00",
+            },
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Backup schedule has errors.")
+        self.assertContains(response, "HH:MM 24-hour format")
+
+    def test_database_management_schedule_runner_creates_backup_and_updates_status(self):
+        self.create_bundle_case(uhid="UH-SCHED-001", phone_number="9000000201")
+        schedule = PatientDataBackupSchedule.get_solo()
+        schedule.enabled = True
+        schedule.schedule_mode = PatientDataBackupScheduleMode.DAILY
+        schedule.daily_time = dt_time(hour=12, minute=0)
+        schedule.save()
+        reference_time = timezone.make_aware(datetime.combine(timezone.localdate(), dt_time(hour=13, minute=0)))
+
+        with tempfile.TemporaryDirectory() as temp_dir, patch(
+            "patients.database_bundle.default_backup_dir", return_value=Path(temp_dir)
+        ):
+            ran = backup_scheduler.run_due_scheduled_backup(reference_time=reference_time)
+
+            self.assertTrue(ran)
+            self.assertEqual(len(list(Path(temp_dir).glob("patient-data-bundle-*.zip"))), 1)
+            schedule.refresh_from_db()
+            self.assertEqual(schedule.last_backup_status, PatientDataBackupStatus.SUCCESS)
+            self.assertEqual(schedule.last_backup_trigger, PatientDataBackupTrigger.SCHEDULED)
+            self.assertIsNotNone(schedule.last_backup_at)
+            self.assertGreater(schedule.next_backup_at(reference_time), reference_time)
+
+            reran = backup_scheduler.run_due_scheduled_backup(reference_time=reference_time)
+            self.assertFalse(reran)
+            self.assertEqual(len(list(Path(temp_dir).glob("patient-data-bundle-*.zip"))), 1)
+
+    def test_database_management_schedule_save_runs_due_backup_when_time_has_passed(self):
+        self.login_as_admin()
+        self.create_bundle_case(uhid="UH-SCHED-002", phone_number="9000000202")
+        local_now = timezone.localtime()
+        due_time = (local_now - timedelta(minutes=1)).time().replace(second=0, microsecond=0)
+
+        with tempfile.TemporaryDirectory() as temp_dir, patch(
+            "patients.database_bundle.default_backup_dir", return_value=Path(temp_dir)
+        ):
+            response = self.client.post(
+                reverse("patients:settings_database"),
+                {
+                    "action": "save_schedule",
+                    "enabled": "on",
+                    "schedule_mode": PatientDataBackupScheduleMode.DAILY,
+                    "daily_time": due_time.strftime("%H:%M"),
+                    "custom_times_text": "",
+                },
+                follow=True,
+            )
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(len(list(Path(temp_dir).glob("patient-data-bundle-*.zip"))), 1)
+            schedule = PatientDataBackupSchedule.get_solo()
+            self.assertEqual(schedule.last_backup_trigger, PatientDataBackupTrigger.SCHEDULED)
+            self.assertEqual(schedule.last_backup_status, PatientDataBackupStatus.SUCCESS)
+
+    def test_database_management_import_requires_confirmation(self):
+        self.login_as_admin()
+        self.create_bundle_case(uhid="UH-CONFIRM-001", phone_number="9000000103")
+        bundle_bytes = self.build_patient_bundle_bytes()
+
+        response = self.client.post(
+            reverse("patients:settings_database"),
+            {
+                "action": "import",
+                "confirm_phrase": "WRONG PHRASE",
+                "bundle_file": SimpleUploadedFile("patient-data.zip", bundle_bytes, content_type="application/zip"),
+            },
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, database_bundle.IMPORT_CONFIRMATION_PHRASE)
+        self.assertContains(response, "Database import has errors.")
+
+    def test_database_management_import_rejects_checksum_mismatch(self):
+        self.login_as_admin()
+        self.create_bundle_case(uhid="UH-CHECK-001", phone_number="9000000104")
+        bad_bundle = self.rewrite_bundle(
+            self.build_patient_bundle_bytes(),
+            manifest_mutator=lambda manifest: manifest.__setitem__("patient_data_sha256", "0" * 64),
+            refresh_manifest=False,
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir, patch(
+            "patients.database_bundle.default_backup_dir", return_value=Path(temp_dir)
+        ):
+            response = self.client.post(
+                reverse("patients:settings_database"),
+                {
+                    "action": "import",
+                    "confirm_phrase": database_bundle.IMPORT_CONFIRMATION_PHRASE,
+                    "bundle_file": SimpleUploadedFile("patient-data.zip", bad_bundle, content_type="application/zip"),
+                },
+                follow=True,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "checksum mismatch")
+        self.assertTrue(Case.objects.filter(uhid="UH-CHECK-001").exists())
+
+    def test_database_management_import_rejects_duplicate_uhids_inside_bundle(self):
+        self.login_as_admin()
+        self.create_bundle_case(uhid="UH-DUP-001", phone_number="9000000105")
+        duplicate_bundle = self.rewrite_bundle(
+            self.build_patient_bundle_bytes(),
+            payload_mutator=lambda payload: payload["cases"].append(dict(payload["cases"][0])),
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir, patch(
+            "patients.database_bundle.default_backup_dir", return_value=Path(temp_dir)
+        ):
+            response = self.client.post(
+                reverse("patients:settings_database"),
+                {
+                    "action": "import",
+                    "confirm_phrase": database_bundle.IMPORT_CONFIRMATION_PHRASE,
+                    "bundle_file": SimpleUploadedFile("patient-data.zip", duplicate_bundle, content_type="application/zip"),
+                },
+                follow=True,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "duplicate UHIDs")
+
+    def test_database_management_import_allows_same_name_patients_with_different_uhids(self):
+        self.login_as_admin()
+        self.create_bundle_case(
+            uhid="UH-SAME-001",
+            first_name="Lakshmi",
+            last_name="Devi",
+            phone_number="9000000106",
+        )
+        self.create_bundle_case(
+            uhid="UH-SAME-002",
+            first_name="Lakshmi",
+            last_name="Devi",
+            phone_number="9000000107",
+        )
+        bundle_bytes = self.build_patient_bundle_bytes()
+        Case.objects.all().delete()
+
+        with tempfile.TemporaryDirectory() as temp_dir, patch(
+            "patients.database_bundle.default_backup_dir", return_value=Path(temp_dir)
+        ):
+            response = self.client.post(
+                reverse("patients:settings_database"),
+                {
+                    "action": "import",
+                    "confirm_phrase": database_bundle.IMPORT_CONFIRMATION_PHRASE,
+                    "bundle_file": SimpleUploadedFile("patient-data.zip", bundle_bytes, content_type="application/zip"),
+                },
+                follow=True,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Case.objects.filter(first_name="Lakshmi", last_name="Devi").count(), 2)
+        self.assertTrue(Case.objects.filter(uhid="UH-SAME-001").exists())
+        self.assertTrue(Case.objects.filter(uhid="UH-SAME-002").exists())
+
+    def test_database_management_import_preserves_non_patient_settings_and_device_data(self):
+        self.login_as_admin()
+        theme = ThemeSettings.get_solo()
+        theme.tokens = {"nav": {"bg": "#123456"}}
+        theme.save()
+        policy = self.enable_device_access_for(self.user)
+        credential = self.create_device_credential(user=self.user, credential_id="db-settings-device")
+
+        source_case = self.create_bundle_case(uhid="UH-IMPORT-001", phone_number="9000000108")
+        task = Task.objects.create(case=source_case, title="Imported task", due_date=timezone.localdate(), created_by=self.user)
+        VitalEntry.objects.create(case=source_case, recorded_at=timezone.now(), pr=80, created_by=self.user)
+        CaseActivityLog.objects.create(case=source_case, task=task, user=self.user, note="Imported log")
+        CallLog.objects.create(case=source_case, task=task, outcome=CallOutcome.CALL_BACK_LATER, staff_user=self.user)
+        bundle_bytes = self.build_patient_bundle_bytes()
+
+        Case.objects.all().delete()
+        self.create_bundle_case(uhid="UH-OLD-001", phone_number="9000000109")
+
+        with tempfile.TemporaryDirectory() as temp_dir, patch(
+            "patients.database_bundle.default_backup_dir", return_value=Path(temp_dir)
+        ):
+            response = self.client.post(
+                reverse("patients:settings_database"),
+                {
+                    "action": "import",
+                    "confirm_phrase": database_bundle.IMPORT_CONFIRMATION_PHRASE,
+                    "bundle_file": SimpleUploadedFile("patient-data.zip", bundle_bytes, content_type="application/zip"),
+                },
+                follow=True,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(Case.objects.filter(uhid="UH-IMPORT-001").exists())
+        self.assertFalse(Case.objects.filter(uhid="UH-OLD-001").exists())
+        self.assertEqual(Task.objects.count(), 1)
+        self.assertEqual(VitalEntry.objects.count(), 1)
+        self.assertEqual(CallLog.objects.count(), 1)
+        self.assertEqual(CaseActivityLog.objects.count(), 1)
+        policy.refresh_from_db()
+        credential.refresh_from_db()
+        theme.refresh_from_db()
+        self.assertTrue(policy.enabled)
+        self.assertEqual(credential.credential_id, "db-settings-device")
+        self.assertEqual(theme.tokens["nav"]["bg"], "#123456")
+
+    def test_database_management_import_maps_missing_users_to_null(self):
+        self.login_as_admin()
+        imported_user = get_user_model().objects.create_user(username="imported-user", password="strong-password-123")
+        source_case = self.create_bundle_case(
+            uhid="UH-NULL-001",
+            phone_number="9000000110",
+            created_by=imported_user,
+        )
+        task = Task.objects.create(
+            case=source_case,
+            title="Missing user task",
+            due_date=timezone.localdate(),
+            created_by=imported_user,
+            assigned_user=imported_user,
+        )
+        VitalEntry.objects.create(case=source_case, recorded_at=timezone.now(), pr=84, created_by=imported_user, updated_by=imported_user)
+        CaseActivityLog.objects.create(case=source_case, task=task, user=imported_user, note="Missing user log")
+        CallLog.objects.create(case=source_case, task=task, outcome=CallOutcome.NO_ANSWER, staff_user=imported_user)
+        bundle_bytes = self.build_patient_bundle_bytes()
+
+        Case.objects.all().delete()
+        imported_user.delete()
+
+        with tempfile.TemporaryDirectory() as temp_dir, patch(
+            "patients.database_bundle.default_backup_dir", return_value=Path(temp_dir)
+        ):
+            response = self.client.post(
+                reverse("patients:settings_database"),
+                {
+                    "action": "import",
+                    "confirm_phrase": database_bundle.IMPORT_CONFIRMATION_PHRASE,
+                    "bundle_file": SimpleUploadedFile("patient-data.zip", bundle_bytes, content_type="application/zip"),
+                },
+                follow=True,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        imported_case = Case.objects.get(uhid="UH-NULL-001")
+        imported_task = Task.objects.get(case=imported_case)
+        imported_vital = VitalEntry.objects.get(case=imported_case)
+        imported_log = CaseActivityLog.objects.get(case=imported_case)
+        imported_call = CallLog.objects.get(case=imported_case)
+        self.assertIsNone(imported_case.created_by)
+        self.assertIsNone(imported_task.created_by)
+        self.assertIsNone(imported_task.assigned_user)
+        self.assertIsNone(imported_vital.created_by)
+        self.assertIsNone(imported_vital.updated_by)
+        self.assertIsNone(imported_log.user)
+        self.assertIsNone(imported_call.staff_user)
+
+    def test_database_management_import_creates_missing_categories(self):
+        self.login_as_admin()
+        outreach = DepartmentConfig.objects.create(
+            name="Outreach",
+            auto_follow_up_days=14,
+            predefined_actions=["Home visit"],
+            metadata_template={"review_date": "Date"},
+            theme_bg_color="#aabbcc",
+            theme_text_color="#112233",
+        )
+        self.create_bundle_case(
+            uhid="UH-CAT-001",
+            phone_number="9000000111",
+            category=outreach,
+            review_date=timezone.localdate() + timedelta(days=3),
+        )
+        bundle_bytes = self.build_patient_bundle_bytes()
+
+        Case.objects.all().delete()
+        outreach.delete()
+
+        with tempfile.TemporaryDirectory() as temp_dir, patch(
+            "patients.database_bundle.default_backup_dir", return_value=Path(temp_dir)
+        ):
+            response = self.client.post(
+                reverse("patients:settings_database"),
+                {
+                    "action": "import",
+                    "confirm_phrase": database_bundle.IMPORT_CONFIRMATION_PHRASE,
+                    "bundle_file": SimpleUploadedFile("patient-data.zip", bundle_bytes, content_type="application/zip"),
+                },
+                follow=True,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        recreated_category = DepartmentConfig.objects.get(name="Outreach")
+        self.assertEqual(recreated_category.theme_bg_color, "#aabbcc")
+        self.assertEqual(recreated_category.theme_text_color, "#112233")
+        self.assertTrue(Case.objects.filter(category=recreated_category, uhid="UH-CAT-001").exists())
+
+    def test_database_management_import_rolls_back_on_internal_error(self):
+        self.login_as_admin()
+        self.create_bundle_case(uhid="UH-ROLLBACK-SOURCE", phone_number="9000000112")
+        bundle_bytes = self.build_patient_bundle_bytes()
+        Case.objects.all().delete()
+        self.create_bundle_case(uhid="UH-ROLLBACK-TARGET", phone_number="9000000113")
+
+        with tempfile.TemporaryDirectory() as temp_dir, patch(
+            "patients.database_bundle.default_backup_dir", return_value=Path(temp_dir)
+        ), patch("patients.database_bundle._import_payload", side_effect=RuntimeError("boom")):
+            response = self.client.post(
+                reverse("patients:settings_database"),
+                {
+                    "action": "import",
+                    "confirm_phrase": database_bundle.IMPORT_CONFIRMATION_PHRASE,
+                    "bundle_file": SimpleUploadedFile("patient-data.zip", bundle_bytes, content_type="application/zip"),
+                },
+                follow=True,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Database import failed: boom")
+        self.assertTrue(Case.objects.filter(uhid="UH-ROLLBACK-TARGET").exists())
 
     def test_device_access_page_can_save_selected_target_users(self):
         pilot_user = get_user_model().objects.create_user(username="pilot-user", password="strong-password-123")
@@ -3896,6 +4397,58 @@ class MedtrackViewTests(TestCase):
         self.assertContains(response, reverse("patients:case_list"))
         self.assertContains(response, "category_group")
         self.assertContains(response, "diagnosis / place / case notes / call notes")
+
+
+class PatientDataBundleTests(TestCase):
+    def setUp(self):
+        ensure_default_departments()
+        self.user = get_user_model().objects.create_user(username="bundle-owner", password="strong-password-123")
+        self.surgery = DepartmentConfig.objects.get(name="Surgery")
+
+    def create_case(self, *, uhid, phone_number):
+        return Case.objects.create(
+            uhid=uhid,
+            first_name="Bundle",
+            last_name="Owner",
+            phone_number=phone_number,
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=7),
+            created_by=self.user,
+        )
+
+    def test_patient_data_bundle_manifest_records_sha_and_counts(self):
+        case = self.create_case(uhid="UH-BUNDLE-001", phone_number="9555555501")
+        task = Task.objects.create(case=case, title="Bundle task", due_date=timezone.localdate(), created_by=self.user)
+        VitalEntry.objects.create(case=case, recorded_at=timezone.now(), pr=75, created_by=self.user)
+        CaseActivityLog.objects.create(case=case, task=task, user=self.user, note="Bundle activity")
+        CallLog.objects.create(case=case, task=task, outcome=CallOutcome.NO_ANSWER, staff_user=self.user)
+
+        archive_bytes, manifest, filename = database_bundle.create_bundle_archive()
+
+        self.assertTrue(filename.startswith("patient-data-bundle-"))
+        with zipfile.ZipFile(io.BytesIO(archive_bytes), "r") as bundle_zip:
+            patient_data_bytes = bundle_zip.read(database_bundle.PATIENT_DATA_FILENAME)
+            payload = json.loads(patient_data_bytes.decode("utf-8"))
+        self.assertEqual(manifest["counts"], database_bundle.compute_payload_counts(payload))
+        self.assertEqual(manifest["patient_data_sha256"], hashlib.sha256(patient_data_bytes).hexdigest())
+        self.assertEqual(payload["cases"][0]["uhid"], "UH-BUNDLE-001")
+
+    def test_backup_patient_data_command_prunes_old_backups(self):
+        self.create_case(uhid="UH-BUNDLE-002", phone_number="9555555502")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            for suffix in ("20240101-000000-000000Z", "20240102-000000-000000Z", "20240103-000000-000000Z"):
+                (temp_path / f"patient-data-bundle-{suffix}.zip").write_bytes(b"old")
+
+            stdout = io.StringIO()
+            call_command("backup_patient_data", "--output-dir", temp_dir, "--keep", "2", stdout=stdout)
+
+            remaining = sorted(temp_path.glob("patient-data-bundle-*.zip"))
+            self.assertEqual(len(remaining), 2)
+            self.assertIn("Created patient-data backup", stdout.getvalue())
 
 
 class SeedMockDataCommandTests(TestCase):

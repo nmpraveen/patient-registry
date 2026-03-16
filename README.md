@@ -12,6 +12,7 @@ A Django + PostgreSQL MVP for **case-based follow-up tracking**.
 - Case dashboard with Today / Upcoming / Overdue / Awaiting / Red / Grey views
 - Case activity log with timestamp + user identity
 - Admin settings page for role permissions, role assignment, and custom category configuration
+- Admin database management page for patient-data export, import, and server-side backups
 - Patient identity with **First Name + Last Name** (instead of single name-only listing)
 
 ## Quick start
@@ -40,6 +41,37 @@ The login flow now supports an admin-approved device pilot for selected users:
 - Pilot helper: clones `Staff` into `Staff Pilot`
 - V1 targeting: selected users only, managed from Device Access settings
 
+## Database management
+
+Admins can manage patient-data bundles from:
+
+- `http://localhost:8000/patients/settings/database/`
+
+This page supports:
+
+- Exporting a patient-data ZIP bundle
+- Importing a patient-data ZIP bundle
+- Writing a patient-data ZIP bundle to the server backup folder
+- Configuring automatic backup schedules with status for the last and next backup
+
+Bundle format:
+
+- `patient_data.json`: patient-related records only
+- `manifest.json`: schema version, record counts, export metadata, and SHA-256 checksum
+
+Important notes:
+
+- These tools cover **patient data only**: cases, tasks, vitals, call logs, and activity logs.
+- Users, roles, theme settings, device-approval settings, sessions, and other non-patient tables are not included in the bundle.
+- Patient identity is keyed by **UHID**, not by patient name, so same-name patients remain separate.
+- Import is destructive for patient data: it replaces all current patient-related records after creating a fresh safety backup.
+- Automatic schedules support:
+  - `1 per day` at a chosen time
+  - `2 per day` at `00:00` and `12:00`
+  - custom comma-separated `HH:MM` timings
+- The page shows the last backup time/status and the next scheduled backup time.
+- Built-in automatic scheduling runs while the web app is running; host-level scheduled commands are still a stronger option for unattended infrastructure.
+
 For WebAuthn / passkeys outside localhost, configure these env vars and serve the app over HTTPS:
 
 ```bash
@@ -65,6 +97,11 @@ docker compose exec web python manage.py seed_mock_data --count 30 --reset
 
 Good news: the Postgres DB already persists in Docker volume `postgres_data`, so container rebuild/restart will not erase your patient data by default.
 
+There are now two backup paths:
+
+- `./scripts/backup.sh`: full Postgres + config backup for disaster recovery and upgrade safety
+- `python manage.py backup_patient_data`: patient-data bundle backup for regular operational snapshots
+
 ### 1) Create backup before pull/update
 
 ```bash
@@ -76,6 +113,8 @@ This backs up:
 - `.env`
 - `docker-compose.yml`
 - current app commit hash
+
+This remains the recommended full-environment disaster-recovery backup.
 
 ### 2) Pull latest and rebuild
 
@@ -108,10 +147,33 @@ docker compose up -d
 - Do **not** run `docker compose down -v` unless you intentionally want to delete DB volume.
 - Keep `.env` backed up; it contains runtime config and DB credentials.
 
+## Periodic patient-data backups
+
+For routine backups, use a host-level scheduler to run the management command inside the web container and keep the latest 30 bundles.
+
+Example command:
+
+```bash
+docker compose exec -T web python manage.py backup_patient_data --output-dir /app/backups --keep 30
+```
+
+Example cron entry on the Docker host:
+
+```cron
+0 2 * * * cd /path/to/patient-registry && docker compose exec -T web python manage.py backup_patient_data --output-dir /app/backups --keep 30
+```
+
+Notes:
+
+- `/app/backups` maps to the repo `backups/` folder in this Docker setup.
+- `backups/` is gitignored and should be treated as PHI-containing server storage.
+- Use the patient-data bundle flow for routine restores of patient records, and keep `scripts/backup.sh` / `scripts/restore.sh` for full-environment recovery.
+
 ## Useful commands
 
 ```bash
 docker compose exec web python manage.py test
 docker compose exec web python manage.py createsuperuser
+docker compose exec -T web python manage.py backup_patient_data --keep 30
 docker compose down
 ```

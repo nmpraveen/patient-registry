@@ -14,6 +14,8 @@ from .models import (
     CaseActivityLog,
     DepartmentConfig,
     DeviceApprovalPolicy,
+    PatientDataBackupSchedule,
+    PatientDataBackupScheduleMode,
     NonCommunicableDisease,
     RoleSetting,
     Task,
@@ -22,6 +24,7 @@ from .models import (
     VitalEntry,
     ensure_default_departments,
     ensure_default_role_settings,
+    normalize_backup_schedule_time,
 )
 from .theme import (
     THEME_FORM_SECTIONS,
@@ -32,6 +35,7 @@ from .theme import (
     theme_field_definitions,
     unflatten_theme_tokens,
 )
+from .database_bundle import IMPORT_CONFIRMATION_PHRASE
 
 
 class StyledModelForm(forms.ModelForm):
@@ -513,6 +517,101 @@ class SeedMockDataForm(forms.Form):
         self.fields["count"].widget.attrs["class"] = "form-control"
         for field_name in ["include_vitals", "include_rch_scenarios", "reset_all"]:
             self.fields[field_name].widget.attrs["class"] = "form-check-input"
+
+
+class DatabaseImportForm(forms.Form):
+    bundle_file = forms.FileField(help_text="Upload a MEDTRACK patient-data backup ZIP.")
+    confirm_phrase = forms.CharField(
+        label="Confirmation",
+        help_text=f'Type "{IMPORT_CONFIRMATION_PHRASE}" to replace all patient records.',
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["bundle_file"].widget.attrs["class"] = "form-control"
+        self.fields["confirm_phrase"].widget.attrs["class"] = "form-control"
+        self.fields["confirm_phrase"].widget.attrs["autocomplete"] = "off"
+
+    def clean_bundle_file(self):
+        bundle_file = self.cleaned_data["bundle_file"]
+        if not bundle_file.name.lower().endswith(".zip"):
+            raise forms.ValidationError("Upload a ZIP archive created by MEDTRACK.")
+        return bundle_file
+
+    def clean_confirm_phrase(self):
+        confirm_phrase = (self.cleaned_data.get("confirm_phrase") or "").strip()
+        if confirm_phrase != IMPORT_CONFIRMATION_PHRASE:
+            raise forms.ValidationError(f'Type "{IMPORT_CONFIRMATION_PHRASE}" exactly to continue.')
+        return confirm_phrase
+
+
+class PatientDataBackupScheduleForm(forms.ModelForm):
+    custom_times_text = forms.CharField(
+        label="Custom backup times",
+        required=False,
+        widget=forms.Textarea(attrs={"rows": 3}),
+        help_text="Comma-separated 24-hour times, for example 09:00, 15:30.",
+    )
+
+    class Meta:
+        model = PatientDataBackupSchedule
+        fields = ["enabled", "schedule_mode", "daily_time"]
+        widgets = {
+            "enabled": forms.CheckboxInput(),
+            "schedule_mode": forms.Select(),
+            "daily_time": forms.TimeInput(attrs={"type": "time"}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["enabled"].widget.attrs["class"] = "form-check-input"
+        self.fields["schedule_mode"].widget.attrs["class"] = "form-select"
+        self.fields["daily_time"].widget.attrs["class"] = "form-control"
+        self.fields["custom_times_text"].widget.attrs["class"] = "form-control"
+        self.fields["daily_time"].input_formats = ["%H:%M"]
+        self.fields["schedule_mode"].help_text = "Choose 1 backup per day, 2 fixed backups per day, or custom timings."
+        if not self.is_bound:
+            self.initial["custom_times_text"] = ", ".join(self.instance.custom_times or [])
+
+    def clean_custom_times_text(self):
+        raw = (self.cleaned_data.get("custom_times_text") or "").replace("\n", ",")
+        times = []
+        if not raw.strip():
+            return times
+        for item in raw.split(","):
+            label = item.strip()
+            if not label:
+                continue
+            try:
+                times.append(normalize_backup_schedule_time(label))
+            except ValueError as exc:
+                raise forms.ValidationError(str(exc))
+        return sorted(dict.fromkeys(times))
+
+    def clean(self):
+        cleaned_data = super().clean()
+        if not cleaned_data.get("enabled"):
+            cleaned_data["custom_times"] = []
+            return cleaned_data
+
+        mode = cleaned_data.get("schedule_mode")
+        if mode == PatientDataBackupScheduleMode.DAILY and not cleaned_data.get("daily_time"):
+            self.add_error("daily_time", "Choose the daily backup time.")
+        if mode == PatientDataBackupScheduleMode.CUSTOM:
+            custom_times = cleaned_data.get("custom_times_text") or []
+            if not custom_times:
+                self.add_error("custom_times_text", "Enter at least one custom backup time.")
+            cleaned_data["custom_times"] = custom_times
+        else:
+            cleaned_data["custom_times"] = []
+        return cleaned_data
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        instance.custom_times = self.cleaned_data.get("custom_times", [])
+        if commit:
+            instance.save()
+        return instance
 
 
 class DeviceApprovalPolicyForm(forms.ModelForm):

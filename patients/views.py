@@ -29,7 +29,7 @@ from django.db.models import (
     When,
 )
 from django.db.models.functions import Coalesce
-from django.http import HttpResponseForbidden, JsonResponse
+from django.http import HttpResponse, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse, reverse_lazy
 from django.utils.crypto import constant_time_compare
@@ -38,10 +38,14 @@ from django.utils.http import url_has_allowed_host_and_scheme
 from django.views import View
 from django.views.generic import CreateView, DetailView, ListView, UpdateView
 
+from . import backup_scheduler
+from . import database_bundle
 from .forms import (
     ActivityLogForm,
     CallLogForm,
     CaseForm,
+    DatabaseImportForm,
+    PatientDataBackupScheduleForm,
     DepartmentThemeFormSet,
     DepartmentConfigForm,
     DeviceApprovalPolicyForm,
@@ -64,6 +68,8 @@ from .models import (
     DeviceApprovalPolicy,
     DEVICE_APPROVAL_MAX_APPROVED,
     Gender,
+    PatientDataBackupSchedule,
+    PatientDataBackupTrigger,
     RCH_REMINDER_INTERVAL_DAYS,
     RCH_REMINDER_TASK_TITLE,
     RoleSetting,
@@ -2756,6 +2762,101 @@ class SeedMockDataSettingsView(LoginRequiredMixin, View):
         call_command(*command_args)
         messages.success(request, "Mock data seeding completed.")
         return redirect("patients:settings_seed_mock_data")
+
+
+class DatabaseManagementSettingsView(LoginRequiredMixin, View):
+    template_name = "patients/settings_database.html"
+
+    def _check_access(self, request):
+        if not has_capability(request.user, "manage_settings"):
+            return HttpResponseForbidden("Only admins can access settings.")
+        return None
+
+    def _build_context(self, import_form=None, schedule_form=None):
+        schedule = PatientDataBackupSchedule.get_solo()
+        recent_backups = [
+            {"name": path.name, "size_bytes": path.stat().st_size}
+            for path in database_bundle.list_backup_bundles(limit=5)
+        ]
+        return {
+            "import_form": import_form or DatabaseImportForm(),
+            "schedule_form": schedule_form or PatientDataBackupScheduleForm(instance=schedule),
+            "schedule": schedule,
+            "next_backup_at": schedule.next_backup_at(),
+            "backup_dir": str(database_bundle.default_backup_dir()),
+            "import_confirmation_phrase": database_bundle.IMPORT_CONFIRMATION_PHRASE,
+            "recent_backups": recent_backups,
+        }
+
+    def get(self, request):
+        denied = self._check_access(request)
+        if denied:
+            return denied
+        return render(request, self.template_name, self._build_context())
+
+    def post(self, request):
+        denied = self._check_access(request)
+        if denied:
+            return denied
+
+        action = request.POST.get("action")
+        if action == "export":
+            archive_bytes, _, filename = database_bundle.create_bundle_archive()
+            response = HttpResponse(archive_bytes, content_type="application/zip")
+            response["Content-Disposition"] = f'attachment; filename="{filename}"'
+            response["Content-Length"] = str(len(archive_bytes))
+            return response
+
+        if action == "backup":
+            try:
+                bundle_path, _, _ = database_bundle.write_backup_bundle(trigger=PatientDataBackupTrigger.MANUAL)
+            except Exception as exc:
+                PatientDataBackupSchedule.record_backup_failure(
+                    error=str(exc),
+                    trigger=PatientDataBackupTrigger.MANUAL,
+                )
+                messages.error(request, f"Backup failed: {exc}")
+                return redirect("patients:settings_database")
+            messages.success(request, f"Saved patient-data backup to {bundle_path}.")
+            return redirect("patients:settings_database")
+
+        if action == "import":
+            import_form = DatabaseImportForm(request.POST, request.FILES)
+            if not import_form.is_valid():
+                messages.error(request, "Database import has errors.")
+                return render(request, self.template_name, self._build_context(import_form=import_form))
+            try:
+                result = database_bundle.import_bundle_bytes(import_form.cleaned_data["bundle_file"].read())
+            except database_bundle.BundleValidationError as exc:
+                messages.error(request, str(exc))
+                return render(request, self.template_name, self._build_context(import_form=import_form))
+            except Exception as exc:
+                messages.error(request, f"Database import failed: {exc}")
+                return render(request, self.template_name, self._build_context(import_form=import_form))
+
+            counts = result["counts"]
+            messages.success(
+                request,
+                f"Imported {counts['cases']} patient case(s). Safety backup saved to {result['safety_backup_path']}.",
+            )
+            return redirect("patients:settings_database")
+
+        if action == "save_schedule":
+            schedule = PatientDataBackupSchedule.get_solo()
+            schedule_form = PatientDataBackupScheduleForm(request.POST, instance=schedule)
+            if not schedule_form.is_valid():
+                messages.error(request, "Backup schedule has errors.")
+                return render(request, self.template_name, self._build_context(schedule_form=schedule_form))
+            schedule = schedule_form.save()
+            backup_scheduler.run_due_scheduled_backup()
+            if schedule.enabled:
+                messages.success(request, "Automatic backup schedule saved.")
+            else:
+                messages.success(request, "Automatic backup schedule disabled.")
+            return redirect("patients:settings_database")
+
+        messages.error(request, "Unknown database management action.")
+        return redirect("patients:settings_database")
 
 
 class ThemeSettingsView(LoginRequiredMixin, View):

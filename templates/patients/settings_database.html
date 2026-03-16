@@ -1,0 +1,193 @@
+{% extends 'base.html' %}
+{% block title %}Database Management | MEDTRACK{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <h1 class="h4 mb-0">Database Management</h1>
+  <a class="btn btn-outline-secondary btn-sm" href="{% url 'patients:settings' %}">Back to Settings</a>
+</div>
+
+<div class="alert alert-warning" role="alert">
+  These tools manage <strong>patient data only</strong>. Patient names are not unique identifiers; MEDTRACK uses <strong>UHID</strong> to keep same-name patients separate.
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-12 col-xl-8">
+    <div class="card h-100"><div class="card-body">
+      <h2 class="h6">Automatic backup scheduler</h2>
+      <p class="text-muted small mb-3">Choose a daily schedule, the built-in twice-daily option at 12:00 AM and 12:00 PM, or custom 24-hour timings. Backups run automatically while the app is running.</p>
+      <form method="post" id="backup-schedule-form">
+        {% csrf_token %}
+        <div class="form-check mb-3">
+          {{ schedule_form.enabled }}
+          <label class="form-check-label" for="{{ schedule_form.enabled.id_for_label }}">Enable automatic patient-data backups</label>
+        </div>
+        <div class="row g-3">
+          <div class="col-12 col-lg-4">
+            <label class="form-label" for="{{ schedule_form.schedule_mode.id_for_label }}">{{ schedule_form.schedule_mode.label }}</label>
+            {{ schedule_form.schedule_mode }}
+            <div class="form-text">{{ schedule_form.schedule_mode.help_text }}</div>
+            {% if schedule_form.schedule_mode.errors %}
+              <div class="text-danger small mt-1">{{ schedule_form.schedule_mode.errors|striptags }}</div>
+            {% endif %}
+          </div>
+          <div class="col-12 col-lg-4" data-schedule-daily>
+            <label class="form-label" for="{{ schedule_form.daily_time.id_for_label }}">{{ schedule_form.daily_time.label }}</label>
+            {{ schedule_form.daily_time }}
+            {% if schedule_form.daily_time.errors %}
+              <div class="text-danger small mt-1">{{ schedule_form.daily_time.errors|striptags }}</div>
+            {% endif %}
+          </div>
+          <div class="col-12 col-lg-4">
+            <div class="small text-muted pt-lg-4">Retention stays at the default 30 backup bundles for now.</div>
+          </div>
+          <div class="col-12" data-schedule-custom>
+            <label class="form-label" for="{{ schedule_form.custom_times_text.id_for_label }}">{{ schedule_form.custom_times_text.label }}</label>
+            {{ schedule_form.custom_times_text }}
+            <div class="form-text">{{ schedule_form.custom_times_text.help_text }}</div>
+            {% if schedule_form.custom_times_text.errors %}
+              <div class="text-danger small mt-1">{{ schedule_form.custom_times_text.errors|striptags }}</div>
+            {% endif %}
+          </div>
+        </div>
+        <div class="d-flex flex-wrap gap-2 mt-3">
+          <button class="btn btn-primary" type="submit" name="action" value="save_schedule">Save schedule</button>
+          <span class="small text-muted align-self-center">Current schedule: <strong>{{ schedule.schedule_summary }}</strong></span>
+        </div>
+      </form>
+    </div></div>
+  </div>
+
+  <div class="col-12 col-xl-4">
+    <div class="card h-100"><div class="card-body">
+      <h2 class="h6">Scheduler status</h2>
+      <p class="mb-2"><strong>Last backup:</strong>
+        {% if schedule.last_backup_at %}
+          {{ schedule.last_backup_at|date:"M j, Y g:i A" }} ({{ schedule.get_last_backup_status_display }})
+        {% else %}
+          Never
+        {% endif %}
+      </p>
+      <p class="mb-2"><strong>Next backup:</strong>
+        {% if next_backup_at %}
+          {{ next_backup_at|date:"M j, Y g:i A" }}
+        {% else %}
+          Not scheduled
+        {% endif %}
+      </p>
+      <p class="mb-2"><strong>Last trigger:</strong>
+        {% if schedule.last_backup_trigger %}
+          {{ schedule.get_last_backup_trigger_display }}
+        {% else %}
+          -
+        {% endif %}
+      </p>
+      <p class="mb-0"><strong>Last backup file:</strong>
+        {% if schedule.last_backup_path %}
+          <code>{{ schedule.last_backup_path }}</code>
+        {% else %}
+          -
+        {% endif %}
+      </p>
+      {% if schedule.last_backup_error %}
+        <div class="alert alert-danger small mt-3 mb-0">{{ schedule.last_backup_error }}</div>
+      {% endif %}
+    </div></div>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-12 col-lg-4">
+    <div class="card h-100"><div class="card-body">
+      <h2 class="h6">Export database</h2>
+      <p class="text-muted small mb-3">Download a ZIP bundle containing <code>patient_data.json</code> and <code>manifest.json</code> with SHA-256 integrity data.</p>
+      <form method="post">
+        {% csrf_token %}
+        <button class="btn btn-primary w-100" type="submit" name="action" value="export">Export patient data</button>
+      </form>
+    </div></div>
+  </div>
+
+  <div class="col-12 col-lg-4">
+    <div class="card h-100"><div class="card-body">
+      <h2 class="h6">Backup database</h2>
+      <p class="text-muted small mb-2">Save the same patient-data ZIP bundle to the server backup folder.</p>
+      <p class="small mb-3"><strong>Backup folder:</strong> <code>{{ backup_dir }}</code></p>
+      <form method="post">
+        {% csrf_token %}
+        <button class="btn btn-outline-primary w-100" type="submit" name="action" value="backup">Create server backup</button>
+      </form>
+      <div class="small text-muted mt-3">Recommended for periodic backups: run the management command nightly and keep the latest 30 bundles.</div>
+    </div></div>
+  </div>
+
+  <div class="col-12 col-lg-4">
+    <div class="card h-100 border-danger"><div class="card-body">
+      <h2 class="h6 text-danger">Import database</h2>
+      <p class="text-muted small">This replaces all current patient records, tasks, vitals, call logs, and activity logs. Users, settings, sessions, and device approvals stay intact.</p>
+      <form method="post" enctype="multipart/form-data">
+        {% csrf_token %}
+        <div class="mb-3">
+          <label class="form-label" for="{{ import_form.bundle_file.id_for_label }}">{{ import_form.bundle_file.label }}</label>
+          {{ import_form.bundle_file }}
+          <div class="form-text">{{ import_form.bundle_file.help_text }}</div>
+          {% if import_form.bundle_file.errors %}
+            <div class="text-danger small mt-1">{{ import_form.bundle_file.errors|striptags }}</div>
+          {% endif %}
+        </div>
+        <div class="mb-3">
+          <label class="form-label" for="{{ import_form.confirm_phrase.id_for_label }}">{{ import_form.confirm_phrase.label }}</label>
+          {{ import_form.confirm_phrase }}
+          <div class="form-text">{{ import_form.confirm_phrase.help_text }}</div>
+          {% if import_form.confirm_phrase.errors %}
+            <div class="text-danger small mt-1">{{ import_form.confirm_phrase.errors|striptags }}</div>
+          {% endif %}
+        </div>
+        <div class="small text-muted mb-3">A fresh safety backup is created before the import starts.</div>
+        <button class="btn btn-danger w-100" type="submit" name="action" value="import">Import and replace patient data</button>
+      </form>
+    </div></div>
+  </div>
+</div>
+
+<div class="card mt-3"><div class="card-body">
+  <h2 class="h6">Recent server backups</h2>
+  {% if recent_backups %}
+    <ul class="list-group list-group-flush small">
+      {% for backup in recent_backups %}
+        <li class="list-group-item px-0 d-flex justify-content-between align-items-center">
+          <span>{{ backup.name }}</span>
+          <span class="text-muted">{{ backup.size_bytes }} bytes</span>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="text-muted small mb-0">No server-side patient-data backups found yet.</p>
+  {% endif %}
+</div></div>
+
+<script>
+  (function() {
+    const form = document.getElementById("backup-schedule-form");
+    if (!form) return;
+    const modeField = document.getElementById("{{ schedule_form.schedule_mode.id_for_label }}");
+    const dailyGroup = form.querySelector("[data-schedule-daily]");
+    const customGroup = form.querySelector("[data-schedule-custom]");
+
+    function syncScheduleFields() {
+      if (!modeField) return;
+      const mode = modeField.value;
+      if (dailyGroup) {
+        dailyGroup.classList.toggle("d-none", mode !== "DAILY");
+      }
+      if (customGroup) {
+        customGroup.classList.toggle("d-none", mode !== "CUSTOM");
+      }
+    }
+
+    if (modeField) {
+      modeField.addEventListener("change", syncScheduleFields);
+      syncScheduleFields();
+    }
+  })();
+</script>
+{% endblock %}

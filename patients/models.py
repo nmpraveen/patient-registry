@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import datetime, time as dt_time, timedelta
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -36,6 +36,18 @@ RCH_REMINDER_FREQUENCY_LABEL = "RCH reminder"
 STAFF_ROLE_NAME = "Staff"
 STAFF_PILOT_ROLE_NAME = "Staff Pilot"
 DEVICE_APPROVAL_MAX_APPROVED = 3
+
+
+def normalize_backup_schedule_time(value):
+    if value in (None, ""):
+        raise ValueError("Backup times must use HH:MM 24-hour format.")
+    if isinstance(value, dt_time):
+        return value.replace(second=0, microsecond=0).strftime("%H:%M")
+    try:
+        parsed = datetime.strptime(str(value).strip(), "%H:%M").time()
+    except ValueError as exc:
+        raise ValueError("Backup times must use HH:MM 24-hour format.") from exc
+    return parsed.strftime("%H:%M")
 
 
 class CallOutcome(models.TextChoices):
@@ -179,6 +191,151 @@ class ThemeSettings(models.Model):
     @classmethod
     def get_solo(cls):
         return cls.objects.get_or_create(pk=1)[0]
+
+
+class PatientDataBackupScheduleMode(models.TextChoices):
+    DAILY = "DAILY", "1 per day"
+    TWICE_DAILY = "TWICE_DAILY", "2 per day (12:00 AM and 12:00 PM)"
+    CUSTOM = "CUSTOM", "Custom timings"
+
+
+class PatientDataBackupStatus(models.TextChoices):
+    NEVER = "NEVER", "Never run"
+    SUCCESS = "SUCCESS", "Success"
+    FAILED = "FAILED", "Failed"
+
+
+class PatientDataBackupTrigger(models.TextChoices):
+    MANUAL = "MANUAL", "Manual"
+    SCHEDULED = "SCHEDULED", "Scheduled"
+    IMPORT_SAFETY = "IMPORT_SAFETY", "Import safety"
+
+
+class PatientDataBackupSchedule(models.Model):
+    enabled = models.BooleanField(default=False)
+    schedule_mode = models.CharField(
+        max_length=16,
+        choices=PatientDataBackupScheduleMode.choices,
+        default=PatientDataBackupScheduleMode.DAILY,
+    )
+    daily_time = models.TimeField(default=dt_time(hour=2, minute=0))
+    custom_times = models.JSONField(default=list, blank=True)
+    retention_count = models.PositiveIntegerField(default=30)
+    last_backup_at = models.DateTimeField(null=True, blank=True)
+    last_backup_path = models.CharField(max_length=500, blank=True, default="")
+    last_backup_status = models.CharField(
+        max_length=16,
+        choices=PatientDataBackupStatus.choices,
+        default=PatientDataBackupStatus.NEVER,
+    )
+    last_backup_trigger = models.CharField(
+        max_length=16,
+        choices=PatientDataBackupTrigger.choices,
+        blank=True,
+        default="",
+    )
+    last_backup_error = models.TextField(blank=True, default="")
+    run_lock_until = models.DateTimeField(null=True, blank=True)
+    run_lock_token = models.CharField(max_length=64, blank=True, default="")
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def save(self, *args, **kwargs):
+        self.pk = 1
+        self.custom_times = sorted(
+            dict.fromkeys(normalize_backup_schedule_time(value) for value in (self.custom_times or []))
+        )
+        if self.retention_count < 1:
+            self.retention_count = 1
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def get_solo(cls):
+        return cls.objects.get_or_create(pk=1)[0]
+
+    def configured_time_labels(self):
+        if self.schedule_mode == PatientDataBackupScheduleMode.TWICE_DAILY:
+            return ["00:00", "12:00"]
+        if self.schedule_mode == PatientDataBackupScheduleMode.CUSTOM:
+            return list(self.custom_times or [])
+        return [normalize_backup_schedule_time(self.daily_time)]
+
+    def schedule_summary(self):
+        if not self.enabled:
+            return "Disabled"
+        if self.schedule_mode == PatientDataBackupScheduleMode.DAILY:
+            return f"1 per day at {self.configured_time_labels()[0]}"
+        if self.schedule_mode == PatientDataBackupScheduleMode.TWICE_DAILY:
+            return "2 per day at 00:00 and 12:00"
+        return f"Custom timings: {', '.join(self.configured_time_labels())}"
+
+    def scheduled_datetimes_for_date(self, target_date):
+        tz = timezone.get_current_timezone()
+        scheduled = []
+        for time_label in self.configured_time_labels():
+            scheduled_time = datetime.strptime(time_label, "%H:%M").time()
+            scheduled.append(timezone.make_aware(datetime.combine(target_date, scheduled_time), tz))
+        return scheduled
+
+    def latest_due_backup_at(self, reference_time=None):
+        if not self.enabled:
+            return None
+        reference_time = reference_time or timezone.now()
+        local_reference = timezone.localtime(reference_time)
+        for day_offset in range(0, 3):
+            target_date = local_reference.date() - timedelta(days=day_offset)
+            for scheduled_at in reversed(self.scheduled_datetimes_for_date(target_date)):
+                if scheduled_at <= local_reference:
+                    return scheduled_at
+        return None
+
+    def next_backup_at(self, reference_time=None):
+        if not self.enabled:
+            return None
+        reference_time = reference_time or timezone.now()
+        local_reference = timezone.localtime(reference_time)
+        for day_offset in range(0, 3):
+            target_date = local_reference.date() + timedelta(days=day_offset)
+            for scheduled_at in self.scheduled_datetimes_for_date(target_date):
+                if scheduled_at > local_reference:
+                    return scheduled_at
+        return None
+
+    @classmethod
+    def record_backup_success(cls, *, backup_path, trigger, backup_at=None):
+        schedule = cls.get_solo()
+        schedule.last_backup_at = backup_at or timezone.now()
+        schedule.last_backup_path = str(backup_path)
+        schedule.last_backup_status = PatientDataBackupStatus.SUCCESS
+        schedule.last_backup_trigger = trigger
+        schedule.last_backup_error = ""
+        schedule.save(
+            update_fields=[
+                "last_backup_at",
+                "last_backup_path",
+                "last_backup_status",
+                "last_backup_trigger",
+                "last_backup_error",
+                "updated_at",
+            ]
+        )
+
+    @classmethod
+    def record_backup_failure(cls, *, error, trigger="", backup_at=None):
+        schedule = cls.get_solo()
+        if backup_at is not None:
+            schedule.last_backup_at = backup_at
+        schedule.last_backup_status = PatientDataBackupStatus.FAILED
+        schedule.last_backup_trigger = trigger
+        schedule.last_backup_error = error
+        schedule.save(
+            update_fields=[
+                "last_backup_at",
+                "last_backup_status",
+                "last_backup_trigger",
+                "last_backup_error",
+                "updated_at",
+            ]
+        )
 
 
 class DeviceApprovalPolicy(models.Model):

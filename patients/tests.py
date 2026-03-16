@@ -2193,7 +2193,26 @@ class MedtrackViewTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Backup schedule has errors.")
-        self.assertContains(response, "Choose the daily backup time.")
+        self.assertContains(response, "This field is required.")
+
+    def test_database_management_schedule_accepts_browser_time_with_seconds(self):
+        self.login_as_admin()
+
+        response = self.client.post(
+            reverse("patients:settings_database"),
+            {
+                "action": "save_schedule",
+                "enabled": "on",
+                "daily_time": "09:30:00",
+            },
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        schedule = PatientDataBackupSchedule.get_solo()
+        self.assertTrue(schedule.enabled)
+        self.assertEqual(schedule.daily_time.strftime("%H:%M"), "09:30")
+        self.assertContains(response, "Automatic backup schedules saved.")
 
     def test_database_management_schedule_runner_creates_daily_backup_and_updates_status(self):
         self.create_bundle_case(uhid="UH-SCHED-001", phone_number="9000000201")

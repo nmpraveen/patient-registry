@@ -549,14 +549,14 @@ class PatientDataBackupScheduleForm(forms.ModelForm):
         fields = ["enabled", "daily_time"]
         widgets = {
             "enabled": forms.CheckboxInput(),
-            "daily_time": forms.TimeInput(attrs={"type": "time"}),
+            "daily_time": forms.TimeInput(format="%H:%M", attrs={"type": "time", "step": 60}),
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["enabled"].widget.attrs["class"] = "form-check-input"
         self.fields["daily_time"].widget.attrs["class"] = "form-control"
-        self.fields["daily_time"].input_formats = ["%H:%M"]
+        self.fields["daily_time"].input_formats = ["%H:%M", "%H:%M:%S"]
         self.fields["daily_time"].label = "Daily backup time"
         self.fields["daily_time"].help_text = (
             "Daily backups run at this time. Monthly backups run automatically on the 1st at 12:00 AM, "
@@ -565,7 +565,7 @@ class PatientDataBackupScheduleForm(forms.ModelForm):
 
     def clean(self):
         cleaned_data = super().clean()
-        if cleaned_data.get("enabled") and not cleaned_data.get("daily_time"):
+        if cleaned_data.get("enabled") and not cleaned_data.get("daily_time") and "daily_time" not in self.errors:
             self.add_error("daily_time", "Choose the daily backup time.")
         return cleaned_data
 

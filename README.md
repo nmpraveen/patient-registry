@@ -52,7 +52,7 @@ This page supports:
 - Exporting a patient-data ZIP bundle
 - Importing a patient-data ZIP bundle
 - Writing a patient-data ZIP bundle to the server backup folder
-- Configuring automatic backup schedules with status for the last and next backup
+- Configuring automatic backup schedules with status for the last and next backup of each schedule
 
 Bundle format:
 
@@ -66,10 +66,10 @@ Important notes:
 - Patient identity is keyed by **UHID**, not by patient name, so same-name patients remain separate.
 - Import is destructive for patient data: it replaces all current patient-related records after creating a fresh safety backup.
 - Automatic schedules support:
-  - `1 per day` at a chosen time
-  - `2 per day` at `00:00` and `12:00`
-  - custom comma-separated `HH:MM` timings
-- The page shows the last backup time/status and the next scheduled backup time.
+  - daily backups at a chosen time, retaining the most recent 30 daily bundles
+  - monthly backups every 1st of the month at `12:00 AM`, retaining all monthly bundles
+  - yearly backups every `Jan 1` at `12:00 AM`, retaining all yearly bundles
+- The page shows the last backup and next backup timing for each schedule, plus the overall last backup status.
 - Built-in automatic scheduling runs while the web app is running; host-level scheduled commands are still a stronger option for unattended infrastructure.
 
 For WebAuthn / passkeys outside localhost, configure these env vars and serve the app over HTTPS:
@@ -149,7 +149,7 @@ docker compose up -d
 
 ## Periodic patient-data backups
 
-For routine backups, use a host-level scheduler to run the management command inside the web container and keep the latest 30 bundles.
+For routine unattended backups, use a host-level scheduler to run the management command inside the web container and keep the latest 30 manual bundles.
 
 Example command:
 
@@ -167,6 +167,7 @@ Notes:
 
 - `/app/backups` maps to the repo `backups/` folder in this Docker setup.
 - `backups/` is gitignored and should be treated as PHI-containing server storage.
+- The built-in app scheduler creates separate daily, monthly, and yearly archive bundles; the management command creates manual bundles and prunes only other manual bundles.
 - Use the patient-data bundle flow for routine restores of patient records, and keep `scripts/backup.sh` / `scripts/restore.sh` for full-environment recovery.
 
 ## Useful commands

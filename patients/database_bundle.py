@@ -32,6 +32,11 @@ MANIFEST_FILENAME = "manifest.json"
 BACKUP_FILENAME_PREFIX = "patient-data-bundle"
 DEFAULT_BACKUP_KEEP = 30
 IMPORT_CONFIRMATION_PHRASE = "REPLACE PATIENT DATA"
+BACKUP_KIND_DAILY = "daily"
+BACKUP_KIND_MONTHLY = "monthly"
+BACKUP_KIND_YEARLY = "yearly"
+BACKUP_KIND_MANUAL = "manual"
+BACKUP_KIND_IMPORT_SAFETY = "import-safety"
 
 
 class BundleValidationError(Exception):
@@ -42,21 +47,26 @@ def default_backup_dir():
     return Path(settings.BASE_DIR) / "backups"
 
 
-def list_backup_bundles(limit=5):
+def list_backup_bundles(limit=5, backup_kind=None):
     backup_dir = default_backup_dir()
     if not backup_dir.exists():
         return []
-    bundles = sorted(backup_dir.glob(f"{BACKUP_FILENAME_PREFIX}-*.zip"), reverse=True)
+    bundles = sorted(
+        backup_dir.glob(_backup_glob_pattern(backup_kind)),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
     return bundles[:limit] if limit else bundles
 
 
-def build_bundle_filename(exported_at=None):
+def build_bundle_filename(exported_at=None, backup_kind=None):
     exported_at = exported_at or timezone.now()
     stamp = exported_at.astimezone(dt_timezone.utc).strftime("%Y%m%d-%H%M%S-%fZ")
-    return f"{BACKUP_FILENAME_PREFIX}-{stamp}.zip"
+    kind_suffix = f"-{backup_kind}" if backup_kind else ""
+    return f"{BACKUP_FILENAME_PREFIX}{kind_suffix}-{stamp}.zip"
 
 
-def create_bundle_archive(exported_at=None):
+def create_bundle_archive(exported_at=None, backup_kind=None):
     exported_at = exported_at or timezone.now()
     payload = build_patient_data_payload()
     counts = compute_payload_counts(payload)
@@ -77,7 +87,7 @@ def create_bundle_archive(exported_at=None):
     with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as bundle_zip:
         bundle_zip.writestr(PATIENT_DATA_FILENAME, patient_data_bytes)
         bundle_zip.writestr(MANIFEST_FILENAME, manifest_bytes)
-    return archive.getvalue(), manifest, build_bundle_filename(exported_at)
+    return archive.getvalue(), manifest, build_bundle_filename(exported_at, backup_kind=backup_kind)
 
 
 def write_backup_bundle(
@@ -86,29 +96,36 @@ def write_backup_bundle(
     keep=DEFAULT_BACKUP_KEEP,
     exported_at=None,
     trigger=PatientDataBackupTrigger.MANUAL,
+    backup_kind=None,
+    schedule_key=None,
 ):
     output_dir = Path(output_dir) if output_dir else default_backup_dir()
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    archive_bytes, manifest, filename = create_bundle_archive(exported_at=exported_at)
+    backup_kind = backup_kind or backup_kind_for_trigger(trigger)
+    archive_bytes, manifest, filename = create_bundle_archive(exported_at=exported_at, backup_kind=backup_kind)
     bundle_path = output_dir / filename
     bundle_path.write_bytes(archive_bytes)
 
-    pruned = prune_backup_bundles(output_dir, keep=keep)
+    pruned = prune_backup_bundles(output_dir, keep=keep, backup_kind=backup_kind)
     PatientDataBackupSchedule.record_backup_success(
         backup_path=bundle_path,
         trigger=trigger,
         backup_at=exported_at or timezone.now(),
+        schedule_key=schedule_key,
     )
     return bundle_path, manifest, pruned
 
 
-def prune_backup_bundles(output_dir, *, keep):
+def prune_backup_bundles(output_dir, *, keep, backup_kind=None):
     output_dir = Path(output_dir)
     if keep is None:
         return []
     keep = max(int(keep), 0)
-    bundle_paths = sorted(output_dir.glob(f"{BACKUP_FILENAME_PREFIX}-*.zip"))
+    bundle_paths = sorted(
+        output_dir.glob(_backup_glob_pattern(backup_kind)),
+        key=lambda path: path.stat().st_mtime,
+    )
     if keep == 0:
         to_remove = bundle_paths
     else:
@@ -123,9 +140,27 @@ def import_bundle_bytes(bundle_bytes, *, keep=DEFAULT_BACKUP_KEEP):
     safety_backup_path, _, _ = write_backup_bundle(
         keep=keep,
         trigger=PatientDataBackupTrigger.IMPORT_SAFETY,
+        backup_kind=BACKUP_KIND_IMPORT_SAFETY,
     )
     counts = _replace_patient_data(payload)
     return {"counts": counts, "safety_backup_path": safety_backup_path}
+
+
+def backup_kind_for_trigger(trigger):
+    return {
+        PatientDataBackupTrigger.DAILY_SCHEDULED: BACKUP_KIND_DAILY,
+        PatientDataBackupTrigger.MONTHLY_SCHEDULED: BACKUP_KIND_MONTHLY,
+        PatientDataBackupTrigger.YEARLY_SCHEDULED: BACKUP_KIND_YEARLY,
+        PatientDataBackupTrigger.IMPORT_SAFETY: BACKUP_KIND_IMPORT_SAFETY,
+        PatientDataBackupTrigger.MANUAL: BACKUP_KIND_MANUAL,
+        PatientDataBackupTrigger.SCHEDULED: BACKUP_KIND_DAILY,
+    }.get(trigger, BACKUP_KIND_MANUAL)
+
+
+def _backup_glob_pattern(backup_kind=None):
+    if backup_kind:
+        return f"{BACKUP_FILENAME_PREFIX}-{backup_kind}-*.zip"
+    return f"{BACKUP_FILENAME_PREFIX}-*.zip"
 
 
 def load_bundle_archive(bundle_bytes):

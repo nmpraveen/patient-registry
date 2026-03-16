@@ -14,39 +14,29 @@
   <div class="col-12 col-xl-8">
     <div class="card h-100"><div class="card-body">
       <h2 class="h6">Automatic backup scheduler</h2>
-      <p class="text-muted small mb-3">Choose a daily schedule, the built-in twice-daily option at 12:00 AM and 12:00 PM, or custom 24-hour timings. Backups run automatically while the app is running.</p>
+      <p class="text-muted small mb-3">Automatic backups run while the app is running. Daily backups are customizable and keep the last 30 daily bundles. Monthly and yearly archive backups are fixed and kept indefinitely.</p>
       <form method="post" id="backup-schedule-form">
         {% csrf_token %}
         <div class="form-check mb-3">
           {{ schedule_form.enabled }}
-          <label class="form-check-label" for="{{ schedule_form.enabled.id_for_label }}">Enable automatic patient-data backups</label>
+          <label class="form-check-label" for="{{ schedule_form.enabled.id_for_label }}">Enable automatic daily, monthly, and yearly patient-data backups</label>
         </div>
         <div class="row g-3">
           <div class="col-12 col-lg-4">
-            <label class="form-label" for="{{ schedule_form.schedule_mode.id_for_label }}">{{ schedule_form.schedule_mode.label }}</label>
-            {{ schedule_form.schedule_mode }}
-            <div class="form-text">{{ schedule_form.schedule_mode.help_text }}</div>
-            {% if schedule_form.schedule_mode.errors %}
-              <div class="text-danger small mt-1">{{ schedule_form.schedule_mode.errors|striptags }}</div>
-            {% endif %}
-          </div>
-          <div class="col-12 col-lg-4" data-schedule-daily>
             <label class="form-label" for="{{ schedule_form.daily_time.id_for_label }}">{{ schedule_form.daily_time.label }}</label>
             {{ schedule_form.daily_time }}
+            <div class="form-text">{{ schedule_form.daily_time.help_text }}</div>
             {% if schedule_form.daily_time.errors %}
               <div class="text-danger small mt-1">{{ schedule_form.daily_time.errors|striptags }}</div>
             {% endif %}
           </div>
-          <div class="col-12 col-lg-4">
-            <div class="small text-muted pt-lg-4">Retention stays at the default 30 backup bundles for now.</div>
-          </div>
-          <div class="col-12" data-schedule-custom>
-            <label class="form-label" for="{{ schedule_form.custom_times_text.id_for_label }}">{{ schedule_form.custom_times_text.label }}</label>
-            {{ schedule_form.custom_times_text }}
-            <div class="form-text">{{ schedule_form.custom_times_text.help_text }}</div>
-            {% if schedule_form.custom_times_text.errors %}
-              <div class="text-danger small mt-1">{{ schedule_form.custom_times_text.errors|striptags }}</div>
-            {% endif %}
+          <div class="col-12 col-lg-8">
+            <div class="border rounded p-3 h-100 bg-light-subtle">
+              <div class="fw-semibold mb-2">Fixed archive schedules</div>
+              <div class="small text-muted">Monthly backup: every 1st of the month at 12:00 AM, kept forever.</div>
+              <div class="small text-muted">Yearly backup: every Jan 1 at 12:00 AM, kept forever.</div>
+              <div class="small text-muted mt-2">Daily backups keep the latest 30 daily bundles only.</div>
+            </div>
           </div>
         </div>
         <div class="d-flex flex-wrap gap-2 mt-3">
@@ -95,6 +85,46 @@
   </div>
 </div>
 
+<div class="card mb-3"><div class="card-body">
+  <h2 class="h6">Schedule details</h2>
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0">
+      <thead>
+        <tr>
+          <th scope="col">Schedule</th>
+          <th scope="col">Runs</th>
+          <th scope="col">Retention</th>
+          <th scope="col">Last backup</th>
+          <th scope="col">Next backup</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in schedule_rows %}
+          <tr>
+            <th scope="row">{{ row.label }}</th>
+            <td>{{ row.schedule }}</td>
+            <td>{{ row.retention }}</td>
+            <td>
+              {% if row.last_backup_at %}
+                {{ row.last_backup_at|date:"M j, Y g:i A" }}
+              {% else %}
+                Never
+              {% endif %}
+            </td>
+            <td>
+              {% if row.next_backup_at %}
+                {{ row.next_backup_at|date:"M j, Y g:i A" }}
+              {% else %}
+                Not scheduled
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div></div>
+
 <div class="row g-3">
   <div class="col-12 col-lg-4">
     <div class="card h-100"><div class="card-body">
@@ -116,7 +146,7 @@
         {% csrf_token %}
         <button class="btn btn-outline-primary w-100" type="submit" name="action" value="backup">Create server backup</button>
       </form>
-      <div class="small text-muted mt-3">Recommended for periodic backups: run the management command nightly and keep the latest 30 bundles.</div>
+      <div class="small text-muted mt-3">Built-in scheduling covers daily, monthly, and yearly backups while the app stays online. Host-level scheduled commands are still the stronger option for unattended infrastructure.</div>
     </div></div>
   </div>
 
@@ -165,29 +195,4 @@
   {% endif %}
 </div></div>
 
-<script>
-  (function() {
-    const form = document.getElementById("backup-schedule-form");
-    if (!form) return;
-    const modeField = document.getElementById("{{ schedule_form.schedule_mode.id_for_label }}");
-    const dailyGroup = form.querySelector("[data-schedule-daily]");
-    const customGroup = form.querySelector("[data-schedule-custom]");
-
-    function syncScheduleFields() {
-      if (!modeField) return;
-      const mode = modeField.value;
-      if (dailyGroup) {
-        dailyGroup.classList.toggle("d-none", mode !== "DAILY");
-      }
-      if (customGroup) {
-        customGroup.classList.toggle("d-none", mode !== "CUSTOM");
-      }
-    }
-
-    if (modeField) {
-      modeField.addEventListener("change", syncScheduleFields);
-      syncScheduleFields();
-    }
-  })();
-</script>
 {% endblock %}

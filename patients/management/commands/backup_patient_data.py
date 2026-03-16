@@ -6,7 +6,7 @@ from patients import database_bundle
 
 
 class Command(BaseCommand):
-    help = "Create a patient-data backup ZIP bundle and prune older bundles."
+    help = "Create a manual patient-data backup ZIP bundle and prune older manual bundles."
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -18,7 +18,7 @@ class Command(BaseCommand):
             "--keep",
             type=int,
             default=database_bundle.DEFAULT_BACKUP_KEEP,
-            help="Number of newest backup bundles to keep after writing the new backup.",
+            help="Number of newest manual backup bundles to keep after writing the new backup.",
         )
 
     def handle(self, *args, **options):

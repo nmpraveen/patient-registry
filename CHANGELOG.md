@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.03.16.14.27
+- Reworked the Database Management scheduler into three automatic backup tracks: daily backups at an admin-chosen time, monthly backups on the 1st at `12:00 AM`, and yearly backups on `Jan 1` at `12:00 AM`.
+- Changed retention behavior so daily backups keep the newest 30 daily bundles while monthly and yearly archive bundles are retained indefinitely, with backup filenames and pruning now separated by backup type.
+- Updated the scheduler UI, migration state, and automated coverage to show per-schedule last/next backup status and to verify that daily pruning never deletes monthly or yearly archives.
+
 ## 2026.03.16.13.52
 - Added backup-scheduler controls to the Database Management page so admins can enable automatic patient-data backups as `1 per day`, `2 per day` at `00:00` and `12:00`, or custom `HH:MM` timings.
 - Added persistent scheduler status on the page, including last backup time/result, last trigger type, last backup file, and the next scheduled backup time.

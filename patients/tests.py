@@ -38,7 +38,6 @@ from .models import (
     DEVICE_APPROVAL_MAX_APPROVED,
     Gender,
     PatientDataBackupSchedule,
-    PatientDataBackupScheduleMode,
     PatientDataBackupStatus,
     PatientDataBackupTrigger,
     RCH_REMINDER_INTERVAL_DAYS,
@@ -2148,7 +2147,7 @@ class MedtrackViewTests(TestCase):
             response = self.client.post(reverse("patients:settings_database"), {"action": "backup"}, follow=True)
 
             self.assertEqual(response.status_code, 200)
-            backup_paths = sorted(Path(temp_dir).glob("patient-data-bundle-*.zip"))
+            backup_paths = sorted(Path(temp_dir).glob("patient-data-bundle-manual-*.zip"))
             self.assertEqual(len(backup_paths), 1)
             self.assertContains(response, "Saved patient-data backup to")
             self.assertContains(response, str(backup_paths[0]))
@@ -2164,9 +2163,7 @@ class MedtrackViewTests(TestCase):
             {
                 "action": "save_schedule",
                 "enabled": "on",
-                "schedule_mode": PatientDataBackupScheduleMode.DAILY,
                 "daily_time": "09:30",
-                "custom_times_text": "",
             },
             follow=True,
         )
@@ -2174,12 +2171,14 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         schedule = PatientDataBackupSchedule.get_solo()
         self.assertTrue(schedule.enabled)
-        self.assertEqual(schedule.schedule_mode, PatientDataBackupScheduleMode.DAILY)
         self.assertEqual(schedule.daily_time.strftime("%H:%M"), "09:30")
-        self.assertContains(response, "Automatic backup schedule saved.")
+        self.assertContains(response, "Automatic backup schedules saved.")
         self.assertContains(response, "Current schedule:")
+        self.assertContains(response, "Daily backups")
+        self.assertContains(response, "Monthly backups")
+        self.assertContains(response, "Yearly backups")
 
-    def test_database_management_schedule_validates_custom_times(self):
+    def test_database_management_schedule_requires_daily_time_when_enabled(self):
         self.login_as_admin()
 
         response = self.client.post(
@@ -2187,25 +2186,24 @@ class MedtrackViewTests(TestCase):
             {
                 "action": "save_schedule",
                 "enabled": "on",
-                "schedule_mode": PatientDataBackupScheduleMode.CUSTOM,
-                "daily_time": "09:00",
-                "custom_times_text": "09:00, 25:00",
+                "daily_time": "",
             },
             follow=True,
         )
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Backup schedule has errors.")
-        self.assertContains(response, "HH:MM 24-hour format")
+        self.assertContains(response, "Choose the daily backup time.")
 
-    def test_database_management_schedule_runner_creates_backup_and_updates_status(self):
+    def test_database_management_schedule_runner_creates_daily_backup_and_updates_status(self):
         self.create_bundle_case(uhid="UH-SCHED-001", phone_number="9000000201")
         schedule = PatientDataBackupSchedule.get_solo()
         schedule.enabled = True
-        schedule.schedule_mode = PatientDataBackupScheduleMode.DAILY
         schedule.daily_time = dt_time(hour=12, minute=0)
+        schedule.last_monthly_backup_at = timezone.make_aware(datetime(2026, 5, 1, 0, 0))
+        schedule.last_yearly_backup_at = timezone.make_aware(datetime(2026, 1, 1, 0, 0))
         schedule.save()
-        reference_time = timezone.make_aware(datetime.combine(timezone.localdate(), dt_time(hour=13, minute=0)))
+        reference_time = timezone.make_aware(datetime(2026, 5, 2, 13, 0))
 
         with tempfile.TemporaryDirectory() as temp_dir, patch(
             "patients.database_bundle.default_backup_dir", return_value=Path(temp_dir)
@@ -2213,22 +2211,51 @@ class MedtrackViewTests(TestCase):
             ran = backup_scheduler.run_due_scheduled_backup(reference_time=reference_time)
 
             self.assertTrue(ran)
-            self.assertEqual(len(list(Path(temp_dir).glob("patient-data-bundle-*.zip"))), 1)
+            self.assertEqual(len(list(Path(temp_dir).glob("patient-data-bundle-daily-*.zip"))), 1)
             schedule.refresh_from_db()
             self.assertEqual(schedule.last_backup_status, PatientDataBackupStatus.SUCCESS)
-            self.assertEqual(schedule.last_backup_trigger, PatientDataBackupTrigger.SCHEDULED)
+            self.assertEqual(schedule.last_backup_trigger, PatientDataBackupTrigger.DAILY_SCHEDULED)
             self.assertIsNotNone(schedule.last_backup_at)
+            self.assertIsNotNone(schedule.last_daily_backup_at)
             self.assertGreater(schedule.next_backup_at(reference_time), reference_time)
 
             reran = backup_scheduler.run_due_scheduled_backup(reference_time=reference_time)
             self.assertFalse(reran)
-            self.assertEqual(len(list(Path(temp_dir).glob("patient-data-bundle-*.zip"))), 1)
+            self.assertEqual(len(list(Path(temp_dir).glob("patient-data-bundle-daily-*.zip"))), 1)
+
+    def test_database_management_schedule_runner_creates_monthly_and_yearly_archives(self):
+        self.create_bundle_case(uhid="UH-SCHED-003", phone_number="9000000203")
+        schedule = PatientDataBackupSchedule.get_solo()
+        schedule.enabled = True
+        schedule.daily_time = dt_time(hour=2, minute=0)
+        schedule.last_daily_backup_at = timezone.make_aware(datetime(2026, 12, 31, 3, 0))
+        schedule.save()
+        reference_time = timezone.make_aware(datetime(2027, 1, 1, 0, 5))
+
+        with tempfile.TemporaryDirectory() as temp_dir, patch(
+            "patients.database_bundle.default_backup_dir", return_value=Path(temp_dir)
+        ):
+            ran = backup_scheduler.run_due_scheduled_backup(reference_time=reference_time)
+
+            self.assertTrue(ran)
+            self.assertEqual(len(list(Path(temp_dir).glob("patient-data-bundle-monthly-*.zip"))), 1)
+            self.assertEqual(len(list(Path(temp_dir).glob("patient-data-bundle-yearly-*.zip"))), 1)
+            self.assertEqual(len(list(Path(temp_dir).glob("patient-data-bundle-daily-*.zip"))), 0)
+            schedule.refresh_from_db()
+            self.assertIsNotNone(schedule.last_monthly_backup_at)
+            self.assertIsNotNone(schedule.last_yearly_backup_at)
 
     def test_database_management_schedule_save_runs_due_backup_when_time_has_passed(self):
         self.login_as_admin()
         self.create_bundle_case(uhid="UH-SCHED-002", phone_number="9000000202")
         local_now = timezone.localtime()
         due_time = (local_now - timedelta(minutes=1)).time().replace(second=0, microsecond=0)
+        first_of_month = timezone.make_aware(datetime(local_now.year, local_now.month, 1, 0, 0))
+        start_of_year = timezone.make_aware(datetime(local_now.year, 1, 1, 0, 0))
+        schedule = PatientDataBackupSchedule.get_solo()
+        schedule.last_monthly_backup_at = first_of_month
+        schedule.last_yearly_backup_at = start_of_year
+        schedule.save()
 
         with tempfile.TemporaryDirectory() as temp_dir, patch(
             "patients.database_bundle.default_backup_dir", return_value=Path(temp_dir)
@@ -2238,17 +2265,15 @@ class MedtrackViewTests(TestCase):
                 {
                     "action": "save_schedule",
                     "enabled": "on",
-                    "schedule_mode": PatientDataBackupScheduleMode.DAILY,
                     "daily_time": due_time.strftime("%H:%M"),
-                    "custom_times_text": "",
                 },
                 follow=True,
             )
 
             self.assertEqual(response.status_code, 200)
-            self.assertEqual(len(list(Path(temp_dir).glob("patient-data-bundle-*.zip"))), 1)
+            self.assertEqual(len(list(Path(temp_dir).glob("patient-data-bundle-daily-*.zip"))), 1)
             schedule = PatientDataBackupSchedule.get_solo()
-            self.assertEqual(schedule.last_backup_trigger, PatientDataBackupTrigger.SCHEDULED)
+            self.assertEqual(schedule.last_backup_trigger, PatientDataBackupTrigger.DAILY_SCHEDULED)
             self.assertEqual(schedule.last_backup_status, PatientDataBackupStatus.SUCCESS)
 
     def test_database_management_import_requires_confirmation(self):
@@ -4441,14 +4466,32 @@ class PatientDataBundleTests(TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
             for suffix in ("20240101-000000-000000Z", "20240102-000000-000000Z", "20240103-000000-000000Z"):
-                (temp_path / f"patient-data-bundle-{suffix}.zip").write_bytes(b"old")
+                (temp_path / f"patient-data-bundle-manual-{suffix}.zip").write_bytes(b"old")
 
             stdout = io.StringIO()
             call_command("backup_patient_data", "--output-dir", temp_dir, "--keep", "2", stdout=stdout)
 
-            remaining = sorted(temp_path.glob("patient-data-bundle-*.zip"))
+            remaining = sorted(temp_path.glob("patient-data-bundle-manual-*.zip"))
             self.assertEqual(len(remaining), 2)
             self.assertIn("Created patient-data backup", stdout.getvalue())
+
+    def test_prune_backup_bundles_only_removes_matching_backup_kind(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            for filename in (
+                "patient-data-bundle-daily-20240101-000000-000000Z.zip",
+                "patient-data-bundle-daily-20240102-000000-000000Z.zip",
+                "patient-data-bundle-daily-20240103-000000-000000Z.zip",
+                "patient-data-bundle-monthly-20240101-000000-000000Z.zip",
+                "patient-data-bundle-yearly-20240101-000000-000000Z.zip",
+            ):
+                (temp_path / filename).write_bytes(b"old")
+
+            database_bundle.prune_backup_bundles(temp_path, keep=2, backup_kind=database_bundle.BACKUP_KIND_DAILY)
+
+            self.assertEqual(len(list(temp_path.glob("patient-data-bundle-daily-*.zip"))), 2)
+            self.assertEqual(len(list(temp_path.glob("patient-data-bundle-monthly-*.zip"))), 1)
+            self.assertEqual(len(list(temp_path.glob("patient-data-bundle-yearly-*.zip"))), 1)
 
 
 class SeedMockDataCommandTests(TestCase):

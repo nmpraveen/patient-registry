@@ -207,11 +207,18 @@ class PatientDataBackupStatus(models.TextChoices):
 
 class PatientDataBackupTrigger(models.TextChoices):
     MANUAL = "MANUAL", "Manual"
+    DAILY_SCHEDULED = "DAILY_SCHEDULED", "Daily scheduled backup"
+    MONTHLY_SCHEDULED = "MONTHLY_SCHEDULED", "Monthly scheduled backup"
+    YEARLY_SCHEDULED = "YEARLY_SCHEDULED", "Yearly scheduled backup"
     SCHEDULED = "SCHEDULED", "Scheduled"
     IMPORT_SAFETY = "IMPORT_SAFETY", "Import safety"
 
 
 class PatientDataBackupSchedule(models.Model):
+    DAILY_RETENTION_COUNT = 30
+    MONTHLY_BACKUP_TIME = dt_time(hour=0, minute=0)
+    YEARLY_BACKUP_TIME = dt_time(hour=0, minute=0)
+
     enabled = models.BooleanField(default=False)
     schedule_mode = models.CharField(
         max_length=16,
@@ -229,95 +236,189 @@ class PatientDataBackupSchedule(models.Model):
         default=PatientDataBackupStatus.NEVER,
     )
     last_backup_trigger = models.CharField(
-        max_length=16,
+        max_length=32,
         choices=PatientDataBackupTrigger.choices,
         blank=True,
         default="",
     )
     last_backup_error = models.TextField(blank=True, default="")
+    last_daily_backup_at = models.DateTimeField(null=True, blank=True)
+    last_monthly_backup_at = models.DateTimeField(null=True, blank=True)
+    last_yearly_backup_at = models.DateTimeField(null=True, blank=True)
     run_lock_until = models.DateTimeField(null=True, blank=True)
     run_lock_token = models.CharField(max_length=64, blank=True, default="")
     updated_at = models.DateTimeField(auto_now=True)
 
     def save(self, *args, **kwargs):
         self.pk = 1
+        self.schedule_mode = PatientDataBackupScheduleMode.DAILY
         self.custom_times = sorted(
             dict.fromkeys(normalize_backup_schedule_time(value) for value in (self.custom_times or []))
         )
         if self.retention_count < 1:
-            self.retention_count = 1
+            self.retention_count = self.DAILY_RETENTION_COUNT
         super().save(*args, **kwargs)
 
     @classmethod
     def get_solo(cls):
         return cls.objects.get_or_create(pk=1)[0]
 
-    def configured_time_labels(self):
-        if self.schedule_mode == PatientDataBackupScheduleMode.TWICE_DAILY:
-            return ["00:00", "12:00"]
-        if self.schedule_mode == PatientDataBackupScheduleMode.CUSTOM:
-            return list(self.custom_times or [])
-        return [normalize_backup_schedule_time(self.daily_time)]
-
     def schedule_summary(self):
         if not self.enabled:
             return "Disabled"
-        if self.schedule_mode == PatientDataBackupScheduleMode.DAILY:
-            return f"1 per day at {self.configured_time_labels()[0]}"
-        if self.schedule_mode == PatientDataBackupScheduleMode.TWICE_DAILY:
-            return "2 per day at 00:00 and 12:00"
-        return f"Custom timings: {', '.join(self.configured_time_labels())}"
+        return (
+            f"Daily at {self.daily_schedule_time_label()}, "
+            "monthly on the 1st at 12:00 AM, yearly on Jan 1 at 12:00 AM"
+        )
 
-    def scheduled_datetimes_for_date(self, target_date):
+    def daily_schedule_time_label(self):
+        return self.daily_time.strftime("%I:%M %p").lstrip("0")
+
+    @staticmethod
+    def _midnight_label():
+        return "12:00 AM"
+
+    @staticmethod
+    def _aware_datetime(target_date, target_time):
         tz = timezone.get_current_timezone()
-        scheduled = []
-        for time_label in self.configured_time_labels():
-            scheduled_time = datetime.strptime(time_label, "%H:%M").time()
-            scheduled.append(timezone.make_aware(datetime.combine(target_date, scheduled_time), tz))
-        return scheduled
+        return timezone.make_aware(datetime.combine(target_date, target_time), tz)
 
-    def latest_due_backup_at(self, reference_time=None):
+    def _monthly_backup_datetime(self, year, month):
+        return self._aware_datetime(datetime(year=year, month=month, day=1).date(), self.MONTHLY_BACKUP_TIME)
+
+    def _yearly_backup_datetime(self, year):
+        return self._aware_datetime(datetime(year=year, month=1, day=1).date(), self.YEARLY_BACKUP_TIME)
+
+    def latest_due_backup_at_for(self, schedule_key, reference_time=None):
         if not self.enabled:
             return None
-        reference_time = reference_time or timezone.now()
-        local_reference = timezone.localtime(reference_time)
-        for day_offset in range(0, 3):
-            target_date = local_reference.date() - timedelta(days=day_offset)
-            for scheduled_at in reversed(self.scheduled_datetimes_for_date(target_date)):
-                if scheduled_at <= local_reference:
-                    return scheduled_at
+        reference_time = timezone.localtime(reference_time or timezone.now())
+        if schedule_key == "daily":
+            today_backup = self._aware_datetime(reference_time.date(), self.daily_time)
+            if today_backup <= reference_time:
+                return today_backup
+            return self._aware_datetime(reference_time.date() - timedelta(days=1), self.daily_time)
+        if schedule_key == "monthly":
+            current_month_backup = self._monthly_backup_datetime(reference_time.year, reference_time.month)
+            if current_month_backup <= reference_time:
+                return current_month_backup
+            previous_month_date = reference_time.date().replace(day=1) - timedelta(days=1)
+            return self._monthly_backup_datetime(previous_month_date.year, previous_month_date.month)
+        if schedule_key == "yearly":
+            current_year_backup = self._yearly_backup_datetime(reference_time.year)
+            if current_year_backup <= reference_time:
+                return current_year_backup
+            return self._yearly_backup_datetime(reference_time.year - 1)
         return None
 
     def next_backup_at(self, reference_time=None):
+        next_backups = [
+            self.next_backup_at_for("daily", reference_time),
+            self.next_backup_at_for("monthly", reference_time),
+            self.next_backup_at_for("yearly", reference_time),
+        ]
+        next_backups = [scheduled_at for scheduled_at in next_backups if scheduled_at is not None]
+        return min(next_backups) if next_backups else None
+
+    def next_backup_at_for(self, schedule_key, reference_time=None):
         if not self.enabled:
             return None
-        reference_time = reference_time or timezone.now()
-        local_reference = timezone.localtime(reference_time)
-        for day_offset in range(0, 3):
-            target_date = local_reference.date() + timedelta(days=day_offset)
-            for scheduled_at in self.scheduled_datetimes_for_date(target_date):
-                if scheduled_at > local_reference:
-                    return scheduled_at
+        reference_time = timezone.localtime(reference_time or timezone.now())
+        if schedule_key == "daily":
+            today_backup = self._aware_datetime(reference_time.date(), self.daily_time)
+            if today_backup > reference_time:
+                return today_backup
+            return self._aware_datetime(reference_time.date() + timedelta(days=1), self.daily_time)
+        if schedule_key == "monthly":
+            current_month_backup = self._monthly_backup_datetime(reference_time.year, reference_time.month)
+            if current_month_backup > reference_time:
+                return current_month_backup
+            next_month_anchor = reference_time.date().replace(day=28) + timedelta(days=4)
+            next_month_date = next_month_anchor.replace(day=1)
+            return self._monthly_backup_datetime(next_month_date.year, next_month_date.month)
+        if schedule_key == "yearly":
+            current_year_backup = self._yearly_backup_datetime(reference_time.year)
+            if current_year_backup > reference_time:
+                return current_year_backup
+            return self._yearly_backup_datetime(reference_time.year + 1)
         return None
 
+    def last_backup_at_for(self, schedule_key):
+        if schedule_key == "daily":
+            return self.last_daily_backup_at
+        if schedule_key == "monthly":
+            return self.last_monthly_backup_at
+        if schedule_key == "yearly":
+            return self.last_yearly_backup_at
+        return None
+
+    def due_scheduled_runs(self, reference_time=None):
+        if not self.enabled:
+            return []
+        runs = []
+        for schedule_key in ("yearly", "monthly", "daily"):
+            due_at = self.latest_due_backup_at_for(schedule_key, reference_time)
+            if due_at is None:
+                continue
+            last_backup_at = self.last_backup_at_for(schedule_key)
+            if last_backup_at is None or last_backup_at < due_at:
+                runs.append({"schedule_key": schedule_key, "due_at": due_at})
+        return runs
+
+    def schedule_rows(self, reference_time=None):
+        return [
+            {
+                "key": "daily",
+                "label": "Daily backups",
+                "schedule": f"Every day at {self.daily_schedule_time_label()}",
+                "retention": f"Keep last {self.retention_count} daily backups",
+                "last_backup_at": self.last_daily_backup_at,
+                "next_backup_at": self.next_backup_at_for("daily", reference_time),
+            },
+            {
+                "key": "monthly",
+                "label": "Monthly backups",
+                "schedule": f"Every 1st of the month at {self._midnight_label()}",
+                "retention": "Keep all monthly backups",
+                "last_backup_at": self.last_monthly_backup_at,
+                "next_backup_at": self.next_backup_at_for("monthly", reference_time),
+            },
+            {
+                "key": "yearly",
+                "label": "Yearly backups",
+                "schedule": f"Every Jan 1 at {self._midnight_label()}",
+                "retention": "Keep all yearly backups",
+                "last_backup_at": self.last_yearly_backup_at,
+                "next_backup_at": self.next_backup_at_for("yearly", reference_time),
+            },
+        ]
+
     @classmethod
-    def record_backup_success(cls, *, backup_path, trigger, backup_at=None):
+    def record_backup_success(cls, *, backup_path, trigger, backup_at=None, schedule_key=None):
         schedule = cls.get_solo()
         schedule.last_backup_at = backup_at or timezone.now()
         schedule.last_backup_path = str(backup_path)
         schedule.last_backup_status = PatientDataBackupStatus.SUCCESS
         schedule.last_backup_trigger = trigger
         schedule.last_backup_error = ""
-        schedule.save(
-            update_fields=[
-                "last_backup_at",
-                "last_backup_path",
-                "last_backup_status",
-                "last_backup_trigger",
-                "last_backup_error",
-                "updated_at",
-            ]
-        )
+        update_fields = [
+            "last_backup_at",
+            "last_backup_path",
+            "last_backup_status",
+            "last_backup_trigger",
+            "last_backup_error",
+            "updated_at",
+        ]
+        if schedule_key == "daily":
+            schedule.last_daily_backup_at = schedule.last_backup_at
+            update_fields.append("last_daily_backup_at")
+        elif schedule_key == "monthly":
+            schedule.last_monthly_backup_at = schedule.last_backup_at
+            update_fields.append("last_monthly_backup_at")
+        elif schedule_key == "yearly":
+            schedule.last_yearly_backup_at = schedule.last_backup_at
+            update_fields.append("last_yearly_backup_at")
+        schedule.save(update_fields=update_fields)
 
     @classmethod
     def record_backup_failure(cls, *, error, trigger="", backup_at=None):

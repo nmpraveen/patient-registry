@@ -2774,6 +2774,7 @@ class DatabaseManagementSettingsView(LoginRequiredMixin, View):
 
     def _build_context(self, import_form=None, schedule_form=None):
         schedule = PatientDataBackupSchedule.get_solo()
+        schedule_rows = schedule.schedule_rows()
         recent_backups = [
             {"name": path.name, "size_bytes": path.stat().st_size}
             for path in database_bundle.list_backup_bundles(limit=5)
@@ -2782,6 +2783,7 @@ class DatabaseManagementSettingsView(LoginRequiredMixin, View):
             "import_form": import_form or DatabaseImportForm(),
             "schedule_form": schedule_form or PatientDataBackupScheduleForm(instance=schedule),
             "schedule": schedule,
+            "schedule_rows": schedule_rows,
             "next_backup_at": schedule.next_backup_at(),
             "backup_dir": str(database_bundle.default_backup_dir()),
             "import_confirmation_phrase": database_bundle.IMPORT_CONFIRMATION_PHRASE,
@@ -2850,9 +2852,9 @@ class DatabaseManagementSettingsView(LoginRequiredMixin, View):
             schedule = schedule_form.save()
             backup_scheduler.run_due_scheduled_backup()
             if schedule.enabled:
-                messages.success(request, "Automatic backup schedule saved.")
+                messages.success(request, "Automatic backup schedules saved.")
             else:
-                messages.success(request, "Automatic backup schedule disabled.")
+                messages.success(request, "Automatic backup schedules disabled.")
             return redirect("patients:settings_database")
 
         messages.error(request, "Unknown database management action.")

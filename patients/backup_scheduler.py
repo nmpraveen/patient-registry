@@ -18,6 +18,20 @@ POLL_INTERVAL_SECONDS = 30
 LOCK_LEASE = timedelta(minutes=10)
 _scheduler_started = False
 _scheduler_lock = threading.Lock()
+SCHEDULED_RUN_CONFIG = {
+    "daily": {
+        "trigger": PatientDataBackupTrigger.DAILY_SCHEDULED,
+        "keep": lambda schedule: schedule.retention_count,
+    },
+    "monthly": {
+        "trigger": PatientDataBackupTrigger.MONTHLY_SCHEDULED,
+        "keep": lambda schedule: None,
+    },
+    "yearly": {
+        "trigger": PatientDataBackupTrigger.YEARLY_SCHEDULED,
+        "keep": lambda schedule: None,
+    },
+}
 
 
 def scheduler_should_start():
@@ -26,6 +40,7 @@ def scheduler_should_start():
     disabled_commands = {
         "makemigrations",
         "migrate",
+        "showmigrations",
         "test",
         "shell",
         "dbshell",
@@ -64,10 +79,8 @@ def _scheduler_loop():
 def run_due_scheduled_backup(reference_time=None):
     reference_time = reference_time or timezone.now()
     schedule = PatientDataBackupSchedule.get_solo()
-    due_backup_at = schedule.latest_due_backup_at(reference_time)
-    if not due_backup_at:
-        return False
-    if schedule.last_backup_at and schedule.last_backup_at >= due_backup_at:
+    due_runs = schedule.due_scheduled_runs(reference_time)
+    if not due_runs:
         return False
 
     lock_token = secrets.token_hex(16)
@@ -80,16 +93,20 @@ def run_due_scheduled_backup(reference_time=None):
 
     try:
         schedule = PatientDataBackupSchedule.get_solo()
-        due_backup_at = schedule.latest_due_backup_at(reference_time)
-        if not due_backup_at:
+        due_runs = schedule.due_scheduled_runs(reference_time)
+        if not due_runs:
             return False
-        if schedule.last_backup_at and schedule.last_backup_at >= due_backup_at:
-            return False
-        database_bundle.write_backup_bundle(
-            keep=schedule.retention_count,
-            trigger=PatientDataBackupTrigger.SCHEDULED,
-        )
-        return True
+        ran_any = False
+        for due_run in due_runs:
+            config = SCHEDULED_RUN_CONFIG[due_run["schedule_key"]]
+            database_bundle.write_backup_bundle(
+                keep=config["keep"](schedule),
+                exported_at=reference_time,
+                trigger=config["trigger"],
+                schedule_key=due_run["schedule_key"],
+            )
+            ran_any = True
+        return ran_any
     except Exception as exc:
         PatientDataBackupSchedule.record_backup_failure(
             error=str(exc),

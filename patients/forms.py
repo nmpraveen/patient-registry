@@ -15,7 +15,6 @@ from .models import (
     DepartmentConfig,
     DeviceApprovalPolicy,
     PatientDataBackupSchedule,
-    PatientDataBackupScheduleMode,
     NonCommunicableDisease,
     RoleSetting,
     Task,
@@ -24,7 +23,6 @@ from .models import (
     VitalEntry,
     ensure_default_departments,
     ensure_default_role_settings,
-    normalize_backup_schedule_time,
 )
 from .theme import (
     THEME_FORM_SECTIONS,
@@ -546,69 +544,36 @@ class DatabaseImportForm(forms.Form):
 
 
 class PatientDataBackupScheduleForm(forms.ModelForm):
-    custom_times_text = forms.CharField(
-        label="Custom backup times",
-        required=False,
-        widget=forms.Textarea(attrs={"rows": 3}),
-        help_text="Comma-separated 24-hour times, for example 09:00, 15:30.",
-    )
-
     class Meta:
         model = PatientDataBackupSchedule
-        fields = ["enabled", "schedule_mode", "daily_time"]
+        fields = ["enabled", "daily_time"]
         widgets = {
             "enabled": forms.CheckboxInput(),
-            "schedule_mode": forms.Select(),
             "daily_time": forms.TimeInput(attrs={"type": "time"}),
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["enabled"].widget.attrs["class"] = "form-check-input"
-        self.fields["schedule_mode"].widget.attrs["class"] = "form-select"
         self.fields["daily_time"].widget.attrs["class"] = "form-control"
-        self.fields["custom_times_text"].widget.attrs["class"] = "form-control"
         self.fields["daily_time"].input_formats = ["%H:%M"]
-        self.fields["schedule_mode"].help_text = "Choose 1 backup per day, 2 fixed backups per day, or custom timings."
-        if not self.is_bound:
-            self.initial["custom_times_text"] = ", ".join(self.instance.custom_times or [])
-
-    def clean_custom_times_text(self):
-        raw = (self.cleaned_data.get("custom_times_text") or "").replace("\n", ",")
-        times = []
-        if not raw.strip():
-            return times
-        for item in raw.split(","):
-            label = item.strip()
-            if not label:
-                continue
-            try:
-                times.append(normalize_backup_schedule_time(label))
-            except ValueError as exc:
-                raise forms.ValidationError(str(exc))
-        return sorted(dict.fromkeys(times))
+        self.fields["daily_time"].label = "Daily backup time"
+        self.fields["daily_time"].help_text = (
+            "Daily backups run at this time. Monthly backups run automatically on the 1st at 12:00 AM, "
+            "and yearly backups run automatically on Jan 1 at 12:00 AM."
+        )
 
     def clean(self):
         cleaned_data = super().clean()
-        if not cleaned_data.get("enabled"):
-            cleaned_data["custom_times"] = []
-            return cleaned_data
-
-        mode = cleaned_data.get("schedule_mode")
-        if mode == PatientDataBackupScheduleMode.DAILY and not cleaned_data.get("daily_time"):
+        if cleaned_data.get("enabled") and not cleaned_data.get("daily_time"):
             self.add_error("daily_time", "Choose the daily backup time.")
-        if mode == PatientDataBackupScheduleMode.CUSTOM:
-            custom_times = cleaned_data.get("custom_times_text") or []
-            if not custom_times:
-                self.add_error("custom_times_text", "Enter at least one custom backup time.")
-            cleaned_data["custom_times"] = custom_times
-        else:
-            cleaned_data["custom_times"] = []
         return cleaned_data
 
     def save(self, commit=True):
         instance = super().save(commit=False)
-        instance.custom_times = self.cleaned_data.get("custom_times", [])
+        instance.schedule_mode = "DAILY"
+        instance.custom_times = []
+        instance.retention_count = instance.DAILY_RETENTION_COUNT
         if commit:
             instance.save()
         return instance

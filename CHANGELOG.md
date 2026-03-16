@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.03.16.23.22
+- Added an admin-only `User Management` settings page for creating users, editing names and usernames, resetting passwords, toggling active status, and assigning each account's primary role/group.
+- Linked the new page from Admin Settings while keeping the existing role-permission configuration flow intact.
+- Added regression coverage for user-management access control, user creation, user updates, and protection against removing the last active settings admin.
+
 ## 2026.03.16.15.24
 - Fixed the automatic backup schedule form so browser time inputs that submit `HH:MM:SS` values are accepted instead of failing with the generic `Backup schedule has errors.` message.
 - Rendered the daily backup time input explicitly at minute precision and added regression coverage for the browser-submitted seconds format.

@@ -54,6 +54,8 @@ from .forms import (
     SeedMockDataForm,
     TaskForm,
     ThemeSettingsForm,
+    UserManagementCreateForm,
+    UserManagementUpdateForm,
     UserRoleForm,
     VitalEntryForm,
 )
@@ -480,6 +482,20 @@ def _user_group_names(user):
         cached_names = {role_setting.role_name for role_setting in _user_role_settings(user)}
         user._cached_group_names = cached_names
     return cached_names
+
+
+def _settings_user_queryset():
+    User = get_user_model()
+    return User.objects.prefetch_related(Prefetch("groups", queryset=Group.objects.order_by("name"))).order_by("username")
+
+
+def _attach_user_role_metadata(users):
+    for user in users:
+        group_names = [group.name for group in user.groups.all()]
+        user.primary_role_name = group_names[0] if group_names else ""
+        user.role_names_display = ", ".join(group_names) if group_names else "No role assigned"
+        user.display_name = user.get_full_name().strip() or "No name set"
+    return users
 
 
 def _recent_case_task_queryset():
@@ -2575,6 +2591,86 @@ class DeviceAuthenticationVerifyView(View):
         response = JsonResponse({"message": "Device verified.", "redirect_url": redirect_to})
         _set_trusted_device_cookie(response, device)
         return response
+
+
+class UserManagementSettingsView(LoginRequiredMixin, View):
+    template_name = "patients/settings_user_management.html"
+
+    def _check_access(self, request):
+        if not has_capability(request.user, "manage_settings"):
+            return HttpResponseForbidden("Only admins can access settings.")
+        return None
+
+    def _selected_user(self, users, selected_user_id):
+        if selected_user_id:
+            for user in users:
+                if str(user.pk) == str(selected_user_id):
+                    return user
+        return users[0] if users else None
+
+    def _build_context(self, *, create_form=None, edit_form=None, selected_user_id=None):
+        ensure_default_role_settings()
+        users = _attach_user_role_metadata(list(_settings_user_queryset()))
+        selected_user = edit_form.instance if edit_form is not None else self._selected_user(users, selected_user_id)
+        if selected_user is None:
+            selected_user = self._selected_user(users, selected_user_id)
+        if selected_user is not None:
+            selected_user = next((user for user in users if user.pk == selected_user.pk), selected_user)
+        return {
+            "create_form": create_form or UserManagementCreateForm(),
+            "edit_form": edit_form or (UserManagementUpdateForm(instance=selected_user) if selected_user else None),
+            "selected_user": selected_user,
+            "users": users,
+        }
+
+    def get(self, request):
+        denied = self._check_access(request)
+        if denied:
+            return denied
+        return render(
+            request,
+            self.template_name,
+            self._build_context(selected_user_id=request.GET.get("user")),
+        )
+
+    def post(self, request):
+        denied = self._check_access(request)
+        if denied:
+            return denied
+
+        action = request.POST.get("action")
+        selected_user_id = request.POST.get("selected_user_id") or request.POST.get("user_id")
+
+        if action == "create_user":
+            create_form = UserManagementCreateForm(request.POST)
+            if create_form.is_valid():
+                user = create_form.save()
+                messages.success(request, f"Created user {user.username}.")
+                return redirect(f"{reverse('patients:settings_user_management')}?user={user.pk}")
+            messages.error(request, "User creation has errors.")
+            return render(
+                request,
+                self.template_name,
+                self._build_context(create_form=create_form, selected_user_id=selected_user_id),
+            )
+
+        if action == "update_user":
+            User = get_user_model()
+            selected_user = get_object_or_404(User, pk=request.POST.get("user_id"))
+            edit_form = UserManagementUpdateForm(request.POST, instance=selected_user)
+            if edit_form.is_valid():
+                user = edit_form.save()
+                messages.success(request, f"Updated user {user.username}.")
+                return redirect(f"{reverse('patients:settings_user_management')}?user={user.pk}")
+            messages.error(request, "User update has errors.")
+            return render(
+                request,
+                self.template_name,
+                self._build_context(edit_form=edit_form, selected_user_id=selected_user.pk),
+            )
+
+        messages.error(request, "Unknown user management action.")
+        return redirect("patients:settings_user_management")
 
 
 class DeviceAccessSettingsView(LoginRequiredMixin, View):

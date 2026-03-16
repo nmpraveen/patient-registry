@@ -5,6 +5,7 @@ from django import forms
 from django.utils import timezone
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
+from django.db.models import Q
 from django.forms import modelformset_factory
 
 from .models import (
@@ -34,6 +35,9 @@ from .theme import (
     unflatten_theme_tokens,
 )
 from .database_bundle import IMPORT_CONFIRMATION_PHRASE
+
+
+User = get_user_model()
 
 
 class StyledModelForm(forms.ModelForm):
@@ -598,10 +602,131 @@ class DeviceApprovalPolicyForm(forms.ModelForm):
         self.fields["target_users"].queryset = User.objects.order_by("username")
 
 
+class UserManagementBaseForm(StyledModelForm):
+    role = forms.ModelChoiceField(queryset=Group.objects.none(), label="Primary role")
+
+    class Meta:
+        model = User
+        fields = ["first_name", "last_name", "username", "is_active"]
+
+    def __init__(self, *args, **kwargs):
+        ensure_default_role_settings()
+        super().__init__(*args, **kwargs)
+        self.fields["role"].queryset = Group.objects.order_by("name")
+        self.fields["role"].empty_label = "Select role"
+        self.fields["role"].help_text = (
+            "Saving replaces any existing group memberships with one primary role, matching current app behavior."
+        )
+        self.fields["username"].help_text = "Used for sign-in."
+        if self.instance and self.instance.pk:
+            primary_group = self.instance.groups.order_by("name").first()
+            if primary_group:
+                self.fields["role"].initial = primary_group
+
+
+class UserManagementCreateForm(UserManagementBaseForm):
+    password1 = forms.CharField(
+        label="Password",
+        widget=forms.PasswordInput(attrs={"autocomplete": "new-password"}),
+    )
+    password2 = forms.CharField(
+        label="Confirm password",
+        widget=forms.PasswordInput(attrs={"autocomplete": "new-password"}),
+    )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        password1 = cleaned_data.get("password1")
+        password2 = cleaned_data.get("password2")
+        if password1 and password2 and password1 != password2:
+            self.add_error("password2", "Passwords do not match.")
+        return cleaned_data
+
+    def save(self, commit=True):
+        user = super().save(commit=False)
+        user.set_password(self.cleaned_data["password1"])
+        if commit:
+            user.save()
+            user.groups.set([self.cleaned_data["role"]])
+        return user
+
+
+class UserManagementUpdateForm(UserManagementBaseForm):
+    password1 = forms.CharField(
+        label="New password",
+        required=False,
+        help_text="Leave blank to keep the current password.",
+        widget=forms.PasswordInput(attrs={"autocomplete": "new-password"}),
+    )
+    password2 = forms.CharField(
+        label="Confirm new password",
+        required=False,
+        widget=forms.PasswordInput(attrs={"autocomplete": "new-password"}),
+    )
+
+    def _current_manage_settings_access(self):
+        if not self.instance.is_active:
+            return False
+        if self.instance.is_superuser:
+            return True
+        return RoleSetting.objects.filter(
+            role_name__in=self.instance.groups.values_list("name", flat=True),
+            can_manage_settings=True,
+        ).exists()
+
+    def _future_manage_settings_access(self, role, is_active):
+        if not is_active:
+            return False
+        if self.instance.is_superuser:
+            return True
+        if not role:
+            return False
+        return RoleSetting.objects.filter(role_name=role.name, can_manage_settings=True).exists()
+
+    def _other_active_settings_admin_exists(self):
+        manage_settings_roles = RoleSetting.objects.filter(can_manage_settings=True).values_list("role_name", flat=True)
+        return User.objects.filter(is_active=True).exclude(pk=self.instance.pk).filter(
+            Q(is_superuser=True) | Q(groups__name__in=manage_settings_roles)
+        ).distinct().exists()
+
+    def clean(self):
+        cleaned_data = super().clean()
+        password1 = cleaned_data.get("password1")
+        password2 = cleaned_data.get("password2")
+        if password1 or password2:
+            if password1 != password2:
+                self.add_error("password2", "Passwords do not match.")
+
+        role = cleaned_data.get("role")
+        is_active = cleaned_data.get("is_active")
+        if (
+            self.instance
+            and self.instance.pk
+            and self._current_manage_settings_access()
+            and not self._future_manage_settings_access(role, is_active)
+            and not self._other_active_settings_admin_exists()
+        ):
+            message = "Keep at least one active admin user with settings access."
+            if is_active:
+                self.add_error("role", message)
+            else:
+                self.add_error("is_active", message)
+        return cleaned_data
+
+    def save(self, commit=True):
+        user = super().save(commit=False)
+        password1 = self.cleaned_data.get("password1")
+        if password1:
+            user.set_password(password1)
+        if commit:
+            user.save()
+            user.groups.set([self.cleaned_data["role"]])
+        return user
+
+
 class UserRoleForm(forms.Form):
     def __init__(self, *args, **kwargs):
         ensure_default_role_settings()
         super().__init__(*args, **kwargs)
-        User = get_user_model()
         self.fields["user"] = forms.ModelChoiceField(queryset=User.objects.order_by("username"), widget=forms.Select(attrs={"class": "form-select"}))
         self.fields["role"] = forms.ModelChoiceField(queryset=Group.objects.order_by("name"), widget=forms.Select(attrs={"class": "form-select"}))

@@ -1,0 +1,163 @@
+{% extends 'base.html' %}
+{% block title %}User Management | MEDTRACK{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <div>
+    <h1 class="h4 mb-1">User Management</h1>
+    <p class="text-muted mb-0">Create staff accounts, edit login names, reset passwords, and assign the one primary role/group the app currently uses.</p>
+  </div>
+  <a class="btn btn-outline-primary btn-sm" href="{% url 'patients:settings' %}">Back to Settings</a>
+</div>
+
+<div class="alert alert-info mb-3">
+  This page manages usernames, names, active state, and the primary role/group used by MEDTRACK. Superuser status is shown for visibility but not changed here.
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-12 col-xl-4">
+    <div class="card h-100">
+      <div class="card-body">
+        <h2 class="h6">Create User</h2>
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="create_user" />
+          <input type="hidden" name="selected_user_id" value="{{ selected_user.pk|default:'' }}" />
+
+          {% if create_form.non_field_errors %}
+            <div class="alert alert-danger py-2">
+              {{ create_form.non_field_errors }}
+            </div>
+          {% endif %}
+
+          {% for field in create_form %}
+            <div class="mb-3">
+              {{ field.label_tag }}
+              {{ field }}
+              {% if field.help_text %}
+                <div class="form-text">{{ field.help_text }}</div>
+              {% endif %}
+              {% if field.errors %}
+                <div class="text-danger small mt-1">{{ field.errors|striptags }}</div>
+              {% endif %}
+            </div>
+          {% endfor %}
+
+          <button class="btn btn-primary btn-sm w-100">Create User</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-xl-8">
+    <div class="card h-100">
+      <div class="card-body">
+        {% if selected_user and edit_form %}
+          <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+            <div>
+              <h2 class="h6 mb-1">Edit User</h2>
+              <div class="fw-semibold">{{ selected_user.display_name }}</div>
+              <div class="text-muted small">
+                {{ selected_user.username }}
+                {% if selected_user.role_names_display %}
+                  | {{ selected_user.role_names_display }}
+                {% endif %}
+              </div>
+            </div>
+            <div class="d-flex gap-2">
+              <span class="badge {% if selected_user.is_active %}text-bg-success{% else %}text-bg-secondary{% endif %}">
+                {{ selected_user.is_active|yesno:"Active,Inactive" }}
+              </span>
+              {% if selected_user.is_superuser %}
+                <span class="badge text-bg-warning">Superuser</span>
+              {% endif %}
+            </div>
+          </div>
+
+          <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="update_user" />
+            <input type="hidden" name="user_id" value="{{ selected_user.pk }}" />
+
+            {% if edit_form.non_field_errors %}
+              <div class="alert alert-danger py-2">
+                {{ edit_form.non_field_errors }}
+              </div>
+            {% endif %}
+
+            <div class="row g-3">
+              {% for field in edit_form %}
+                <div class="col-12 col-md-6">
+                  {{ field.label_tag }}
+                  {{ field }}
+                  {% if field.help_text %}
+                    <div class="form-text">{{ field.help_text }}</div>
+                  {% endif %}
+                  {% if field.errors %}
+                    <div class="text-danger small mt-1">{{ field.errors|striptags }}</div>
+                  {% endif %}
+                </div>
+              {% endfor %}
+            </div>
+
+            <button class="btn btn-primary btn-sm mt-3">Save User</button>
+          </form>
+        {% else %}
+          <div class="text-muted">No users are available to edit yet.</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+      <div>
+        <h2 class="h6 mb-1">Current Users</h2>
+        <p class="text-muted small mb-0">Selecting a user loads that account into the edit form above.</p>
+      </div>
+      <div class="text-muted small">{{ users|length }} total user{{ users|length|pluralize }}</div>
+    </div>
+
+    <div class="table-responsive">
+      <table class="table table-sm align-middle mb-0">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Username</th>
+            <th>Role</th>
+            <th>Status</th>
+            <th class="text-end">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for listed_user in users %}
+            <tr{% if selected_user and listed_user.pk == selected_user.pk %} class="table-secondary"{% endif %}>
+              <td>
+                <div>{{ listed_user.display_name }}</div>
+                {% if listed_user.is_superuser %}
+                  <div class="text-muted small">Superuser account</div>
+                {% endif %}
+              </td>
+              <td>{{ listed_user.username }}</td>
+              <td>{{ listed_user.role_names_display }}</td>
+              <td>
+                <span class="badge {% if listed_user.is_active %}text-bg-success{% else %}text-bg-secondary{% endif %}">
+                  {{ listed_user.is_active|yesno:"Active,Inactive" }}
+                </span>
+              </td>
+              <td class="text-end">
+                <a class="btn btn-outline-primary btn-sm" href="{% url 'patients:settings_user_management' %}?user={{ listed_user.pk }}">Edit</a>
+              </td>
+            </tr>
+          {% empty %}
+            <tr>
+              <td colspan="5" class="text-muted">No users found.</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

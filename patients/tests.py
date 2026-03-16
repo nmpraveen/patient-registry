@@ -2092,6 +2092,118 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(device_response.status_code, 200)
         self.assertContains(device_response, "Device Access")
 
+    def test_admin_settings_page_shows_user_management_link_and_page_requires_manage_settings(self):
+        self.client.force_login(self.user)
+
+        forbidden_get = self.client.get(reverse("patients:settings_user_management"))
+        forbidden_post = self.client.post(
+            reverse("patients:settings_user_management"),
+            {
+                "action": "create_user",
+                "username": "blocked-user",
+            },
+        )
+
+        self.assertEqual(forbidden_get.status_code, 403)
+        self.assertEqual(forbidden_post.status_code, 403)
+
+        self.login_as_admin()
+        settings_response = self.client.get(reverse("patients:settings"))
+        user_management_response = self.client.get(reverse("patients:settings_user_management"))
+
+        self.assertEqual(settings_response.status_code, 200)
+        self.assertContains(settings_response, reverse("patients:settings_user_management"))
+        self.assertEqual(user_management_response.status_code, 200)
+        self.assertContains(user_management_response, "Create User")
+        self.assertContains(user_management_response, "Edit User")
+
+    def test_user_management_page_can_create_user_with_role(self):
+        self.login_as_admin()
+        reception_group, _ = Group.objects.get_or_create(name="Reception")
+
+        response = self.client.post(
+            reverse("patients:settings_user_management"),
+            {
+                "action": "create_user",
+                "first_name": "Anita",
+                "last_name": "Thomas",
+                "username": "frontdesk",
+                "password1": "strong-password-456",
+                "password2": "strong-password-456",
+                "role": str(reception_group.pk),
+                "is_active": "on",
+                "selected_user_id": str(self.user.pk),
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        created_user = get_user_model().objects.get(username="frontdesk")
+        self.assertEqual(created_user.first_name, "Anita")
+        self.assertEqual(created_user.last_name, "Thomas")
+        self.assertTrue(created_user.is_active)
+        self.assertEqual(list(created_user.groups.values_list("name", flat=True)), ["Reception"])
+        self.assertTrue(created_user.check_password("strong-password-456"))
+
+    def test_user_management_page_can_update_existing_user_details_role_and_password(self):
+        target_user = get_user_model().objects.create_user(
+            username="caller-user",
+            password="strong-password-123",
+            first_name="Caller",
+            last_name="User",
+        )
+        caller_group, _ = Group.objects.get_or_create(name="Caller")
+        doctor_group, _ = Group.objects.get_or_create(name="Doctor")
+        target_user.groups.add(caller_group)
+
+        self.login_as_admin()
+
+        response = self.client.post(
+            reverse("patients:settings_user_management"),
+            {
+                "action": "update_user",
+                "user_id": str(target_user.pk),
+                "first_name": "Updated",
+                "last_name": "Doctor",
+                "username": "doctor-user",
+                "password1": "new-strong-password-789",
+                "password2": "new-strong-password-789",
+                "role": str(doctor_group.pk),
+                "is_active": "on",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        target_user.refresh_from_db()
+        self.assertEqual(target_user.first_name, "Updated")
+        self.assertEqual(target_user.last_name, "Doctor")
+        self.assertEqual(target_user.username, "doctor-user")
+        self.assertTrue(target_user.is_active)
+        self.assertEqual(list(target_user.groups.values_list("name", flat=True)), ["Doctor"])
+        self.assertTrue(target_user.check_password("new-strong-password-789"))
+
+    def test_user_management_page_blocks_removing_last_settings_admin(self):
+        self.login_as_admin()
+        doctor_group, _ = Group.objects.get_or_create(name="Doctor")
+
+        response = self.client.post(
+            reverse("patients:settings_user_management"),
+            {
+                "action": "update_user",
+                "user_id": str(self.user.pk),
+                "first_name": self.user.first_name,
+                "last_name": self.user.last_name,
+                "username": self.user.username,
+                "role": str(doctor_group.pk),
+                "is_active": "on",
+            },
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.user.refresh_from_db()
+        self.assertEqual(list(self.user.groups.values_list("name", flat=True)), ["Admin"])
+        self.assertContains(response, "Keep at least one active admin user with settings access.")
+
     def test_admin_settings_page_shows_database_link_and_page_requires_manage_settings(self):
         self.client.force_login(self.user)
 

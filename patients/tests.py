@@ -857,7 +857,7 @@ class MedtrackViewTests(TestCase):
         Task.objects.create(case=non_surgical_active, title="Awaiting", due_date=today + timedelta(days=11), status=TaskStatus.AWAITING_REPORTS, created_by=self.user)
         Task.objects.create(case=surgery_active, title="Completed", due_date=today - timedelta(days=1), status=TaskStatus.COMPLETED, created_by=self.user)
 
-        response = self.assert_max_queries(11, reverse("patients:dashboard"), {"upcoming_days": 14})
+        response = self.assert_max_queries(11, reverse("patients:dashboard"), {"week_offset": 0})
 
         self.assertEqual(response.context["anc_case_count"], 1)
         self.assertEqual(response.context["surgery_case_count"], 1)
@@ -1927,17 +1927,34 @@ class MedtrackViewTests(TestCase):
         self.assertContains(response, "--theme-case-header-bg: #654321;")
         self.assertContains(response, "background: var(--theme-case-header-bg);")
 
-    def test_dashboard_invalid_upcoming_days_defaults_to_seven(self):
+    def test_dashboard_week_navigation_invalid_and_negative_offsets_clamp_to_this_week(self):
         self.client.force_login(self.user)
 
-        response = self.client.get(reverse("patients:dashboard"), {"upcoming_days": "invalid"})
+        invalid_response = self.client.get(reverse("patients:dashboard"), {"week_offset": "invalid"})
+        negative_response = self.client.get(reverse("patients:dashboard"), {"week_offset": -3})
 
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.context["upcoming_days"], 7)
+        current_week_start = timezone.localdate() - timedelta(days=timezone.localdate().weekday())
+        current_week_end = current_week_start + timedelta(days=6)
 
-    def test_dashboard_upcoming_schedule_renders_inclusive_range_and_today_default(self):
+        self.assertEqual(invalid_response.status_code, 200)
+        self.assertEqual(invalid_response.context["week_offset"], 0)
+        self.assertFalse(invalid_response.context["show_previous_week"])
+        self.assertEqual(invalid_response.context["selected_week_start"], current_week_start)
+        self.assertEqual(invalid_response.context["selected_week_end"], current_week_end)
+
+        self.assertEqual(negative_response.status_code, 200)
+        self.assertEqual(negative_response.context["week_offset"], 0)
+        self.assertFalse(negative_response.context["show_previous_week"])
+        self.assertEqual(negative_response.context["selected_week_start"], current_week_start)
+        self.assertEqual(negative_response.context["selected_week_end"], current_week_end)
+
+    def test_dashboard_upcoming_schedule_renders_this_week_default(self):
         self.client.force_login(self.user)
         today = timezone.localdate()
+        current_week_start = today - timedelta(days=today.weekday())
+        current_week_end = current_week_start + timedelta(days=6)
+        today_index = (today - current_week_start).days
+        next_week_start = current_week_start + timedelta(days=7)
         schedule_case = Case.objects.create(
             uhid="UH-SCHED-001",
             first_name="Today",
@@ -1950,7 +1967,12 @@ class MedtrackViewTests(TestCase):
             created_by=self.user,
         )
         Task.objects.create(case=schedule_case, title="Today review", due_date=today, created_by=self.user)
-        Task.objects.create(case=schedule_case, title="Future review", due_date=today + timedelta(days=2), created_by=self.user)
+        Task.objects.create(
+            case=schedule_case,
+            title="Next week review",
+            due_date=next_week_start + timedelta(days=2),
+            created_by=self.user,
+        )
         Task.objects.create(
             case=schedule_case,
             title="Awaiting",
@@ -1959,26 +1981,95 @@ class MedtrackViewTests(TestCase):
             created_by=self.user,
         )
 
-        response = self.client.get(reverse("patients:dashboard"), {"upcoming_days": 3})
+        response = self.client.get(reverse("patients:dashboard"))
 
         self.assertEqual(response.status_code, 200)
         schedule_days = response.context["appointment_schedule_days"]
-        self.assertEqual(len(schedule_days), 4)
-        self.assertEqual(schedule_days[0]["date"], today)
-        self.assertTrue(schedule_days[0]["is_selected"])
-        self.assertEqual(schedule_days[0]["count"], 1)
-        self.assertEqual(schedule_days[1]["count"], 0)
-        self.assertEqual(schedule_days[2]["count"], 1)
+        self.assertEqual(response.context["week_offset"], 0)
+        self.assertFalse(response.context["show_previous_week"])
+        self.assertEqual(response.context["selected_week_start"], current_week_start)
+        self.assertEqual(response.context["selected_week_end"], current_week_end)
+        self.assertEqual(len(schedule_days), 7)
+        self.assertEqual(schedule_days[0]["date"], current_week_start)
+        self.assertEqual(schedule_days[-1]["date"], current_week_end)
+        self.assertTrue(schedule_days[today_index]["is_selected"])
+        self.assertEqual(schedule_days[today_index]["count"], 1)
+        self.assertContains(response, "This week")
+        self.assertContains(response, "Next week")
+        self.assertNotContains(response, "Previous week")
+        self.assertContains(response, 'href="?week_offset=0" data-upcoming-week-link')
+        self.assertContains(response, 'href="?week_offset=1" data-upcoming-week-link')
+        self.assertContains(response, 'data-upcoming-day-trigger=', count=7)
+        self.assertContains(response, 'data-upcoming-day-panel=', count=7)
         self.assertContains(response, 'data-upcoming-schedule')
-        self.assertContains(response, 'data-upcoming-day-trigger=', count=4)
-        self.assertContains(response, 'data-upcoming-day-panel=', count=4)
-        empty_label = f"No scheduled patients for {(today + timedelta(days=1)).strftime('%B')} {(today + timedelta(days=1)).day}."
+        self.assertContains(response, "Today review")
+        self.assertNotContains(response, "Next week review")
+        empty_label = f"No scheduled patients for {(current_week_start + timedelta(days=1)).strftime('%B')} {(current_week_start + timedelta(days=1)).day}."
         self.assertContains(response, empty_label)
+
+    def test_dashboard_upcoming_schedule_shows_next_week_only_with_previous_control(self):
+        self.client.force_login(self.user)
+        today = timezone.localdate()
+        current_week_start = today - timedelta(days=today.weekday())
+        next_week_start = current_week_start + timedelta(days=7)
+        next_week_end = next_week_start + timedelta(days=6)
+        next_week_task_date = next_week_start + timedelta(days=2)
+        this_week_case = Case.objects.create(
+            uhid="UH-SCHED-THIS",
+            first_name="This",
+            last_name="Week",
+            phone_number="9876504005",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=current_week_start + timedelta(days=2),
+            created_by=self.user,
+        )
+        next_week_case = Case.objects.create(
+            uhid="UH-SCHED-NEXT",
+            first_name="Next",
+            last_name="Week",
+            phone_number="9876504006",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=next_week_task_date,
+            created_by=self.user,
+        )
+        Task.objects.create(case=this_week_case, title="Current week review", due_date=current_week_start + timedelta(days=2), created_by=self.user)
+        Task.objects.create(case=next_week_case, title="Next week review", due_date=next_week_task_date, created_by=self.user)
+
+        response = self.client.get(reverse("patients:dashboard"), {"week_offset": 1})
+
+        self.assertEqual(response.status_code, 200)
+        schedule_days = response.context["appointment_schedule_days"]
+        self.assertEqual(response.context["week_offset"], 1)
+        self.assertTrue(response.context["show_previous_week"])
+        self.assertEqual(response.context["previous_week_offset"], 0)
+        self.assertEqual(response.context["next_week_offset"], 2)
+        self.assertEqual(response.context["selected_week_start"], next_week_start)
+        self.assertEqual(response.context["selected_week_end"], next_week_end)
+        self.assertEqual(len(schedule_days), 7)
+        self.assertEqual(schedule_days[0]["date"], next_week_start)
+        self.assertEqual(schedule_days[-1]["date"], next_week_end)
+        self.assertTrue(schedule_days[0]["is_selected"])
+        self.assertContains(response, "Previous week")
+        self.assertContains(response, "This week")
+        self.assertContains(response, "Next week")
+        self.assertContains(response, 'href="?week_offset=0" data-upcoming-week-link', count=2)
+        self.assertContains(response, 'href="?week_offset=2" data-upcoming-week-link')
+        content = response.content.decode()
+        rendered_titles = [title for day in schedule_days for row in day["rows"] for title in row["task_titles"]]
+        self.assertLess(content.index("Previous week"), content.index("This week"))
+        self.assertIn("Next week review", rendered_titles)
+        self.assertNotIn("Current week review", rendered_titles)
 
     def test_dashboard_upcoming_schedule_groups_rows_and_deduplicates_category_dots(self):
         self.client.force_login(self.user)
         today = timezone.localdate()
-        target_date = today + timedelta(days=2)
+        current_week_start = today - timedelta(days=today.weekday())
+        next_week_start = current_week_start + timedelta(days=7)
+        target_date = next_week_start + timedelta(days=2)
         anc_case = Case.objects.create(
             uhid="UH-SCHED-ANC",
             first_name="Asha",
@@ -2006,10 +2097,11 @@ class MedtrackViewTests(TestCase):
         Task.objects.create(case=surgery_case, title="ECG", due_date=target_date, created_by=self.user)
         Task.objects.create(case=surgery_case, title="ECG", due_date=target_date, created_by=self.user)
 
-        response = self.client.get(reverse("patients:dashboard"), {"upcoming_days": 4})
+        response = self.client.get(reverse("patients:dashboard"), {"week_offset": 1})
 
         self.assertEqual(response.status_code, 200)
         schedule_day = next(day for day in response.context["appointment_schedule_days"] if day["date"] == target_date)
+        self.assertEqual(response.context["week_offset"], 1)
         self.assertEqual(schedule_day["count"], 2)
         self.assertEqual([category["name"] for category in schedule_day["categories"]], ["ANC", "Surgery"])
         grouped_row = next(row for row in schedule_day["rows"] if row["patient_name"] == "Grouped Surgery")
@@ -2020,6 +2112,8 @@ class MedtrackViewTests(TestCase):
     def test_dashboard_upcoming_schedule_uses_category_theme_colors_for_dots_and_rows(self):
         self.client.force_login(self.user)
         today = timezone.localdate()
+        current_week_start = today - timedelta(days=today.weekday())
+        next_week_start = current_week_start + timedelta(days=7)
         self.surgery.theme_bg_color = "#abcdef"
         self.surgery.theme_text_color = "#123456"
         self.surgery.save()
@@ -2031,14 +2125,15 @@ class MedtrackViewTests(TestCase):
             category=self.surgery,
             status=CaseStatus.ACTIVE,
             surgical_pathway=SurgicalPathway.SURVEILLANCE,
-            review_date=today + timedelta(days=3),
+            review_date=next_week_start + timedelta(days=3),
             created_by=self.user,
         )
-        Task.objects.create(case=case, title="Theme review", due_date=today + timedelta(days=1), created_by=self.user)
+        Task.objects.create(case=case, title="Theme review", due_date=next_week_start + timedelta(days=1), created_by=self.user)
 
-        response = self.client.get(reverse("patients:dashboard"), {"upcoming_days": 3})
+        response = self.client.get(reverse("patients:dashboard"), {"week_offset": 1})
 
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["week_offset"], 1)
         self.assertContains(response, "--schedule-dot-ring: #abcdef;")
         self.assertContains(response, f"--schedule-dot-fill: {mix_colors('#123456', '#abcdef', 0.22)};")
         self.assertContains(response, "--upcoming-category-bg: #abcdef; --upcoming-category-text: #123456;")

@@ -552,7 +552,29 @@
     margin-top: 0.15rem;
   }
 
-  .upcoming-schedule-range {
+  .upcoming-schedule-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    justify-content: flex-end;
+  }
+
+  .nav-stats-bar,
+  .upcoming-schedule {
+    transition: opacity 0.18s ease, transform 0.18s ease;
+  }
+
+  .nav-stats-bar.is-loading,
+  .upcoming-schedule.is-loading {
+    opacity: 0.68;
+  }
+
+  .upcoming-schedule.is-loading {
+    transform: translateY(2px);
+  }
+
+  .upcoming-schedule-range,
+  .upcoming-schedule-control {
     background: color-mix(in srgb, var(--theme-dashboard-upcoming-bg) 70%, white);
     border: 1px solid var(--theme-dashboard-upcoming-border);
     border-radius: 999px;
@@ -562,7 +584,32 @@
     font-weight: 700;
     line-height: 1;
     padding: 0.42rem 0.65rem;
+    text-decoration: none;
     white-space: nowrap;
+  }
+
+  .upcoming-schedule-control {
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease, background-color 0.15s ease;
+  }
+
+  .upcoming-schedule-control:hover,
+  .upcoming-schedule-control:focus-visible {
+    border-color: var(--theme-dashboard-upcoming-border);
+    box-shadow: 0 0.45rem 0.9rem var(--theme-shell-shadow);
+    color: var(--theme-dashboard-upcoming-text);
+    transform: translateY(-1px);
+  }
+
+  .upcoming-schedule-control.is-active {
+    background: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--theme-dashboard-upcoming-text) 12%, var(--theme-dashboard-upcoming-bg)) 0%,
+      var(--theme-dashboard-upcoming-bg) 100%
+    );
+    box-shadow: none;
+    color: var(--theme-dashboard-upcoming-text);
+    cursor: default;
+    transform: none;
   }
 
   .upcoming-schedule-rail {
@@ -818,8 +865,13 @@
 
     .dashboard-module-badge,
     .upcoming-schedule-range,
-    .upcoming-schedule-open-pill {
+    .upcoming-schedule-open-pill,
+    .upcoming-schedule-controls {
       align-self: flex-start;
+    }
+
+    .upcoming-schedule-controls {
+      justify-content: flex-start;
     }
 
     .recent-case-row .card-body,
@@ -936,9 +988,15 @@
         <div>
           <span class="upcoming-schedule-kicker">Upcoming</span>
           <h2 class="h6">Upcoming Schedule</h2>
-          <p class="upcoming-schedule-header-copy">Scrollable schedule view for today plus the next {{ upcoming_days }} day{{ upcoming_days|pluralize }}.</p>
+          <p class="upcoming-schedule-header-copy">Appointments for {{ selected_week_start|date:'M j' }} to {{ selected_week_end|date:'M j' }}.</p>
         </div>
-        <span class="upcoming-schedule-range">Today + {{ upcoming_days }} days</span>
+        <div class="upcoming-schedule-controls" aria-label="Upcoming schedule week filters">
+          {% if show_previous_week %}
+            <a class="upcoming-schedule-control" href="?week_offset={{ previous_week_offset }}" data-upcoming-week-link>Previous week</a>
+          {% endif %}
+          <a class="upcoming-schedule-control{% if week_offset == 0 %} is-active{% endif %}" href="?week_offset=0" data-upcoming-week-link{% if week_offset == 0 %} aria-current="page"{% endif %}>This week</a>
+          <a class="upcoming-schedule-control" href="?week_offset={{ next_week_offset }}" data-upcoming-week-link>Next week</a>
+        </div>
       </div>
 
       <div class="upcoming-schedule-rail" role="tablist" aria-label="Upcoming schedule dates">
@@ -1151,40 +1209,151 @@
 
 <script>
   (() => {
-    const initializeUpcomingSchedule = () => {
-      const root = document.querySelector("[data-upcoming-schedule]");
-      if (!root) {
-        return;
-      }
+    const summarySelector = "[data-dashboard-summary-grid]";
+    const rootSelector = "[data-upcoming-schedule]";
+    const triggerSelector = "[data-upcoming-day-trigger]";
+    const panelSelector = "[data-upcoming-day-panel]";
+    const weekLinkSelector = "[data-upcoming-week-link]";
+    let activeNavigationController = null;
 
-      const triggers = Array.from(root.querySelectorAll("[data-upcoming-day-trigger]"));
-      const panels = Array.from(root.querySelectorAll("[data-upcoming-day-panel]"));
+    const getElements = () => ({
+      summary: document.querySelector(summarySelector),
+      root: document.querySelector(rootSelector),
+    });
+
+    const setLoadingState = (isLoading) => {
+      const { summary, root } = getElements();
+      if (summary) {
+        summary.classList.toggle("is-loading", isLoading);
+        summary.setAttribute("aria-busy", isLoading ? "true" : "false");
+      }
+      if (root) {
+        root.classList.toggle("is-loading", isLoading);
+        root.setAttribute("aria-busy", isLoading ? "true" : "false");
+        root.querySelectorAll(weekLinkSelector).forEach((link) => {
+          link.setAttribute("aria-disabled", isLoading ? "true" : "false");
+          link.tabIndex = isLoading ? -1 : 0;
+        });
+      }
+    };
+
+    const setActiveDay = (root, dateKey) => {
+      const triggers = Array.from(root.querySelectorAll(triggerSelector));
+      const panels = Array.from(root.querySelectorAll(panelSelector));
       if (!triggers.length || !panels.length) {
         return;
       }
 
-      const setActiveDay = (dateKey) => {
-        triggers.forEach((trigger) => {
-          const isActive = trigger.dataset.upcomingDayTrigger === dateKey;
-          trigger.classList.toggle("is-active", isActive);
-          trigger.setAttribute("aria-selected", isActive ? "true" : "false");
-        });
+      triggers.forEach((trigger) => {
+        const isActive = trigger.dataset.upcomingDayTrigger === dateKey;
+        trigger.classList.toggle("is-active", isActive);
+        trigger.setAttribute("aria-selected", isActive ? "true" : "false");
+      });
 
-        panels.forEach((panel) => {
-          panel.classList.toggle("is-active", panel.dataset.upcomingDayPanel === dateKey);
+      panels.forEach((panel) => {
+        panel.classList.toggle("is-active", panel.dataset.upcomingDayPanel === dateKey);
+      });
+    };
+
+    const shouldHandleNavigation = (event) => {
+      if (event.defaultPrevented) {
+        return false;
+      }
+      if (event.button !== 0) {
+        return false;
+      }
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+        return false;
+      }
+      return true;
+    };
+
+    const replaceUpcomingSections = (htmlText) => {
+      const parsed = new DOMParser().parseFromString(htmlText, "text/html");
+      const nextSummary = parsed.querySelector(summarySelector);
+      const nextRoot = parsed.querySelector(rootSelector);
+      if (!nextSummary || !nextRoot) {
+        throw new Error("Could not refresh the upcoming schedule.");
+      }
+
+      const { summary, root } = getElements();
+      summary?.replaceWith(nextSummary);
+      root?.replaceWith(nextRoot);
+      initializeUpcomingSchedule();
+      nextRoot
+        .querySelector(".upcoming-schedule-control.is-active, .upcoming-schedule-control[aria-current='page']")
+        ?.focus({ preventScroll: true });
+    };
+
+    const navigateWeek = async (targetUrl, { pushState = true } = {}) => {
+      const resolvedUrl = new URL(targetUrl, window.location.href);
+      activeNavigationController?.abort();
+      const controller = new AbortController();
+      activeNavigationController = controller;
+      setLoadingState(true);
+
+      try {
+        const response = await fetch(resolvedUrl, {
+          headers: {
+            "X-Requested-With": "XMLHttpRequest",
+          },
+          signal: controller.signal,
         });
-      };
+        if (!response.ok) {
+          throw new Error(`Request failed with status ${response.status}.`);
+        }
+
+        replaceUpcomingSections(await response.text());
+        if (pushState && window.location.href !== resolvedUrl.href) {
+          window.history.pushState({ upcomingWeekUrl: resolvedUrl.href }, "", resolvedUrl.href);
+        }
+      } catch (error) {
+        if (controller.signal.aborted) {
+          return;
+        }
+        window.location.assign(resolvedUrl.href);
+      } finally {
+        if (activeNavigationController === controller) {
+          activeNavigationController = null;
+          setLoadingState(false);
+        }
+      }
+    };
+
+    const initializeUpcomingSchedule = () => {
+      const { root } = getElements();
+      if (!root || root.dataset.upcomingScheduleBound === "true") {
+        return;
+      }
+      root.dataset.upcomingScheduleBound = "true";
 
       root.addEventListener("click", (event) => {
-        const trigger = event.target.closest("[data-upcoming-day-trigger]");
-        if (!trigger) {
+        const weekLink = event.target.closest(weekLinkSelector);
+        if (weekLink && root.contains(weekLink)) {
+          if (!shouldHandleNavigation(event)) {
+            return;
+          }
+          event.preventDefault();
+          navigateWeek(weekLink.href);
           return;
         }
 
-        setActiveDay(trigger.dataset.upcomingDayTrigger);
+        const trigger = event.target.closest(triggerSelector);
+        if (!trigger || !root.contains(trigger)) {
+          return;
+        }
+
+        setActiveDay(root, trigger.dataset.upcomingDayTrigger);
         trigger.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
       });
     };
+
+    window.addEventListener("popstate", () => {
+      if (!document.querySelector(rootSelector)) {
+        return;
+      }
+      navigateWeek(window.location.href, { pushState: false });
+    });
 
     if (document.readyState === "loading") {
       document.addEventListener("DOMContentLoaded", initializeUpcomingSchedule, { once: true });

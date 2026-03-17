@@ -1248,6 +1248,7 @@ class DashboardView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
     model = Task
     template_name = "patients/dashboard.html"
     context_object_name = "today_tasks"
+    max_week_offset = 52
     task_only_fields = (
         "id",
         "title",
@@ -1334,16 +1335,28 @@ class DashboardView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
             "dot_color": mix_colors(text_color, bg_color, 0.22),
         }
 
+    @staticmethod
+    def _week_start_for(date_value):
+        return date_value - timedelta(days=date_value.weekday())
+
     @classmethod
-    def _build_appointment_schedule_days(cls, task_queryset, today, upcoming_days):
+    def _parse_week_offset(cls, raw_week_offset):
+        try:
+            week_offset = int(raw_week_offset)
+        except (TypeError, ValueError):
+            week_offset = 0
+        return max(0, min(week_offset, cls.max_week_offset))
+
+    @classmethod
+    def _build_appointment_schedule_days(cls, task_queryset, range_start, range_end, selected_date):
         grouped_tasks = OrderedDict()
         for task in task_queryset:
             day_groups = grouped_tasks.setdefault(task.due_date, OrderedDict())
             day_groups.setdefault(task.case_id, []).append(task)
 
         schedule_days = []
-        for offset in range(upcoming_days + 1):
-            schedule_date = today + timedelta(days=offset)
+        schedule_date = range_start
+        while schedule_date <= range_end:
             case_groups = grouped_tasks.get(schedule_date, OrderedDict())
             category_map = OrderedDict()
             rows = []
@@ -1383,9 +1396,10 @@ class DashboardView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
                     "count": len(rows),
                     "categories": categories,
                     "rows": rows,
-                    "is_selected": offset == 0,
+                    "is_selected": schedule_date == selected_date,
                 }
             )
+            schedule_date += timedelta(days=1)
 
         return schedule_days
 
@@ -1402,30 +1416,32 @@ class DashboardView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         today = timezone.localdate()
-        raw_upcoming_days = self.request.GET.get("upcoming_days", "7")
-        try:
-            upcoming_days = int(raw_upcoming_days)
-        except (TypeError, ValueError):
-            upcoming_days = 7
-        upcoming_days = max(1, min(upcoming_days, 30))
-        upper_bound = today + timedelta(days=upcoming_days)
+        current_week_start = self._week_start_for(today)
+        week_offset = self._parse_week_offset(self.request.GET.get("week_offset", "0"))
+        selected_week_start = current_week_start + timedelta(days=week_offset * 7)
+        selected_week_end = selected_week_start + timedelta(days=6)
+        selected_day = today if week_offset == 0 else selected_week_start
 
-        window_tasks = list(
+        dashboard_tasks = list(
             self._task_queryset()
             .exclude(status=TaskStatus.COMPLETED)
-            .filter(due_date__lte=upper_bound)
+            .filter(
+                Q(due_date__lt=today)
+                | Q(status=TaskStatus.SCHEDULED, due_date=today)
+                | Q(status=TaskStatus.SCHEDULED, due_date__range=(selected_week_start, selected_week_end))
+            )
         )
 
         today_tasks = []
         upcoming_tasks = []
         overdue_tasks = []
-        for task in window_tasks:
+        for task in dashboard_tasks:
             if task.due_date < today:
                 overdue_tasks.append(task)
             if task.status == TaskStatus.SCHEDULED:
                 if task.due_date == today:
                     today_tasks.append(task)
-                elif task.due_date > today:
+                if selected_week_start <= task.due_date <= selected_week_end:
                     upcoming_tasks.append(task)
 
         awaiting_tasks = list(self._task_queryset().filter(status=TaskStatus.AWAITING_REPORTS))
@@ -1448,9 +1464,10 @@ class DashboardView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
         context["overdue_tasks"] = overdue_tasks
         context["awaiting_tasks"] = awaiting_tasks
         context["appointment_schedule_days"] = self._build_appointment_schedule_days(
-            [*today_tasks, *upcoming_tasks],
-            today,
-            upcoming_days,
+            upcoming_tasks,
+            selected_week_start,
+            selected_week_end,
+            selected_day,
         )
         case_ids = sorted({task.case_id for task in [*today_tasks, *upcoming_tasks, *overdue_tasks]})
         call_summary_by_case = self._build_call_summaries(case_ids)
@@ -1464,7 +1481,12 @@ class DashboardView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
         context["non_surgical_case_count"] = case_counts["non_surgical_case_count"]
         context["active_case_count"] = case_counts["active_case_count"]
         context["completed_case_count"] = case_counts["completed_case_count"]
-        context["upcoming_days"] = upcoming_days
+        context["week_offset"] = week_offset
+        context["show_previous_week"] = week_offset > 0
+        context["previous_week_offset"] = max(0, week_offset - 1)
+        context["next_week_offset"] = min(self.max_week_offset, week_offset + 1)
+        context["selected_week_start"] = selected_week_start
+        context["selected_week_end"] = selected_week_end
         context["show_recent_cases_panel"] = _can_view_recent_cases(self.request.user)
         context["can_edit_recent_cases"] = _can_edit_recent_cases(self.request.user)
         context["recent_cases"] = (

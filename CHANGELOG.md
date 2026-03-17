@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026.03.17.21.57
+- Changed the dashboard `Upcoming Schedule` week controls to refresh in place instead of triggering a full-page reload, while keeping the URL and browser history in sync.
+- Updated the dashboard script to fetch the next week view asynchronously, replace the Upcoming summary and schedule DOM together, and preserve the existing day-tab interaction after each swap.
+- Added regression assertions for the rendered week-navigation hooks used by the in-page updater.
+
+## 2026.03.17.21.49
+- Reworked the dashboard `Upcoming Schedule` from a rolling `Today + 7 days` window into Monday-Sunday week navigation with `This week`, `Next week`, and conditional `Previous week` controls.
+- Changed the dashboard schedule query and tab state so each view renders exactly one selected week, defaults to today within the current week, and starts on Monday for future weeks.
+- Added regression coverage for week-offset validation, next-week filtering, previous-week navigation visibility, and preserved grouped/category-themed schedule rows.
+
 ## 2026.03.17.11.11
 - Changed the India-style Crayons datepicker rollout to commit single-date selections immediately on day click instead of waiting for the picker footer's `Update` button, preventing blank submissions that triggered `Pick a valid date`.
 - Normalized picker write-back to submit `YYYY-MM-DD` into Django even though the Crayons component reports full ISO datetimes, and synchronized picker disabled/readonly/min/max state with the hidden source input after enhancement.

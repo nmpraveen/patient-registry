@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026.03.17.03.12
+- Renamed the shared top-bar brand label from `MEDTRACK` to `NNH` across the authenticated navbar and the Theme settings live preview.
+
 ## 2026.03.17.02.48
 - Upgraded case and task date fields to a Crayons-style datepicker experience with `dd/MM/yyyy` display for India while preserving ISO date submission for Django.
 - Added shared datepicker assets and wired quick-add and quick-reschedule task forms into the same reusable date input treatment.

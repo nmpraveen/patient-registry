@@ -1,6 +1,7 @@
 import hashlib
 import json
 import secrets
+from urllib.parse import urlencode
 from base64 import urlsafe_b64encode
 from collections import OrderedDict
 from datetime import datetime, timedelta
@@ -51,12 +52,12 @@ from .forms import (
     DeviceApprovalPolicyForm,
     RecentCaseUpdateForm,
     RoleSettingForm,
+    RoleSettingUpdateForm,
     SeedMockDataForm,
     TaskForm,
     ThemeSettingsForm,
     UserManagementCreateForm,
     UserManagementUpdateForm,
-    UserRoleForm,
     VitalEntryForm,
 )
 from .models import (
@@ -82,16 +83,18 @@ from .models import (
     Task,
     TaskStatus,
     ThemeSettings,
+    UserAdminNote,
     VitalEntry,
     build_default_tasks,
     cancel_open_rch_reminders,
     clone_role_setting,
+    ensure_default_departments,
     ensure_rch_reminder_task,
     ensure_default_role_settings,
     frequency_to_days,
     is_anc_case,
 )
-from .theme import build_theme_category_colors, get_default_category_theme, mix_colors, resolve_category_theme
+from .theme import build_theme_category_colors, flatten_theme_tokens, get_default_category_theme, mix_colors, resolve_category_theme
 
 NON_SURGICAL_CASE_FILTER = (
     Q(category__name__iexact="Non Surgical")
@@ -484,17 +487,68 @@ def _user_group_names(user):
     return cached_names
 
 
-def _settings_user_queryset():
+def _settings_url(view_name, **params):
+    query = urlencode({key: value for key, value in params.items() if value not in (None, "")})
+    base_url = reverse(view_name)
+    return f"{base_url}?{query}" if query else base_url
+
+
+def _display_user_name(user):
+    if not user:
+        return ""
+    return user.get_full_name().strip() or user.username
+
+
+def _settings_admin_user_count():
+    manage_settings_roles = RoleSetting.objects.filter(can_manage_settings=True).values_list("role_name", flat=True)
     User = get_user_model()
-    return User.objects.prefetch_related(Prefetch("groups", queryset=Group.objects.order_by("name"))).order_by("username")
+    return (
+        User.objects.filter(is_active=True)
+        .filter(Q(is_superuser=True) | Q(groups__name__in=manage_settings_roles))
+        .distinct()
+        .count()
+    )
+
+
+def _settings_user_queryset(query=""):
+    User = get_user_model()
+    queryset = (
+        User.objects.select_related("admin_note", "admin_note__updated_by")
+        .prefetch_related(Prefetch("groups", queryset=Group.objects.order_by("name")))
+        .order_by("username")
+    )
+    normalized_query = (query or "").strip()
+    if normalized_query:
+        queryset = queryset.filter(
+            Q(username__icontains=normalized_query)
+            | Q(first_name__icontains=normalized_query)
+            | Q(last_name__icontains=normalized_query)
+        )
+    return queryset
+
+
+def _attach_role_member_counts(roles):
+    group_map = {group.name: group for group in Group.objects.prefetch_related("user_set").all()}
+    for role in roles:
+        group = group_map.get(role.role_name)
+        role.member_count = len(group.user_set.all()) if group else 0
+    return roles
 
 
 def _attach_user_role_metadata(users):
+    manage_settings_roles = set(RoleSetting.objects.filter(can_manage_settings=True).values_list("role_name", flat=True))
     for user in users:
         group_names = [group.name for group in user.groups.all()]
         user.primary_role_name = group_names[0] if group_names else ""
         user.role_names_display = ", ".join(group_names) if group_names else "No role assigned"
         user.display_name = user.get_full_name().strip() or "No name set"
+        note = getattr(user, "admin_note", None)
+        note_text = (note.temporary_password_note or "").strip() if note is not None else ""
+        user.temporary_password_note = note_text
+        user.has_temporary_password_note = bool(note_text)
+        user.temporary_password_note_updated_at = note.updated_at if note_text else None
+        user.temporary_password_note_updated_by_display = _display_user_name(note.updated_by) if note_text else ""
+        user.has_settings_access = user.is_superuser or bool(set(group_names) & manage_settings_roles)
     return users
 
 
@@ -2601,6 +2655,10 @@ class UserManagementSettingsView(LoginRequiredMixin, View):
             return HttpResponseForbidden("Only admins can access settings.")
         return None
 
+    @staticmethod
+    def _normalize_tab(raw_value):
+        return raw_value if raw_value in {"users", "roles"} else "users"
+
     def _selected_user(self, users, selected_user_id):
         if selected_user_id:
             for user in users:
@@ -2608,19 +2666,55 @@ class UserManagementSettingsView(LoginRequiredMixin, View):
                     return user
         return users[0] if users else None
 
-    def _build_context(self, *, create_form=None, edit_form=None, selected_user_id=None):
+    def _selected_role(self, roles, selected_role_id):
+        if selected_role_id:
+            for role in roles:
+                if str(role.pk) == str(selected_role_id):
+                    return role
+        return roles[0] if roles else None
+
+    def _build_context(
+        self,
+        *,
+        create_form=None,
+        edit_form=None,
+        selected_user_id=None,
+        role_create_form=None,
+        role_edit_form=None,
+        selected_role_id=None,
+        active_tab="users",
+        user_query="",
+    ):
         ensure_default_role_settings()
-        users = _attach_user_role_metadata(list(_settings_user_queryset()))
-        selected_user = edit_form.instance if edit_form is not None else self._selected_user(users, selected_user_id)
-        if selected_user is None:
-            selected_user = self._selected_user(users, selected_user_id)
-        if selected_user is not None:
-            selected_user = next((user for user in users if user.pk == selected_user.pk), selected_user)
+        users = _attach_user_role_metadata(list(_settings_user_queryset(user_query)))
+        roles = _attach_role_member_counts(list(RoleSetting.objects.order_by("role_name")))
+        selected_user = self._selected_user(users, selected_user_id)
+        if edit_form is not None and getattr(edit_form.instance, "pk", None):
+            selected_user = next((user for user in users if user.pk == edit_form.instance.pk), None)
+            if selected_user is None:
+                selected_user_matches = _attach_user_role_metadata(list(_settings_user_queryset().filter(pk=edit_form.instance.pk)))
+                selected_user = selected_user_matches[0] if selected_user_matches else edit_form.instance
+        selected_role = self._selected_role(roles, selected_role_id)
+        if role_edit_form is not None and getattr(role_edit_form.instance, "pk", None):
+            selected_role = next((role for role in roles if role.pk == role_edit_form.instance.pk), role_edit_form.instance)
+        User = get_user_model()
         return {
+            "active_tab": self._normalize_tab(active_tab),
             "create_form": create_form or UserManagementCreateForm(),
             "edit_form": edit_form or (UserManagementUpdateForm(instance=selected_user) if selected_user else None),
             "selected_user": selected_user,
             "users": users,
+            "user_query": user_query,
+            "matching_user_count": len(users),
+            "total_user_count": User.objects.count(),
+            "active_user_count": User.objects.filter(is_active=True).count(),
+            "settings_admin_count": _settings_admin_user_count(),
+            "users_with_temp_note_count": UserAdminNote.objects.exclude(temporary_password_note="").count(),
+            "role_create_form": role_create_form or RoleSettingForm(),
+            "role_edit_form": role_edit_form or (RoleSettingUpdateForm(instance=selected_role) if selected_role else None),
+            "selected_role": selected_role,
+            "roles": roles,
+            "settings_role_count": sum(1 for role in roles if role.can_manage_settings),
         }
 
     def get(self, request):
@@ -2630,7 +2724,12 @@ class UserManagementSettingsView(LoginRequiredMixin, View):
         return render(
             request,
             self.template_name,
-            self._build_context(selected_user_id=request.GET.get("user")),
+            self._build_context(
+                selected_user_id=request.GET.get("user"),
+                selected_role_id=request.GET.get("role"),
+                active_tab=request.GET.get("tab"),
+                user_query=(request.GET.get("q") or "").strip(),
+            ),
         )
 
     def post(self, request):
@@ -2639,19 +2738,28 @@ class UserManagementSettingsView(LoginRequiredMixin, View):
             return denied
 
         action = request.POST.get("action")
+        active_tab = self._normalize_tab(request.POST.get("tab"))
+        user_query = (request.POST.get("q") or "").strip()
         selected_user_id = request.POST.get("selected_user_id") or request.POST.get("user_id")
+        selected_role_id = request.POST.get("selected_role_id") or request.POST.get("role_id")
 
         if action == "create_user":
             create_form = UserManagementCreateForm(request.POST)
             if create_form.is_valid():
-                user = create_form.save()
+                user = create_form.save(actor=request.user)
                 messages.success(request, f"Created user {user.username}.")
-                return redirect(f"{reverse('patients:settings_user_management')}?user={user.pk}")
+                return redirect(_settings_url("patients:settings_user_management", tab="users", user=user.pk, q=user_query))
             messages.error(request, "User creation has errors.")
             return render(
                 request,
                 self.template_name,
-                self._build_context(create_form=create_form, selected_user_id=selected_user_id),
+                self._build_context(
+                    create_form=create_form,
+                    selected_user_id=selected_user_id,
+                    selected_role_id=selected_role_id,
+                    active_tab="users",
+                    user_query=user_query,
+                ),
             )
 
         if action == "update_user":
@@ -2659,18 +2767,75 @@ class UserManagementSettingsView(LoginRequiredMixin, View):
             selected_user = get_object_or_404(User, pk=request.POST.get("user_id"))
             edit_form = UserManagementUpdateForm(request.POST, instance=selected_user)
             if edit_form.is_valid():
-                user = edit_form.save()
+                user = edit_form.save(actor=request.user)
                 messages.success(request, f"Updated user {user.username}.")
-                return redirect(f"{reverse('patients:settings_user_management')}?user={user.pk}")
+                return redirect(_settings_url("patients:settings_user_management", tab="users", user=user.pk, q=user_query))
             messages.error(request, "User update has errors.")
             return render(
                 request,
                 self.template_name,
-                self._build_context(edit_form=edit_form, selected_user_id=selected_user.pk),
+                self._build_context(
+                    edit_form=edit_form,
+                    selected_user_id=selected_user.pk,
+                    selected_role_id=selected_role_id,
+                    active_tab="users",
+                    user_query=user_query,
+                ),
+            )
+
+        if action == "clear_temp_password_note":
+            User = get_user_model()
+            selected_user = get_object_or_404(User.objects.select_related("admin_note"), pk=request.POST.get("user_id"))
+            note, _ = UserAdminNote.objects.get_or_create(user=selected_user)
+            note.temporary_password_note = ""
+            note.updated_by = request.user
+            note.save()
+            messages.success(request, f"Cleared the temporary password note for {selected_user.username}.")
+            return redirect(_settings_url("patients:settings_user_management", tab="users", user=selected_user.pk, q=user_query))
+
+        if action == "create_role":
+            role_create_form = RoleSettingForm(request.POST)
+            if role_create_form.is_valid():
+                role = role_create_form.save()
+                Group.objects.get_or_create(name=role.role_name)
+                messages.success(request, f"Created role {role.role_name}.")
+                return redirect(_settings_url("patients:settings_user_management", tab="roles", role=role.pk))
+            messages.error(request, "Role creation has errors.")
+            return render(
+                request,
+                self.template_name,
+                self._build_context(
+                    role_create_form=role_create_form,
+                    selected_user_id=selected_user_id,
+                    selected_role_id=selected_role_id,
+                    active_tab="roles",
+                    user_query=user_query,
+                ),
+            )
+
+        if action == "update_role":
+            selected_role = get_object_or_404(RoleSetting, pk=request.POST.get("role_id"))
+            role_edit_form = RoleSettingUpdateForm(request.POST, instance=selected_role)
+            if role_edit_form.is_valid():
+                role = role_edit_form.save()
+                Group.objects.get_or_create(name=role.role_name)
+                messages.success(request, f"Updated permissions for {role.role_name}.")
+                return redirect(_settings_url("patients:settings_user_management", tab="roles", role=role.pk))
+            messages.error(request, "Role update has errors.")
+            return render(
+                request,
+                self.template_name,
+                self._build_context(
+                    role_edit_form=role_edit_form,
+                    selected_user_id=selected_user_id,
+                    selected_role_id=selected_role.pk,
+                    active_tab="roles",
+                    user_query=user_query,
+                ),
             )
 
         messages.error(request, "Unknown user management action.")
-        return redirect("patients:settings_user_management")
+        return redirect(_settings_url("patients:settings_user_management", tab=active_tab, user=selected_user_id, role=selected_role_id, q=user_query))
 
 
 class DeviceAccessSettingsView(LoginRequiredMixin, View):
@@ -3024,6 +3189,85 @@ class ThemeSettingsView(LoginRequiredMixin, View):
         return render(request, self.template_name, self._build_context(theme_form, department_theme_formset))
 
 
+class CategorySettingsView(LoginRequiredMixin, View):
+    template_name = "patients/settings_categories.html"
+
+    def _check_access(self, request):
+        if not has_capability(request.user, "manage_settings"):
+            return HttpResponseForbidden("Only admins can access settings.")
+        return None
+
+    def _selected_category(self, categories, selected_category_id):
+        if selected_category_id:
+            for category in categories:
+                if str(category.pk) == str(selected_category_id):
+                    return category
+        return categories[0] if categories else None
+
+    def _build_context(self, *, create_form=None, edit_form=None, selected_category_id=None):
+        ensure_default_departments()
+        categories = list(DepartmentConfig.objects.order_by("name"))
+        selected_category = self._selected_category(categories, selected_category_id)
+        if edit_form is not None and getattr(edit_form.instance, "pk", None):
+            selected_category = next(
+                (category for category in categories if category.pk == edit_form.instance.pk),
+                edit_form.instance,
+            )
+        return {
+            "create_form": create_form or DepartmentConfigForm(),
+            "edit_form": edit_form or (DepartmentConfigForm(instance=selected_category) if selected_category else None),
+            "selected_category": selected_category,
+            "categories": categories,
+        }
+
+    def get(self, request):
+        denied = self._check_access(request)
+        if denied:
+            return denied
+        return render(
+            request,
+            self.template_name,
+            self._build_context(selected_category_id=request.GET.get("category")),
+        )
+
+    def post(self, request):
+        denied = self._check_access(request)
+        if denied:
+            return denied
+
+        action = request.POST.get("action")
+        selected_category_id = request.POST.get("selected_category_id") or request.POST.get("category_id")
+        if action == "create_category":
+            create_form = DepartmentConfigForm(request.POST)
+            if create_form.is_valid():
+                category = create_form.save()
+                messages.success(request, f"Saved category {category.name}.")
+                return redirect(_settings_url("patients:settings_categories", category=category.pk))
+            messages.error(request, "Category creation has errors.")
+            return render(
+                request,
+                self.template_name,
+                self._build_context(create_form=create_form, selected_category_id=selected_category_id),
+            )
+
+        if action == "update_category":
+            category = get_object_or_404(DepartmentConfig, pk=request.POST.get("category_id"))
+            edit_form = DepartmentConfigForm(request.POST, instance=category)
+            if edit_form.is_valid():
+                category = edit_form.save()
+                messages.success(request, f"Updated category {category.name}.")
+                return redirect(_settings_url("patients:settings_categories", category=category.pk))
+            messages.error(request, "Category update has errors.")
+            return render(
+                request,
+                self.template_name,
+                self._build_context(edit_form=edit_form, selected_category_id=category.pk),
+            )
+
+        messages.error(request, "Unknown category action.")
+        return redirect(_settings_url("patients:settings_categories", category=selected_category_id))
+
+
 class AdminSettingsView(LoginRequiredMixin, View):
     template_name = "patients/settings.html"
 
@@ -3037,13 +3281,43 @@ class AdminSettingsView(LoginRequiredMixin, View):
         if denied:
             return denied
         ensure_default_role_settings()
+        ensure_default_departments()
+        User = get_user_model()
+        departments = list(DepartmentConfig.objects.order_by("name"))
+        device_policy = DeviceApprovalPolicy.get_solo()
+        schedule = PatientDataBackupSchedule.get_solo()
+        next_backup_at = schedule.next_backup_at()
+        theme_settings = ThemeSettings.get_solo()
+        custom_category_theme_count = 0
+        for department in departments:
+            default_theme = get_default_category_theme(department.name)
+            if department.theme_bg_color != default_theme["bg"] or department.theme_text_color != default_theme["text"]:
+                custom_category_theme_count += 1
         context = {
-            "role_form": RoleSettingForm(),
-            "department_form": DepartmentConfigForm(),
-            "user_role_form": UserRoleForm(),
-            "roles": RoleSetting.objects.all(),
-            "departments": DepartmentConfig.objects.all(),
-            "groups": Group.objects.order_by("name"),
+            "total_user_count": User.objects.count(),
+            "active_user_count": User.objects.filter(is_active=True).count(),
+            "settings_admin_count": _settings_admin_user_count(),
+            "users_with_temp_note_count": UserAdminNote.objects.exclude(temporary_password_note="").count(),
+            "category_count": len(departments),
+            "category_action_count": sum(len(department.predefined_actions or []) for department in departments),
+            "category_name_preview": ", ".join(department.name for department in departments[:3]),
+            "device_policy_enabled": device_policy.enabled,
+            "device_target_user_count": device_policy.target_users.count(),
+            "pending_device_count": StaffDeviceCredential.objects.filter(status=StaffDeviceCredentialStatus.PENDING).count(),
+            "approved_device_count": StaffDeviceCredential.objects.filter(status=StaffDeviceCredentialStatus.APPROVED).count(),
+            "last_backup_at": schedule.last_backup_at,
+            "last_backup_status": schedule.get_last_backup_status_display(),
+            "next_backup_at": next_backup_at,
+            "theme_has_customizations": bool(theme_settings.tokens) or custom_category_theme_count > 0,
+            "custom_theme_token_count": len(flatten_theme_tokens(theme_settings.tokens)) if theme_settings.tokens else 0,
+            "custom_category_theme_count": custom_category_theme_count,
+            "security_highlights": [
+                {"label": "HTTPS redirect", "enabled": settings.SECURE_SSL_REDIRECT},
+                {"label": "Secure session cookie", "enabled": settings.SESSION_COOKIE_SECURE},
+                {"label": "Secure CSRF cookie", "enabled": settings.CSRF_COOKIE_SECURE},
+                {"label": "HSTS", "enabled": settings.SECURE_HSTS_SECONDS > 0},
+                {"label": "Frame protection", "enabled": settings.X_FRAME_OPTIONS.upper() == "DENY"},
+            ],
         }
         return render(request, self.template_name, context)
 
@@ -3051,34 +3325,5 @@ class AdminSettingsView(LoginRequiredMixin, View):
         denied = self._check_access(request)
         if denied:
             return denied
-
-        action = request.POST.get("action")
-        if action == "create_role":
-            form = RoleSettingForm(request.POST)
-            if form.is_valid():
-                role = form.save()
-                Group.objects.get_or_create(name=role.role_name)
-                messages.success(request, "Role setting saved.")
-            else:
-                messages.error(request, f"Role form errors: {form.errors}")
-
-        elif action == "create_department":
-            form = DepartmentConfigForm(request.POST)
-            if form.is_valid():
-                form.save()
-                messages.success(request, "Category saved.")
-            else:
-                messages.error(request, f"Category form errors: {form.errors}")
-
-        elif action == "assign_role":
-            form = UserRoleForm(request.POST)
-            if form.is_valid():
-                user = form.cleaned_data["user"]
-                role = form.cleaned_data["role"]
-                user.groups.clear()
-                user.groups.add(role)
-                messages.success(request, f"Assigned role {role.name} to {user.username}.")
-            else:
-                messages.error(request, f"User role form errors: {form.errors}")
-
+        messages.error(request, "Use the focused settings pages to update configuration.")
         return redirect("patients:settings")

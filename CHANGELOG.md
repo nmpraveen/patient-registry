@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026.03.17.02.16
+- Enlarged the Settings hub version panel in `Utilities & About` so long version stamps fit comfortably and read as a dedicated info tile instead of a cramped metric chip.
+
+## 2026.03.17.02.09
+- Rebuilt the main Settings page into a category-based admin hub with filterable overview cards for user management, categories/workflow defaults, device access, data recovery, appearance, and utilities/about.
+- Expanded `User Management` into the single admin surface for users and roles, including a dedicated roles tab, searchable user list, and an admin-only temporary plaintext password note with clear action and update metadata.
+- Added a dedicated `Categories & Workflow` settings page for category names, predefined actions, metadata templates, and retained follow-up defaults, plus new migration and regression coverage for the redesigned settings flows.
+
 ## 2026.03.16.23.22
 - Added an admin-only `User Management` settings page for creating users, editing names and usernames, resetting passwords, toggling active status, and assigning each account's primary role/group.
 - Linked the new page from Admin Settings while keeping the existing role-permission configuration flow intact.

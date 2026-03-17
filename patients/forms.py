@@ -21,6 +21,7 @@ from .models import (
     Task,
     TaskStatus,
     ThemeSettings,
+    UserAdminNote,
     VitalEntry,
     ensure_default_departments,
     ensure_default_role_settings,
@@ -378,6 +379,13 @@ class RoleSettingForm(StyledModelForm):
         }
 
 
+class RoleSettingUpdateForm(RoleSettingForm):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["role_name"].disabled = True
+        self.fields["role_name"].help_text = "Use Create Role for new names. Editing here updates permissions only."
+
+
 class DepartmentConfigForm(StyledModelForm):
     predefined_actions_text = forms.CharField(required=False, help_text="Comma-separated actions")
     metadata_template_text = forms.CharField(required=False, widget=forms.Textarea(attrs={"rows": 2}), help_text="JSON object")
@@ -388,6 +396,9 @@ class DepartmentConfigForm(StyledModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields["auto_follow_up_days"].help_text = (
+            "Retained for future workflow defaults. Changing this does not alter live task generation today."
+        )
         if self.instance.pk:
             self.fields["predefined_actions_text"].initial = ", ".join(self.instance.predefined_actions or [])
             self.fields["metadata_template_text"].initial = json.dumps(self.instance.metadata_template or {})
@@ -604,6 +615,12 @@ class DeviceApprovalPolicyForm(forms.ModelForm):
 
 class UserManagementBaseForm(StyledModelForm):
     role = forms.ModelChoiceField(queryset=Group.objects.none(), label="Primary role")
+    temporary_password_note = forms.CharField(
+        required=False,
+        label="Temporary password note",
+        widget=forms.Textarea(attrs={"rows": 3}),
+        help_text="Admin-only plaintext note for short-lived password handoff. Clear it once it is no longer needed.",
+    )
 
     class Meta:
         model = User
@@ -622,6 +639,25 @@ class UserManagementBaseForm(StyledModelForm):
             primary_group = self.instance.groups.order_by("name").first()
             if primary_group:
                 self.fields["role"].initial = primary_group
+            note = getattr(self.instance, "admin_note", None)
+            if note is not None:
+                self.fields["temporary_password_note"].initial = note.temporary_password_note
+
+    def _save_temporary_password_note(self, *, user, actor=None):
+        note_text = (self.cleaned_data.get("temporary_password_note") or "").strip()
+        note = getattr(user, "admin_note", None)
+        actor_id = actor.pk if actor is not None else None
+        if note is None and not note_text:
+            return None
+        if note is not None and note.temporary_password_note == note_text and note.updated_by_id == actor_id:
+            return note
+        if note is None:
+            note = UserAdminNote(user=user)
+        note.temporary_password_note = note_text
+        note.updated_by = actor
+        note.save()
+        user.admin_note = note
+        return note
 
 
 class UserManagementCreateForm(UserManagementBaseForm):
@@ -642,12 +678,13 @@ class UserManagementCreateForm(UserManagementBaseForm):
             self.add_error("password2", "Passwords do not match.")
         return cleaned_data
 
-    def save(self, commit=True):
+    def save(self, commit=True, actor=None):
         user = super().save(commit=False)
         user.set_password(self.cleaned_data["password1"])
         if commit:
             user.save()
             user.groups.set([self.cleaned_data["role"]])
+            self._save_temporary_password_note(user=user, actor=actor)
         return user
 
 
@@ -713,7 +750,7 @@ class UserManagementUpdateForm(UserManagementBaseForm):
                 self.add_error("is_active", message)
         return cleaned_data
 
-    def save(self, commit=True):
+    def save(self, commit=True, actor=None):
         user = super().save(commit=False)
         password1 = self.cleaned_data.get("password1")
         if password1:
@@ -721,6 +758,7 @@ class UserManagementUpdateForm(UserManagementBaseForm):
         if commit:
             user.save()
             user.groups.set([self.cleaned_data["role"]])
+            self._save_temporary_password_note(user=user, actor=actor)
         return user
 
 

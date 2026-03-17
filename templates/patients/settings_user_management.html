@@ -1,163 +1,534 @@
 {% extends 'base.html' %}
 {% block title %}User Management | MEDTRACK{% endblock %}
 {% block content %}
-<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-  <div>
-    <h1 class="h4 mb-1">User Management</h1>
-    <p class="text-muted mb-0">Create staff accounts, edit login names, reset passwords, and assign the one primary role/group the app currently uses.</p>
+<style>
+  .settings-shell-header {
+    padding: 1.5rem;
+    border: 1px solid var(--theme-shell-surface-border);
+    border-radius: 1.25rem;
+    background: linear-gradient(135deg, var(--theme-shell-surface-bg), var(--theme-shell-surface-hover-bg));
+    box-shadow: 0 16px 34px var(--theme-shell-shadow);
+    margin-bottom: 1rem;
+  }
+
+  .settings-shell-nav {
+    margin-bottom: 1rem;
+  }
+
+  .settings-shell-nav .nav-link {
+    border-radius: 999px;
+  }
+
+  .settings-shell-nav .nav-link.active {
+    background-color: var(--theme-buttons-primary-bg);
+    color: var(--theme-buttons-primary-text);
+  }
+
+  .settings-stat-strip {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+  }
+
+  .settings-stat-card {
+    padding: 0.9rem 1rem;
+    border-radius: 1rem;
+    border: 1px solid var(--theme-shell-surface-border);
+    background: var(--theme-shell-surface-bg);
+    box-shadow: 0 12px 26px var(--theme-shell-shadow);
+  }
+
+  .settings-stat-value {
+    font-size: 1.35rem;
+    font-weight: 700;
+    line-height: 1.1;
+  }
+
+  .settings-stat-label {
+    margin-top: 0.2rem;
+    font-size: 0.82rem;
+    color: var(--theme-shell-muted-text);
+  }
+
+  .settings-panel-card {
+    border: 1px solid var(--theme-shell-surface-border);
+    border-radius: 1.2rem;
+    background: var(--theme-shell-surface-bg);
+    box-shadow: 0 14px 30px var(--theme-shell-shadow);
+    height: 100%;
+  }
+
+  .settings-panel-card .card-body {
+    padding: 1.2rem;
+  }
+
+  .settings-note-warning {
+    border: 1px solid var(--theme-alerts-warning-border);
+    background: var(--theme-alerts-warning-bg);
+    color: var(--theme-alerts-warning-text);
+    border-radius: 1rem;
+    padding: 0.85rem 1rem;
+  }
+</style>
+
+<section class="settings-shell-header">
+  <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3">
+    <div>
+      <h1 class="h3 mb-1">User Management</h1>
+      <p class="text-muted mb-0">
+        Manage staff accounts, primary roles, role permissions, and temporary password notes from one admin page.
+      </p>
+    </div>
+    <a class="btn btn-outline-primary btn-sm" href="{% url 'patients:settings' %}">Back to Settings</a>
   </div>
-  <a class="btn btn-outline-primary btn-sm" href="{% url 'patients:settings' %}">Back to Settings</a>
-</div>
+</section>
 
-<div class="alert alert-info mb-3">
-  This page manages usernames, names, active state, and the primary role/group used by MEDTRACK. Superuser status is shown for visibility but not changed here.
-</div>
+<nav class="settings-shell-nav">
+  <ul class="nav nav-pills gap-2">
+    <li class="nav-item">
+      <a class="nav-link {% if active_tab == 'users' %}active{% endif %}" href="{% url 'patients:settings_user_management' %}?tab=users{% if user_query %}&q={{ user_query|urlencode }}{% endif %}">Users</a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link {% if active_tab == 'roles' %}active{% endif %}" href="{% url 'patients:settings_user_management' %}?tab=roles">Roles</a>
+    </li>
+  </ul>
+</nav>
 
-<div class="row g-3 mb-3">
-  <div class="col-12 col-xl-4">
-    <div class="card h-100">
-      <div class="card-body">
-        <h2 class="h6">Create User</h2>
-        <form method="post">
-          {% csrf_token %}
-          <input type="hidden" name="action" value="create_user" />
-          <input type="hidden" name="selected_user_id" value="{{ selected_user.pk|default:'' }}" />
-
-          {% if create_form.non_field_errors %}
-            <div class="alert alert-danger py-2">
-              {{ create_form.non_field_errors }}
-            </div>
-          {% endif %}
-
-          {% for field in create_form %}
-            <div class="mb-3">
-              {{ field.label_tag }}
-              {{ field }}
-              {% if field.help_text %}
-                <div class="form-text">{{ field.help_text }}</div>
-              {% endif %}
-              {% if field.errors %}
-                <div class="text-danger small mt-1">{{ field.errors|striptags }}</div>
-              {% endif %}
-            </div>
-          {% endfor %}
-
-          <button class="btn btn-primary btn-sm w-100">Create User</button>
-        </form>
-      </div>
+{% if active_tab == 'users' %}
+  <div class="settings-stat-strip">
+    <div class="settings-stat-card">
+      <div class="settings-stat-value">{{ total_user_count }}</div>
+      <div class="settings-stat-label">Total users</div>
+    </div>
+    <div class="settings-stat-card">
+      <div class="settings-stat-value">{{ active_user_count }}</div>
+      <div class="settings-stat-label">Active users</div>
+    </div>
+    <div class="settings-stat-card">
+      <div class="settings-stat-value">{{ settings_admin_count }}</div>
+      <div class="settings-stat-label">Settings admins</div>
+    </div>
+    <div class="settings-stat-card">
+      <div class="settings-stat-value">{{ users_with_temp_note_count }}</div>
+      <div class="settings-stat-label">Temp password notes</div>
     </div>
   </div>
 
-  <div class="col-12 col-xl-8">
-    <div class="card h-100">
-      <div class="card-body">
-        {% if selected_user and edit_form %}
-          <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+  <div class="row g-3 mb-3">
+    <div class="col-12 col-xl-5">
+      <div class="settings-panel-card">
+        <div class="card-body">
+          <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
             <div>
-              <h2 class="h6 mb-1">Edit User</h2>
-              <div class="fw-semibold">{{ selected_user.display_name }}</div>
-              <div class="text-muted small">
-                {{ selected_user.username }}
-                {% if selected_user.role_names_display %}
-                  | {{ selected_user.role_names_display }}
-                {% endif %}
-              </div>
+              <h2 class="h6 mb-1">Current Users</h2>
+              <p class="text-muted small mb-0">Select a user to load the edit panel.</p>
             </div>
-            <div class="d-flex gap-2">
-              <span class="badge {% if selected_user.is_active %}text-bg-success{% else %}text-bg-secondary{% endif %}">
-                {{ selected_user.is_active|yesno:"Active,Inactive" }}
-              </span>
-              {% if selected_user.is_superuser %}
-                <span class="badge text-bg-warning">Superuser</span>
-              {% endif %}
-            </div>
+            <div class="text-muted small">{{ matching_user_count }} shown</div>
           </div>
-
-          <form method="post">
-            {% csrf_token %}
-            <input type="hidden" name="action" value="update_user" />
-            <input type="hidden" name="user_id" value="{{ selected_user.pk }}" />
-
-            {% if edit_form.non_field_errors %}
-              <div class="alert alert-danger py-2">
-                {{ edit_form.non_field_errors }}
+          <form class="row g-2 mb-3" method="get">
+            <input type="hidden" name="tab" value="users" />
+            <div class="col">
+              <input class="form-control" type="search" name="q" value="{{ user_query }}" placeholder="Search users" />
+            </div>
+            <div class="col-auto">
+              <button class="btn btn-primary btn-sm" type="submit">Search</button>
+            </div>
+            {% if user_query %}
+              <div class="col-auto">
+                <a class="btn btn-outline-secondary btn-sm" href="{% url 'patients:settings_user_management' %}?tab=users">Clear</a>
               </div>
             {% endif %}
+          </form>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+              <thead>
+                <tr>
+                  <th>User</th>
+                  <th>Role</th>
+                  <th>Flags</th>
+                  <th class="text-end">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for listed_user in users %}
+                  <tr{% if selected_user and listed_user.pk == selected_user.pk %} class="table-secondary"{% endif %}>
+                    <td>
+                      <div class="fw-semibold">{{ listed_user.display_name }}</div>
+                      <div class="text-muted small">{{ listed_user.username }}</div>
+                    </td>
+                    <td>{{ listed_user.role_names_display }}</td>
+                    <td>
+                      <div class="d-flex flex-wrap gap-1">
+                        <span class="badge {% if listed_user.is_active %}text-bg-success{% else %}text-bg-secondary{% endif %}">
+                          {{ listed_user.is_active|yesno:"Active,Inactive" }}
+                        </span>
+                        {% if listed_user.has_settings_access %}
+                          <span class="badge text-bg-primary">Settings Admin</span>
+                        {% endif %}
+                        {% if listed_user.is_superuser %}
+                          <span class="badge text-bg-warning">Superuser</span>
+                        {% endif %}
+                        {% if listed_user.has_temporary_password_note %}
+                          <span class="badge text-bg-warning">Temp Note</span>
+                        {% endif %}
+                      </div>
+                    </td>
+                    <td class="text-end">
+                      <a class="btn btn-outline-primary btn-sm" href="{% url 'patients:settings_user_management' %}?tab=users&user={{ listed_user.pk }}{% if user_query %}&q={{ user_query|urlencode }}{% endif %}">Edit</a>
+                    </td>
+                  </tr>
+                {% empty %}
+                  <tr>
+                    <td colspan="4" class="text-muted">No users matched that search.</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
 
-            <div class="row g-3">
-              {% for field in edit_form %}
-                <div class="col-12 col-md-6">
-                  {{ field.label_tag }}
-                  {{ field }}
-                  {% if field.help_text %}
-                    <div class="form-text">{{ field.help_text }}</div>
-                  {% endif %}
-                  {% if field.errors %}
-                    <div class="text-danger small mt-1">{{ field.errors|striptags }}</div>
-                  {% endif %}
-                </div>
-              {% endfor %}
+    <div class="col-12 col-xl-7">
+      <div class="settings-panel-card">
+        <div class="card-body">
+          {% if selected_user and edit_form %}
+            <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+              <div>
+                <h2 class="h6 mb-1">Edit User</h2>
+                <div class="fw-semibold">{{ selected_user.display_name }}</div>
+                <div class="text-muted small">{{ selected_user.username }}{% if selected_user.role_names_display %} | {{ selected_user.role_names_display }}{% endif %}</div>
+              </div>
+              <div class="d-flex flex-wrap gap-1">
+                <span class="badge {% if selected_user.is_active %}text-bg-success{% else %}text-bg-secondary{% endif %}">
+                  {{ selected_user.is_active|yesno:"Active,Inactive" }}
+                </span>
+                {% if selected_user.has_settings_access %}
+                  <span class="badge text-bg-primary">Settings Admin</span>
+                {% endif %}
+                {% if selected_user.is_superuser %}
+                  <span class="badge text-bg-warning">Superuser</span>
+                {% endif %}
+                {% if selected_user.has_temporary_password_note %}
+                  <span class="badge text-bg-warning">Temp Note Stored</span>
+                {% endif %}
+              </div>
             </div>
 
-            <button class="btn btn-primary btn-sm mt-3">Save User</button>
-          </form>
-        {% else %}
-          <div class="text-muted">No users are available to edit yet.</div>
-        {% endif %}
+            <div class="settings-note-warning mb-3">
+              Temporary password notes are stored in plaintext for short-lived admin handoff only. Clear them as soon as they are no longer needed.
+            </div>
+
+            {% if selected_user.has_temporary_password_note %}
+              <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+                <div class="small text-muted">
+                  Last updated {{ selected_user.temporary_password_note_updated_at|date:"M j, Y g:i A" }}
+                  {% if selected_user.temporary_password_note_updated_by_display %}
+                    by {{ selected_user.temporary_password_note_updated_by_display }}
+                  {% endif %}
+                </div>
+                <form method="post" class="m-0">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="clear_temp_password_note" />
+                  <input type="hidden" name="tab" value="users" />
+                  <input type="hidden" name="user_id" value="{{ selected_user.pk }}" />
+                  <input type="hidden" name="q" value="{{ user_query }}" />
+                  <button class="btn btn-outline-danger btn-sm" type="submit">Clear Temporary Note</button>
+                </form>
+              </div>
+            {% else %}
+              <div class="small text-muted mb-3">No temporary password note is stored for this user.</div>
+            {% endif %}
+
+            {% if edit_form.non_field_errors %}
+              <div class="alert alert-danger py-2">{{ edit_form.non_field_errors }}</div>
+            {% endif %}
+
+            <form method="post">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="update_user" />
+              <input type="hidden" name="tab" value="users" />
+              <input type="hidden" name="user_id" value="{{ selected_user.pk }}" />
+              <input type="hidden" name="q" value="{{ user_query }}" />
+              <div class="row g-3">
+                <div class="col-12 col-md-6">
+                  {{ edit_form.first_name.label_tag }}
+                  {{ edit_form.first_name }}
+                  {% if edit_form.first_name.errors %}<div class="text-danger small mt-1">{{ edit_form.first_name.errors|striptags }}</div>{% endif %}
+                </div>
+                <div class="col-12 col-md-6">
+                  {{ edit_form.last_name.label_tag }}
+                  {{ edit_form.last_name }}
+                  {% if edit_form.last_name.errors %}<div class="text-danger small mt-1">{{ edit_form.last_name.errors|striptags }}</div>{% endif %}
+                </div>
+                <div class="col-12 col-md-6">
+                  {{ edit_form.username.label_tag }}
+                  {{ edit_form.username }}
+                  {% if edit_form.username.help_text %}<div class="form-text">{{ edit_form.username.help_text }}</div>{% endif %}
+                  {% if edit_form.username.errors %}<div class="text-danger small mt-1">{{ edit_form.username.errors|striptags }}</div>{% endif %}
+                </div>
+                <div class="col-12 col-md-6">
+                  {{ edit_form.role.label_tag }}
+                  {{ edit_form.role }}
+                  {% if edit_form.role.help_text %}<div class="form-text">{{ edit_form.role.help_text }}</div>{% endif %}
+                  {% if edit_form.role.errors %}<div class="text-danger small mt-1">{{ edit_form.role.errors|striptags }}</div>{% endif %}
+                </div>
+                <div class="col-12 col-md-6">
+                  <div class="form-check mt-4">
+                    {{ edit_form.is_active }}
+                    <label class="form-check-label" for="{{ edit_form.is_active.id_for_label }}">{{ edit_form.is_active.label }}</label>
+                  </div>
+                  {% if edit_form.is_active.errors %}<div class="text-danger small mt-1">{{ edit_form.is_active.errors|striptags }}</div>{% endif %}
+                </div>
+                <div class="col-12 col-md-6">
+                  {{ edit_form.password1.label_tag }}
+                  {{ edit_form.password1 }}
+                  {% if edit_form.password1.help_text %}<div class="form-text">{{ edit_form.password1.help_text }}</div>{% endif %}
+                  {% if edit_form.password1.errors %}<div class="text-danger small mt-1">{{ edit_form.password1.errors|striptags }}</div>{% endif %}
+                </div>
+                <div class="col-12 col-md-6">
+                  {{ edit_form.password2.label_tag }}
+                  {{ edit_form.password2 }}
+                  {% if edit_form.password2.errors %}<div class="text-danger small mt-1">{{ edit_form.password2.errors|striptags }}</div>{% endif %}
+                </div>
+                <div class="col-12">
+                  {{ edit_form.temporary_password_note.label_tag }}
+                  {{ edit_form.temporary_password_note }}
+                  {% if edit_form.temporary_password_note.help_text %}<div class="form-text">{{ edit_form.temporary_password_note.help_text }}</div>{% endif %}
+                  {% if edit_form.temporary_password_note.errors %}<div class="text-danger small mt-1">{{ edit_form.temporary_password_note.errors|striptags }}</div>{% endif %}
+                </div>
+              </div>
+              <button class="btn btn-primary btn-sm mt-3">Save User</button>
+            </form>
+          {% else %}
+            <div class="text-muted">No users are available to edit.</div>
+          {% endif %}
+        </div>
       </div>
     </div>
   </div>
-</div>
 
-<div class="card">
-  <div class="card-body">
-    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-      <div>
-        <h2 class="h6 mb-1">Current Users</h2>
-        <p class="text-muted small mb-0">Selecting a user loads that account into the edit form above.</p>
+  <div class="settings-panel-card">
+    <div class="card-body">
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <div>
+          <h2 class="h6 mb-1">Create User</h2>
+          <p class="text-muted small mb-0">Create a staff account, assign its primary role, and optionally store a short-lived password note.</p>
+        </div>
       </div>
-      <div class="text-muted small">{{ users|length }} total user{{ users|length|pluralize }}</div>
+
+      <div class="settings-note-warning mb-3">
+        Password notes are admin-only plaintext. Use them only for temporary handoff and clear them later from the edit panel.
+      </div>
+
+      {% if create_form.non_field_errors %}
+        <div class="alert alert-danger py-2">{{ create_form.non_field_errors }}</div>
+      {% endif %}
+
+      <form method="post">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="create_user" />
+        <input type="hidden" name="tab" value="users" />
+        <input type="hidden" name="selected_user_id" value="{{ selected_user.pk|default:'' }}" />
+        <input type="hidden" name="q" value="{{ user_query }}" />
+        <div class="row g-3">
+          <div class="col-12 col-md-6">
+            {{ create_form.first_name.label_tag }}
+            {{ create_form.first_name }}
+            {% if create_form.first_name.errors %}<div class="text-danger small mt-1">{{ create_form.first_name.errors|striptags }}</div>{% endif %}
+          </div>
+          <div class="col-12 col-md-6">
+            {{ create_form.last_name.label_tag }}
+            {{ create_form.last_name }}
+            {% if create_form.last_name.errors %}<div class="text-danger small mt-1">{{ create_form.last_name.errors|striptags }}</div>{% endif %}
+          </div>
+          <div class="col-12 col-md-6">
+            {{ create_form.username.label_tag }}
+            {{ create_form.username }}
+            {% if create_form.username.help_text %}<div class="form-text">{{ create_form.username.help_text }}</div>{% endif %}
+            {% if create_form.username.errors %}<div class="text-danger small mt-1">{{ create_form.username.errors|striptags }}</div>{% endif %}
+          </div>
+          <div class="col-12 col-md-6">
+            {{ create_form.role.label_tag }}
+            {{ create_form.role }}
+            {% if create_form.role.help_text %}<div class="form-text">{{ create_form.role.help_text }}</div>{% endif %}
+            {% if create_form.role.errors %}<div class="text-danger small mt-1">{{ create_form.role.errors|striptags }}</div>{% endif %}
+          </div>
+          <div class="col-12 col-md-6">
+            <div class="form-check mt-4">
+              {{ create_form.is_active }}
+              <label class="form-check-label" for="{{ create_form.is_active.id_for_label }}">{{ create_form.is_active.label }}</label>
+            </div>
+            {% if create_form.is_active.errors %}<div class="text-danger small mt-1">{{ create_form.is_active.errors|striptags }}</div>{% endif %}
+          </div>
+          <div class="col-12 col-md-6">
+            {{ create_form.password1.label_tag }}
+            {{ create_form.password1 }}
+            {% if create_form.password1.errors %}<div class="text-danger small mt-1">{{ create_form.password1.errors|striptags }}</div>{% endif %}
+          </div>
+          <div class="col-12 col-md-6">
+            {{ create_form.password2.label_tag }}
+            {{ create_form.password2 }}
+            {% if create_form.password2.errors %}<div class="text-danger small mt-1">{{ create_form.password2.errors|striptags }}</div>{% endif %}
+          </div>
+          <div class="col-12">
+            {{ create_form.temporary_password_note.label_tag }}
+            {{ create_form.temporary_password_note }}
+            {% if create_form.temporary_password_note.help_text %}<div class="form-text">{{ create_form.temporary_password_note.help_text }}</div>{% endif %}
+            {% if create_form.temporary_password_note.errors %}<div class="text-danger small mt-1">{{ create_form.temporary_password_note.errors|striptags }}</div>{% endif %}
+          </div>
+        </div>
+        <button class="btn btn-primary btn-sm mt-3">Create User</button>
+      </form>
+    </div>
+  </div>
+{% else %}
+  <div class="settings-stat-strip">
+    <div class="settings-stat-card">
+      <div class="settings-stat-value">{{ roles|length }}</div>
+      <div class="settings-stat-label">Configured roles</div>
+    </div>
+    <div class="settings-stat-card">
+      <div class="settings-stat-value">{{ settings_role_count }}</div>
+      <div class="settings-stat-label">Roles with settings access</div>
+    </div>
+  </div>
+
+  <div class="row g-3 mb-3">
+    <div class="col-12 col-xl-5">
+      <div class="settings-panel-card">
+        <div class="card-body">
+          <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+            <div>
+              <h2 class="h6 mb-1">Roles</h2>
+              <p class="text-muted small mb-0">Select a role to update its permissions.</p>
+            </div>
+            <div class="text-muted small">{{ roles|length }} total role{{ roles|length|pluralize }}</div>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+              <thead>
+                <tr>
+                  <th>Role</th>
+                  <th>Members</th>
+                  <th>Settings</th>
+                  <th class="text-end">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for role in roles %}
+                  <tr{% if selected_role and role.pk == selected_role.pk %} class="table-secondary"{% endif %}>
+                    <td>
+                      <div class="fw-semibold">{{ role.role_name }}</div>
+                      <div class="text-muted small">
+                        Case {{ role.can_case_create|yesno:"create,-" }} / {{ role.can_case_edit|yesno:"edit,-" }},
+                        Task {{ role.can_task_create|yesno:"create,-" }} / {{ role.can_task_edit|yesno:"edit,-" }}
+                      </div>
+                    </td>
+                    <td>{{ role.member_count }}</td>
+                    <td>
+                      {% if role.can_manage_settings %}
+                        <span class="badge text-bg-primary">Allowed</span>
+                      {% else %}
+                        <span class="badge text-bg-secondary">Off</span>
+                      {% endif %}
+                    </td>
+                    <td class="text-end">
+                      <a class="btn btn-outline-primary btn-sm" href="{% url 'patients:settings_user_management' %}?tab=roles&role={{ role.pk }}">Edit</a>
+                    </td>
+                  </tr>
+                {% empty %}
+                  <tr>
+                    <td colspan="4" class="text-muted">No roles found.</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
     </div>
 
-    <div class="table-responsive">
-      <table class="table table-sm align-middle mb-0">
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Username</th>
-            <th>Role</th>
-            <th>Status</th>
-            <th class="text-end">Action</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for listed_user in users %}
-            <tr{% if selected_user and listed_user.pk == selected_user.pk %} class="table-secondary"{% endif %}>
-              <td>
-                <div>{{ listed_user.display_name }}</div>
-                {% if listed_user.is_superuser %}
-                  <div class="text-muted small">Superuser account</div>
+    <div class="col-12 col-xl-7">
+      <div class="settings-panel-card">
+        <div class="card-body">
+          {% if selected_role and role_edit_form %}
+            <div class="mb-3">
+              <h2 class="h6 mb-1">Edit Role Permissions</h2>
+              <p class="text-muted small mb-0">Update what this role can do in the app. Role names stay fixed here.</p>
+            </div>
+
+            {% if role_edit_form.non_field_errors %}
+              <div class="alert alert-danger py-2">{{ role_edit_form.non_field_errors }}</div>
+            {% endif %}
+
+            <form method="post">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="update_role" />
+              <input type="hidden" name="tab" value="roles" />
+              <input type="hidden" name="role_id" value="{{ selected_role.pk }}" />
+              <div class="mb-3">
+                {{ role_edit_form.role_name.label_tag }}
+                {{ role_edit_form.role_name }}
+                {% if role_edit_form.role_name.help_text %}<div class="form-text">{{ role_edit_form.role_name.help_text }}</div>{% endif %}
+                {% if role_edit_form.role_name.errors %}<div class="text-danger small mt-1">{{ role_edit_form.role_name.errors|striptags }}</div>{% endif %}
+              </div>
+              {% for field in role_edit_form %}
+                {% if field.name != 'role_name' %}
+                  <div class="form-check mb-2">
+                    {{ field }}
+                    <label class="form-check-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                  </div>
+                  {% if field.errors %}<div class="text-danger small mb-2">{{ field.errors|striptags }}</div>{% endif %}
                 {% endif %}
-              </td>
-              <td>{{ listed_user.username }}</td>
-              <td>{{ listed_user.role_names_display }}</td>
-              <td>
-                <span class="badge {% if listed_user.is_active %}text-bg-success{% else %}text-bg-secondary{% endif %}">
-                  {{ listed_user.is_active|yesno:"Active,Inactive" }}
-                </span>
-              </td>
-              <td class="text-end">
-                <a class="btn btn-outline-primary btn-sm" href="{% url 'patients:settings_user_management' %}?user={{ listed_user.pk }}">Edit</a>
-              </td>
-            </tr>
-          {% empty %}
-            <tr>
-              <td colspan="5" class="text-muted">No users found.</td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+              {% endfor %}
+              <button class="btn btn-primary btn-sm mt-3">Save Role Permissions</button>
+            </form>
+          {% else %}
+            <div class="text-muted">No role is available to edit.</div>
+          {% endif %}
+        </div>
+      </div>
     </div>
   </div>
-</div>
+
+  <div class="settings-panel-card">
+    <div class="card-body">
+      <div class="mb-3">
+        <h2 class="h6 mb-1">Create Role</h2>
+        <p class="text-muted small mb-0">Create a new primary role and choose the exact permission set it should receive.</p>
+      </div>
+
+      {% if role_create_form.non_field_errors %}
+        <div class="alert alert-danger py-2">{{ role_create_form.non_field_errors }}</div>
+      {% endif %}
+
+      <form method="post">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="create_role" />
+        <input type="hidden" name="tab" value="roles" />
+        <div class="mb-3">
+          {{ role_create_form.role_name.label_tag }}
+          {{ role_create_form.role_name }}
+          {% if role_create_form.role_name.errors %}<div class="text-danger small mt-1">{{ role_create_form.role_name.errors|striptags }}</div>{% endif %}
+        </div>
+        <div class="row g-2">
+          {% for field in role_create_form %}
+            {% if field.name != 'role_name' %}
+              <div class="col-12 col-md-6">
+                <div class="form-check">
+                  {{ field }}
+                  <label class="form-check-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                </div>
+                {% if field.errors %}<div class="text-danger small mt-1">{{ field.errors|striptags }}</div>{% endif %}
+              </div>
+            {% endif %}
+          {% endfor %}
+        </div>
+        <button class="btn btn-primary btn-sm mt-3">Create Role</button>
+      </form>
+    </div>
+  </div>
+{% endif %}
 {% endblock %}

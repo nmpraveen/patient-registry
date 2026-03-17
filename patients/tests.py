@@ -52,6 +52,7 @@ from .models import (
     TaskType,
     TaskStatus,
     ThemeSettings,
+    UserAdminNote,
     VitalEntry,
     ensure_default_departments,
     ensure_default_role_settings,
@@ -2010,29 +2011,25 @@ class MedtrackViewTests(TestCase):
         self.assertContains(response, "This field is required.")
 
 
-    def test_admin_settings_page_access_and_role_config(self):
+    def test_admin_settings_page_access_and_summary_links(self):
         ensure_default_role_settings()
         admin_group, _ = Group.objects.get_or_create(name="Admin")
         self.user.groups.clear()
         self.user.groups.add(admin_group)
         self.client.force_login(self.user)
+
         response = self.client.get(reverse("patients:settings"))
+
         self.assertEqual(response.status_code, 200)
-        post_response = self.client.post(
-            reverse("patients:settings"),
-            {
-                "action": "create_role",
-                "role_name": "Reception",
-                "can_case_create": "on",
-                "can_case_edit": "on",
-                "can_task_create": "on",
-                "can_note_add": "on",
-            },
-        )
-        self.assertEqual(post_response.status_code, 302)
-        self.assertTrue(RoleSetting.objects.filter(role_name="Reception").exists())
-
-
+        self.assertContains(response, "User Management")
+        self.assertContains(response, "Categories & Workflow")
+        self.assertContains(response, reverse("patients:settings_user_management"))
+        self.assertContains(response, reverse("patients:settings_categories"))
+        self.assertContains(response, reverse("patients:settings_database"))
+        self.assertContains(response, reverse("patients:settings_device_access"))
+        self.assertContains(response, reverse("patients:settings_theme"))
+        self.assertContains(response, reverse("patients:settings_seed_mock_data"))
+        self.assertContains(response, reverse("patients:changelog"))
 
     def test_admin_settings_page_shows_changelog_link(self):
         ensure_default_role_settings()
@@ -2092,6 +2089,28 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(device_response.status_code, 200)
         self.assertContains(device_response, "Device Access")
 
+    def test_admin_settings_page_shows_categories_link_and_page_requires_manage_settings(self):
+        self.client.force_login(self.user)
+
+        forbidden_get = self.client.get(reverse("patients:settings_categories"))
+        forbidden_post = self.client.post(
+            reverse("patients:settings_categories"),
+            {"action": "create_category", "name": "Blocked"},
+        )
+
+        self.assertEqual(forbidden_get.status_code, 403)
+        self.assertEqual(forbidden_post.status_code, 403)
+
+        self.login_as_admin()
+        settings_response = self.client.get(reverse("patients:settings"))
+        categories_response = self.client.get(reverse("patients:settings_categories"))
+
+        self.assertEqual(settings_response.status_code, 200)
+        self.assertContains(settings_response, reverse("patients:settings_categories"))
+        self.assertEqual(categories_response.status_code, 200)
+        self.assertContains(categories_response, "Categories & Workflow")
+        self.assertContains(categories_response, "does not alter live task generation today")
+
     def test_admin_settings_page_shows_user_management_link_and_page_requires_manage_settings(self):
         self.client.force_login(self.user)
 
@@ -2099,8 +2118,8 @@ class MedtrackViewTests(TestCase):
         forbidden_post = self.client.post(
             reverse("patients:settings_user_management"),
             {
-                "action": "create_user",
-                "username": "blocked-user",
+                "action": "clear_temp_password_note",
+                "user_id": str(self.user.pk),
             },
         )
 
@@ -2116,6 +2135,7 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(user_management_response.status_code, 200)
         self.assertContains(user_management_response, "Create User")
         self.assertContains(user_management_response, "Edit User")
+        self.assertContains(user_management_response, "Roles")
 
     def test_user_management_page_can_create_user_with_role(self):
         self.login_as_admin()
@@ -2132,7 +2152,9 @@ class MedtrackViewTests(TestCase):
                 "password2": "strong-password-456",
                 "role": str(reception_group.pk),
                 "is_active": "on",
+                "temporary_password_note": "Temp password: strong-password-456",
                 "selected_user_id": str(self.user.pk),
+                "tab": "users",
             },
         )
 
@@ -2143,6 +2165,7 @@ class MedtrackViewTests(TestCase):
         self.assertTrue(created_user.is_active)
         self.assertEqual(list(created_user.groups.values_list("name", flat=True)), ["Reception"])
         self.assertTrue(created_user.check_password("strong-password-456"))
+        self.assertEqual(created_user.admin_note.temporary_password_note, "Temp password: strong-password-456")
 
     def test_user_management_page_can_update_existing_user_details_role_and_password(self):
         target_user = get_user_model().objects.create_user(
@@ -2169,6 +2192,8 @@ class MedtrackViewTests(TestCase):
                 "password2": "new-strong-password-789",
                 "role": str(doctor_group.pk),
                 "is_active": "on",
+                "temporary_password_note": "Handed off on paper",
+                "tab": "users",
             },
         )
 
@@ -2180,6 +2205,78 @@ class MedtrackViewTests(TestCase):
         self.assertTrue(target_user.is_active)
         self.assertEqual(list(target_user.groups.values_list("name", flat=True)), ["Doctor"])
         self.assertTrue(target_user.check_password("new-strong-password-789"))
+        self.assertEqual(target_user.admin_note.temporary_password_note, "Handed off on paper")
+
+    def test_user_management_page_can_clear_temporary_password_note(self):
+        target_user = get_user_model().objects.create_user(username="noted-user", password="strong-password-123")
+        UserAdminNote.objects.create(
+            user=target_user,
+            temporary_password_note="Temporary credential",
+            updated_by=self.user,
+        )
+
+        self.login_as_admin()
+
+        response = self.client.post(
+            reverse("patients:settings_user_management"),
+            {
+                "action": "clear_temp_password_note",
+                "user_id": str(target_user.pk),
+                "tab": "users",
+            },
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        target_user.admin_note.refresh_from_db()
+        self.assertEqual(target_user.admin_note.temporary_password_note, "")
+        self.assertContains(response, "Cleared the temporary password note")
+
+    def test_user_management_roles_tab_can_create_role(self):
+        self.login_as_admin()
+
+        response = self.client.post(
+            reverse("patients:settings_user_management"),
+            {
+                "action": "create_role",
+                "tab": "roles",
+                "role_name": "Coordinator",
+                "can_case_create": "on",
+                "can_case_edit": "on",
+                "can_note_add": "on",
+            },
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(RoleSetting.objects.filter(role_name="Coordinator", can_case_create=True, can_note_add=True).exists())
+        self.assertTrue(Group.objects.filter(name="Coordinator").exists())
+        self.assertContains(response, "Created role Coordinator.")
+
+    def test_user_management_roles_tab_can_update_role_permissions(self):
+        self.login_as_admin()
+        role = RoleSetting.objects.get(role_name="Doctor")
+
+        response = self.client.post(
+            reverse("patients:settings_user_management"),
+            {
+                "action": "update_role",
+                "tab": "roles",
+                "role_id": str(role.pk),
+                "can_case_create": "on",
+                "can_case_edit": "on",
+                "can_task_create": "on",
+                "can_task_edit": "on",
+                "can_note_add": "on",
+                "can_manage_settings": "on",
+            },
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        role.refresh_from_db()
+        self.assertTrue(role.can_manage_settings)
+        self.assertContains(response, "Updated permissions for Doctor.")
 
     def test_user_management_page_blocks_removing_last_settings_admin(self):
         self.login_as_admin()
@@ -2195,6 +2292,7 @@ class MedtrackViewTests(TestCase):
                 "username": self.user.username,
                 "role": str(doctor_group.pk),
                 "is_active": "on",
+                "tab": "users",
             },
             follow=True,
         )
@@ -2203,6 +2301,52 @@ class MedtrackViewTests(TestCase):
         self.user.refresh_from_db()
         self.assertEqual(list(self.user.groups.values_list("name", flat=True)), ["Admin"])
         self.assertContains(response, "Keep at least one active admin user with settings access.")
+
+    def test_categories_settings_page_can_create_category(self):
+        self.login_as_admin()
+
+        response = self.client.post(
+            reverse("patients:settings_categories"),
+            {
+                "action": "create_category",
+                "name": "Postpartum",
+                "auto_follow_up_days": "21",
+                "predefined_actions_text": "Review, Counseling",
+                "metadata_template_text": '{"visit_type": "String"}',
+            },
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        category = DepartmentConfig.objects.get(name="Postpartum")
+        self.assertEqual(category.auto_follow_up_days, 21)
+        self.assertEqual(category.predefined_actions, ["Review", "Counseling"])
+        self.assertEqual(category.metadata_template, {"visit_type": "String"})
+        self.assertContains(response, "Saved category Postpartum.")
+
+    def test_categories_settings_page_can_update_category(self):
+        self.login_as_admin()
+        category = DepartmentConfig.objects.get(name="ANC")
+
+        response = self.client.post(
+            reverse("patients:settings_categories"),
+            {
+                "action": "update_category",
+                "category_id": str(category.pk),
+                "name": "ANC",
+                "auto_follow_up_days": "14",
+                "predefined_actions_text": "ANC Visit, BP Check",
+                "metadata_template_text": '{"lmp": "Date", "risk_band": "String"}',
+            },
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        category.refresh_from_db()
+        self.assertEqual(category.auto_follow_up_days, 14)
+        self.assertEqual(category.predefined_actions, ["ANC Visit", "BP Check"])
+        self.assertEqual(category.metadata_template, {"lmp": "Date", "risk_band": "String"})
+        self.assertContains(response, "Updated category ANC.")
 
     def test_admin_settings_page_shows_database_link_and_page_requires_manage_settings(self):
         self.client.force_login(self.user)
@@ -2518,6 +2662,11 @@ class MedtrackViewTests(TestCase):
         theme.save()
         policy = self.enable_device_access_for(self.user)
         credential = self.create_device_credential(user=self.user, credential_id="db-settings-device")
+        note = UserAdminNote.objects.create(
+            user=self.user,
+            temporary_password_note="Temporary nurse password",
+            updated_by=self.user,
+        )
 
         source_case = self.create_bundle_case(uhid="UH-IMPORT-001", phone_number="9000000108")
         task = Task.objects.create(case=source_case, title="Imported task", due_date=timezone.localdate(), created_by=self.user)
@@ -2551,9 +2700,11 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(CaseActivityLog.objects.count(), 1)
         policy.refresh_from_db()
         credential.refresh_from_db()
+        note.refresh_from_db()
         theme.refresh_from_db()
         self.assertTrue(policy.enabled)
         self.assertEqual(credential.credential_id, "db-settings-device")
+        self.assertEqual(note.temporary_password_note, "Temporary nurse password")
         self.assertEqual(theme.tokens["nav"]["bg"], "#123456")
 
     def test_database_management_import_maps_missing_users_to_null(self):
@@ -2926,8 +3077,8 @@ class MedtrackViewTests(TestCase):
         self.login_as_admin()
 
         response = self.client.post(
-            reverse("patients:settings"),
-            {"action": "create_role"},
+            reverse("patients:settings_user_management"),
+            {"action": "create_role", "tab": "roles"},
             follow=True,
         )
 

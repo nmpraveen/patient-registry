@@ -1,0 +1,199 @@
+{% extends 'base.html' %}
+{% block title %}Categories & Workflow | MEDTRACK{% endblock %}
+{% block content %}
+<style>
+  .settings-shell-header {
+    padding: 1.5rem;
+    border: 1px solid var(--theme-shell-surface-border);
+    border-radius: 1.25rem;
+    background: linear-gradient(135deg, var(--theme-shell-surface-bg), var(--theme-shell-surface-hover-bg));
+    box-shadow: 0 16px 34px var(--theme-shell-shadow);
+    margin-bottom: 1rem;
+  }
+
+  .settings-panel-card {
+    border: 1px solid var(--theme-shell-surface-border);
+    border-radius: 1.2rem;
+    background: var(--theme-shell-surface-bg);
+    box-shadow: 0 14px 30px var(--theme-shell-shadow);
+    height: 100%;
+  }
+
+  .settings-panel-card .card-body {
+    padding: 1.2rem;
+  }
+
+  .settings-info-strip {
+    border: 1px solid var(--theme-alerts-info-border);
+    background: var(--theme-alerts-info-bg);
+    color: var(--theme-alerts-info-text);
+    border-radius: 1rem;
+    padding: 0.9rem 1rem;
+    margin-bottom: 1rem;
+  }
+</style>
+
+<section class="settings-shell-header">
+  <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3">
+    <div>
+      <h1 class="h3 mb-1">Categories & Workflow</h1>
+      <p class="text-muted mb-0">Manage category names, action defaults, and metadata templates without touching theme colors.</p>
+    </div>
+    <div class="d-flex gap-2">
+      <a class="btn btn-outline-secondary btn-sm" href="{% url 'patients:settings' %}">Back to Settings</a>
+      <a class="btn btn-outline-primary btn-sm" href="{% url 'patients:settings_theme' %}">Open Theme Settings</a>
+    </div>
+  </div>
+</section>
+
+<div class="settings-info-strip">
+  <strong>Workflow note:</strong> <code>auto_follow_up_days</code> is retained configuration for future workflow defaults. Changing it here does not alter live task generation today.
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-12 col-xl-5">
+    <div class="settings-panel-card">
+      <div class="card-body">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+          <div>
+            <h2 class="h6 mb-1">Current Categories</h2>
+            <p class="text-muted small mb-0">Select a category to edit its defaults.</p>
+          </div>
+          <div class="text-muted small">{{ categories|length }} total</div>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm align-middle mb-0">
+            <thead>
+              <tr>
+                <th>Category</th>
+                <th>Defaults</th>
+                <th class="text-end">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for category in categories %}
+                <tr{% if selected_category and category.pk == selected_category.pk %} class="table-secondary"{% endif %}>
+                  <td>
+                    <div class="fw-semibold">{{ category.name }}</div>
+                    <div class="text-muted small">{{ category.predefined_actions|length }} action{{ category.predefined_actions|length|pluralize }}</div>
+                  </td>
+                  <td>
+                    <div>{{ category.auto_follow_up_days }} day{{ category.auto_follow_up_days|pluralize }}</div>
+                  </td>
+                  <td class="text-end">
+                    <a class="btn btn-outline-primary btn-sm" href="{% url 'patients:settings_categories' %}?category={{ category.pk }}">Edit</a>
+                  </td>
+                </tr>
+              {% empty %}
+                <tr>
+                  <td colspan="3" class="text-muted">No categories are configured yet.</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-xl-7">
+    <div class="settings-panel-card">
+      <div class="card-body">
+        {% if selected_category and edit_form %}
+          <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+            <div>
+              <h2 class="h6 mb-1">Edit Category</h2>
+              <div class="fw-semibold">{{ selected_category.name }}</div>
+              <div class="text-muted small">Theme colors stay on the Theme settings page.</div>
+            </div>
+            <a class="btn btn-outline-primary btn-sm" href="{% url 'patients:settings_theme' %}">Edit Colors</a>
+          </div>
+
+          {% if edit_form.non_field_errors %}
+            <div class="alert alert-danger py-2">{{ edit_form.non_field_errors }}</div>
+          {% endif %}
+
+          <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="update_category" />
+            <input type="hidden" name="category_id" value="{{ selected_category.pk }}" />
+            <div class="row g-3">
+              <div class="col-12 col-md-6">
+                {{ edit_form.name.label_tag }}
+                {{ edit_form.name }}
+                {% if edit_form.name.errors %}<div class="text-danger small mt-1">{{ edit_form.name.errors|striptags }}</div>{% endif %}
+              </div>
+              <div class="col-12 col-md-6">
+                {{ edit_form.auto_follow_up_days.label_tag }}
+                {{ edit_form.auto_follow_up_days }}
+                {% if edit_form.auto_follow_up_days.help_text %}<div class="form-text">{{ edit_form.auto_follow_up_days.help_text }}</div>{% endif %}
+                {% if edit_form.auto_follow_up_days.errors %}<div class="text-danger small mt-1">{{ edit_form.auto_follow_up_days.errors|striptags }}</div>{% endif %}
+              </div>
+              <div class="col-12">
+                {{ edit_form.predefined_actions_text.label_tag }}
+                {{ edit_form.predefined_actions_text }}
+                {% if edit_form.predefined_actions_text.help_text %}<div class="form-text">{{ edit_form.predefined_actions_text.help_text }}</div>{% endif %}
+                {% if edit_form.predefined_actions_text.errors %}<div class="text-danger small mt-1">{{ edit_form.predefined_actions_text.errors|striptags }}</div>{% endif %}
+              </div>
+              <div class="col-12">
+                {{ edit_form.metadata_template_text.label_tag }}
+                {{ edit_form.metadata_template_text }}
+                {% if edit_form.metadata_template_text.help_text %}<div class="form-text">{{ edit_form.metadata_template_text.help_text }}</div>{% endif %}
+                {% if edit_form.metadata_template_text.errors %}<div class="text-danger small mt-1">{{ edit_form.metadata_template_text.errors|striptags }}</div>{% endif %}
+              </div>
+            </div>
+            <button class="btn btn-primary btn-sm mt-3">Save Category</button>
+          </form>
+        {% else %}
+          <div class="text-muted">No categories are available to edit.</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="settings-panel-card">
+  <div class="card-body">
+    <div class="mb-3">
+      <h2 class="h6 mb-1">Create Category</h2>
+      <p class="text-muted small mb-0">Add a new category and set its non-visual defaults. Theme colors can be adjusted later on the Theme page.</p>
+    </div>
+
+    {% if create_form.non_field_errors %}
+      <div class="alert alert-danger py-2">{{ create_form.non_field_errors }}</div>
+    {% endif %}
+
+    <form method="post">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="create_category" />
+      <input type="hidden" name="selected_category_id" value="{{ selected_category.pk|default:'' }}" />
+      <div class="row g-3">
+        <div class="col-12 col-md-6">
+          {{ create_form.name.label_tag }}
+          {{ create_form.name }}
+          {% if create_form.name.errors %}<div class="text-danger small mt-1">{{ create_form.name.errors|striptags }}</div>{% endif %}
+        </div>
+        <div class="col-12 col-md-6">
+          {{ create_form.auto_follow_up_days.label_tag }}
+          {{ create_form.auto_follow_up_days }}
+          {% if create_form.auto_follow_up_days.help_text %}<div class="form-text">{{ create_form.auto_follow_up_days.help_text }}</div>{% endif %}
+          {% if create_form.auto_follow_up_days.errors %}<div class="text-danger small mt-1">{{ create_form.auto_follow_up_days.errors|striptags }}</div>{% endif %}
+        </div>
+        <div class="col-12">
+          {{ create_form.predefined_actions_text.label_tag }}
+          {{ create_form.predefined_actions_text }}
+          {% if create_form.predefined_actions_text.help_text %}<div class="form-text">{{ create_form.predefined_actions_text.help_text }}</div>{% endif %}
+          {% if create_form.predefined_actions_text.errors %}<div class="text-danger small mt-1">{{ create_form.predefined_actions_text.errors|striptags }}</div>{% endif %}
+        </div>
+        <div class="col-12">
+          {{ create_form.metadata_template_text.label_tag }}
+          {{ create_form.metadata_template_text }}
+          {% if create_form.metadata_template_text.help_text %}<div class="form-text">{{ create_form.metadata_template_text.help_text }}</div>{% endif %}
+          {% if create_form.metadata_template_text.errors %}<div class="text-danger small mt-1">{{ create_form.metadata_template_text.errors|striptags }}</div>{% endif %}
+        </div>
+      </div>
+      <button class="btn btn-primary btn-sm mt-3">Create Category</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

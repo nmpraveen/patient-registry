@@ -193,6 +193,22 @@ class ThemeSettings(models.Model):
         return cls.objects.get_or_create(pk=1)[0]
 
 
+class UserAdminNote(models.Model):
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="admin_note")
+    temporary_password_note = models.TextField(blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="updated_user_admin_notes",
+    )
+
+    def __str__(self) -> str:
+        return f"Admin note for {self.user}"
+
+
 class PatientDataBackupScheduleMode(models.TextChoices):
     DAILY = "DAILY", "1 per day"
     TWICE_DAILY = "TWICE_DAILY", "2 per day (12:00 AM and 12:00 PM)"

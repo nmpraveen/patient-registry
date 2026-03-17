@@ -1,76 +1,355 @@
 {% extends 'base.html' %}
 {% block title %}Settings | MEDTRACK{% endblock %}
 {% block content %}
-<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-  <h1 class="h4 mb-0">Admin Settings</h1>
-  <div class="d-flex gap-2">
-    <a class="btn btn-outline-primary btn-sm" href="{% url 'patients:settings_user_management' %}">User Management</a>
-    <a class="btn btn-outline-primary btn-sm" href="{% url 'patients:settings_database' %}">Database Management</a>
-    <a class="btn btn-outline-primary btn-sm" href="{% url 'patients:settings_device_access' %}">Device Access</a>
-    <a class="btn btn-outline-primary btn-sm" href="{% url 'patients:settings_theme' %}">Theme</a>
-    <a class="btn btn-outline-primary btn-sm" href="{% url 'patients:settings_seed_mock_data' %}">Seed Mock Data</a>
-    <a class="btn btn-outline-primary btn-sm" href="{% url 'patients:changelog' %}">View Changelog</a>
-  </div>
-</div>
-<div class="row g-3">
-  <div class="col-12 col-lg-4">
-    <div class="card"><div class="card-body">
-      <h2 class="h6">Create / Update Role Permissions</h2>
-      <form method="post">{% csrf_token %}
-        <input type="hidden" name="action" value="create_role" />
-        <div class="mb-2">{{ role_form.role_name.label_tag }} {{ role_form.role_name }}</div>
-        {% for field in role_form %}
-          {% if field.name != 'role_name' %}
-            <div class="form-check mb-2">
-              {{ field }}
-              <label class="form-check-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
-            </div>
-          {% endif %}
-        {% endfor %}
-        <button class="btn btn-primary btn-sm w-100 mt-2">Save Role</button>
-      </form>
-      <hr>
-      <ul class="list-group list-group-flush small">
-        {% for role in roles %}
-          <li class="list-group-item px-0">{{ role.role_name }}: case-create {{ role.can_case_create|yesno:"yes,no" }}, case-edit {{ role.can_case_edit|yesno:"yes,no" }}, task-create {{ role.can_task_create|yesno:"yes,no" }}, task-edit {{ role.can_task_edit|yesno:"yes,no" }}, notes {{ role.can_note_add|yesno:"yes,no" }}, settings {{ role.can_manage_settings|yesno:"yes,no" }}</li>
-        {% endfor %}
-      </ul>
-    </div></div>
-  </div>
+<style>
+  .settings-hub-hero {
+    padding: 1.5rem;
+    border: 1px solid var(--theme-shell-surface-border);
+    border-radius: 1.25rem;
+    background: linear-gradient(135deg, var(--theme-shell-surface-bg), var(--theme-shell-surface-hover-bg));
+    box-shadow: 0 18px 40px var(--theme-shell-shadow);
+    margin-bottom: 1rem;
+  }
 
-  <div class="col-12 col-lg-4">
-    <div class="card"><div class="card-body">
-      <h2 class="h6">Create Custom Category</h2>
-      <form method="post">{% csrf_token %}
-        <input type="hidden" name="action" value="create_department" />
-        {% for field in department_form %}
-          <div class="mb-2">{{ field.label_tag }} {{ field }}{% if field.help_text %}<div class="text-muted small">{{ field.help_text }}</div>{% endif %}</div>
-        {% endfor %}
-        <button class="btn btn-primary btn-sm w-100">Save Category</button>
-      </form>
-      <hr>
-      <ul class="list-group list-group-flush small">
-        {% for dep in departments %}
-          <li class="list-group-item px-0">{{ dep.name }} (auto follow-up {{ dep.auto_follow_up_days }} days)</li>
-        {% endfor %}
-      </ul>
-    </div></div>
-  </div>
+  .settings-hub-search {
+    max-width: 22rem;
+  }
 
-  <div class="col-12 col-lg-4">
-    <div class="card"><div class="card-body">
-      <h2 class="h6">Assign Role to User</h2>
-      <form method="post">{% csrf_token %}
-        <input type="hidden" name="action" value="assign_role" />
-        {% for field in user_role_form %}
-          <div class="mb-2">{{ field.label_tag }} {{ field }}</div>
-        {% endfor %}
-        <button class="btn btn-primary btn-sm w-100">Assign</button>
-      </form>
-      <hr>
-      <div class="small text-muted mb-2">Users are assigned one primary group from the role list.</div>
-      <a class="btn btn-outline-primary btn-sm w-100" href="{% url 'patients:settings_user_management' %}">Open Full User Management</a>
-    </div></div>
+  .settings-card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 1rem;
+  }
+
+  .settings-card {
+    border: 1px solid var(--theme-shell-surface-border);
+    border-radius: 1.25rem;
+    background: var(--theme-shell-surface-bg);
+    box-shadow: 0 14px 30px var(--theme-shell-shadow);
+    overflow: hidden;
+  }
+
+  .settings-card-body {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    padding: 1.25rem;
+    height: 100%;
+  }
+
+  .settings-kicker {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--theme-shell-muted-text);
+  }
+
+  .settings-kicker::before {
+    content: "";
+    width: 0.55rem;
+    height: 0.55rem;
+    border-radius: 999px;
+    background: var(--theme-buttons-primary-bg);
+  }
+
+  .settings-metric-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+  }
+
+  .settings-metric {
+    padding: 0.85rem;
+    border-radius: 1rem;
+    background: var(--theme-shell-surface-hover-bg);
+    border: 1px solid var(--theme-shell-surface-border);
+  }
+
+  .settings-metric-value {
+    font-size: 1.25rem;
+    font-weight: 700;
+    line-height: 1.1;
+  }
+
+  .settings-metric-label {
+    margin-top: 0.25rem;
+    font-size: 0.8rem;
+    color: var(--theme-shell-muted-text);
+  }
+
+  .settings-version-panel {
+    width: 100%;
+    max-width: 18rem;
+    padding: 1rem 1.1rem;
+  }
+
+  .settings-version-panel .settings-metric-value {
+    font-size: clamp(1.55rem, 2.6vw, 2rem);
+    line-height: 1.05;
+    word-break: break-word;
+  }
+
+  .settings-card-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .settings-status-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .settings-empty-state {
+    display: none;
+    margin-top: 1rem;
+    padding: 1rem 1.25rem;
+    border-radius: 1rem;
+    border: 1px dashed var(--theme-shell-surface-border);
+    background: var(--theme-shell-surface-bg);
+    color: var(--theme-shell-muted-text);
+  }
+</style>
+
+<section class="settings-hub-hero">
+  <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3">
+    <div>
+      <div class="settings-kicker">Admin Workspace</div>
+      <h1 class="h3 mb-2 mt-2">Settings</h1>
+      <p class="text-muted mb-0">
+        Category-based administration for users, workflow defaults, device access, backups, theme controls, and utilities.
+      </p>
+    </div>
+    <div class="settings-hub-search">
+      <label class="form-label small text-muted" for="settings-filter">Filter settings</label>
+      <input
+        class="form-control"
+        id="settings-filter"
+        type="search"
+        placeholder="Search users, backups, theme, categories..."
+        autocomplete="off"
+      />
+    </div>
   </div>
+</section>
+
+<div class="settings-card-grid" id="settings-card-grid">
+  <section class="settings-card" data-settings-card data-settings-search="user management users roles permissions temporary password notes">
+    <div class="settings-card-body">
+      <div>
+        <div class="settings-kicker">People</div>
+        <h2 class="h5 mt-2 mb-1">User Management</h2>
+        <p class="text-muted mb-0">The single place for staff accounts, primary roles, role permissions, and temporary password notes.</p>
+      </div>
+      <div class="settings-metric-grid">
+        <div class="settings-metric">
+          <div class="settings-metric-value">{{ total_user_count }}</div>
+          <div class="settings-metric-label">Total users</div>
+        </div>
+        <div class="settings-metric">
+          <div class="settings-metric-value">{{ active_user_count }}</div>
+          <div class="settings-metric-label">Active users</div>
+        </div>
+        <div class="settings-metric">
+          <div class="settings-metric-value">{{ settings_admin_count }}</div>
+          <div class="settings-metric-label">Settings admins</div>
+        </div>
+        <div class="settings-metric">
+          <div class="settings-metric-value">{{ users_with_temp_note_count }}</div>
+          <div class="settings-metric-label">Temp notes stored</div>
+        </div>
+      </div>
+      <div class="settings-card-links">
+        <a class="btn btn-primary btn-sm" href="{% url 'patients:settings_user_management' %}">Open User Management</a>
+        <a class="btn btn-outline-primary btn-sm" href="{% url 'patients:settings_user_management' %}?tab=roles">Open Roles</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="settings-card" data-settings-card data-settings-search="categories workflow defaults predefined actions metadata templates auto follow up">
+    <div class="settings-card-body">
+      <div>
+        <div class="settings-kicker">Workflow</div>
+        <h2 class="h5 mt-2 mb-1">Categories & Workflow</h2>
+        <p class="text-muted mb-0">
+          Manage category names, predefined actions, metadata templates, and retained workflow-default values.
+        </p>
+      </div>
+      <div class="settings-metric-grid">
+        <div class="settings-metric">
+          <div class="settings-metric-value">{{ category_count }}</div>
+          <div class="settings-metric-label">Categories</div>
+        </div>
+        <div class="settings-metric">
+          <div class="settings-metric-value">{{ category_action_count }}</div>
+          <div class="settings-metric-label">Predefined actions</div>
+        </div>
+      </div>
+      <div class="small text-muted">
+        {% if category_name_preview %}
+          Current categories: {{ category_name_preview }}{% if category_count > 3 %}, and more.{% endif %}
+        {% else %}
+          No categories configured yet.
+        {% endif %}
+      </div>
+      <div class="settings-card-links">
+        <a class="btn btn-primary btn-sm" href="{% url 'patients:settings_categories' %}">Open Categories</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="settings-card" data-settings-card data-settings-search="device access approvals pilot security browsers passkeys">
+    <div class="settings-card-body">
+      <div>
+        <div class="settings-kicker">Access</div>
+        <h2 class="h5 mt-2 mb-1">Device Access & Security</h2>
+        <p class="text-muted mb-0">Monitor the pilot approval flow for trusted devices without changing the default login model.</p>
+      </div>
+      <div class="settings-metric-grid">
+        <div class="settings-metric">
+          <div class="settings-metric-value">{{ pending_device_count }}</div>
+          <div class="settings-metric-label">Pending approvals</div>
+        </div>
+        <div class="settings-metric">
+          <div class="settings-metric-value">{{ approved_device_count }}</div>
+          <div class="settings-metric-label">Approved devices</div>
+        </div>
+        <div class="settings-metric">
+          <div class="settings-metric-value">{{ device_target_user_count }}</div>
+          <div class="settings-metric-label">Pilot users</div>
+        </div>
+        <div class="settings-metric">
+          <div class="settings-metric-value">{% if device_policy_enabled %}On{% else %}Off{% endif %}</div>
+          <div class="settings-metric-label">Pilot status</div>
+        </div>
+      </div>
+      <div class="settings-card-links">
+        <a class="btn btn-primary btn-sm" href="{% url 'patients:settings_device_access' %}">Open Device Access</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="settings-card" data-settings-card data-settings-search="backup restore import export database recovery patient data">
+    <div class="settings-card-body">
+      <div>
+        <div class="settings-kicker">Recovery</div>
+        <h2 class="h5 mt-2 mb-1">Data & Recovery</h2>
+        <p class="text-muted mb-0">Patient-data export, import, backup scheduling, and recent recovery status.</p>
+      </div>
+      <div class="settings-metric-grid">
+        <div class="settings-metric">
+          <div class="settings-metric-value">
+            {% if last_backup_at %}{{ last_backup_status }}{% else %}Never{% endif %}
+          </div>
+          <div class="settings-metric-label">Last backup</div>
+        </div>
+        <div class="settings-metric">
+          <div class="settings-metric-value">
+            {% if next_backup_at %}{{ next_backup_at|date:"M j" }}{% else %}Not set{% endif %}
+          </div>
+          <div class="settings-metric-label">Next backup</div>
+        </div>
+      </div>
+      <div class="small text-muted">
+        {% if last_backup_at %}
+          Last run: {{ last_backup_at|date:"M j, Y g:i A" }}
+        {% else %}
+          Automatic backup status has not been recorded yet.
+        {% endif %}
+      </div>
+      <div class="settings-card-links">
+        <a class="btn btn-primary btn-sm" href="{% url 'patients:settings_database' %}">Open Database Management</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="settings-card" data-settings-card data-settings-search="theme appearance colors tokens category colors preview">
+    <div class="settings-card-body">
+      <div>
+        <div class="settings-kicker">Appearance</div>
+        <h2 class="h5 mt-2 mb-1">Appearance</h2>
+        <p class="text-muted mb-0">Global theme tokens and category accents with live previews on the dedicated theme page.</p>
+      </div>
+      <div class="settings-metric-grid">
+        <div class="settings-metric">
+          <div class="settings-metric-value">{{ custom_theme_token_count }}</div>
+          <div class="settings-metric-label">Custom token values</div>
+        </div>
+        <div class="settings-metric">
+          <div class="settings-metric-value">{{ custom_category_theme_count }}</div>
+          <div class="settings-metric-label">Custom category colors</div>
+        </div>
+      </div>
+      <div class="small text-muted">
+        {% if theme_has_customizations %}
+          Custom appearance values are active.
+        {% else %}
+          Theme settings are currently using defaults.
+        {% endif %}
+      </div>
+      <div class="settings-card-links">
+        <a class="btn btn-primary btn-sm" href="{% url 'patients:settings_theme' %}">Open Theme Settings</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="settings-card" data-settings-card data-settings-search="utilities about version changelog seed mock data deployment security">
+    <div class="settings-card-body">
+      <div>
+        <div class="settings-kicker">Utilities</div>
+        <h2 class="h5 mt-2 mb-1">Utilities & About</h2>
+        <p class="text-muted mb-0">Operational tools, app version context, and read-only deployment hardening highlights.</p>
+      </div>
+      <div>
+        <div class="settings-metric settings-version-panel">
+          <div class="settings-metric-value">{{ app_version }}</div>
+          <div class="settings-metric-label">Current version</div>
+        </div>
+      </div>
+      <div class="settings-status-list">
+        {% for item in security_highlights %}
+          <span class="badge {% if item.enabled %}text-bg-success{% else %}text-bg-secondary{% endif %}">{{ item.label }}: {% if item.enabled %}On{% else %}Off{% endif %}</span>
+        {% endfor %}
+      </div>
+      <div class="settings-card-links">
+        <a class="btn btn-primary btn-sm" href="{% url 'patients:settings_seed_mock_data' %}">Seed Mock Data</a>
+        <a class="btn btn-outline-primary btn-sm" href="{% url 'patients:changelog' %}">View Changelog</a>
+      </div>
+    </div>
+  </section>
 </div>
+
+<div class="settings-empty-state" id="settings-empty-state">
+  No settings categories matched that filter.
+</div>
+
+<script>
+  (() => {
+    const input = document.getElementById("settings-filter");
+    const cards = Array.from(document.querySelectorAll("[data-settings-card]"));
+    const emptyState = document.getElementById("settings-empty-state");
+    if (!input || !cards.length || !emptyState) {
+      return;
+    }
+
+    input.addEventListener("input", () => {
+      const query = input.value.trim().toLowerCase();
+      let visibleCount = 0;
+      cards.forEach((card) => {
+        const haystack = (card.dataset.settingsSearch || card.textContent || "").toLowerCase();
+        const matches = !query || haystack.includes(query);
+        card.style.display = matches ? "" : "none";
+        if (matches) {
+          visibleCount += 1;
+        }
+      });
+      emptyState.style.display = visibleCount === 0 ? "block" : "none";
+    });
+  })();
+</script>
 {% endblock %}

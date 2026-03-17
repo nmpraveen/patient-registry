@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.03.17.03.28
+- Added production static-file serving for Django via WhiteNoise and a collected `staticfiles/` output so datepicker assets and other app static files are available behind Gunicorn.
+- Updated the Docker web startup command to run `collectstatic --noinput` before Gunicorn so new static assets are present after each deploy.
+
 ## 2026.03.17.03.12
 - Renamed the shared top-bar brand label from `MEDTRACK` to `NNH` across the authenticated navbar and the Theme settings live preview.
 

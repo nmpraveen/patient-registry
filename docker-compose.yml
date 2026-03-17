@@ -17,7 +17,7 @@ services:
   web:
     build: .
     restart: unless-stopped
-    command: sh -c "python manage.py migrate && gunicorn patient_registry.wsgi:application --bind 0.0.0.0:8000 --workers ${GUNICORN_WORKERS:-3} --timeout ${GUNICORN_TIMEOUT:-60}"
+    command: sh -c "python manage.py migrate && python manage.py collectstatic --noinput && gunicorn patient_registry.wsgi:application --bind 0.0.0.0:8000 --workers ${GUNICORN_WORKERS:-3} --timeout ${GUNICORN_TIMEOUT:-60}"
     env_file:
       - .env
     environment:

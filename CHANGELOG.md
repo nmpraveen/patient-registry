@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.03.17.22.40
+- Renamed the `Non-Surgical` category to `Medicine` across the live dashboard, case list, global search, theme preview, and validation copy.
+- Updated category matching, theming, and case-form behavior so `Medicine` is the canonical category name while legacy `Non Surgical` spellings still map to the same internal filter and style bucket.
+- Added a data migration to merge existing legacy department rows into `Medicine`, repoint existing cases, and updated seeded/demo data plus regression coverage for the renamed category.
+
 ## 2026.03.17.21.57
 - Changed the dashboard `Upcoming Schedule` week controls to refresh in place instead of triggering a full-page reload, while keeping the URL and browser history in sync.
 - Updated the dashboard script to fetch the next week view asynchronously, replace the Upcoming summary and schedule DOM together, and preserve the existing day-tab interaction after each swap.

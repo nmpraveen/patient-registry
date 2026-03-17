@@ -546,7 +546,7 @@ DEFAULT_DEPARTMENTS = [
         "metadata_template": {"surgical_pathway": "String", "surgery_date": "Date"},
     },
     {
-        "name": "Non Surgical",
+        "name": "Medicine",
         "predefined_actions": ["Consultant Review", "Opinion for other consultant"],
         "metadata_template": {"review_date": "Date", "review_frequency": "String"},
     },
@@ -720,8 +720,8 @@ class Case(models.Model):
                 raise ValidationError({"review_date": "Surveillance cases require a review date."})
             if self.surgical_pathway == SurgicalPathway.PLANNED_SURGERY and not self.surgery_date:
                 raise ValidationError({"surgery_date": "Planned surgery cases require a surgery date."})
-        if category_name in ["NON SURGICAL", "NON-SURGICAL", "NONSURGICAL"] and not self.review_date:
-            raise ValidationError({"review_date": "Non-surgical cases require a review date."})
+        if category_name in ["MEDICINE", "NON SURGICAL", "NON-SURGICAL", "NONSURGICAL"] and not self.review_date:
+            raise ValidationError({"review_date": "Medicine cases require a review date."})
 
     def save(self, *args, **kwargs):
         self.patient_name = self.full_name

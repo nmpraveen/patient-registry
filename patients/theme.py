@@ -9,7 +9,7 @@ NEUTRAL_CATEGORY_THEME = {"bg": "#e2e3e5", "text": "#41464b"}
 CATEGORY_THEME_DEFAULTS = {
     "ANC": {"bg": "#d1e7dd", "text": "#0f5132"},
     "SURGERY": {"bg": "#fff3cd", "text": "#664d03"},
-    "NON SURGICAL": deepcopy(NEUTRAL_CATEGORY_THEME),
+    "MEDICINE": deepcopy(NEUTRAL_CATEGORY_THEME),
 }
 
 THEME_DEFAULTS = {
@@ -268,8 +268,8 @@ def canonical_category_key(name):
         return "ANC"
     if letters_only == "SURGERY":
         return "SURGERY"
-    if letters_only == "NONSURGICAL":
-        return "NON SURGICAL"
+    if letters_only in {"MEDICINE", "NONSURGICAL"}:
+        return "MEDICINE"
     return None
 
 

@@ -1070,7 +1070,7 @@
                   <div class="search-filter-pills" aria-label="Category filters">
                     <label class="search-filter-pill search-filter-category" style="{% category_theme_style 'ANC' theme_category_colors %}"><input type="checkbox" value="anc" data-search-category checked /> ANC</label>
                     <label class="search-filter-pill search-filter-category" style="{% category_theme_style 'Surgery' theme_category_colors %}"><input type="checkbox" value="surgical" data-search-category checked /> Surgery</label>
-                    <label class="search-filter-pill search-filter-category" style="{% category_theme_style 'Non Surgical' theme_category_colors %}"><input type="checkbox" value="non_surgical" data-search-category checked /> Non-surgical</label>
+                    <label class="search-filter-pill search-filter-category" style="{% category_theme_style 'Medicine' theme_category_colors %}"><input type="checkbox" value="non_surgical" data-search-category checked /> Medicine</label>
                   </div>
                 </div>
                 <div id="global-search-dropdown" class="global-search-dropdown" role="listbox" hidden></div>
@@ -1141,7 +1141,7 @@
             if (normalized === "surgery" || normalized === "surgical") {
               return "surgery";
             }
-            if (normalized === "nonsurgical") {
+            if (normalized === "medicine" || normalized === "nonsurgical") {
               return "non-surgical";
             }
             return "other";

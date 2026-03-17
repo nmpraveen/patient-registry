@@ -322,9 +322,9 @@
             </div>
           </div>
           <div class="dashboard-summary-item">
-            <div class="dashboard-summary-card dashboard-summary-card--category" style="{% category_theme_style 'Non Surgical' theme_category_colors %}" data-preview-category="NON SURGICAL">
+            <div class="dashboard-summary-card dashboard-summary-card--category" style="{% category_theme_style 'Medicine' theme_category_colors %}" data-preview-category="MEDICINE">
               <div class="dashboard-summary-card-body">
-                <span class="dashboard-summary-label">Non Surgical</span>
+                <span class="dashboard-summary-label">Medicine</span>
                 <div class="dashboard-summary-value">33</div>
               </div>
             </div>
@@ -547,7 +547,7 @@
       const collapsed = String(name || "").toUpperCase().replace(/[^A-Z]/g, "");
       if (collapsed === "ANC") return "ANC";
       if (collapsed === "SURGERY") return "SURGERY";
-      if (collapsed === "NONSURGICAL") return "NON SURGICAL";
+      if (collapsed === "MEDICINE" || collapsed === "NONSURGICAL") return "MEDICINE";
       return String(name || "").toUpperCase();
     }
 

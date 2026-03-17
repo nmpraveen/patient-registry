@@ -97,7 +97,8 @@ from .models import (
 from .theme import build_theme_category_colors, flatten_theme_tokens, get_default_category_theme, mix_colors, resolve_category_theme
 
 NON_SURGICAL_CASE_FILTER = (
-    Q(category__name__iexact="Non Surgical")
+    Q(category__name__iexact="Medicine")
+    | Q(category__name__iexact="Non Surgical")
     | Q(category__name__iexact="Non-Surgical")
     | Q(category__name__iexact="Nonsurgical")
 )
@@ -980,7 +981,7 @@ def _normalized_category_style(category_name):
         return "anc"
     if normalized == "surgery":
         return "surgery"
-    if normalized in {"non surgical", "nonsurgical"}:
+    if normalized in {"medicine", "non surgical", "nonsurgical"}:
         return "non-surgical"
     return "other"
 
@@ -1738,11 +1739,7 @@ class UniversalCaseSearchView(LoginRequiredMixin, CaseDataAccessMixin, View):
         "anc": Q(category__name__iexact="ANC"),
         "surgery": Q(category__name__iexact="Surgery"),
         "surgical": Q(category__name__iexact="Surgery"),
-        "non_surgical": (
-            Q(category__name__iexact="Non Surgical")
-            | Q(category__name__iexact="Non-Surgical")
-            | Q(category__name__iexact="Nonsurgical")
-        ),
+        "non_surgical": NON_SURGICAL_CASE_FILTER,
     }
 
     @staticmethod

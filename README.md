@@ -8,7 +8,7 @@ A Django + PostgreSQL MVP for **case-based follow-up tracking**.
 - Entry flow aligned to clinical pathways:
   - **ANC**: capture LMP/EDD, derive trimester, auto-create ANC checklist tasks
   - **Surgery**: choose **Planned surgery** vs **Surveillance**
-  - **Non-Surgical**: set review date/frequency and track follow-up tasks
+  - **Medicine**: set review date/frequency and track follow-up tasks
 - Case dashboard with Today / Upcoming / Overdue / Awaiting / Red / Grey views
 - Case activity log with timestamp + user identity
 - Admin settings page for role permissions, role assignment, and custom category configuration

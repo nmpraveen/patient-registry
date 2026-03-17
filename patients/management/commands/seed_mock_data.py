@@ -495,7 +495,7 @@ class Command(BaseCommand):
         ensure_default_departments()
         anc = DepartmentConfig.objects.get(name="ANC")
         surgery = DepartmentConfig.objects.get(name="Surgery")
-        non_surgical = DepartmentConfig.objects.get(name="Non Surgical")
+        non_surgical = DepartmentConfig.objects.get(name="Medicine")
 
         if reset_all:
             self._require_reset_all_confirmation(yes_reset_all)

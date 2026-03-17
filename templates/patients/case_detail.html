@@ -796,7 +796,7 @@
 
       <div class="identity-strip">
         <span class="identity-chip pill-status-{{ case.status|slugify }}">{{ case.get_status_display }}</span>
-        <span class="identity-chip theme-category-chip {% if case.category.name|lower == 'anc' %}category-anc{% elif case.category.name|lower == 'surgery' %}category-surgery{% elif case.category.name|lower == 'non surgical' or case.category.name|lower == 'non-surgical' or case.category.name|lower == 'nonsurgical' %}category-non-surgical{% else %}category-other{% endif %}" style="{% category_theme_style case.category theme_category_colors %}">{{ case.category.name }}</span>
+        <span class="identity-chip theme-category-chip {% if case.category.name|lower == 'anc' %}category-anc{% elif case.category.name|lower == 'surgery' %}category-surgery{% elif case.category.name|lower == 'medicine' or case.category.name|lower == 'non surgical' or case.category.name|lower == 'non-surgical' or case.category.name|lower == 'nonsurgical' %}category-non-surgical{% else %}category-other{% endif %}" style="{% category_theme_style case.category theme_category_colors %}">{{ case.category.name }}</span>
         {% if case.high_risk %}<span class="identity-chip app-pill high-risk">High-risk</span>{% endif %}
       </div>
 

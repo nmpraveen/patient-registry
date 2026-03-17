@@ -541,7 +541,7 @@ class MedtrackViewTests(TestCase):
     def test_case_list_category_group_filter_matches_dashboard_buckets(self):
         self.client.force_login(self.user)
         non_surgical_hyphen, _ = DepartmentConfig.objects.get_or_create(name="Non-Surgical")
-        non_surgical_space, _ = DepartmentConfig.objects.get_or_create(name="Non Surgical")
+        medicine_category, _ = DepartmentConfig.objects.get_or_create(name="Medicine")
         today = timezone.localdate()
 
         anc_active = Case.objects.create(
@@ -589,10 +589,10 @@ class MedtrackViewTests(TestCase):
         )
         non_surgical_two = Case.objects.create(
             uhid="UH-GROUP-NS-ACT-2",
-            first_name="Non",
-            last_name="Space",
+            first_name="Medi",
+            last_name="Cine",
             phone_number="8123000005",
-            category=non_surgical_space,
+            category=medicine_category,
             status=CaseStatus.ACTIVE,
             review_date=today + timedelta(days=11),
             created_by=self.user,
@@ -737,7 +737,7 @@ class MedtrackViewTests(TestCase):
 
     def test_case_list_search_supports_multiple_category_group_filters(self):
         self.client.force_login(self.user)
-        non_surgical, _ = DepartmentConfig.objects.get_or_create(name="Non Surgical")
+        non_surgical, _ = DepartmentConfig.objects.get_or_create(name="Medicine")
         today = timezone.localdate()
 
         anc_case = Case.objects.create(
@@ -801,10 +801,11 @@ class MedtrackViewTests(TestCase):
         self.assertContains(response, "?status=ACTIVE&category_group=anc")
         self.assertContains(response, "?status=ACTIVE&category_group=surgery")
         self.assertContains(response, "?status=ACTIVE&category_group=non_surgical")
+        self.assertContains(response, "View active Medicine cases")
 
     def test_dashboard_query_count_stays_bounded(self):
         self.client.force_login(self.user)
-        non_surgical, _ = DepartmentConfig.objects.get_or_create(name="Non Surgical")
+        non_surgical, _ = DepartmentConfig.objects.get_or_create(name="Medicine")
         today = timezone.localdate()
 
         anc_active = Case.objects.create(
@@ -1199,7 +1200,7 @@ class MedtrackViewTests(TestCase):
 
     def test_case_list_shows_category_pill_classes(self):
         self.client.force_login(self.user)
-        non_surgical, _ = DepartmentConfig.objects.get_or_create(name="Non Surgical")
+        non_surgical, _ = DepartmentConfig.objects.get_or_create(name="Medicine")
         Case.objects.create(
             uhid="UH-THEME-ANC",
             first_name="Anc",
@@ -1224,8 +1225,8 @@ class MedtrackViewTests(TestCase):
         )
         Case.objects.create(
             uhid="UH-THEME-NS",
-            first_name="Non",
-            last_name="Surgical",
+            first_name="Medi",
+            last_name="Cine",
             phone_number="9876504994",
             category=non_surgical,
             status=CaseStatus.ACTIVE,
@@ -1239,6 +1240,7 @@ class MedtrackViewTests(TestCase):
         self.assertContains(response, "category-anc")
         self.assertContains(response, "category-surgery")
         self.assertContains(response, "category-non-surgical")
+        self.assertContains(response, "Medicine")
 
     def test_case_detail_uses_custom_completed_row_class_style(self):
         self.client.force_login(self.user)
@@ -4246,7 +4248,7 @@ class MedtrackViewTests(TestCase):
 
     def test_dashboard_groups_tasks_by_patient_and_day(self):
         self.client.force_login(self.user)
-        non_surgical, _ = DepartmentConfig.objects.get_or_create(name="Non Surgical")
+        non_surgical, _ = DepartmentConfig.objects.get_or_create(name="Medicine")
 
         anc_case = Case.objects.create(
             uhid="UH776",
@@ -4272,8 +4274,8 @@ class MedtrackViewTests(TestCase):
         )
         Case.objects.create(
             uhid="UH778",
-            first_name="Non",
-            last_name="Surgical",
+            first_name="Medi",
+            last_name="Cine",
             phone_number="9876501112",
             category=non_surgical,
             status=CaseStatus.ACTIVE,
@@ -4304,7 +4306,7 @@ class MedtrackViewTests(TestCase):
         )
         Case.objects.create(
             uhid="UH781",
-            first_name="Non",
+            first_name="Medi",
             last_name="Completed",
             phone_number="9876501115",
             category=non_surgical,
@@ -4802,7 +4804,7 @@ class MedtrackViewTests(TestCase):
 
     def test_universal_case_search_applies_multiple_category_filters(self):
         self.client.force_login(self.user)
-        non_surgical, _ = DepartmentConfig.objects.get_or_create(name="Non Surgical")
+        non_surgical, _ = DepartmentConfig.objects.get_or_create(name="Medicine")
 
         anc_case = Case.objects.create(
             uhid="UH-SEARCH-ANC",
@@ -4830,8 +4832,8 @@ class MedtrackViewTests(TestCase):
         )
         Case.objects.create(
             uhid="UH-SEARCH-NS",
-            first_name="Non",
-            last_name="Surg",
+            first_name="Medi",
+            last_name="Cine",
             phone_number="9333333333",
             category=non_surgical,
             status=CaseStatus.ACTIVE,
@@ -5027,7 +5029,7 @@ class SeedMockDataCommandTests(TestCase):
         self.assertTrue(surgery_cases.filter(surgical_pathway=SurgicalPathway.PLANNED_SURGERY).exists())
         self.assertTrue(surgery_cases.filter(surgical_pathway=SurgicalPathway.SURVEILLANCE).exists())
 
-        non_surgical_cases = seeded_cases.filter(category__name="Non Surgical")
+        non_surgical_cases = seeded_cases.filter(category__name="Medicine")
         self.assertGreaterEqual(non_surgical_cases.values("review_frequency").distinct().count(), 3)
 
         self.assertTrue(Task.objects.filter(case=anc_high_risk, status=TaskStatus.AWAITING_REPORTS).exists())

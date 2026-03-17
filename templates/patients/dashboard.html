@@ -29,9 +29,9 @@
       <span class="nav-stats-label">Surgery</span>
       <span class="nav-stats-value">{{ surgery_case_count }}</span>
     </a>
-    <a class="nav-stats-item nav-stats-item--category" href="{% url 'patients:case_list' %}?status=ACTIVE&category_group=non_surgical" aria-label="View active Non-Surgical cases" style="{% category_theme_style 'Non Surgical' theme_category_colors %}" data-dashboard-summary-item>
+    <a class="nav-stats-item nav-stats-item--category" href="{% url 'patients:case_list' %}?status=ACTIVE&category_group=non_surgical" aria-label="View active Medicine cases" style="{% category_theme_style 'Medicine' theme_category_colors %}" data-dashboard-summary-item>
       <span class="nav-stats-accent"></span>
-      <span class="nav-stats-label">Non Surgical</span>
+      <span class="nav-stats-label">Medicine</span>
       <span class="nav-stats-value">{{ non_surgical_case_count }}</span>
     </a>
   </div>

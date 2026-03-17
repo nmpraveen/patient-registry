@@ -1,0 +1,20 @@
+.medtrack-datepicker {
+  display: block;
+  width: 100%;
+}
+
+.medtrack-datepicker fw-datepicker {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+}
+
+.medtrack-datepicker fw-datepicker.is-invalid {
+  border-radius: 0.75rem;
+  outline: 1px solid var(--theme-alerts-danger-border);
+  outline-offset: 2px;
+}
+
+.invalid-feedback[data-inline-error="true"] {
+  display: block;
+}

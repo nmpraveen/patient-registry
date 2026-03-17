@@ -1,4 +1,4 @@
-{% load theme_tags %}
+{% load static theme_tags %}
 <!doctype html>
 <html lang="en">
   <head>
@@ -17,6 +17,12 @@
       integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH"
       crossorigin="anonymous"
     />
+    <link
+      href="https://cdn.jsdelivr.net/npm/@freshworks/crayons@4.1.0/css/crayons-min.css"
+      rel="stylesheet"
+      crossorigin="anonymous"
+    />
+    <link rel="stylesheet" href="{% static 'patients/datepicker.css' %}" />
     <style>
       :root {
         {% theme_css_vars theme_tokens %}
@@ -1099,6 +1105,17 @@
       integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz"
       crossorigin="anonymous"
     ></script>
+    <script
+      type="module"
+      src="https://cdn.jsdelivr.net/npm/@freshworks/crayons@4.1.0/dist/crayons/crayons.esm.js"
+      crossorigin="anonymous"
+    ></script>
+    <script
+      nomodule
+      src="https://cdn.jsdelivr.net/npm/@freshworks/crayons@4.1.0/dist/crayons/crayons.js"
+      crossorigin="anonymous"
+    ></script>
+    <script src="{% static 'patients/datepicker.js' %}" defer></script>
     {% if user.is_authenticated %}
       <script>
         (() => {

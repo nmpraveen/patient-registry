@@ -117,6 +117,7 @@ CASE_DATA_CAPABILITIES = (
     "manage_settings",
 )
 
+DATE_INPUT_FORMATS = ("%Y-%m-%d", "%d/%m/%Y")
 
 
 CHANGELOG_FILE = Path(settings.BASE_DIR) / "CHANGELOG.md"
@@ -139,6 +140,15 @@ DEVICE_AUTHENTICATION_STATE_SESSION_KEY = "device_access_authentication_state"
 
 def _bytes_to_base64url(value):
     return urlsafe_b64encode(value).rstrip(b"=").decode("ascii")
+
+
+def _parse_date_input(value):
+    for date_format in DATE_INPUT_FORMATS:
+        try:
+            return datetime.strptime(value, date_format).date()
+        except ValueError:
+            continue
+    raise ValueError("Invalid date format")
 
 
 def _load_webauthn_dependencies():
@@ -761,7 +771,7 @@ def _reschedule_task_inline(task, *, due_date_raw, user):
         return False, "Please provide a new due date."
 
     try:
-        new_due_date = datetime.strptime(due_date_raw, "%Y-%m-%d").date()
+        new_due_date = _parse_date_input(due_date_raw)
     except ValueError:
         return False, "Please enter a valid due date."
 

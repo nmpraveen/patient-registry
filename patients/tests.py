@@ -1590,6 +1590,37 @@ class MedtrackViewTests(TestCase):
         task.refresh_from_db()
         self.assertEqual(task.due_date, timezone.localdate())
 
+    def test_task_quick_reschedule_accepts_india_style_date_input(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-ACTION-04A",
+            first_name="Quick",
+            last_name="India Date",
+            phone_number="9876505443",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=5),
+            created_by=self.user,
+        )
+        task = Task.objects.create(
+            case=case,
+            title="Reschedule with dd/mm/yyyy",
+            due_date=timezone.localdate(),
+            status=TaskStatus.SCHEDULED,
+            created_by=self.user,
+        )
+
+        new_due_date = timezone.localdate() + timedelta(days=4)
+        response = self.client.post(
+            reverse("patients:task_quick_reschedule", kwargs={"pk": task.pk}),
+            {"due_date": new_due_date.strftime("%d/%m/%Y")},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        task.refresh_from_db()
+        self.assertEqual(task.due_date, new_due_date)
+
     def test_task_quick_note_updates_task_and_logs_activity(self):
         self.client.force_login(self.user)
         case = Case.objects.create(
@@ -1699,6 +1730,32 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(reschedule_response.json()["task"]["due_date"], new_due_date.isoformat())
         self.assertEqual(note_response.json()["task"]["notes"], "Updated from modal")
         self.assertEqual(complete_response.json()["task"]["status"], TaskStatus.COMPLETED)
+
+    def test_case_detail_marks_task_date_inputs_for_crayons_datepicker(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-ACTION-05A",
+            first_name="Markup",
+            last_name="Check",
+            phone_number="9876505554",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=5),
+            created_by=self.user,
+        )
+        Task.objects.create(
+            case=case,
+            title="Visible task",
+            due_date=timezone.localdate(),
+            status=TaskStatus.SCHEDULED,
+            created_by=self.user,
+        )
+
+        response = self.client.get(reverse("patients:case_detail", kwargs={"pk": case.pk}))
+
+        self.assertContains(response, 'data-crayons-datepicker="true"', count=3)
+        self.assertContains(response, 'data-crayons-datepicker-format="dd/MM/yyyy"', count=3)
 
     def test_recent_case_update_persists_changes_and_logs_activity(self):
         self.client.force_login(self.user)
@@ -3261,6 +3318,28 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(case.place, "Chennai")
         self.assertEqual(case.date_of_birth.isoformat(), "1995-01-15")
 
+    def test_case_form_accepts_india_style_date_input(self):
+        review_date = timezone.localdate() + timedelta(days=10)
+        form = CaseForm(
+            data={
+                "uhid": "UH444A",
+                "first_name": "Asha",
+                "last_name": "Devi",
+                "gender": "FEMALE",
+                "date_of_birth": "15/01/1995",
+                "place": "Chennai",
+                "phone_number": "9123456788",
+                "category": self.surgery.id,
+                "status": CaseStatus.ACTIVE,
+                "surgical_pathway": SurgicalPathway.SURVEILLANCE,
+                "review_date": review_date.strftime("%d/%m/%Y"),
+            }
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertEqual(form.cleaned_data["date_of_birth"].isoformat(), "1995-01-15")
+        self.assertEqual(form.cleaned_data["review_date"], review_date)
+
     def test_case_form_uses_dob_to_calculate_age(self):
         dob = timezone.localdate() - timedelta(days=365 * 25)
         form = CaseForm(
@@ -3282,6 +3361,14 @@ class MedtrackViewTests(TestCase):
         today = timezone.localdate()
         expected_age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
         self.assertEqual(form.cleaned_data["age"], expected_age)
+
+    def test_case_form_marks_date_fields_for_crayons_datepicker(self):
+        form = CaseForm()
+
+        for field_name in ["date_of_birth", "lmp", "edd", "usg_edd", "surgery_date", "review_date"]:
+            self.assertEqual(form.fields[field_name].widget.attrs["data-crayons-datepicker"], "true")
+            self.assertEqual(form.fields[field_name].widget.attrs["data-crayons-datepicker-format"], "dd/MM/yyyy")
+            self.assertEqual(form.fields[field_name].widget.attrs["data-crayons-datepicker-locale"], "en-IN")
 
     def test_case_form_requires_age_when_dob_missing(self):
         form = CaseForm(

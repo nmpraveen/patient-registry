@@ -40,6 +40,15 @@ from .database_bundle import IMPORT_CONFIRMATION_PHRASE
 
 User = get_user_model()
 
+DATE_INPUT_FORMATS = ["%Y-%m-%d", "%d/%m/%Y"]
+CRAYONS_DATEPICKER_ATTRS = {
+    "type": "date",
+    "data-crayons-datepicker": "true",
+    "data-crayons-datepicker-format": "dd/MM/yyyy",
+    "data-crayons-datepicker-locale": "en-IN",
+    "data-crayons-datepicker-placeholder": "dd/mm/yyyy",
+}
+
 
 class StyledModelForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
@@ -73,6 +82,8 @@ class CaseForm(StyledModelForm):
         ensure_default_departments()
         super().__init__(*args, **kwargs)
         self.fields["category"].queryset = self.fields["category"].queryset.order_by("name")
+        for field_name in ["date_of_birth", "lmp", "edd", "usg_edd", "surgery_date", "review_date"]:
+            self.fields[field_name].input_formats = DATE_INPUT_FORMATS
         if self.instance and self.instance.pk:
             self.fields["ncd_flags"].initial = self.instance.ncd_flags
             self.fields["anc_high_risk_reasons"].initial = self.instance.anc_high_risk_reasons
@@ -178,19 +189,20 @@ class CaseForm(StyledModelForm):
             "notes",
         ]
         widgets = {
-            "lmp": forms.DateInput(attrs={"type": "date"}),
-            "edd": forms.DateInput(attrs={"type": "date"}),
-            "usg_edd": forms.DateInput(attrs={"type": "date"}),
-            "surgery_date": forms.DateInput(attrs={"type": "date"}),
-            "review_date": forms.DateInput(attrs={"type": "date"}),
+            "lmp": forms.DateInput(attrs=dict(CRAYONS_DATEPICKER_ATTRS)),
+            "edd": forms.DateInput(attrs=dict(CRAYONS_DATEPICKER_ATTRS)),
+            "usg_edd": forms.DateInput(attrs=dict(CRAYONS_DATEPICKER_ATTRS)),
+            "surgery_date": forms.DateInput(attrs=dict(CRAYONS_DATEPICKER_ATTRS)),
+            "review_date": forms.DateInput(attrs=dict(CRAYONS_DATEPICKER_ATTRS)),
             "notes": forms.Textarea(attrs={"rows": 3}),
-            "date_of_birth": forms.DateInput(attrs={"type": "date"}),
+            "date_of_birth": forms.DateInput(attrs=dict(CRAYONS_DATEPICKER_ATTRS)),
         }
 
 
 class TaskForm(StyledModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields["due_date"].input_formats = DATE_INPUT_FORMATS
         instance = getattr(self, "instance", None)
         if not instance or not instance.pk:
             return
@@ -204,7 +216,7 @@ class TaskForm(StyledModelForm):
         model = Task
         fields = ["title", "due_date", "status", "assigned_user", "task_type", "frequency_label", "notes"]
         widgets = {
-            "due_date": forms.DateInput(attrs={"type": "date"}),
+            "due_date": forms.DateInput(attrs=dict(CRAYONS_DATEPICKER_ATTRS)),
             "notes": forms.Textarea(attrs={"rows": 2}),
         }
 

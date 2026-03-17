@@ -1452,7 +1452,17 @@
                           task.can_reschedule
                             ? `
                               <form class="recent-case-inline-form is-hidden" data-task-form="reschedule" data-task-id="${task.id}">
-                                <input class="form-control form-control-sm" type="date" name="due_date" value="${escapeHtml(task.due_date)}" required />
+                                <input
+                                  class="form-control form-control-sm"
+                                  type="date"
+                                  name="due_date"
+                                  value="${escapeHtml(task.due_date)}"
+                                  required
+                                  data-crayons-datepicker="true"
+                                  data-crayons-datepicker-format="dd/MM/yyyy"
+                                  data-crayons-datepicker-locale="en-IN"
+                                  data-crayons-datepicker-placeholder="dd/mm/yyyy"
+                                />
                                 <button type="submit" class="btn btn-sm btn-outline-primary align-self-start">Save date</button>
                               </form>
                             `

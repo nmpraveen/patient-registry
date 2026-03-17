@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.03.17.02.48
+- Upgraded case and task date fields to a Crayons-style datepicker experience with `dd/MM/yyyy` display for India while preserving ISO date submission for Django.
+- Added shared datepicker assets and wired quick-add and quick-reschedule task forms into the same reusable date input treatment.
+- Expanded date parsing and regression coverage so case forms and inline task rescheduling accept both ISO dates and `dd/MM/yyyy` input.
+
 ## 2026.03.17.02.16
 - Enlarged the Settings hub version panel in `Utilities & About` so long version stamps fit comfortably and read as a dedicated info tile instead of a cramped metric chip.
 

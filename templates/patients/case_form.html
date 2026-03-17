@@ -271,7 +271,11 @@
 
   function attachInlineError(inputEl, message) {
     if (!inputEl) return;
-    inputEl.classList.add('is-invalid');
+    if (window.medtrackCrayonsDatepicker?.toggleInvalidState) {
+      window.medtrackCrayonsDatepicker.toggleInvalidState(inputEl, true);
+    } else {
+      inputEl.classList.add('is-invalid');
+    }
     const fieldWrap = inputEl.closest('.field-wrap') || inputEl.parentElement;
     if (!fieldWrap) return;
     const feedback = document.createElement('div');

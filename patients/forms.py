@@ -47,6 +47,7 @@ CRAYONS_DATEPICKER_ATTRS = {
     "data-crayons-datepicker-format": "dd/MM/yyyy",
     "data-crayons-datepicker-locale": "en-IN",
     "data-crayons-datepicker-placeholder": "dd/mm/yyyy",
+    "data-crayons-datepicker-show-footer": "false",
 }
 
 

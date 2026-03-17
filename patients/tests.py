@@ -1756,6 +1756,9 @@ class MedtrackViewTests(TestCase):
 
         self.assertContains(response, 'data-crayons-datepicker="true"', count=3)
         self.assertContains(response, 'data-crayons-datepicker-format="dd/MM/yyyy"', count=3)
+        self.assertContains(response, 'data-crayons-datepicker-show-footer="false"', count=3)
+        self.assertContains(response, f'id="task-reschedule-date-{case.tasks.first().id}"')
+        self.assertContains(response, f'id="task-reschedule-mobile-date-{case.tasks.first().id}"')
 
     def test_recent_case_update_persists_changes_and_logs_activity(self):
         self.client.force_login(self.user)
@@ -3369,6 +3372,13 @@ class MedtrackViewTests(TestCase):
             self.assertEqual(form.fields[field_name].widget.attrs["data-crayons-datepicker"], "true")
             self.assertEqual(form.fields[field_name].widget.attrs["data-crayons-datepicker-format"], "dd/MM/yyyy")
             self.assertEqual(form.fields[field_name].widget.attrs["data-crayons-datepicker-locale"], "en-IN")
+            self.assertEqual(form.fields[field_name].widget.attrs["data-crayons-datepicker-show-footer"], "false")
+
+    def test_dashboard_recent_case_reschedule_template_uses_unique_due_date_ids(self):
+        self.client.force_login(self.user)
+        response = self.client.get(reverse("patients:dashboard"))
+
+        self.assertContains(response, 'id="recent-case-due-date-${task.id}"')
 
     def test_case_form_requires_age_when_dob_missing(self):
         form = CaseForm(

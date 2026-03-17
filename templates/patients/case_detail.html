@@ -1053,6 +1053,7 @@
                       {% csrf_token %}
                       <div class="col-12 col-md-5">
                         <input
+                          id="task-reschedule-date-{{ task.id }}"
                           class="form-control form-control-sm"
                           type="date"
                           name="due_date"
@@ -1061,6 +1062,7 @@
                           data-crayons-datepicker-format="dd/MM/yyyy"
                           data-crayons-datepicker-locale="en-IN"
                           data-crayons-datepicker-placeholder="dd/mm/yyyy"
+                          data-crayons-datepicker-show-footer="false"
                         />
                       </div>
                       <div class="col-12 col-md-3">
@@ -1120,6 +1122,7 @@
                 {% csrf_token %}
                 <div class="col-12">
                    <input
+                     id="task-reschedule-mobile-date-{{ task.id }}"
                      class="form-control form-control-sm"
                      type="date"
                      name="due_date"
@@ -1128,6 +1131,7 @@
                      data-crayons-datepicker-format="dd/MM/yyyy"
                      data-crayons-datepicker-locale="en-IN"
                      data-crayons-datepicker-placeholder="dd/mm/yyyy"
+                     data-crayons-datepicker-show-footer="false"
                    />
                 </div>
                 <div class="col-12">

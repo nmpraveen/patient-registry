@@ -1453,6 +1453,7 @@
                             ? `
                               <form class="recent-case-inline-form is-hidden" data-task-form="reschedule" data-task-id="${task.id}">
                                 <input
+                                  id="recent-case-due-date-${task.id}"
                                   class="form-control form-control-sm"
                                   type="date"
                                   name="due_date"
@@ -1462,6 +1463,7 @@
                                   data-crayons-datepicker-format="dd/MM/yyyy"
                                   data-crayons-datepicker-locale="en-IN"
                                   data-crayons-datepicker-placeholder="dd/mm/yyyy"
+                                  data-crayons-datepicker-show-footer="false"
                                 />
                                 <button type="submit" class="btn btn-sm btn-outline-primary align-self-start">Save date</button>
                               </form>

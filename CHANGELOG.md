@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.03.17.11.11
+- Changed the India-style Crayons datepicker rollout to commit single-date selections immediately on day click instead of waiting for the picker footer's `Update` button, preventing blank submissions that triggered `Pick a valid date`.
+- Normalized picker write-back to submit `YYYY-MM-DD` into Django even though the Crayons component reports full ISO datetimes, and synchronized picker disabled/readonly/min/max state with the hidden source input after enhancement.
+- Added explicit unique ids for inline quick-reschedule date inputs and extended regression coverage for the rendered datepicker attributes and dashboard reschedule template.
+
 ## 2026.03.17.03.28
 - Added production static-file serving for Django via WhiteNoise and a collected `staticfiles/` output so datepicker assets and other app static files are available behind Gunicorn.
 - Updated the Docker web startup command to run `collectstatic --noinput` before Gunicorn so new static assets are present after each deploy.

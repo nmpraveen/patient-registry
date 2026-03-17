@@ -234,7 +234,7 @@
       const isVisible = allowed.has(name);
       wrapper.classList.toggle('d-none', !isVisible);
       wrapper.querySelectorAll('input, select, textarea').forEach((input) => {
-        if (input.type === 'hidden') return;
+        if (input.type === 'hidden' && input.dataset.crayonsDatepickerSource !== 'true') return;
         if (!input.dataset.originalRequired) {
           input.dataset.originalRequired = input.required ? 'true' : 'false';
         }

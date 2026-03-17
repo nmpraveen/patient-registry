@@ -1,6 +1,7 @@
 (() => {
   const SOURCE_SELECTOR = 'input[data-crayons-datepicker="true"]';
   const PICKER_FIELD_ATTR = "data-crayons-datepicker-for";
+  let anonymousInputCount = 0;
 
   function escapeSelectorValue(value) {
     if (window.CSS && typeof window.CSS.escape === "function") {
@@ -14,6 +15,102 @@
       return null;
     }
     return document.querySelector(`fw-datepicker[${PICKER_FIELD_ATTR}="${escapeSelectorValue(input.id)}"]`);
+  }
+
+  function ensureInputId(input) {
+    if (!input) {
+      return "";
+    }
+    if (input.id) {
+      return input.id;
+    }
+    const baseId = `id_${input.name || "date_field"}`;
+    let candidate = baseId;
+    while (document.getElementById(candidate)) {
+      anonymousInputCount += 1;
+      candidate = `${baseId}_${anonymousInputCount}`;
+    }
+    input.id = candidate;
+    return candidate;
+  }
+
+  function normalizeDateValue(value, displayFormat = "dd/MM/yyyy") {
+    if (typeof value !== "string") {
+      return "";
+    }
+    const trimmedValue = value.trim();
+    if (!trimmedValue) {
+      return "";
+    }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmedValue)) {
+      return trimmedValue;
+    }
+    const isoDateTimeMatch = trimmedValue.match(/^(\d{4}-\d{2}-\d{2})T/);
+    if (isoDateTimeMatch) {
+      return isoDateTimeMatch[1];
+    }
+    if (displayFormat === "dd/MM/yyyy") {
+      const parts = trimmedValue.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+      if (parts) {
+        return `${parts[3]}-${parts[2]}-${parts[1]}`;
+      }
+    }
+    return "";
+  }
+
+  function syncPickerState(picker, sourceInput) {
+    if (!picker || !sourceInput) {
+      return;
+    }
+
+    const showFooter = sourceInput.dataset.crayonsDatepickerShowFooter === "true";
+    picker.showFooter = showFooter;
+
+    if (sourceInput.required) {
+      picker.setAttribute("required", "");
+    } else {
+      picker.removeAttribute("required");
+    }
+
+    picker.disabled = Boolean(sourceInput.disabled);
+    if (sourceInput.disabled) {
+      picker.setAttribute("disabled", "");
+    } else {
+      picker.removeAttribute("disabled");
+    }
+
+    picker.readOnly = Boolean(sourceInput.readOnly);
+    if (sourceInput.readOnly) {
+      picker.setAttribute("readonly", "");
+    } else {
+      picker.removeAttribute("readonly");
+    }
+
+    if (sourceInput.min) {
+      picker.setAttribute("min-date", sourceInput.min);
+    } else {
+      picker.removeAttribute("min-date");
+    }
+
+    if (sourceInput.max) {
+      picker.setAttribute("max-date", sourceInput.max);
+    } else {
+      picker.removeAttribute("max-date");
+    }
+  }
+
+  function observeSourceInput(picker, sourceInput) {
+    if (!picker || !sourceInput || typeof MutationObserver !== "function") {
+      return;
+    }
+
+    const observer = new MutationObserver(() => {
+      syncPickerState(picker, sourceInput);
+    });
+    observer.observe(sourceInput, {
+      attributes: true,
+      attributeFilter: ["disabled", "readonly", "required", "min", "max"],
+    });
   }
 
   function toggleInvalidState(input, isInvalid) {
@@ -43,15 +140,22 @@
     if (clearFirst) {
       sourceInput.value = "";
     }
-    if (typeof picker.getValue !== "function") {
-      return sourceInput.value || "";
-    }
+
+    const displayFormat = sourceInput.dataset.crayonsDatepickerFormat || "dd/MM/yyyy";
+    let nextValue = sourceInput.value || "";
     try {
-      const value = await picker.getValue();
-      sourceInput.value = typeof value === "string" ? value : "";
+      const value =
+        typeof picker.getValue === "function"
+          ? await picker.getValue()
+          : typeof picker.value === "string"
+            ? picker.value
+            : "";
+      nextValue = normalizeDateValue(typeof value === "string" ? value : "", displayFormat);
     } catch (error) {
-      sourceInput.value = "";
+      nextValue = normalizeDateValue(typeof picker.value === "string" ? picker.value : "", displayFormat);
     }
+
+    sourceInput.value = nextValue;
     sourceInput.dispatchEvent(new Event("input", { bubbles: true }));
     sourceInput.dispatchEvent(new Event("change", { bubbles: true }));
     toggleInvalidState(sourceInput, false);
@@ -63,8 +167,12 @@
       return;
     }
 
-    if (!sourceInput.id) {
-      sourceInput.id = `id_${sourceInput.name || "date_field"}`;
+    ensureInputId(sourceInput);
+
+    const displayFormat = sourceInput.dataset.crayonsDatepickerFormat || "dd/MM/yyyy";
+    const normalizedInitialValue = normalizeDateValue(sourceInput.value || "", displayFormat);
+    if (normalizedInitialValue) {
+      sourceInput.value = normalizedInitialValue;
     }
 
     const picker = document.createElement("fw-datepicker");
@@ -72,7 +180,7 @@
     picker.setAttribute(PICKER_FIELD_ATTR, sourceInput.id);
     picker.setAttribute(
       "display-format",
-      sourceInput.dataset.crayonsDatepickerFormat || "dd/MM/yyyy",
+      displayFormat,
     );
     picker.setAttribute(
       "locale",
@@ -82,24 +190,17 @@
       "placeholder",
       sourceInput.dataset.crayonsDatepickerPlaceholder || "dd/mm/yyyy",
     );
+    const showFooter = sourceInput.dataset.crayonsDatepickerShowFooter === "true";
+    picker.showFooter = showFooter;
+    if (window.customElements && typeof window.customElements.whenDefined === "function") {
+      void window.customElements.whenDefined("fw-datepicker").then(() => {
+        picker.showFooter = showFooter;
+        syncPickerState(picker, sourceInput);
+      });
+    }
     picker.setAttribute("clear-input", "");
-    if (sourceInput.value) {
-      picker.setAttribute("value", sourceInput.value);
-    }
-    if (sourceInput.required) {
-      picker.setAttribute("required", "");
-    }
-    if (sourceInput.disabled) {
-      picker.setAttribute("disabled", "");
-    }
-    if (sourceInput.readOnly) {
-      picker.setAttribute("readonly", "");
-    }
-    if (sourceInput.min) {
-      picker.setAttribute("min-date", sourceInput.min);
-    }
-    if (sourceInput.max) {
-      picker.setAttribute("max-date", sourceInput.max);
+    if (normalizedInitialValue) {
+      picker.setAttribute("value", normalizedInitialValue);
     }
 
     const wrapper = document.createElement("div");
@@ -111,6 +212,8 @@
     sourceInput.type = "hidden";
     sourceInput.dataset.crayonsDatepickerSource = "true";
     sourceInput.dataset.crayonsDatepickerReady = "true";
+    syncPickerState(picker, sourceInput);
+    observeSourceInput(picker, sourceInput);
 
     let syncTimer = null;
     const scheduleSync = (options = {}) => {

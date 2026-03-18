@@ -1,0 +1,113 @@
+{% extends 'base.html' %}
+{% block title %}Quick Entry | MEDTRACK{% endblock %}
+{% block content %}
+<style>
+  .quick-entry-card {
+    border: 1px solid var(--theme-shell-surface-border);
+    border-radius: 1rem;
+    background: var(--theme-shell-surface-bg);
+    box-shadow: 0 16px 34px var(--theme-shell-shadow);
+  }
+
+  .quick-entry-hero {
+    border-bottom: 1px solid var(--theme-shell-surface-border);
+    background: linear-gradient(135deg, var(--theme-shell-surface-bg), var(--theme-shell-surface-hover-bg));
+    border-radius: 1rem 1rem 0 0;
+    padding: 1.25rem 1.25rem 1rem;
+  }
+
+  .quick-entry-body {
+    padding: 1.25rem;
+  }
+
+  .quick-entry-note {
+    border: 1px solid var(--theme-alerts-info-border);
+    background: var(--theme-alerts-info-bg);
+    color: var(--theme-alerts-info-text);
+    border-radius: 0.85rem;
+    padding: 0.8rem 0.9rem;
+  }
+</style>
+
+<section class="quick-entry-card">
+  <div class="quick-entry-hero">
+    <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3">
+      <div>
+        <h1 class="h4 mb-1">Quick Entry</h1>
+        <p class="text-muted mb-0">Create a minimal patient record now and let staff complete the full details later.</p>
+      </div>
+      <a class="btn btn-outline-secondary btn-sm" href="{% url 'patients:case_create' %}">Open Full Case Form</a>
+    </div>
+  </div>
+
+  <div class="quick-entry-body">
+    <div class="quick-entry-note mb-3">
+      An internal quick-entry UHID will be generated automatically. Saving also creates a follow-up task so the missing details are not forgotten.
+    </div>
+
+    <form method="post" class="row g-3" id="quick-case-form">
+      {% csrf_token %}
+      <div class="col-12 col-md-6">
+        <label class="form-label" for="{{ form.first_name.id_for_label }}">{{ form.first_name.label }}</label>
+        {{ form.first_name }}
+        {% for error in form.first_name.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+      </div>
+      <div class="col-12 col-md-3">
+        <label class="form-label" for="{{ form.age.id_for_label }}">{{ form.age.label }}</label>
+        {{ form.age }}
+        {% for error in form.age.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+      </div>
+      <div class="col-12 col-md-3">
+        <label class="form-label" for="{{ form.gender.id_for_label }}">{{ form.gender.label }}</label>
+        {{ form.gender }}
+        {% for error in form.gender.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+      </div>
+      <div class="col-12 col-md-6">
+        <label class="form-label" for="{{ form.category.id_for_label }}">{{ form.category.label }}</label>
+        {{ form.category }}
+        {% for error in form.category.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+      </div>
+      <div class="col-12 col-md-6">
+        <label class="form-label" for="{{ form.review_date.id_for_label }}">{{ form.review_date.label }}</label>
+        {{ form.review_date }}
+        {% for error in form.review_date.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+      </div>
+      <div class="col-12">
+        <label class="form-label" for="{{ form.diagnosis.id_for_label }}">{{ form.diagnosis.label }}</label>
+        {{ form.diagnosis }}
+        {% for error in form.diagnosis.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+      </div>
+      {% if form.non_field_errors %}
+        <div class="col-12">
+          <div class="alert alert-danger py-2 mb-0">{{ form.non_field_errors }}</div>
+        </div>
+      {% endif %}
+      <div class="col-12 d-flex flex-wrap gap-2">
+        <button class="btn btn-warning" type="submit">Save Quick Entry</button>
+        <a class="btn btn-outline-secondary" href="{% url 'patients:dashboard' %}">Cancel</a>
+      </div>
+    </form>
+  </div>
+</section>
+
+<script>
+  (() => {
+    const erroredFields = [
+      {% for field in form %}
+        {% if field.errors %}
+          "id_{{ field.name }}",
+        {% endif %}
+      {% endfor %}
+    ];
+    erroredFields.forEach((fieldId) => {
+      const input = document.getElementById(fieldId);
+      if (!input) return;
+      if (window.medtrackCrayonsDatepicker?.toggleInvalidState) {
+        window.medtrackCrayonsDatepicker.toggleInvalidState(input, true);
+      } else {
+        input.classList.add("is-invalid");
+      }
+    });
+  })();
+</script>
+{% endblock %}

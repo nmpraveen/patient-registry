@@ -17,13 +17,16 @@ from patients.models import (
     CaseStatus,
     DepartmentConfig,
     Gender,
+    QUICK_ENTRY_DETAILS_TASK_TITLE,
     ReviewFrequency,
     SurgicalPathway,
     TaskType,
     TaskStatus,
     VitalEntry,
     build_default_tasks,
+    create_quick_entry_details_task,
     ensure_default_departments,
+    generate_quick_entry_uhid,
 )
 
 
@@ -194,6 +197,27 @@ class Command(BaseCommand):
                 "review_frequency": ReviewFrequency.MONTHLY,
                 "review_date": today - timedelta(days=7),
                 "diagnosis": "Diabetes follow-up overdue review",
+            }
+        )
+        return Case.objects.create(**kwargs), scenario
+
+    def build_quick_entry_case(self, surgery, today, kwargs):
+        scenario = "quick_entry_pending_details"
+        kwargs["metadata"]["seed_scenario"] = scenario
+        kwargs["metadata"]["entry_mode"] = "quick_entry"
+        kwargs["metadata"]["details_pending"] = True
+        kwargs.update(
+            {
+                "uhid": generate_quick_entry_uhid(today),
+                "category": surgery,
+                "status": CaseStatus.ACTIVE,
+                "last_name": "",
+                "place": "",
+                "phone_number": "",
+                "alternate_phone_number": "",
+                "referred_by": "",
+                "review_date": today + timedelta(days=5),
+                "diagnosis": "Quick entry pending full surgical details",
             }
         )
         return Case.objects.create(**kwargs), scenario
@@ -519,6 +543,7 @@ class Command(BaseCommand):
         created = 0
         named_builders = [
             lambda anc, surgery, non_surgical, today, kwargs, _: self.build_anc_high_risk_case(anc, today, kwargs),
+            lambda anc, surgery, non_surgical, today, kwargs, _: self.build_quick_entry_case(surgery, today, kwargs),
             lambda anc, surgery, non_surgical, today, kwargs, _: self.build_surgery_planned_case(surgery, today, kwargs),
             lambda anc, surgery, non_surgical, today, kwargs, _: self.build_non_surgical_overdue_case(non_surgical, today, kwargs),
         ]
@@ -537,13 +562,20 @@ class Command(BaseCommand):
             else:
                 case, scenario = self.build_default_case(anc, surgery, non_surgical, today, kwargs, i)
 
+            details_task = None
+            if (case.metadata or {}).get("entry_mode") == "quick_entry":
+                details_task = create_quick_entry_details_task(case, demo_user, due_date=case.review_date)
             tasks = build_default_tasks(case, demo_user)
             self.mutate_seeded_tasks(case, rng, today)
             CaseActivityLog.objects.create(
                 case=case,
                 user=demo_user,
                 event_type=ActivityEventType.SYSTEM,
-                note=f"Mock case seeded with scenario '{scenario}' and {len(tasks)} starter tasks",
+                note=(
+                    f"Mock case seeded with scenario '{scenario}', "
+                    f"{len(tasks)} starter task(s)"
+                    + (f", and '{QUICK_ENTRY_DETAILS_TASK_TITLE}' follow-up task" if details_task else "")
+                ),
             )
 
             self.seed_calls_for_case(case, demo_user, scenario, rng)

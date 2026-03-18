@@ -13,6 +13,7 @@ from .models import (
     CallLog,
     Case,
     CaseActivityLog,
+    CaseStatus,
     DepartmentConfig,
     DeviceApprovalPolicy,
     PatientDataBackupSchedule,
@@ -197,6 +198,45 @@ class CaseForm(StyledModelForm):
             "review_date": forms.DateInput(attrs=dict(CRAYONS_DATEPICKER_ATTRS)),
             "notes": forms.Textarea(attrs={"rows": 3}),
             "date_of_birth": forms.DateInput(attrs=dict(CRAYONS_DATEPICKER_ATTRS)),
+        }
+
+
+class QuickEntryCaseForm(StyledModelForm):
+    def __init__(self, *args, **kwargs):
+        ensure_default_departments()
+        super().__init__(*args, **kwargs)
+        self.fields["category"].queryset = self.fields["category"].queryset.order_by("name")
+        self.fields["age"].required = True
+        self.fields["gender"].required = True
+        self.fields["diagnosis"].required = True
+        self.fields["review_date"].required = True
+        self.fields["review_date"].input_formats = DATE_INPUT_FORMATS
+
+    def _post_clean(self):
+        self.instance._skip_workflow_validation = True
+        super()._post_clean()
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        instance._skip_workflow_validation = True
+        instance.last_name = ""
+        instance.phone_number = ""
+        instance.alternate_phone_number = ""
+        instance.status = CaseStatus.ACTIVE
+        instance.metadata = {
+            **(instance.metadata or {}),
+            "entry_mode": "quick_entry",
+            "details_pending": True,
+        }
+        if commit:
+            instance.save()
+        return instance
+
+    class Meta:
+        model = Case
+        fields = ["first_name", "age", "gender", "diagnosis", "category", "review_date"]
+        widgets = {
+            "review_date": forms.DateInput(attrs=dict(CRAYONS_DATEPICKER_ATTRS)),
         }
 
 

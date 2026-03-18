@@ -33,6 +33,8 @@ class TaskType(models.TextChoices):
 RCH_REMINDER_TASK_TITLE = "Update RCH Number"
 RCH_REMINDER_INTERVAL_DAYS = 14
 RCH_REMINDER_FREQUENCY_LABEL = "RCH reminder"
+QUICK_ENTRY_DETAILS_TASK_TITLE = "Details need to be filled"
+QUICK_ENTRY_FREQUENCY_LABEL = "Quick entry"
 STAFF_ROLE_NAME = "Staff"
 STAFF_PILOT_ROLE_NAME = "Staff Pilot"
 DEVICE_APPROVAL_MAX_APPROVED = 3
@@ -55,6 +57,18 @@ def normalize_case_name(value):
     if not normalized:
         return ""
     return normalized.title()
+
+
+def generate_quick_entry_uhid(today=None):
+    quick_entry_day = today or timezone.localdate()
+    prefix = f"QE-{quick_entry_day:%Y%m%d}-"
+    existing_uhids = set(Case.objects.filter(uhid__startswith=prefix).values_list("uhid", flat=True))
+    next_sequence = 1
+    candidate = f"{prefix}{next_sequence:03d}"
+    while candidate in existing_uhids:
+        next_sequence += 1
+        candidate = f"{prefix}{next_sequence:03d}"
+    return candidate
 
 
 class CallOutcome(models.TextChoices):
@@ -700,6 +714,12 @@ class Case(models.Model):
                 self.anc_high_risk_reasons.append(reason)
 
         category_name = self.category.name.upper() if self.category_id else ""
+        if getattr(self, "_skip_workflow_validation", False):
+            if category_name != "ANC":
+                self.anc_high_risk_reasons = []
+                self.rch_number = ""
+                self.rch_bypass = False
+            return
         if category_name == "ANC" and (not self.lmp or (not self.edd and not self.usg_edd)):
             raise ValidationError("ANC cases require LMP and at least one EDD (LMP-based or USG-based).")
         if category_name == "ANC":
@@ -1056,3 +1076,14 @@ def build_default_tasks(case: Case, actor):
             )
         )
     return created
+
+
+def create_quick_entry_details_task(case: Case, actor, due_date=None):
+    return Task.objects.create(
+        case=case,
+        title=QUICK_ENTRY_DETAILS_TASK_TITLE,
+        due_date=due_date or case.review_date or timezone.localdate(),
+        task_type=TaskType.CUSTOM,
+        frequency_label=QUICK_ENTRY_FREQUENCY_LABEL,
+        created_by=actor,
+    )

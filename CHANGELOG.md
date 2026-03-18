@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026.03.18.17.05
+- Simplified the top navigation search field by removing the long explanatory placeholder text and replacing it with a compact magnifying-glass treatment while keeping the same search behavior and accessibility label.
+
+## 2026.03.18.16.54
+- Added a new `Quick Entry` patient-create flow with a dedicated six-field form, auto-generated `QE-YYYYMMDD-###` placeholder UHIDs, and saved metadata marking records that still need full details.
+- Created a matching quick-entry follow-up task (`Details need to be filled`) while preserving the existing category starter-task generation so staff can capture notes immediately and complete records later.
+- Updated the top navigation and theme system so `New Case` uses a configurable success button, `Quick Entry` uses the warning palette, and quick-entry cases render intentional phone fallbacks in list/detail views.
+- Extended seeded demo data and regression coverage for the quick-entry workflow, theme controls, seeded pending-details scenario, and top-bar permission behavior.
+
 ## 2026.03.18.03.18
 - Normalized stored patient `first_name`, `last_name`, and `place` values to simple proper case on every `Case` save, with whitespace collapsed and `patient_name` re-derived from the normalized name values.
 - Tightened partial `save(update_fields=...)` handling so patient identity fields stay in sync even when only one of the name fields is explicitly saved.

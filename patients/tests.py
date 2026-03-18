@@ -40,6 +40,7 @@ from .models import (
     PatientDataBackupSchedule,
     PatientDataBackupStatus,
     PatientDataBackupTrigger,
+    QUICK_ENTRY_DETAILS_TASK_TITLE,
     RCH_REMINDER_INTERVAL_DAYS,
     RCH_REMINDER_TASK_TITLE,
     RoleSetting,
@@ -243,6 +244,7 @@ class ThemeSystemTests(TestCase):
 
         self.assertEqual(merged["buttons"]["primary"]["border"], mix_colors("#112233", "#ffffff", 0.20))
         self.assertEqual(merged["buttons"]["primary"]["hover_bg"], mix_colors("#112233", "#ffffff", 0.10))
+        self.assertEqual(merged["buttons"]["success"]["bg"], "#198754")
         self.assertEqual(merged["vitals_chart"]["bp_systolic_fill"], rgba_string("#112233", 0.18))
 
     def test_theme_settings_singleton_normalizes_tokens_on_save(self):
@@ -286,6 +288,7 @@ class MedtrackViewTests(TestCase):
 
         self.anc, _ = DepartmentConfig.objects.get_or_create(name="ANC")
         self.surgery, _ = DepartmentConfig.objects.get_or_create(name="Surgery")
+        self.medicine, _ = DepartmentConfig.objects.get_or_create(name="Medicine")
         self.case_sequence = 0
 
     def assert_max_queries(self, max_queries, url, params=None):
@@ -1124,6 +1127,128 @@ class MedtrackViewTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 403)
+
+    def test_dashboard_nav_shows_new_case_and_quick_entry_for_case_create_roles(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("patients:dashboard"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, reverse("patients:case_create"))
+        self.assertContains(response, reverse("patients:case_quick_create"))
+        self.assertContains(response, 'class="btn btn-sm btn-success"')
+        self.assertContains(response, 'class="btn btn-sm btn-warning"')
+
+    def test_dashboard_nav_hides_case_create_actions_without_case_create_capability(self):
+        self.login_as_role("Nurse", username="nurse_nav")
+
+        response = self.client.get(reverse("patients:dashboard"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, reverse("patients:case_create"))
+        self.assertNotContains(response, reverse("patients:case_quick_create"))
+
+    def test_quick_case_create_view_is_forbidden_without_case_create_capability(self):
+        self.login_as_role("Nurse", username="nurse_quick_create")
+
+        response = self.client.get(reverse("patients:case_quick_create"))
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_quick_case_create_saves_minimal_case_and_tasks(self):
+        review_date = timezone.localdate() + timedelta(days=7)
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("patients:case_quick_create"),
+            {
+                "first_name": "Lalitha",
+                "age": "42",
+                "gender": Gender.FEMALE,
+                "diagnosis": "Thyroid swelling",
+                "category": self.surgery.id,
+                "review_date": review_date.isoformat(),
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        case = Case.objects.get(metadata__entry_mode="quick_entry", first_name="Lalitha")
+        self.assertRegex(case.uhid, r"^QE-\d{8}-\d{3}$")
+        self.assertEqual(case.last_name, "")
+        self.assertEqual(case.phone_number, "")
+        self.assertEqual(case.alternate_phone_number, "")
+        self.assertEqual(case.status, CaseStatus.ACTIVE)
+        self.assertEqual(case.review_date, review_date)
+        self.assertEqual(case.metadata["entry_mode"], "quick_entry")
+        self.assertTrue(case.metadata["details_pending"])
+        self.assertTrue(case.tasks.filter(title=QUICK_ENTRY_DETAILS_TASK_TITLE, due_date=review_date).exists())
+        self.assertTrue(case.tasks.filter(title="Surveillance Review").exists())
+        self.assertTrue(
+            case.activity_logs.filter(note__icontains="Quick entry created with 1 starter task(s)").exists()
+        )
+
+    def test_quick_case_create_allows_anc_without_full_anc_fields(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("patients:case_quick_create"),
+            {
+                "first_name": "Revathi",
+                "age": "24",
+                "gender": Gender.FEMALE,
+                "diagnosis": "ANC follow-up pending full details",
+                "category": self.anc.id,
+                "review_date": (timezone.localdate() + timedelta(days=4)).isoformat(),
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        case = Case.objects.get(first_name="Revathi", metadata__entry_mode="quick_entry")
+        self.assertEqual(case.category, self.anc)
+        self.assertTrue(case.tasks.filter(title=QUICK_ENTRY_DETAILS_TASK_TITLE).exists())
+        self.assertGreater(case.tasks.count(), 1)
+        self.assertFalse(case.tasks.filter(title=RCH_REMINDER_TASK_TITLE).exists())
+
+    def test_quick_case_create_invalid_submission_shows_inline_errors(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("patients:case_quick_create"),
+            {
+                "first_name": "",
+                "age": "",
+                "gender": "",
+                "diagnosis": "",
+                "category": "",
+                "review_date": "",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "invalid-feedback")
+        self.assertContains(response, "This field is required.")
+
+    def test_quick_entry_cases_show_phone_pending_fallback_in_detail_and_list(self):
+        case = Case.objects.create(
+            uhid="QE-20260318-001",
+            first_name="Pending",
+            last_name="",
+            age=32,
+            gender=Gender.FEMALE,
+            phone_number="",
+            category=self.medicine,
+            review_date=timezone.localdate() + timedelta(days=5),
+            diagnosis="Pending phone details",
+            created_by=self.user,
+            metadata={"entry_mode": "quick_entry", "details_pending": True},
+        )
+
+        self.client.force_login(self.user)
+        detail_response = self.client.get(reverse("patients:case_detail", kwargs={"pk": case.pk}))
+        list_response = self.client.get(reverse("patients:case_list"))
+
+        self.assertContains(detail_response, "Phone pending")
+        self.assertContains(list_response, "Phone pending")
 
     def test_create_anc_case_autogenerates_tasks(self):
         self.client.force_login(self.user)
@@ -2316,6 +2441,8 @@ class MedtrackViewTests(TestCase):
         self.assertContains(settings_response, reverse("patients:settings_theme"))
         self.assertEqual(theme_response.status_code, 200)
         self.assertContains(theme_response, "Theme Settings")
+        self.assertContains(theme_response, "Success Button")
+        self.assertContains(theme_response, "buttons__success__bg")
 
     def test_admin_settings_page_shows_device_access_link_and_page_requires_manage_settings(self):
         pending_user = get_user_model().objects.create_user(username="pilot-target", password="strong-password-123")
@@ -5218,16 +5345,23 @@ class SeedMockDataCommandTests(TestCase):
         self.assertEqual(seeded_cases.count(), 30)
 
         for case in seeded_cases:
+            self.assertTrue(case.gender)
+            self.assertIsNotNone(case.age)
+            self.assertTrue(case.diagnosis)
+            self.assertTrue(case.metadata.get("seed_scenario"))
+            if case.metadata.get("entry_mode") == "quick_entry":
+                self.assertRegex(case.uhid, r"^QE-\d{8}-\d{3}$")
+                self.assertEqual(case.phone_number, "")
+                self.assertEqual(case.alternate_phone_number, "")
+                self.assertEqual(case.place, "")
+                self.assertEqual(case.referred_by, "")
+                continue
             self.assertRegex(case.uhid, r"^TN-[A-Z]{3}-\d{6}$")
             self.assertRegex(case.phone_number, r"^[6-9]\d{9}$")
             self.assertRegex(case.alternate_phone_number, r"^[6-9]\d{9}$")
-            self.assertTrue(case.gender)
             self.assertIsNotNone(case.date_of_birth)
             self.assertTrue(case.place)
-            self.assertIsNotNone(case.age)
-            self.assertTrue(case.diagnosis)
             self.assertTrue(case.referred_by)
-            self.assertTrue(case.metadata.get("seed_scenario"))
 
         anc_high_risk = seeded_cases.get(metadata__seed_scenario="anc_high_risk")
         self.assertTrue(anc_high_risk.high_risk)
@@ -5245,6 +5379,11 @@ class SeedMockDataCommandTests(TestCase):
 
         non_surgical_cases = seeded_cases.filter(category__name="Medicine")
         self.assertGreaterEqual(non_surgical_cases.values("review_frequency").distinct().count(), 3)
+
+        quick_entry_case = seeded_cases.get(metadata__seed_scenario="quick_entry_pending_details")
+        self.assertEqual(quick_entry_case.metadata.get("entry_mode"), "quick_entry")
+        self.assertTrue(quick_entry_case.metadata.get("details_pending"))
+        self.assertTrue(quick_entry_case.tasks.filter(title=QUICK_ENTRY_DETAILS_TASK_TITLE).exists())
 
         self.assertTrue(Task.objects.filter(case=anc_high_risk, status=TaskStatus.AWAITING_REPORTS).exists())
         self.assertTrue(Task.objects.filter(case=anc_high_risk, status=TaskStatus.COMPLETED).exists())

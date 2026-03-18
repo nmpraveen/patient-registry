@@ -782,7 +782,7 @@
         {% endif %}
         <div class="identity-fact">
           <svg class="identity-icon" aria-hidden="true"><use href="#identity-icon-phone"></use></svg>
-          <span>{{ case.phone_number }}</span>
+          <span>{{ case.phone_number|default:"Phone pending" }}</span>
         </div>
         {% if case.referred_by %}
           <div class="identity-fact">

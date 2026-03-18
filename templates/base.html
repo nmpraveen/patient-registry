@@ -138,6 +138,7 @@
       }
 
       .btn-primary,
+      .btn-success,
       .btn-secondary,
       .btn-warning,
       .btn-danger,
@@ -157,6 +158,20 @@
         color: var(--theme-buttons-primary-text) !important;
         background-color: var(--theme-buttons-primary-hover-bg) !important;
         border-color: var(--theme-buttons-primary-border) !important;
+      }
+
+      .btn-success {
+        color: var(--theme-buttons-success-text);
+        background-color: var(--theme-buttons-success-bg);
+        border-color: var(--theme-buttons-success-border);
+      }
+
+      .btn-success:hover,
+      .btn-success:focus-visible,
+      .btn-success:active {
+        color: var(--theme-buttons-success-text) !important;
+        background-color: var(--theme-buttons-success-hover-bg) !important;
+        border-color: var(--theme-buttons-success-border) !important;
       }
 
       .btn-secondary {
@@ -602,6 +617,22 @@
         gap: 0.65rem;
       }
 
+      .global-search-input-wrap {
+        position: relative;
+      }
+
+      .global-search-icon {
+        position: absolute;
+        top: 50%;
+        left: 0.9rem;
+        transform: translateY(-50%);
+        color: var(--theme-nav-control-text);
+        font-size: 1rem;
+        line-height: 1;
+        pointer-events: none;
+        opacity: 0.9;
+      }
+
       .global-search-input {
         width: 100%;
         min-width: 0;
@@ -610,7 +641,8 @@
         border-radius: 0.85rem;
         font-size: 1rem;
         font-weight: 600;
-        padding-inline: 0.9rem;
+        padding-left: 2.45rem;
+        padding-right: 0.9rem;
       }
 
       .search-filter-pills {
@@ -1059,14 +1091,17 @@
               <div class="global-search-wrap" id="global-search-container">
                 <div class="global-search-controls">
                   <label class="visually-hidden" for="global-case-search-input">Search cases</label>
-                  <input
-                    id="global-case-search-input"
-                    type="search"
-                    class="form-control form-control-sm global-search-input"
-                    placeholder="Search UHID / name / phone / diagnosis / place / case notes / call notes"
-                    autocomplete="off"
-                    aria-label="Search cases"
-                  />
+                  <div class="global-search-input-wrap">
+                    <span class="global-search-icon" aria-hidden="true">&#128269;</span>
+                    <input
+                      id="global-case-search-input"
+                      type="search"
+                      class="form-control form-control-sm global-search-input"
+                      placeholder=""
+                      autocomplete="off"
+                      aria-label="Search cases"
+                    />
+                  </div>
                   <div class="search-filter-pills" aria-label="Category filters">
                     <label class="search-filter-pill search-filter-category" style="{% category_theme_style 'ANC' theme_category_colors %}"><input type="checkbox" value="anc" data-search-category checked /> ANC</label>
                     <label class="search-filter-pill search-filter-category" style="{% category_theme_style 'Surgery' theme_category_colors %}"><input type="checkbox" value="surgical" data-search-category checked /> Surgery</label>
@@ -1077,7 +1112,10 @@
               </div>
               <div class="global-nav-actions">
                 <a class="btn btn-sm btn-outline-light" href="{% url 'patients:case_list' %}">Cases</a>
-                <a class="btn btn-sm btn-primary" href="{% url 'patients:case_create' %}">New Case</a>
+                {% if user|has_capability:'case_create' %}
+                  <a class="btn btn-sm btn-success" href="{% url 'patients:case_create' %}">New Case</a>
+                  <a class="btn btn-sm btn-warning" href="{% url 'patients:case_quick_create' %}">Quick Entry</a>
+                {% endif %}
                 <a class="btn btn-sm btn-outline-light" href="{% url 'patients:settings' %}">Settings</a>
                 <form action="{% url 'logout' %}" method="post" class="m-0">
                   {% csrf_token %}

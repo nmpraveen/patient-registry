@@ -39,6 +39,7 @@ THEME_DEFAULTS = {
     },
     "buttons": {
         "primary": {"bg": "#0d6efd", "text": "#ffffff"},
+        "success": {"bg": "#198754", "text": "#ffffff"},
         "secondary": {"bg": "#6c757d", "text": "#ffffff"},
         "warning": {"bg": "#ffc107", "text": "#000000"},
         "danger": {"bg": "#dc3545", "text": "#ffffff"},
@@ -94,6 +95,7 @@ THEME_DEFAULTS = {
 
 PAIR_GROUPS = (
     ("buttons", "primary"),
+    ("buttons", "success"),
     ("buttons", "secondary"),
     ("buttons", "warning"),
     ("buttons", "danger"),
@@ -158,6 +160,7 @@ THEME_FORM_SECTIONS = [
         "title": "Buttons & Alerts",
         "rows": [
             {"label": "Primary Button", "fields": [{"name": "buttons__primary__bg", "label": "Background"}, {"name": "buttons__primary__text", "label": "Text"}]},
+            {"label": "Success Button", "fields": [{"name": "buttons__success__bg", "label": "Background"}, {"name": "buttons__success__text", "label": "Text"}]},
             {"label": "Secondary Button", "fields": [{"name": "buttons__secondary__bg", "label": "Background"}, {"name": "buttons__secondary__text", "label": "Text"}]},
             {"label": "Warning Button", "fields": [{"name": "buttons__warning__bg", "label": "Background"}, {"name": "buttons__warning__text", "label": "Text"}]},
             {"label": "Danger Button", "fields": [{"name": "buttons__danger__bg", "label": "Background"}, {"name": "buttons__danger__text", "label": "Text"}]},

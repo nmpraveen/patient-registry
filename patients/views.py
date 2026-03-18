@@ -16,6 +16,7 @@ from django.contrib.auth.models import Group
 from django.contrib.auth.views import LoginView
 from django.core.management import call_command
 from django.core.exceptions import ValidationError
+from django.db import transaction
 from django.db.models import (
     BooleanField,
     Case as QueryCase,
@@ -50,6 +51,7 @@ from .forms import (
     DepartmentThemeFormSet,
     DepartmentConfigForm,
     DeviceApprovalPolicyForm,
+    QuickEntryCaseForm,
     RecentCaseUpdateForm,
     RoleSettingForm,
     RoleSettingUpdateForm,
@@ -73,6 +75,7 @@ from .models import (
     Gender,
     PatientDataBackupSchedule,
     PatientDataBackupTrigger,
+    QUICK_ENTRY_DETAILS_TASK_TITLE,
     RCH_REMINDER_INTERVAL_DAYS,
     RCH_REMINDER_TASK_TITLE,
     RoleSetting,
@@ -88,10 +91,12 @@ from .models import (
     build_default_tasks,
     cancel_open_rch_reminders,
     clone_role_setting,
+    create_quick_entry_details_task,
     ensure_default_departments,
     ensure_rch_reminder_task,
     ensure_default_role_settings,
     frequency_to_days,
+    generate_quick_entry_uhid,
     is_anc_case,
 )
 from .theme import build_theme_category_colors, flatten_theme_tokens, get_default_category_theme, mix_colors, resolve_category_theme
@@ -2091,6 +2096,42 @@ class CaseCreateView(LoginRequiredMixin, CreateView):
                 user=self.request.user,
                 event_type=ActivityEventType.TASK,
                 note=f"RCH reminder scheduled for {reminder.due_date:%d-%m-%Y}.",
+            )
+        return response
+
+    def get_success_url(self):
+        return reverse("patients:case_detail", kwargs={"pk": self.object.pk})
+
+
+class QuickCaseCreateView(LoginRequiredMixin, CreateView):
+    model = Case
+    form_class = QuickEntryCaseForm
+    template_name = "patients/quick_case_form.html"
+
+    def dispatch(self, request, *args, **kwargs):
+        if not has_capability(request.user, "case_create"):
+            return HttpResponseForbidden("You do not have permission to create cases.")
+        return super().dispatch(request, *args, **kwargs)
+
+    def form_valid(self, form):
+        with transaction.atomic():
+            form.instance.created_by = self.request.user
+            form.instance.uhid = generate_quick_entry_uhid()
+            response = super().form_valid(form)
+            details_task = create_quick_entry_details_task(self.object, self.request.user, due_date=self.object.review_date)
+            created_tasks = build_default_tasks(self.object, self.request.user)
+            create_case_activity(
+                case=self.object,
+                user=self.request.user,
+                event_type=ActivityEventType.SYSTEM,
+                note=f"Quick entry created with {len(created_tasks)} starter task(s) and pending details reminder.",
+            )
+            create_case_activity(
+                case=self.object,
+                task=details_task,
+                user=self.request.user,
+                event_type=ActivityEventType.TASK,
+                note=f"{QUICK_ENTRY_DETAILS_TASK_TITLE} task scheduled for {details_task.due_date:%d-%m-%Y}.",
             )
         return response
 

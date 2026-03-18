@@ -50,6 +50,13 @@ def normalize_backup_schedule_time(value):
     return parsed.strftime("%H:%M")
 
 
+def normalize_case_name(value):
+    normalized = " ".join((value or "").split())
+    if not normalized:
+        return ""
+    return normalized.title()
+
+
 class CallOutcome(models.TextChoices):
     ANSWERED_CONFIRMED_VISIT = "ANSWERED_CONFIRMED_VISIT", "Answered - Confirmed visit"
     ANSWERED_UNCERTAIN = "ANSWERED_UNCERTAIN", "Answered - Uncertain"
@@ -664,6 +671,12 @@ class Case(models.Model):
     def full_name(self):
         return f"{self.first_name} {self.last_name}".strip()
 
+    def _normalize_identity_fields(self):
+        self.first_name = normalize_case_name(self.first_name)
+        self.last_name = normalize_case_name(self.last_name)
+        self.place = normalize_case_name(self.place)
+        self.patient_name = self.full_name
+
     def clean(self):
         if self.phone_number and (not self.phone_number.isdigit() or len(self.phone_number) != 10):
             raise ValidationError({"phone_number": "Phone number must be exactly 10 digits."})
@@ -724,7 +737,19 @@ class Case(models.Model):
             raise ValidationError({"review_date": "Medicine cases require a review date."})
 
     def save(self, *args, **kwargs):
-        self.patient_name = self.full_name
+        tracked_name_fields = {"first_name", "last_name", "patient_name"}
+        update_fields = kwargs.get("update_fields")
+        should_sync_names = update_fields is None
+
+        if update_fields is not None:
+            update_fields = set(update_fields)
+            should_sync_names = bool(tracked_name_fields & update_fields)
+            if should_sync_names:
+                update_fields.update(tracked_name_fields)
+                kwargs["update_fields"] = tuple(sorted(update_fields))
+
+        if should_sync_names:
+            self._normalize_identity_fields()
         super().save(*args, **kwargs)
 
     @property

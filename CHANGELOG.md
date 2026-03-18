@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.03.18.03.18
+- Normalized stored patient `first_name`, `last_name`, and `place` values to simple proper case on every `Case` save, with whitespace collapsed and `patient_name` re-derived from the normalized name values.
+- Tightened partial `save(update_fields=...)` handling so patient identity fields stay in sync even when only one of the name fields is explicitly saved.
+- Added batched data migrations to rewrite existing patient names and places into the same normalized storage format without touching `updated_at`, and expanded regression coverage for direct ORM saves, case create/edit flows, and database bundle imports.
+
 ## 2026.03.18.02.10
 - Reworked the dashboard `Today`, `Recently Added`, `Overdue`, and `Awaiting Reports` modules into a shared compact-row layout with category tinting, inline expand behavior where needed, and mobile-friendly condensed rows.
 - Replaced the `Recently Added` modal workflow with inline notes and task review, preserved `Open full case`, and expanded the dashboard/recent payloads to include compact sex-age, short-name, due-date, and category theme metadata.

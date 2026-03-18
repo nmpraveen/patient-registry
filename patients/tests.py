@@ -72,6 +72,74 @@ class MedtrackModelTests(TestCase):
         self.user = get_user_model().objects.create_user(username="doctor", password="pw12345")
         self.anc, _ = DepartmentConfig.objects.get_or_create(name="ANC", defaults={"predefined_actions": ["USG"], "metadata_template": {"lmp": "date"}})
 
+    def test_case_save_normalizes_patient_names_and_place(self):
+        case = Case.objects.create(
+            uhid="UH-NAME-001",
+            first_name="  FIRST   NAME  ",
+            last_name="  lAST   NAME  ",
+            place="  cHENNAI  ",
+            phone_number="9000000001",
+            category=self.anc,
+            lmp=timezone.localdate() - timedelta(days=70),
+            edd=timezone.localdate() + timedelta(days=200),
+            created_by=self.user,
+        )
+
+        self.assertEqual(case.first_name, "First Name")
+        self.assertEqual(case.last_name, "Last Name")
+        self.assertEqual(case.place, "Chennai")
+        self.assertEqual(case.patient_name, "First Name Last Name")
+
+    def test_case_save_with_update_fields_normalizes_names_place_and_keeps_patient_name_synced(self):
+        case = Case.objects.create(
+            uhid="UH-NAME-002",
+            first_name="Asha",
+            last_name="Devi",
+            place="Pune",
+            phone_number="9000000002",
+            category=self.anc,
+            lmp=timezone.localdate() - timedelta(days=70),
+            edd=timezone.localdate() + timedelta(days=200),
+            created_by=self.user,
+        )
+
+        case.first_name = "  mR  "
+        case.last_name = "  LAST   NAME  "
+        case.place = "  nEW   dELHI  "
+        case.save(update_fields=["first_name", "place"])
+        case.refresh_from_db()
+
+        self.assertEqual(case.first_name, "Mr")
+        self.assertEqual(case.last_name, "Last Name")
+        self.assertEqual(case.place, "New Delhi")
+        self.assertEqual(case.patient_name, "Mr Last Name")
+
+    def test_case_save_with_unrelated_update_fields_does_not_rewrite_names(self):
+        case = Case.objects.create(
+            uhid="UH-NAME-003",
+            first_name="Asha",
+            last_name="Devi",
+            phone_number="9000000003",
+            category=self.anc,
+            lmp=timezone.localdate() - timedelta(days=70),
+            edd=timezone.localdate() + timedelta(days=200),
+            created_by=self.user,
+        )
+        Case.objects.filter(pk=case.pk).update(
+            first_name="  FIRST   NAME  ",
+            last_name="  mR  ",
+            patient_name="  FIRST   NAME     mR  ",
+        )
+
+        case.refresh_from_db()
+        case.notes = "Updated note"
+        case.save(update_fields=["notes"])
+        case.refresh_from_db()
+
+        self.assertEqual(case.first_name, "  FIRST   NAME  ")
+        self.assertEqual(case.last_name, "  mR  ")
+        self.assertEqual(case.patient_name, "  FIRST   NAME     mR  ")
+
     def test_anc_case_requires_lmp_edd(self):
         case = Case(
             uhid="UH001",
@@ -2843,6 +2911,46 @@ class MedtrackViewTests(TestCase):
         self.assertTrue(Case.objects.filter(uhid="UH-SAME-001").exists())
         self.assertTrue(Case.objects.filter(uhid="UH-SAME-002").exists())
 
+    def test_database_management_import_normalizes_patient_names_and_place(self):
+        self.login_as_admin()
+        self.create_bundle_case(
+            uhid="UH-NORM-001",
+            first_name="Lakshmi",
+            last_name="Devi",
+            phone_number="9000000108",
+        )
+        bundle_bytes = self.rewrite_bundle(
+            self.build_patient_bundle_bytes(),
+            payload_mutator=lambda payload: payload["cases"][0].update(
+                {
+                    "first_name": "  FIRST   NAME  ",
+                    "last_name": "  mR  ",
+                    "place": "  cHENNAI  ",
+                }
+            ),
+        )
+        Case.objects.all().delete()
+
+        with tempfile.TemporaryDirectory() as temp_dir, patch(
+            "patients.database_bundle.default_backup_dir", return_value=Path(temp_dir)
+        ):
+            response = self.client.post(
+                reverse("patients:settings_database"),
+                {
+                    "action": "import",
+                    "confirm_phrase": database_bundle.IMPORT_CONFIRMATION_PHRASE,
+                    "bundle_file": SimpleUploadedFile("patient-data.zip", bundle_bytes, content_type="application/zip"),
+                },
+                follow=True,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        case = Case.objects.get(uhid="UH-NORM-001")
+        self.assertEqual(case.first_name, "First Name")
+        self.assertEqual(case.last_name, "Mr")
+        self.assertEqual(case.place, "Chennai")
+        self.assertEqual(case.patient_name, "First Name Mr")
+
     def test_database_management_import_preserves_non_patient_settings_and_device_data(self):
         self.login_as_admin()
         theme = ThemeSettings.get_solo()
@@ -3449,6 +3557,32 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(case.place, "Chennai")
         self.assertEqual(case.date_of_birth.isoformat(), "1995-01-15")
 
+    def test_create_case_normalizes_patient_names_and_place(self):
+        self.client.force_login(self.user)
+        response = self.client.post(
+            reverse("patients:case_create"),
+            {
+                "uhid": "UH444N",
+                "first_name": "  FIRST   NAME  ",
+                "last_name": "  mR  ",
+                "gender": "FEMALE",
+                "date_of_birth": "1995-01-15",
+                "place": "  cHENNAI  ",
+                "phone_number": "9123456790",
+                "category": self.surgery.id,
+                "status": CaseStatus.ACTIVE,
+                "surgical_pathway": SurgicalPathway.SURVEILLANCE,
+                "review_date": (timezone.localdate() + timedelta(days=14)).isoformat(),
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        case = Case.objects.get(uhid="UH444N")
+        self.assertEqual(case.first_name, "First Name")
+        self.assertEqual(case.last_name, "Mr")
+        self.assertEqual(case.place, "Chennai")
+        self.assertEqual(case.patient_name, "First Name Mr")
+
     def test_case_form_accepts_india_style_date_input(self):
         review_date = timezone.localdate() + timedelta(days=10)
         form = CaseForm(
@@ -3712,6 +3846,44 @@ class MedtrackViewTests(TestCase):
         case.refresh_from_db()
         self.assertEqual(reminder.status, TaskStatus.CANCELLED)
         self.assertFalse(case.rch_bypass)
+
+    def test_case_update_normalizes_patient_names(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-EDIT-NAME",
+            first_name="Asha",
+            last_name="Devi",
+            place="Pune",
+            phone_number="9876500198",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            review_date=timezone.localdate() + timedelta(days=7),
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            created_by=self.user,
+        )
+
+        response = self.client.post(
+            reverse("patients:case_edit", kwargs={"pk": case.pk}),
+            {
+                "uhid": case.uhid,
+                "first_name": "  LAST   NAME ",
+                "last_name": "  mR ",
+                "place": "  nEW   dELHI  ",
+                "phone_number": case.phone_number,
+                "category": self.surgery.id,
+                "status": CaseStatus.ACTIVE,
+                "age": "26",
+                "surgical_pathway": SurgicalPathway.SURVEILLANCE,
+                "review_date": case.review_date.isoformat(),
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        case.refresh_from_db()
+        self.assertEqual(case.first_name, "Last Name")
+        self.assertEqual(case.last_name, "Mr")
+        self.assertEqual(case.place, "New Delhi")
+        self.assertEqual(case.patient_name, "Last Name Mr")
 
     def test_completing_rch_reminder_schedules_next_reminder_when_rch_missing(self):
         self.client.force_login(self.user)

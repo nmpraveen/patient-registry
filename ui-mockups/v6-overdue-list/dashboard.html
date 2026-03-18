@@ -1,0 +1,959 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Overdue Compact List Mockup | MEDTRACK</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Manrope:wght@700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --shell-bg: #f6f0ef;
+      --shell-text: #213248;
+      --shell-muted: #6e7d90;
+      --shell-border: rgba(235, 219, 218, 0.92);
+      --shell-shadow: 0 28px 80px rgba(55, 35, 33, 0.12);
+      --module-bg: rgba(255, 250, 249, 0.94);
+      --module-border: rgba(214, 150, 150, 0.3);
+      --module-shadow: 0 16px 38px rgba(87, 58, 55, 0.12);
+      --module-kicker: #a65454;
+      --module-badge-bg: #f8dede;
+      --module-badge-text: #a54a4a;
+      --row-bg: rgba(255, 255, 255, 0.96);
+      --row-border: rgba(204, 191, 191, 0.88);
+      --row-shadow: 0 6px 18px rgba(50, 48, 52, 0.08);
+      --row-hover-shadow: 0 12px 26px rgba(72, 54, 56, 0.12);
+      --row-accent: linear-gradient(180deg, #f1b3b3 0%, #e58f8f 100%);
+      --expand-bg: #ffffff;
+      --expand-border: rgba(181, 105, 105, 0.2);
+      --call-bg: #dff6e7;
+      --call-border: #a9dfba;
+      --call-text: #1f7d42;
+      --anc-bg: #e7f5ec;
+      --anc-border: #cae8d6;
+      --anc-text: #2d7b4f;
+      --surgery-bg: #fff2d8;
+      --surgery-border: #f2d89b;
+      --surgery-text: #9a6708;
+      --medicine-bg: #eef2f6;
+      --medicine-border: #d8e0ea;
+      --medicine-text: #536273;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      min-height: 100%;
+    }
+
+    body {
+      font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--shell-text);
+      background:
+        radial-gradient(circle at top left, rgba(246, 206, 206, 0.68) 0%, rgba(246, 206, 206, 0) 24%),
+        radial-gradient(circle at bottom right, rgba(239, 231, 207, 0.7) 0%, rgba(239, 231, 207, 0) 28%),
+        linear-gradient(155deg, #fcf8f7 0%, #f5f0ef 42%, #ece8ea 100%);
+      padding: 2.4rem 1.25rem 3rem;
+    }
+
+    a {
+      color: inherit;
+    }
+
+    .page-shell {
+      width: min(1260px, 100%);
+      margin: 0 auto;
+    }
+
+    .page-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-bottom: 1.6rem;
+    }
+
+    .back-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      margin-bottom: 0.85rem;
+      color: var(--shell-muted);
+      font-size: 0.84rem;
+      font-weight: 700;
+      text-decoration: none;
+    }
+
+    .back-link:hover {
+      color: var(--shell-text);
+    }
+
+    .page-title {
+      margin: 0;
+      font-family: "Manrope", "Inter", sans-serif;
+      font-size: clamp(2rem, 5vw, 3rem);
+      font-weight: 800;
+      letter-spacing: -0.06em;
+      line-height: 0.96;
+      max-width: 12ch;
+    }
+
+    .page-copy {
+      margin: 0.85rem 0 0;
+      max-width: 48rem;
+      color: var(--shell-muted);
+      font-size: 0.95rem;
+      line-height: 1.7;
+    }
+
+    .page-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px;
+      border: 1px solid rgba(182, 114, 114, 0.18);
+      background: rgba(255, 255, 255, 0.82);
+      box-shadow: 0 10px 28px rgba(57, 40, 40, 0.08);
+      color: var(--module-kicker);
+      font-size: 0.78rem;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      padding: 0.6rem 0.9rem;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .preview-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.8fr);
+      gap: 1.35rem;
+      align-items: start;
+    }
+
+    .preview-stage {
+      display: grid;
+      gap: 0.75rem;
+    }
+
+    .preview-label {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      color: var(--shell-muted);
+      font-size: 0.82rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+    }
+
+    .preview-label strong {
+      color: var(--shell-text);
+      font-weight: 800;
+    }
+
+    .preview-surface {
+      border: 1px solid var(--shell-border);
+      border-radius: 32px;
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.82) 0%, rgba(249, 245, 245, 0.9) 100%);
+      box-shadow: var(--shell-shadow);
+      padding: 1.2rem;
+      backdrop-filter: blur(16px);
+    }
+
+    .preview-surface--mobile {
+      width: min(100%, 430px);
+      margin-left: auto;
+      margin-right: auto;
+      padding: 1rem;
+    }
+
+    .mock-shell {
+      --module-accent: var(--module-kicker);
+      position: relative;
+      overflow: hidden;
+      border-radius: 26px;
+      border: 1px solid var(--module-border);
+      background:
+        radial-gradient(circle at top left, rgba(255, 222, 222, 0.68) 0%, rgba(255, 222, 222, 0) 35%),
+        linear-gradient(180deg, rgba(255, 251, 250, 0.97) 0%, var(--module-bg) 100%);
+      box-shadow: var(--module-shadow);
+      padding: 1.1rem;
+    }
+
+    .mock-shell::before {
+      content: "";
+      position: absolute;
+      inset: -40px auto auto -40px;
+      width: 160px;
+      height: 160px;
+      border-radius: 999px;
+      background: radial-gradient(circle, rgba(221, 152, 152, 0.16) 0%, rgba(221, 152, 152, 0) 72%);
+      pointer-events: none;
+    }
+
+    .module-card {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      gap: 0.9rem;
+    }
+
+    .module-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 0.9rem;
+    }
+
+    .module-kicker {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      margin-bottom: 0.38rem;
+      color: var(--module-accent);
+      font-size: 0.72rem;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .module-kicker::before {
+      content: "";
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: currentColor;
+      opacity: 0.72;
+    }
+
+    .module-title {
+      margin: 0;
+      font-size: 1.12rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+    }
+
+    .module-copy {
+      margin: 0.18rem 0 0;
+      color: var(--shell-muted);
+      font-size: 0.83rem;
+      line-height: 1.55;
+      max-width: 37rem;
+    }
+
+    .module-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px;
+      border: 1px solid rgba(205, 141, 141, 0.34);
+      background: var(--module-badge-bg);
+      color: var(--module-badge-text);
+      font-size: 0.74rem;
+      font-weight: 800;
+      padding: 0.42rem 0.68rem;
+      white-space: nowrap;
+    }
+
+    .overdue-list {
+      display: grid;
+      gap: 0.72rem;
+    }
+
+    .overdue-row {
+      position: relative;
+      overflow: hidden;
+      border: 1px solid var(--row-border-color, var(--row-border));
+      border-radius: 18px;
+      background: linear-gradient(180deg, var(--row-surface-strong, #ffffff) 0%, var(--row-surface, var(--row-bg)) 100%);
+      box-shadow: var(--row-shadow);
+      transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+    }
+
+    .overdue-row::before {
+      content: "";
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 5px;
+      background: linear-gradient(180deg, var(--row-accent-soft, #f1b3b3) 0%, var(--row-accent-strong, #e58f8f) 100%);
+      pointer-events: none;
+    }
+
+    .overdue-row:hover,
+    .overdue-row.is-open {
+      border-color: rgba(183, 120, 120, 0.28);
+      box-shadow: var(--row-hover-shadow);
+      transform: translateY(-1px);
+    }
+
+    .overdue-row-top {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 0.7rem;
+      padding: 0.08rem;
+    }
+
+    .overdue-row-toggle {
+      appearance: none;
+      flex: 1 1 auto;
+      min-width: 0;
+      border: 0;
+      background: transparent;
+      color: inherit;
+      cursor: pointer;
+      text-align: left;
+      padding: 0.78rem 0.4rem 0.78rem 0.92rem;
+    }
+
+    .overdue-row-toggle:focus-visible {
+      outline: 2px solid rgba(165, 74, 74, 0.28);
+      outline-offset: 2px;
+      border-radius: 12px;
+    }
+
+    .overdue-summary-line {
+      display: flex;
+      flex-wrap: nowrap;
+      align-items: center;
+      gap: 0.35rem;
+      min-width: 0;
+      overflow: hidden;
+      white-space: nowrap;
+    }
+
+    .overdue-date {
+      color: var(--module-accent);
+      font-size: 0.76rem;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      flex: 0 0 auto;
+    }
+
+    .line-sep {
+      color: #b7b2ba;
+      flex: 0 0 auto;
+      font-weight: 700;
+    }
+
+    .patient-name {
+      min-width: 0;
+      flex: 1 1 auto;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-size: 0.95rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+
+    .inline-meta {
+      color: var(--shell-muted);
+      font-size: 0.82rem;
+      font-weight: 600;
+      flex: 0 0 auto;
+    }
+
+    .call-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px;
+      border: 1px solid var(--call-border);
+      background: var(--call-bg);
+      color: var(--call-text);
+      font-size: 0.78rem;
+      font-weight: 800;
+      padding: 0.48rem 0.78rem;
+      text-decoration: none;
+      white-space: nowrap;
+      margin: 0.55rem 0.65rem 0.55rem 0;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .call-button:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 10px 18px rgba(31, 125, 66, 0.14);
+    }
+
+    .overdue-row-details {
+      border-top: 1px solid rgba(222, 213, 216, 0.76);
+      background: linear-gradient(180deg, rgba(251, 246, 247, 0.82) 0%, rgba(255, 255, 255, 0.94) 100%);
+      color: var(--shell-muted);
+      font-size: 0.8rem;
+      line-height: 1.55;
+      padding: 0.78rem 0.95rem 0.88rem 1rem;
+    }
+
+    .overdue-row-details[hidden] {
+      display: none;
+    }
+
+    .detail-label {
+      color: var(--module-accent);
+      font-size: 0.7rem;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      margin-right: 0.45rem;
+      text-transform: uppercase;
+    }
+
+    .task-dot {
+      color: #c89c9c;
+      margin: 0 0.3rem;
+    }
+
+    .module-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.8rem;
+      margin-top: 0.05rem;
+    }
+
+    .footer-copy {
+      color: var(--shell-muted);
+      font-size: 0.8rem;
+    }
+
+    .expand-button {
+      appearance: none;
+      border: 1px solid var(--expand-border);
+      border-radius: 999px;
+      background: var(--expand-bg);
+      color: var(--module-kicker);
+      cursor: pointer;
+      font-size: 0.82rem;
+      font-weight: 800;
+      padding: 0.58rem 0.9rem;
+      transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+    }
+
+    .expand-button:hover {
+      background: #fff5f5;
+      border-color: rgba(165, 74, 74, 0.3);
+      transform: translateY(-1px);
+    }
+
+    .page-note {
+      margin-top: 1.35rem;
+      border-radius: 20px;
+      border: 1px solid rgba(214, 209, 209, 0.88);
+      background: rgba(255, 255, 255, 0.72);
+      color: var(--shell-muted);
+      font-size: 0.84rem;
+      line-height: 1.7;
+      padding: 1rem 1.15rem;
+    }
+
+    .mock-shell[data-display-mode="mobile"] {
+      padding: 0.95rem;
+    }
+
+    .mock-shell[data-display-mode="mobile"] .module-header {
+      flex-direction: column;
+    }
+
+    .mock-shell[data-display-mode="mobile"] .module-badge {
+      align-self: flex-start;
+    }
+
+    .mock-shell[data-display-mode="mobile"] .overdue-row-toggle {
+      padding: 0.7rem 0.12rem 0.68rem 0.78rem;
+    }
+
+    .mock-shell[data-display-mode="mobile"] .overdue-summary-line {
+      flex-wrap: nowrap;
+      gap: 0.28rem;
+      overflow: hidden;
+      white-space: nowrap;
+    }
+
+    .mock-shell[data-display-mode="mobile"] .call-button {
+      margin-top: 0.48rem;
+      margin-right: 0.42rem;
+      padding: 0.34rem 0.56rem;
+      font-size: 0.72rem;
+      min-width: 2.95rem;
+    }
+
+    .mock-shell[data-display-mode="mobile"] .overdue-date {
+      font-size: 0.69rem;
+    }
+
+    .mock-shell[data-display-mode="mobile"] .patient-name {
+      font-size: 0.88rem;
+    }
+
+    .mock-shell[data-display-mode="mobile"] .inline-meta,
+    .mock-shell[data-display-mode="mobile"] .line-sep {
+      font-size: 0.74rem;
+    }
+
+    .mock-shell[data-display-mode="mobile"] .overdue-row-details {
+      padding: 0.72rem 0.82rem 0.8rem 0.84rem;
+      font-size: 0.76rem;
+    }
+
+    .mock-shell[data-display-mode="mobile"] .module-footer {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+
+    @media (max-width: 980px) {
+      .page-header {
+        flex-direction: column;
+      }
+
+      .preview-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 640px) {
+      body {
+        padding-left: 0.9rem;
+        padding-right: 0.9rem;
+      }
+
+      .preview-surface {
+        padding: 0.9rem;
+        border-radius: 24px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page-shell">
+    <header class="page-header">
+      <div>
+        <a class="back-link" href="../index.html">&larr; Back to mockup index</a>
+        <h1 class="page-title">Overdue Tasks Compact List</h1>
+        <p class="page-copy">
+          Standalone preview for the dashboard overdue section using the tighter Recently Added row rhythm:
+          one dense summary line, one hidden overdue-task line, 10 visible rows by default, and a separate green Call action.
+        </p>
+      </div>
+      <div class="page-badge">Preview Only</div>
+    </header>
+
+    <div class="preview-grid">
+      <section class="preview-stage">
+        <div class="preview-label">
+          <strong>Desktop Preview</strong>
+          <span>Wide dashboard module shell</span>
+        </div>
+        <div class="preview-surface">
+          <div class="mock-shell" data-overdue-module data-display-mode="desktop"></div>
+        </div>
+      </section>
+
+      <section class="preview-stage">
+        <div class="preview-label">
+          <strong>Mobile Preview</strong>
+          <span>390px narrow shell</span>
+        </div>
+        <div class="preview-surface preview-surface--mobile">
+          <div class="mock-shell" data-overdue-module data-display-mode="mobile"></div>
+        </div>
+      </section>
+    </div>
+
+    <div class="page-note">
+      This is a static HTML mockup with sample overdue data. It intentionally does not change the live dashboard template or Django views.
+      Click any summary row to toggle the hidden overdue-task line. Use the footer button to reveal all overdue rows or collapse back to the first 10.
+    </div>
+  </div>
+
+  <script>
+    (() => {
+      const rows = [
+        {
+          id: 1,
+          date: "Oct 07",
+          patient: "Karthik Raman",
+          sex: "M",
+          age: 37,
+          category: "ANC",
+          categoryKey: "anc",
+          phone: "9700000001",
+          tasks: [
+            "Routine prenatal check up",
+            "First trimester combined test",
+            "NT ultrasound scan"
+          ]
+        },
+        {
+          id: 2,
+          date: "Nov 04",
+          patient: "Karthik Raman",
+          sex: "M",
+          age: 37,
+          category: "ANC",
+          categoryKey: "anc",
+          phone: "9700000001",
+          tasks: [
+            "Routine prenatal check up"
+          ]
+        },
+        {
+          id: 3,
+          date: "Dec 02",
+          patient: "Karthik Raman",
+          sex: "M",
+          age: 37,
+          category: "ANC",
+          categoryKey: "anc",
+          phone: "9700000001",
+          tasks: [
+            "Routine prenatal check up",
+            "Anomaly scan"
+          ]
+        },
+        {
+          id: 4,
+          date: "Dec 30",
+          patient: "Karthik Raman",
+          sex: "M",
+          age: 37,
+          category: "ANC",
+          categoryKey: "anc",
+          phone: "9700000001",
+          tasks: [
+            "Routine prenatal check up",
+            "First dose of Tetanus Toxoid injection"
+          ]
+        },
+        {
+          id: 5,
+          date: "Jan 03",
+          patient: "Nivetha Sundaram",
+          sex: "F",
+          age: 30,
+          category: "ANC",
+          categoryKey: "anc",
+          phone: "9700000005",
+          tasks: [
+            "Routine prenatal check up",
+            "First trimester combined test",
+            "NT ultrasound scan"
+          ]
+        },
+        {
+          id: 6,
+          date: "Jan 27",
+          patient: "Karthik Raman",
+          sex: "M",
+          age: 37,
+          category: "ANC",
+          categoryKey: "anc",
+          phone: "9700000001",
+          tasks: [
+            "Routine prenatal check up",
+            "Second dose of Tetanus Toxoid injection",
+            "Fetal wellbeing ultrasound scan"
+          ]
+        },
+        {
+          id: 7,
+          date: "Jan 31",
+          patient: "Nivetha Sundaram",
+          sex: "F",
+          age: 30,
+          category: "ANC",
+          categoryKey: "anc",
+          phone: "9700000005",
+          tasks: [
+            "Routine prenatal check up"
+          ]
+        },
+        {
+          id: 8,
+          date: "Feb 24",
+          patient: "Karthik Raman",
+          sex: "M",
+          age: 37,
+          category: "ANC",
+          categoryKey: "anc",
+          phone: "9700000001",
+          tasks: [
+            "Routine prenatal check up"
+          ]
+        },
+        {
+          id: 9,
+          date: "Feb 24",
+          patient: "Anitha Balasubramaniam",
+          sex: "F",
+          age: 32,
+          category: "Medicine",
+          categoryKey: "medicine",
+          phone: "9700000003",
+          tasks: [
+            "HbA1c review",
+            "Medication refill",
+            "Diet counseling"
+          ]
+        },
+        {
+          id: 10,
+          date: "Mar 03",
+          patient: "Pradeep Subramanian",
+          sex: "M",
+          age: 35,
+          category: "Surgery",
+          categoryKey: "surgery",
+          phone: "9700000008",
+          tasks: [
+            "Post-op wound review",
+            "Suture removal"
+          ]
+        },
+        {
+          id: 11,
+          date: "Mar 13",
+          patient: "Sathish Arumugam",
+          sex: "M",
+          age: 41,
+          category: "Medicine",
+          categoryKey: "medicine",
+          phone: "9700000011",
+          tasks: [
+            "Consultant review"
+          ]
+        },
+        {
+          id: 12,
+          date: "Mar 13",
+          patient: "Meena Rajendran",
+          sex: "F",
+          age: 52,
+          category: "Surgery",
+          categoryKey: "surgery",
+          phone: "9700000012",
+          tasks: [
+            "Lab test"
+          ]
+        },
+        {
+          id: 13,
+          date: "Mar 13",
+          patient: "Aravind Muthukumar",
+          sex: "M",
+          age: 36,
+          category: "Medicine",
+          categoryKey: "medicine",
+          phone: "9700000013",
+          tasks: [
+            "Consultant review"
+          ]
+        },
+        {
+          id: 14,
+          date: "Mar 13",
+          patient: "Keerthana Manikandan",
+          sex: "F",
+          age: 29,
+          category: "ANC",
+          categoryKey: "anc",
+          phone: "9700000014",
+          tasks: [
+            "Routine prenatal check up"
+          ]
+        }
+      ];
+
+      const categoryTheme = {
+        anc: {
+          surface: "#f5fbf7",
+          surfaceStrong: "#edf8f1",
+          border: "#cfe9d8",
+          accentSoft: "#a8d8b8",
+          accentStrong: "#4aa36d"
+        },
+        surgery: {
+          surface: "#fff9ee",
+          surfaceStrong: "#fff4df",
+          border: "#f0ddb0",
+          accentSoft: "#efcf83",
+          accentStrong: "#d89a18"
+        },
+        medicine: {
+          surface: "#f5f8fb",
+          surfaceStrong: "#eef3f7",
+          border: "#d8e0ea",
+          accentSoft: "#c4d0dd",
+          accentStrong: "#7890a8"
+        }
+      };
+
+      const rowLimit = 10;
+
+      const buildShortName = (name) => {
+        const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
+        if (parts.length <= 1) {
+          return name;
+        }
+        const first = parts[0];
+        const lastInitial = parts[parts.length - 1].charAt(0);
+        return `${first} ${lastInitial}.`;
+      };
+
+      const renderTaskLine = (tasks) =>
+        tasks
+          .map((task) => `<span>${task}</span>`)
+          .join('<span class="task-dot">&bull;</span>');
+
+      const renderRow = (row, openId, displayMode) => {
+        const theme = categoryTheme[row.categoryKey];
+        const detailId = `overdue-detail-${row.id}`;
+        const isOpen = row.id === openId;
+        const metaLabel = `${row.sex}${row.age}`;
+        return `
+          <article
+            class="overdue-row${isOpen ? " is-open" : ""}"
+            style="--row-surface:${theme.surface}; --row-surface-strong:${theme.surfaceStrong}; --row-border-color:${theme.border}; --row-accent-soft:${theme.accentSoft}; --row-accent-strong:${theme.accentStrong};"
+          >
+            <div class="overdue-row-top">
+              <button
+                type="button"
+                class="overdue-row-toggle"
+                data-overdue-toggle="${row.id}"
+                aria-expanded="${isOpen ? "true" : "false"}"
+                aria-controls="${detailId}"
+              >
+                <div class="overdue-summary-line">
+                  <span class="overdue-date">${row.date}</span>
+                  <span class="line-sep" aria-hidden="true">|</span>
+                  <span
+                    class="patient-name"
+                    data-full-name="${row.patient}"
+                    data-short-name="${buildShortName(row.patient)}"
+                  >${row.patient}</span>
+                  <span class="line-sep" aria-hidden="true">|</span>
+                  <span class="inline-meta">${metaLabel}</span>
+                </div>
+              </button>
+              <a class="call-button" href="tel:${row.phone}" aria-label="Call ${row.patient}">Call</a>
+            </div>
+            <div class="overdue-row-details" id="${detailId}"${isOpen ? "" : " hidden"}>
+              <span class="detail-label">Overdue</span>${renderTaskLine(row.tasks)}
+            </div>
+          </article>
+        `;
+      };
+
+      const initModule = (root) => {
+        const displayMode = root.dataset.displayMode || "desktop";
+        const state = {
+          isExpanded: false,
+          openId: null
+        };
+        const textMeasureCanvas = document.createElement("canvas");
+        const textMeasureContext = textMeasureCanvas.getContext("2d");
+
+        const applyMobileNameFallback = () => {
+          if (displayMode !== "mobile") {
+            return;
+          }
+
+          root.querySelectorAll(".patient-name").forEach((nameEl) => {
+            const summaryLine = nameEl.closest(".overdue-summary-line");
+            const fullName = nameEl.dataset.fullName || nameEl.textContent || "";
+            const shortName = nameEl.dataset.shortName || fullName;
+            const computedStyle = window.getComputedStyle(nameEl);
+            const font = [
+              computedStyle.fontStyle,
+              computedStyle.fontVariant,
+              computedStyle.fontWeight,
+              computedStyle.fontSize,
+              computedStyle.fontFamily
+            ].join(" ");
+            nameEl.textContent = fullName;
+            nameEl.setAttribute("title", fullName);
+
+            if (textMeasureContext) {
+              textMeasureContext.font = font;
+            }
+
+            const measuredFullNameWidth = textMeasureContext
+              ? textMeasureContext.measureText(fullName).width
+              : nameEl.scrollWidth;
+
+            if (
+              (summaryLine && summaryLine.scrollWidth > summaryLine.clientWidth + 1)
+              || measuredFullNameWidth > nameEl.clientWidth + 1
+            ) {
+              nameEl.textContent = shortName;
+            }
+          });
+        };
+
+        const render = () => {
+          const visibleRows = state.isExpanded ? rows : rows.slice(0, rowLimit);
+          const hiddenCount = Math.max(rows.length - rowLimit, 0);
+
+          if (state.openId !== null && !visibleRows.some((row) => row.id === state.openId)) {
+            state.openId = visibleRows[0] ? visibleRows[0].id : null;
+          }
+
+          root.innerHTML = `
+            <div class="module-card">
+              <div class="module-header">
+                <div>
+                  <div class="module-kicker">Overdue</div>
+                  <h2 class="module-title">Overdue Tasks</h2>
+                  <p class="module-copy">Oldest overdue patients condensed into the Recently Added row style. Tap a row to reveal the missed items without opening a modal.</p>
+                </div>
+                <div class="module-badge">${state.isExpanded ? `${rows.length} shown` : `${Math.min(rowLimit, rows.length)} shown`}</div>
+              </div>
+              <div class="overdue-list">
+                ${visibleRows.map((row) => renderRow(row, state.openId, displayMode)).join("")}
+              </div>
+              <div class="module-footer">
+                <div class="footer-copy">${rows.length} overdue patients in this preview set.</div>
+                ${
+                  hiddenCount
+                    ? `<button type="button" class="expand-button" data-overdue-expand>${state.isExpanded ? "Collapse list" : `Expand ${hiddenCount} more`}</button>`
+                    : ""
+                }
+              </div>
+            </div>
+          `;
+
+          window.requestAnimationFrame(applyMobileNameFallback);
+        };
+
+        root.addEventListener("click", (event) => {
+          const expandButton = event.target.closest("[data-overdue-expand]");
+          if (expandButton) {
+            state.isExpanded = !state.isExpanded;
+            render();
+            return;
+          }
+
+          const toggle = event.target.closest("[data-overdue-toggle]");
+          if (!toggle) {
+            return;
+          }
+
+          const nextId = Number(toggle.dataset.overdueToggle);
+          state.openId = state.openId === nextId ? null : nextId;
+          render();
+        });
+
+        render();
+        window.addEventListener("resize", applyMobileNameFallback);
+      };
+
+      document.querySelectorAll("[data-overdue-module]").forEach(initModule);
+    })();
+  </script>
+</body>
+</html>

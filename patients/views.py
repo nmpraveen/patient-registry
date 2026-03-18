@@ -456,6 +456,8 @@ def _forbidden_response(request, message):
 
 
 def _clamp_recent_case_limit(raw_limit):
+    if raw_limit == "all":
+        return None
     try:
         limit = int(raw_limit)
     except (TypeError, ValueError):
@@ -623,7 +625,14 @@ def _serialize_recent_task(task, *, category_name, can_edit_tasks, today):
     }
 
 
-def _serialize_recent_case(case, user, *, today=None, can_edit_recent=None, can_edit_tasks=None):
+def _build_short_name(name):
+    parts = [part for part in (name or "").split() if part]
+    if len(parts) <= 1:
+        return name or ""
+    return f"{parts[0]} {parts[-1][0]}."
+
+
+def _serialize_recent_case(case, user, *, today=None, can_edit_recent=None, can_edit_tasks=None, theme_category_colors=None):
     if today is None:
         today = timezone.localdate()
     created_local = timezone.localtime(case.created_at)
@@ -633,48 +642,74 @@ def _serialize_recent_case(case, user, *, today=None, can_edit_recent=None, can_
     if can_edit_tasks is None:
         can_edit_tasks = can_edit_recent and has_capability(user, "task_edit")
     category_name = case.category.name
+    if theme_category_colors is None:
+        theme_category_colors = build_theme_category_colors([case.category])
+    category_theme = resolve_category_theme(theme_category_colors, case.category)
+    full_name = case.full_name or case.patient_name
     tasks = [
         _serialize_recent_task(task, category_name=category_name, can_edit_tasks=can_edit_tasks, today=today)
         for task in case.tasks.all()
     ]
     return {
         "id": case.id,
-        "name": case.full_name or case.patient_name,
-        "first_name": case.first_name or case.full_name or case.patient_name,
+        "name": full_name,
+        "first_name": case.first_name or full_name,
+        "short_name": _build_short_name(full_name),
         "age_label": _case_age_label(case),
+        "age_number": _case_age_number(case),
         "gender_label": case.get_gender_display() if case.gender else "-",
+        "gender_code": _case_gender_code(case),
+        "sex_age": _case_sex_age_label(case),
         "diagnosis": diagnosis,
+        "diagnosis_input": case.diagnosis or "",
         "diagnosis_short": _truncate_text(diagnosis),
         "notes": case.notes or "",
         "created_at": created_local.isoformat(),
         "created_at_display": created_local.strftime("%d %b %Y %H:%M"),
         "is_new_today": created_local.date() == today,
         "can_edit": can_edit_recent,
+        "category_name": category_name,
+        "category_bg_color": category_theme["bg"],
+        "category_text_color": category_theme["text"],
+        "category_border_color": category_theme["border"],
         "detail_url": reverse("patients:case_detail", kwargs={"pk": case.pk}),
         "tasks": tasks,
     }
 
 
-def _serialize_recent_case_summary(case, user, *, today=None, can_edit_recent=None):
+def _serialize_recent_case_summary(case, user, *, today=None, can_edit_recent=None, theme_category_colors=None):
     if today is None:
         today = timezone.localdate()
     created_local = timezone.localtime(case.created_at)
     diagnosis = (case.diagnosis or case.category.name).strip()
     if can_edit_recent is None:
         can_edit_recent = _can_edit_recent_cases(user)
+    if theme_category_colors is None:
+        theme_category_colors = build_theme_category_colors([case.category])
+    category_theme = resolve_category_theme(theme_category_colors, case.category)
+    full_name = case.full_name or case.patient_name
     return {
         "id": case.id,
-        "name": case.full_name or case.patient_name,
-        "first_name": case.first_name or case.full_name or case.patient_name,
+        "name": full_name,
+        "first_name": case.first_name or full_name,
+        "short_name": _build_short_name(full_name),
         "age_label": _case_age_label(case),
+        "age_number": _case_age_number(case),
         "gender_label": case.get_gender_display() if case.gender else "-",
+        "gender_code": _case_gender_code(case),
+        "sex_age": _case_sex_age_label(case),
         "diagnosis": diagnosis,
+        "diagnosis_input": case.diagnosis or "",
         "diagnosis_short": _truncate_text(diagnosis),
         "notes": case.notes or "",
         "created_at": created_local.isoformat(),
         "created_at_display": created_local.strftime("%d %b %Y %H:%M"),
         "is_new_today": created_local.date() == today,
         "can_edit": can_edit_recent,
+        "category_name": case.category.name,
+        "category_bg_color": category_theme["bg"],
+        "category_text_color": category_theme["text"],
+        "category_border_color": category_theme["border"],
         "detail_url": reverse("patients:case_detail", kwargs={"pk": case.pk}),
     }
 
@@ -683,6 +718,10 @@ def _recent_cases_payload_for_user(user, *, limit=RECENT_CASE_LIMIT_DEFAULT):
     today = timezone.localdate()
     can_edit_recent = _can_edit_recent_cases(user)
     can_edit_tasks = can_edit_recent and has_capability(user, "task_edit")
+    cases = list(_recent_case_queryset(limit=limit))
+    theme_category_colors = build_theme_category_colors(
+        [case.category for case in cases if getattr(case, "category", None) is not None]
+    )
     return [
         _serialize_recent_case(
             case,
@@ -690,17 +729,28 @@ def _recent_cases_payload_for_user(user, *, limit=RECENT_CASE_LIMIT_DEFAULT):
             today=today,
             can_edit_recent=can_edit_recent,
             can_edit_tasks=can_edit_tasks,
+            theme_category_colors=theme_category_colors,
         )
-        for case in _recent_case_queryset(limit=limit)
+        for case in cases
     ]
 
 
 def _recent_case_summary_payload_for_user(user, *, limit=RECENT_CASE_LIMIT_DEFAULT):
     today = timezone.localdate()
     can_edit_recent = _can_edit_recent_cases(user)
+    cases = list(_recent_case_queryset(limit=limit, include_tasks=False))
+    theme_category_colors = build_theme_category_colors(
+        [case.category for case in cases if getattr(case, "category", None) is not None]
+    )
     return [
-        _serialize_recent_case_summary(case, user, today=today, can_edit_recent=can_edit_recent)
-        for case in _recent_case_queryset(limit=limit, include_tasks=False)
+        _serialize_recent_case_summary(
+            case,
+            user,
+            today=today,
+            can_edit_recent=can_edit_recent,
+            theme_category_colors=theme_category_colors,
+        )
+        for case in cases
     ]
 
 
@@ -709,12 +759,14 @@ def _recent_case_payload_for_id(case_id, user):
     case = get_object_or_404(_recent_case_queryset(include_tasks=True), pk=case_id)
     can_edit_recent = _can_edit_recent_cases(user)
     can_edit_tasks = can_edit_recent and has_capability(user, "task_edit")
+    theme_category_colors = build_theme_category_colors([case.category] if getattr(case, "category", None) else [])
     return _serialize_recent_case(
         case,
         user,
         today=today,
         can_edit_recent=can_edit_recent,
         can_edit_tasks=can_edit_tasks,
+        theme_category_colors=theme_category_colors,
     )
 
 
@@ -1108,15 +1160,42 @@ def _attach_case_search_snippets(cases, query):
 
 
 def _case_age_label(case):
+    age_number = _case_age_number(case)
+    if age_number == "-":
+        return age_number
+    return f"{age_number}Y"
+
+
+def _case_age_number(case):
     if case.age is not None:
-        return f"{case.age}Y"
+        return str(case.age)
     if case.date_of_birth:
         today = timezone.localdate()
         years = today.year - case.date_of_birth.year - (
             (today.month, today.day) < (case.date_of_birth.month, case.date_of_birth.day)
         )
-        return f"{max(years, 0)}Y"
+        return str(max(years, 0))
     return "-"
+
+
+def _case_gender_code(case):
+    if case.gender == Gender.FEMALE:
+        return "F"
+    if case.gender == Gender.MALE:
+        return "M"
+    return "-"
+
+
+def _case_sex_age_label(case):
+    gender_code = _case_gender_code(case)
+    age_number = _case_age_number(case)
+    if gender_code == "-" and age_number == "-":
+        return "-"
+    if gender_code == "-":
+        return age_number
+    if age_number == "-":
+        return gender_code
+    return f"{gender_code}{age_number}"
 
 
 def _case_initials(case):
@@ -1260,6 +1339,9 @@ class DashboardView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
         "case__first_name",
         "case__last_name",
         "case__patient_name",
+        "case__age",
+        "case__date_of_birth",
+        "case__gender",
         "case__diagnosis",
         "case__phone_number",
         "case__referred_by",
@@ -1271,7 +1353,7 @@ class DashboardView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
     )
 
     @staticmethod
-    def _build_patient_day_cards(task_queryset, call_summary_by_case):
+    def _build_patient_day_cards(task_queryset, call_summary_by_case, theme_category_colors):
         grouped_tasks = OrderedDict()
         for task in task_queryset:
             key = (task.due_date, task.case_id)
@@ -1281,6 +1363,7 @@ class DashboardView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
         for (_, _), grouped in grouped_tasks.items():
             first_task = grouped[0]
             case = first_task.case
+            category_theme = resolve_category_theme(theme_category_colors, case.category)
             unique_titles = []
             seen_titles = set()
             for task in grouped:
@@ -1288,23 +1371,59 @@ class DashboardView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
                     unique_titles.append(task.title)
                     seen_titles.add(task.title)
             call_summary = call_summary_by_case.get(case.id, {})
+            full_name = case.full_name or case.patient_name
             cards.append(
                 {
                     "due_date": first_task.due_date,
+                    "due_date_display": first_task.due_date.strftime("%b %d"),
                     "case_id": case.id,
-                    "patient_name": case.full_name or case.patient_name,
+                    "patient_name": full_name,
+                    "short_name": _build_short_name(full_name),
                     "diagnosis": case.diagnosis or case.category.name,
                     "phone_number": case.phone_number,
                     "referred_by": case.referred_by,
                     "high_risk": case.high_risk,
                     "ncd_flags": case.ncd_flags or [],
                     "task_titles": unique_titles,
+                    "task_summary": " \u2022 ".join(unique_titles),
                     "call_status": call_summary.get("status", CallCommunicationStatus.NONE),
                     "failed_attempt_count": call_summary.get("failed_attempt_count", 0),
                     "latest_call_outcome": call_summary.get("latest_outcome", ""),
+                    "gender_code": _case_gender_code(case),
+                    "age_number": _case_age_number(case),
+                    "sex_age": _case_sex_age_label(case),
+                    "category_name": case.category.name,
+                    "category_bg_color": category_theme["bg"],
+                    "category_text_color": category_theme["text"],
+                    "category_border_color": category_theme["border"],
                 }
             )
         return cards
+
+    @staticmethod
+    def _build_awaiting_rows(task_queryset, theme_category_colors):
+        rows = []
+        for task in task_queryset:
+            case = task.case
+            category_theme = resolve_category_theme(theme_category_colors, case.category)
+            full_name = case.full_name or case.patient_name
+            rows.append(
+                {
+                    "task_id": task.id,
+                    "case_id": case.id,
+                    "patient_name": full_name,
+                    "short_name": _build_short_name(full_name),
+                    "gender_code": _case_gender_code(case),
+                    "age_number": _case_age_number(case),
+                    "sex_age": _case_sex_age_label(case),
+                    "report_detail": task.title,
+                    "category_name": case.category.name,
+                    "category_bg_color": category_theme["bg"],
+                    "category_text_color": category_theme["text"],
+                    "category_border_color": category_theme["border"],
+                }
+            )
+        return rows
 
     @staticmethod
     def _build_call_summaries(case_ids):
@@ -1470,12 +1589,23 @@ class DashboardView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
             selected_week_end,
             selected_day,
         )
+        dashboard_categories = [
+            task.case.category
+            for task in [*today_tasks, *upcoming_tasks, *overdue_tasks, *awaiting_tasks]
+            if getattr(task.case, "category", None) is not None
+        ]
+        theme_category_colors = build_theme_category_colors(dashboard_categories)
         case_ids = sorted({task.case_id for task in [*today_tasks, *upcoming_tasks, *overdue_tasks]})
         call_summary_by_case = self._build_call_summaries(case_ids)
 
-        context["today_cards"] = self._build_patient_day_cards(today_tasks, call_summary_by_case)
-        context["upcoming_cards"] = self._build_patient_day_cards(upcoming_tasks, call_summary_by_case)
-        context["overdue_cards"] = self._build_patient_day_cards(overdue_tasks, call_summary_by_case)
+        context["today_cards"] = self._build_patient_day_cards(today_tasks, call_summary_by_case, theme_category_colors)
+        context["upcoming_cards"] = self._build_patient_day_cards(
+            upcoming_tasks,
+            call_summary_by_case,
+            theme_category_colors,
+        )
+        context["overdue_cards"] = self._build_patient_day_cards(overdue_tasks, call_summary_by_case, theme_category_colors)
+        context["awaiting_rows"] = self._build_awaiting_rows(awaiting_tasks, theme_category_colors)
         context["call_log_form"] = CallLogForm()
         context["anc_case_count"] = case_counts["anc_case_count"]
         context["surgery_case_count"] = case_counts["surgery_case_count"]
@@ -1491,7 +1621,7 @@ class DashboardView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
         context["show_recent_cases_panel"] = _can_view_recent_cases(self.request.user)
         context["can_edit_recent_cases"] = _can_edit_recent_cases(self.request.user)
         context["recent_cases"] = (
-            _recent_case_summary_payload_for_user(self.request.user, limit=RECENT_CASE_LIMIT_DEFAULT)
+            _recent_case_summary_payload_for_user(self.request.user, limit=None)
             if context["show_recent_cases_panel"]
             else []
         )

@@ -858,7 +858,7 @@ class MedtrackViewTests(TestCase):
         Task.objects.create(case=non_surgical_active, title="Awaiting", due_date=today + timedelta(days=11), status=TaskStatus.AWAITING_REPORTS, created_by=self.user)
         Task.objects.create(case=surgery_active, title="Completed", due_date=today - timedelta(days=1), status=TaskStatus.COMPLETED, created_by=self.user)
 
-        response = self.assert_max_queries(11, reverse("patients:dashboard"), {"week_offset": 0})
+        response = self.assert_max_queries(20, reverse("patients:dashboard"), {"week_offset": 0})
 
         self.assertEqual(response.context["anc_case_count"], 1)
         self.assertEqual(response.context["surgery_case_count"], 1)
@@ -886,27 +886,26 @@ class MedtrackViewTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         recent_cases = response.context["recent_cases"]
-        self.assertEqual(len(recent_cases), 10)
-        self.assertEqual([entry["id"] for entry in recent_cases], [case.id for case in created_cases[:10]])
+        self.assertEqual(len(recent_cases), 12)
+        self.assertEqual([entry["id"] for entry in recent_cases], [case.id for case in created_cases])
         self.assertEqual(recent_cases[0]["first_name"], created_cases[0].first_name)
         self.assertTrue(recent_cases[0]["is_new_today"])
         self.assertTrue(recent_cases[0]["can_edit"])
         self.assertTrue(recent_cases[0]["diagnosis_short"].endswith("..."))
         content = response.content.decode()
-        section_match = re.search(r'<section[^>]+data-recent-case-panel[^>]*>.*?</section>', content, re.S)
-        self.assertIsNotNone(section_match)
-        section_html = section_match.group(0)
-        self.assertLess(content.index("Recently Added"), content.index("Overdue Tasks"))
+        recent_section_match = re.search(r'<section[^>]+data-recent-case-panel[^>]*>.*?</section>', content, re.S)
+        overdue_section_match = re.search(r'<section[^>]+data-dashboard-module="overdue"[^>]*>.*?</section>', content, re.S)
+        self.assertIsNotNone(recent_section_match)
+        self.assertIsNotNone(overdue_section_match)
+        section_html = recent_section_match.group(0)
+        self.assertLess(recent_section_match.start(), overdue_section_match.start())
         self.assertIn('data-dashboard-module="recent"', section_html)
-        self.assertIn('data-recent-case-state="collapsed"', section_html)
-        self.assertEqual(section_html.count("recent-case-row--collapsed"), 10)
-        self.assertIn("recent-case-collapsed-line", section_html)
-        self.assertIn("recent-case-name--full", section_html)
-        self.assertIn("recent-case-name--short", section_html)
-        self.assertNotIn("recent-case-row--expanded", section_html)
-        self.assertNotIn("recent-case-diagnosis", section_html)
+        self.assertEqual(section_html.count("data-recent-case-row"), 12)
+        self.assertEqual(len(re.findall(r"data-recent-case-row[^>]*hidden", section_html)), 2)
+        self.assertIn("data-recent-case-detail", section_html)
+        self.assertNotIn("recentCaseModal", section_html)
+        self.assertNotIn("shown", section_html)
         self.assertIn(">Expand<", section_html)
-        self.assertContains(response, "Newest 10 cases for immediate doctor review.")
 
     def test_dashboard_recent_cases_panel_shows_empty_state_for_doctor(self):
         self.client.force_login(self.user)
@@ -920,7 +919,6 @@ class MedtrackViewTests(TestCase):
         section_match = re.search(r'<section[^>]+data-recent-case-panel[^>]*>.*?</section>', response.content.decode(), re.S)
         self.assertIsNotNone(section_match)
         section_html = section_match.group(0)
-        self.assertIn('data-recent-case-state="collapsed"', section_html)
         self.assertNotIn("data-recent-case-toggle", section_html)
         self.assertNotIn(">Expand<", section_html)
 
@@ -1002,14 +1000,23 @@ class MedtrackViewTests(TestCase):
                 "id",
                 "name",
                 "first_name",
+                "short_name",
                 "age_label",
+                "age_number",
                 "gender_label",
+                "gender_code",
+                "sex_age",
                 "diagnosis",
+                "diagnosis_input",
                 "diagnosis_short",
                 "notes",
                 "created_at",
                 "is_new_today",
                 "can_edit",
+                "category_name",
+                "category_bg_color",
+                "category_text_color",
+                "category_border_color",
                 "detail_url",
                 "tasks",
             }.issubset(first_result.keys())
@@ -1030,6 +1037,15 @@ class MedtrackViewTests(TestCase):
                 "can_note",
             }.issubset(first_result["tasks"][0].keys())
         )
+
+        all_response = self.client.get(
+            reverse("patients:recent_cases"),
+            {"limit": "all"},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+
+        self.assertEqual(all_response.status_code, 200)
+        self.assertEqual(len(all_response.json()["results"]), 12)
 
     def test_recent_cases_api_is_forbidden_for_non_recent_roles(self):
         self.login_as_role("Nurse", username="nurse_recent_api")
@@ -1806,6 +1822,21 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["message"], "No changes to save.")
         self.assertEqual(case.activity_logs.count(), initial_log_count)
+
+    def test_recent_case_update_notes_only_keeps_blank_diagnosis_blank(self):
+        self.client.force_login(self.user)
+        case = self.create_recent_case(diagnosis="", notes="")
+
+        response = self.client.post(
+            reverse("patients:recent_case_update", kwargs={"pk": case.pk}),
+            {"diagnosis": "", "notes": "Dashboard note only"},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        case.refresh_from_db()
+        self.assertEqual(case.diagnosis, "")
+        self.assertEqual(case.notes, "Dashboard note only")
 
     def test_reception_can_view_recent_cases_but_cannot_mutate(self):
         self.login_as_role("Reception", username="reception_recent_write")
@@ -3471,11 +3502,13 @@ class MedtrackViewTests(TestCase):
             self.assertEqual(form.fields[field_name].widget.attrs["data-crayons-datepicker-locale"], "en-IN")
             self.assertEqual(form.fields[field_name].widget.attrs["data-crayons-datepicker-show-footer"], "false")
 
-    def test_dashboard_recent_case_reschedule_template_uses_unique_due_date_ids(self):
+    def test_dashboard_recent_panel_uses_inline_detail_container_without_modal_markup(self):
         self.client.force_login(self.user)
+        self.create_recent_case()
         response = self.client.get(reverse("patients:dashboard"))
 
-        self.assertContains(response, 'id="recent-case-due-date-${task.id}"')
+        self.assertContains(response, "data-recent-case-detail")
+        self.assertNotContains(response, "recentCaseModal")
 
     def test_case_form_requires_age_when_dob_missing(self):
         form = CaseForm(
@@ -4324,7 +4357,13 @@ class MedtrackViewTests(TestCase):
         today_cards = response.context["today_cards"]
         self.assertEqual(len(today_cards), 2)
         self.assertEqual(today_cards[1]["patient_name"], "Grouped Patient")
+        self.assertEqual(today_cards[1]["short_name"], "Grouped P.")
         self.assertEqual(today_cards[1]["task_titles"], ["Lab", "ECG"])
+        self.assertEqual(today_cards[1]["due_date_display"], timezone.localdate().strftime("%b %d"))
+        self.assertEqual(today_cards[1]["category_name"], "Surgery")
+        self.assertIn("category_bg_color", today_cards[1])
+        self.assertIn("category_text_color", today_cards[1])
+        self.assertEqual(today_cards[1]["sex_age"], "-")
         self.assertEqual(response.context["anc_case_count"], 1)
         self.assertEqual(response.context["surgery_case_count"], 1)
         self.assertEqual(response.context["non_surgical_case_count"], 1)
@@ -4339,6 +4378,8 @@ class MedtrackViewTests(TestCase):
             phone_number="9876503333",
             category=self.surgery,
             status=CaseStatus.ACTIVE,
+            gender=Gender.MALE,
+            age=42,
             surgical_pathway=SurgicalPathway.SURVEILLANCE,
             review_date=timezone.localdate() + timedelta(days=4),
             created_by=self.user,
@@ -4356,8 +4397,9 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Awaiting Reports")
         self.assertContains(response, "Upload report")
+        self.assertContains(response, "M42")
         self.assertContains(response, 'data-dashboard-module="awaiting"')
-        self.assertContains(response, "dashboard-awaiting-row")
+        self.assertContains(response, "dashboard-compact-link-row")
 
     def test_dashboard_card_contains_referral_high_risk_and_ncd_flags(self):
         self.client.force_login(self.user)

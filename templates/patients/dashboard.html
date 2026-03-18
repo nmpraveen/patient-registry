@@ -83,62 +83,21 @@
 
   .dashboard-module-header {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     justify-content: space-between;
     gap: 0.85rem;
     margin-bottom: 0.85rem;
   }
 
-  .dashboard-module-header h2,
-  .dashboard-module-header p {
+  .dashboard-module-header h2 {
+    color: inherit;
+    font-size: 1rem;
     margin-bottom: 0;
   }
 
-  .dashboard-module-kicker {
-    color: var(--dashboard-module-text);
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    font-size: 0.7rem;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    margin-bottom: 0.35rem;
-    text-transform: uppercase;
-  }
-
-  .dashboard-module-kicker::before {
-    content: "";
-    width: 0.45rem;
-    height: 0.45rem;
-    border-radius: 999px;
-    background: var(--dashboard-module-text);
-    opacity: 0.7;
-  }
-
-  .dashboard-module-copy,
   .recent-case-modal-muted {
     color: var(--theme-shell-muted-text);
     font-size: 0.82rem;
-  }
-
-  .dashboard-module-copy {
-    margin-top: 0.15rem;
-  }
-
-  .dashboard-module-badge,
-  .recent-case-badge {
-    align-items: center;
-    background: color-mix(in srgb, var(--dashboard-module-bg, var(--theme-dashboard-upcoming-bg)) 70%, white);
-    border: 1px solid var(--dashboard-module-border, var(--theme-dashboard-upcoming-border));
-    border-radius: 999px;
-    color: var(--dashboard-module-text, var(--theme-dashboard-upcoming-text));
-    display: inline-flex;
-    font-size: 0.74rem;
-    font-weight: 700;
-    justify-content: center;
-    line-height: 1;
-    padding: 0.42rem 0.65rem;
-    white-space: nowrap;
   }
 
   .dashboard-module-body,
@@ -514,42 +473,16 @@
 
   .upcoming-schedule-header {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     justify-content: space-between;
     gap: 0.85rem;
     margin-bottom: 0.85rem;
   }
 
-  .upcoming-schedule-header h2,
-  .upcoming-schedule-header p {
+  .upcoming-schedule-header h2 {
+    color: inherit;
+    font-size: 1rem;
     margin-bottom: 0;
-  }
-
-  .upcoming-schedule-kicker {
-    color: var(--theme-dashboard-upcoming-text);
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    font-size: 0.7rem;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    margin-bottom: 0.35rem;
-    text-transform: uppercase;
-  }
-
-  .upcoming-schedule-kicker::before {
-    content: "";
-    width: 0.45rem;
-    height: 0.45rem;
-    border-radius: 999px;
-    background: var(--theme-dashboard-upcoming-text);
-    opacity: 0.7;
-  }
-
-  .upcoming-schedule-header-copy {
-    color: var(--theme-shell-muted-text);
-    font-size: 0.82rem;
-    margin-top: 0.15rem;
   }
 
   .upcoming-schedule-controls {
@@ -851,6 +784,307 @@
     padding: 0.95rem 1rem;
   }
 
+  .dashboard-module-body--compact {
+    display: grid;
+    gap: 0.8rem;
+  }
+
+  .dashboard-compact-list {
+    display: grid;
+    gap: 0.7rem;
+  }
+
+  .dashboard-compact-row,
+  .dashboard-compact-link-row {
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--theme-shell-surface-bg) 90%, var(--theme-category-bg) 10%) 0%,
+        color-mix(in srgb, var(--theme-shell-surface-bg) 96%, var(--theme-category-bg) 4%) 100%
+      );
+    border: 1px solid color-mix(in srgb, var(--theme-shell-surface-border) 68%, var(--theme-category-text) 32%);
+    border-radius: 1rem;
+    box-shadow: 0 0.35rem 0.85rem var(--theme-shell-shadow);
+    color: inherit;
+    overflow: hidden;
+    position: relative;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+  }
+
+  .dashboard-compact-row::before,
+  .dashboard-compact-link-row::before {
+    background: linear-gradient(180deg, var(--theme-category-bg) 0%, var(--theme-category-text) 100%);
+    content: "";
+    inset: 0 auto 0 0;
+    position: absolute;
+    width: 0.32rem;
+  }
+
+  .dashboard-compact-row:hover,
+  .dashboard-compact-row:focus-within,
+  .dashboard-compact-row.is-open,
+  .dashboard-compact-link-row:hover,
+  .dashboard-compact-link-row:focus-visible {
+    border-color: var(--theme-category-border);
+    box-shadow: 0 0.55rem 1rem var(--theme-shell-shadow);
+    transform: translateY(-1px);
+  }
+
+  .dashboard-compact-row-top {
+    align-items: center;
+    display: grid;
+    gap: 0.7rem;
+    grid-template-columns: minmax(0, 1fr) auto;
+    position: relative;
+    z-index: 1;
+  }
+
+  .dashboard-compact-toggle,
+  .dashboard-compact-link {
+    align-items: center;
+    appearance: none;
+    background: transparent;
+    border: 0;
+    color: inherit;
+    display: flex;
+    min-width: 0;
+    padding: 0.82rem 0.4rem 0.82rem 1rem;
+    text-align: left;
+    text-decoration: none;
+    width: 100%;
+  }
+
+  .dashboard-compact-toggle {
+    cursor: pointer;
+  }
+
+  .dashboard-compact-toggle:focus-visible,
+  .dashboard-compact-link:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--theme-category-text) 30%, white);
+    outline-offset: -2px;
+  }
+
+  .dashboard-compact-summary {
+    align-items: center;
+    display: flex;
+    gap: 0.35rem;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    width: 100%;
+  }
+
+  .dashboard-compact-date {
+    color: var(--dashboard-module-text);
+    flex: 0 0 auto;
+    font-size: 0.74rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .dashboard-compact-separator {
+    color: var(--theme-shell-muted-text);
+    flex: 0 0 auto;
+    font-weight: 700;
+    opacity: 0.7;
+  }
+
+  .dashboard-compact-name {
+    flex: 1 1 auto;
+    font-size: 0.95rem;
+    font-weight: 700;
+    line-height: 1.25;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .dashboard-compact-inline {
+    color: var(--theme-shell-muted-text);
+    flex: 0 0 auto;
+    font-size: 0.82rem;
+    font-weight: 600;
+  }
+
+  .dashboard-compact-status {
+    align-items: center;
+    display: inline-flex;
+    gap: 0.2rem;
+  }
+
+  .dashboard-compact-call {
+    align-items: center;
+    align-self: stretch;
+    background: color-mix(in srgb, #f5fff8 85%, var(--theme-category-bg) 15%);
+    border: 1px solid color-mix(in srgb, #8bc7a0 55%, var(--theme-category-border) 45%);
+    border-radius: 999px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+    color: #1e7a42;
+    display: inline-flex;
+    font-size: 0.78rem;
+    font-weight: 700;
+    justify-content: center;
+    line-height: 1;
+    margin: 0.55rem 0.7rem 0.55rem 0;
+    min-width: 4rem;
+    padding: 0.48rem 0.8rem;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+
+  .dashboard-compact-call:hover,
+  .dashboard-compact-call:focus-visible {
+    color: #165f33;
+    text-decoration: none;
+  }
+
+  .dashboard-compact-call.is-disabled {
+    cursor: default;
+    opacity: 0.65;
+    pointer-events: none;
+  }
+
+  .dashboard-compact-details {
+    border-top: 1px solid color-mix(in srgb, var(--theme-category-border) 40%, white);
+    display: grid;
+    gap: 0.8rem;
+    padding: 0.82rem 1rem 0.95rem;
+    position: relative;
+    z-index: 1;
+  }
+
+  .dashboard-compact-details[hidden] {
+    display: none;
+  }
+
+  .dashboard-compact-detail-grid {
+    display: grid;
+    gap: 0.7rem;
+  }
+
+  .dashboard-compact-detail-block {
+    display: grid;
+    gap: 0.18rem;
+  }
+
+  .dashboard-compact-detail-label {
+    color: var(--dashboard-module-text);
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .dashboard-compact-detail-copy,
+  .dashboard-compact-task-line,
+  .dashboard-compact-muted {
+    color: var(--theme-shell-muted-text);
+    font-size: 0.82rem;
+    line-height: 1.5;
+  }
+
+  .dashboard-compact-task-list {
+    display: grid;
+    gap: 0.55rem;
+  }
+
+  .dashboard-compact-task {
+    background: color-mix(in srgb, var(--theme-shell-surface-bg) 94%, var(--theme-category-bg) 6%);
+    border: 1px solid color-mix(in srgb, var(--theme-category-border) 52%, white);
+    border-radius: 0.8rem;
+    padding: 0.7rem 0.8rem;
+  }
+
+  .dashboard-compact-task-title {
+    font-size: 0.87rem;
+    font-weight: 700;
+    line-height: 1.3;
+    margin-bottom: 0.18rem;
+  }
+
+  .dashboard-compact-task-meta {
+    color: var(--theme-shell-muted-text);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem 0.65rem;
+    font-size: 0.76rem;
+    line-height: 1.4;
+  }
+
+  .dashboard-compact-task-note {
+    color: var(--theme-shell-muted-text);
+    font-size: 0.76rem;
+    line-height: 1.45;
+    margin-top: 0.35rem;
+  }
+
+  .dashboard-compact-flags {
+    color: var(--theme-shell-muted-text);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem 0.8rem;
+    font-size: 0.78rem;
+  }
+
+  .dashboard-compact-detail-header {
+    align-items: flex-start;
+    display: flex;
+    gap: 0.75rem;
+    justify-content: space-between;
+  }
+
+  .dashboard-compact-detail-header .btn {
+    white-space: nowrap;
+  }
+
+  .dashboard-compact-feedback {
+    margin: 0;
+  }
+
+  .dashboard-compact-feedback.is-hidden {
+    display: none;
+  }
+
+  .dashboard-compact-notes-form {
+    display: grid;
+    gap: 0.6rem;
+  }
+
+  .dashboard-compact-notes-form textarea[readonly] {
+    background: color-mix(in srgb, var(--theme-shell-surface-bg) 94%, var(--theme-shell-surface-border) 6%);
+  }
+
+  .dashboard-compact-notes-actions {
+    align-items: center;
+    display: flex;
+    gap: 0.75rem;
+    justify-content: space-between;
+  }
+
+  .dashboard-compact-readonly {
+    color: var(--theme-shell-muted-text);
+    font-size: 0.78rem;
+  }
+
+  .dashboard-module-expand {
+    background: color-mix(in srgb, var(--theme-shell-surface-bg) 88%, white 12%);
+    border: 1px solid var(--dashboard-module-border);
+    border-radius: 999px;
+    color: var(--theme-shell-page-text);
+    font-size: 0.78rem;
+    font-weight: 700;
+    line-height: 1;
+    padding: 0.55rem 0.88rem;
+  }
+
+  .dashboard-module-expand:hover,
+  .dashboard-module-expand:focus-visible {
+    background: color-mix(in srgb, var(--theme-shell-surface-bg) 84%, var(--dashboard-module-bg) 16%);
+    border-color: color-mix(in srgb, var(--dashboard-module-border) 80%, var(--dashboard-module-text) 20%);
+    color: var(--theme-shell-page-text);
+  }
+
   @media (max-width: 767.98px) {
     .dashboard-module,
     .upcoming-schedule {
@@ -863,7 +1097,7 @@
       flex-direction: column;
     }
 
-    .dashboard-module-badge,
+    .dashboard-module-expand,
     .upcoming-schedule-range,
     .upcoming-schedule-open-pill,
     .upcoming-schedule-controls {
@@ -919,6 +1153,50 @@
       justify-items: start;
     }
 
+    .dashboard-compact-row-top {
+      gap: 0.4rem;
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    .dashboard-compact-toggle,
+    .dashboard-compact-link {
+      padding: 0.72rem 0.2rem 0.72rem 0.85rem;
+    }
+
+    .dashboard-compact-summary {
+      gap: 0.25rem;
+    }
+
+    .dashboard-compact-date {
+      font-size: 0.68rem;
+    }
+
+    .dashboard-compact-name {
+      font-size: 0.89rem;
+    }
+
+    .dashboard-compact-inline,
+    .dashboard-compact-separator,
+    .dashboard-compact-status {
+      font-size: 0.74rem;
+    }
+
+    .dashboard-compact-call {
+      margin: 0.48rem 0.45rem 0.48rem 0;
+      min-width: 3rem;
+      padding: 0.36rem 0.6rem;
+    }
+
+    .dashboard-compact-details {
+      padding: 0.72rem 0.85rem 0.82rem;
+    }
+
+    .dashboard-compact-detail-header,
+    .dashboard-compact-notes-actions {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+
     .upcoming-schedule-legend {
       justify-content: flex-start;
     }
@@ -943,53 +1221,76 @@
 
 <div class="row g-3 g-md-4">
   <div class="col-12 col-lg-6">
-    <section class="dashboard-module dashboard-module--today" data-dashboard-module="today">
+    <section class="dashboard-module dashboard-module--today" data-dashboard-module="today" data-compact-module data-compact-limit="10">
       <div class="dashboard-module-header">
-        <div>
-          <span class="dashboard-module-kicker">Today</span>
-          <h2 class="h6">Today's Tasks</h2>
-          <p class="dashboard-module-copy">Grouped by patient so due work stays compact and easy to scan.</p>
-        </div>
-        <span class="dashboard-module-badge">{{ today_cards|length }} patient{{ today_cards|length|pluralize }}</span>
+        <h2 class="h6">Today</h2>
+        {% if today_cards|length > 10 %}
+          <button type="button" class="btn dashboard-module-expand" data-compact-expand>Expand</button>
+        {% endif %}
       </div>
-      <div class="dashboard-module-body">
+      <div class="dashboard-module-body dashboard-module-body--compact">
+        <div class="dashboard-compact-list">
         {% for card in today_cards %}
-          <div class="dashboard-module-card">
-            <div class="dashboard-module-card-body">
-              <div class="dashboard-task-card-top">
-                <span class="dashboard-task-card-date">{{ card.due_date|date:'M d' }}</span>
-                <a class="dashboard-task-card-name" href="{% url 'patients:case_detail' card.case_id %}">{{ card.patient_name }}</a>
-                <span class="dashboard-task-card-diagnosis">{{ card.diagnosis }}</span>
-              </div>
-              <div class="dashboard-task-card-meta">
-                {% if card.high_risk %}<span title="High-risk case" class="text-danger">&#10071;</span>{% endif %}
-                {% if card.referred_by %}<span title="Referred by: {{ card.referred_by }}">&#11088;</span>{% endif %}
-                {% if card.ncd_flags %}<span title="NCD flags: {{ card.ncd_flags|join:', ' }}">&#127991;&#65039;</span>{% endif %}
-                {% if card.call_status == "CONFIRMED" %}<span title="Confirmed">&#128994;&#128222;</span>
-                {% elif card.call_status == "NOT_REACHABLE" %}<span title="Not reachable">&#128308;&#128222; x{{ card.failed_attempt_count }}</span>
-                {% elif card.call_status == "INVALID_CONTACT" %}<span title="Invalid contact">&#9888;&#65039;&#128222;</span>
-                {% elif card.call_status == "LOST" %}<span title="Lost follow-up">&#10060;</span>
-                {% elif card.call_status == "CALL_BACK_LATER" %}<span title="Call back later">&#128993;&#128222;</span>
-                {% else %}<span title="Not contacted">&#128222;</span>{% endif %}
-                <a class="dashboard-task-card-call" href="tel:{{ card.phone_number }}" data-bs-toggle="collapse" data-bs-target="#today-phone-{{ forloop.counter }}" aria-expanded="false" aria-controls="today-phone-{{ forloop.counter }}" title="Show and call patient number">Call</a>
-                <span id="today-phone-{{ forloop.counter }}" class="collapse">{{ card.phone_number }}</span>
-              </div>
-              <div class="dashboard-task-card-tasks">{{ card.task_titles|join:' &bull; ' }}</div>
+          <article class="dashboard-compact-row" data-compact-row{% if forloop.counter > 10 %} hidden{% endif %} style="{% category_theme_style card.category_name theme_category_colors %}">
+            <div class="dashboard-compact-row-top">
+              <button
+                type="button"
+                class="dashboard-compact-toggle"
+                data-compact-toggle
+                aria-expanded="false"
+                aria-controls="today-card-detail-{{ forloop.counter }}"
+              >
+                <div class="dashboard-compact-summary">
+                  <span class="dashboard-compact-date">{{ card.due_date_display }}</span>
+                  <span class="dashboard-compact-separator" aria-hidden="true">|</span>
+                  <span class="dashboard-compact-name" data-compact-name data-full-name="{{ card.patient_name }}" data-short-name="{{ card.short_name }}">{{ card.patient_name }}</span>
+                  <span class="dashboard-compact-separator" aria-hidden="true">|</span>
+                  <span class="dashboard-compact-inline dashboard-compact-status">
+                    {% if card.call_status == "CONFIRMED" %}<span title="Confirmed">&#128994;&#128222;</span>
+                    {% elif card.call_status == "NOT_REACHABLE" %}<span title="Not reachable">&#128308;&#128222; x{{ card.failed_attempt_count }}</span>
+                    {% elif card.call_status == "INVALID_CONTACT" %}<span title="Invalid contact">&#9888;&#65039;&#128222;</span>
+                    {% elif card.call_status == "LOST" %}<span title="Lost follow-up">&#10060;</span>
+                    {% elif card.call_status == "CALL_BACK_LATER" %}<span title="Call back later">&#128993;&#128222;</span>
+                    {% else %}<span title="Not contacted">&#128222;</span>{% endif %}
+                  </span>
+                </div>
+              </button>
+              {% if card.phone_number %}
+                <a class="dashboard-compact-call" href="tel:{{ card.phone_number }}" data-compact-action>Call</a>
+              {% else %}
+                <span class="dashboard-compact-call is-disabled">Call</span>
+              {% endif %}
             </div>
-          </div>
+            <div id="today-card-detail-{{ forloop.counter }}" class="dashboard-compact-details" data-compact-details hidden>
+              <div class="dashboard-compact-detail-grid">
+                <div class="dashboard-compact-detail-block">
+                  <span class="dashboard-compact-detail-label">Diagnosis</span>
+                  <span class="dashboard-compact-detail-copy">{{ card.diagnosis }}</span>
+                </div>
+                <div class="dashboard-compact-detail-block">
+                  <span class="dashboard-compact-detail-label">Tasks</span>
+                  <span class="dashboard-compact-task-line">{{ card.task_titles|join:' &bull; ' }}</span>
+                </div>
+                {% if card.high_risk or card.referred_by or card.ncd_flags %}
+                  <div class="dashboard-compact-flags">
+                    {% if card.high_risk %}<span>&#10071; High-risk</span>{% endif %}
+                    {% if card.referred_by %}<span>&#11088; Referred by {{ card.referred_by }}</span>{% endif %}
+                    {% if card.ncd_flags %}<span>&#127991;&#65039; {{ card.ncd_flags|join:', ' }}</span>{% endif %}
+                  </div>
+                {% endif %}
+              </div>
+            </div>
+          </article>
         {% empty %}
           <div class="dashboard-module-empty">No tasks due today.</div>
         {% endfor %}
+        </div>
       </div>
     </section>
 
     <section class="upcoming-schedule mt-3" data-upcoming-schedule>
       <div class="upcoming-schedule-header">
-        <div>
-          <span class="upcoming-schedule-kicker">Upcoming</span>
-          <h2 class="h6">Upcoming Schedule</h2>
-          <p class="upcoming-schedule-header-copy">Appointments for {{ selected_week_start|date:'M j' }} to {{ selected_week_end|date:'M j' }}.</p>
-        </div>
+        <h2 class="h6">Upcoming</h2>
         <div class="upcoming-schedule-controls" aria-label="Upcoming schedule week filters">
           {% if show_previous_week %}
             <a class="upcoming-schedule-control" href="?week_offset={{ previous_week_offset }}" data-upcoming-week-link>Previous week</a>
@@ -1092,115 +1393,127 @@
 
   <div class="col-12 col-lg-6">
     {% if show_recent_cases_panel %}
-      <section class="dashboard-module dashboard-module--recent mb-4" data-dashboard-module="recent" data-recent-case-panel data-recent-case-state="collapsed">
+      <section class="dashboard-module dashboard-module--recent mb-4" data-dashboard-module="recent" data-recent-case-panel data-compact-limit="10">
         <div class="dashboard-module-header">
-          <div>
-            <span class="dashboard-module-kicker">Recent</span>
-            <h2 class="h6">Recently Added</h2>
-            <p class="dashboard-module-copy">Newest 10 cases for immediate doctor review.</p>
-          </div>
-          <span class="dashboard-module-badge">{{ recent_cases|length }} shown</span>
+          <h2 class="h6">Recently Added</h2>
+          {% if recent_cases|length > 10 %}
+            <button type="button" class="btn dashboard-module-expand" data-recent-case-toggle aria-expanded="false" aria-controls="recent-case-list">Expand</button>
+          {% endif %}
         </div>
-        <div id="recent-case-list" class="recent-case-list" data-recent-case-list data-recent-case-view="collapsed">
+        <div class="dashboard-module-body dashboard-module-body--compact">
+        <div id="recent-case-list" class="dashboard-compact-list recent-case-list" data-recent-case-list>
           {% for case in recent_cases %}
-            <button
-              type="button"
-              class="recent-case-row recent-case-row--collapsed"
-              data-recent-case-trigger
+            <article
+              class="dashboard-compact-row"
+              data-recent-case-row
               data-case-id="{{ case.id }}"
+              {% if forloop.counter > 10 %}hidden{% endif %}
+              style="{% category_theme_style case.category_name theme_category_colors %}"
             >
-              <div class="card-body">
-                <div class="recent-case-collapsed-line">
-                  <span class="recent-case-name-wrap">
-                    <span class="fw-semibold recent-case-name recent-case-name--full">{{ case.name }}</span>
-                    <span class="fw-semibold recent-case-name recent-case-name--short">{{ case.first_name }}</span>
-                  </span>
-                  <span class="recent-case-line-separator" aria-hidden="true">|</span>
-                  <span class="recent-case-inline-meta">{{ case.gender_label }}</span>
-                  <span class="recent-case-line-separator" aria-hidden="true">|</span>
-                  <span class="recent-case-inline-meta">{{ case.age_label }}</span>
-                  <span class="recent-case-line-separator" aria-hidden="true">|</span>
-                  <span class="recent-case-inline-meta">Added {{ case.created_at_display }}</span>
-                </div>
+              <div class="dashboard-compact-row-top">
+                <button
+                  type="button"
+                  class="dashboard-compact-toggle"
+                  data-recent-case-trigger
+                  data-case-id="{{ case.id }}"
+                  aria-expanded="false"
+                  aria-controls="recent-case-detail-{{ case.id }}"
+                >
+                  <div class="dashboard-compact-summary">
+                    <span class="dashboard-compact-name" data-compact-name data-full-name="{{ case.name }}" data-short-name="{{ case.short_name }}">{{ case.name }}</span>
+                    <span class="dashboard-compact-separator" aria-hidden="true">|</span>
+                    <span class="dashboard-compact-inline">{{ case.gender_label }}</span>
+                    <span class="dashboard-compact-separator" aria-hidden="true">|</span>
+                    <span class="dashboard-compact-inline">{{ case.age_label }}</span>
+                    <span class="dashboard-compact-separator" aria-hidden="true">|</span>
+                    <span class="dashboard-compact-inline">Added {{ case.created_at_display }}</span>
+                  </div>
+                </button>
               </div>
-            </button>
+              <div id="recent-case-detail-{{ case.id }}" class="dashboard-compact-details" data-recent-case-detail hidden></div>
+            </article>
           {% empty %}
             <div class="recent-case-empty">No recent patients added.</div>
           {% endfor %}
         </div>
-        {% if recent_cases %}
-          <div class="recent-case-panel-footer">
-            <button type="button" class="btn btn-sm btn-outline-primary" data-recent-case-toggle aria-expanded="false" aria-controls="recent-case-list">Expand</button>
-          </div>
-        {% endif %}
+        </div>
       </section>
     {% endif %}
 
-    <section class="dashboard-module dashboard-module--overdue" data-dashboard-module="overdue">
+    <section class="dashboard-module dashboard-module--overdue" data-dashboard-module="overdue" data-compact-module data-compact-limit="10">
       <div class="dashboard-module-header">
-        <div>
-          <span class="dashboard-module-kicker">Overdue</span>
-          <h2 class="h6">Overdue Tasks</h2>
-          <p class="dashboard-module-copy">Oldest missed work grouped by patient to keep follow-up clear.</p>
-        </div>
-        <span class="dashboard-module-badge">{{ overdue_cards|length }} patient{{ overdue_cards|length|pluralize }}</span>
+        <h2 class="h6">Overdue</h2>
+        {% if overdue_cards|length > 10 %}
+          <button type="button" class="btn dashboard-module-expand" data-compact-expand>Expand</button>
+        {% endif %}
       </div>
-      <div class="dashboard-module-body">
+      <div class="dashboard-module-body dashboard-module-body--compact">
+        <div class="dashboard-compact-list">
         {% for card in overdue_cards %}
-          <div class="dashboard-module-card">
-            <div class="dashboard-module-card-body">
-              <div class="dashboard-task-card-top">
-                <span class="dashboard-task-card-date">{{ card.due_date|date:'M d' }}</span>
-                <a class="dashboard-task-card-name" href="{% url 'patients:case_detail' card.case_id %}">{{ card.patient_name }}</a>
-                <span class="dashboard-task-card-diagnosis">{{ card.diagnosis }}</span>
-              </div>
-              <div class="dashboard-task-card-meta">
-                {% if card.high_risk %}<span title="High-risk case" class="text-danger">&#10071;</span>{% endif %}
-                {% if card.referred_by %}<span title="Referred by: {{ card.referred_by }}">&#11088;</span>{% endif %}
-                {% if card.ncd_flags %}<span title="NCD flags: {{ card.ncd_flags|join:', ' }}">&#127991;&#65039;</span>{% endif %}
-                {% if card.call_status == "CONFIRMED" %}<span title="Confirmed">&#128994;&#128222;</span>
-                {% elif card.call_status == "NOT_REACHABLE" %}<span title="Not reachable">&#128308;&#128222; x{{ card.failed_attempt_count }}</span>
-                {% elif card.call_status == "INVALID_CONTACT" %}<span title="Invalid contact">&#9888;&#65039;&#128222;</span>
-                {% elif card.call_status == "LOST" %}<span title="Lost follow-up">&#10060;</span>
-                {% elif card.call_status == "CALL_BACK_LATER" %}<span title="Call back later">&#128993;&#128222;</span>
-                {% else %}<span title="Not contacted">&#128222;</span>{% endif %}
-                <a class="dashboard-task-card-call" href="tel:{{ card.phone_number }}" data-bs-toggle="collapse" data-bs-target="#overdue-phone-{{ forloop.counter }}" aria-expanded="false" aria-controls="overdue-phone-{{ forloop.counter }}" title="Show and call patient number">Call</a>
-                <span id="overdue-phone-{{ forloop.counter }}" class="collapse">{{ card.phone_number }}</span>
-              </div>
-              <div class="dashboard-task-card-tasks">{{ card.task_titles|join:' &bull; ' }}</div>
+          <article class="dashboard-compact-row" data-compact-row{% if forloop.counter > 10 %} hidden{% endif %} style="{% category_theme_style card.category_name theme_category_colors %}">
+            <div class="dashboard-compact-row-top">
+              <button
+                type="button"
+                class="dashboard-compact-toggle"
+                data-compact-toggle
+                aria-expanded="false"
+                aria-controls="overdue-card-detail-{{ forloop.counter }}"
+              >
+                <div class="dashboard-compact-summary">
+                  <span class="dashboard-compact-date">{{ card.due_date_display }}</span>
+                  <span class="dashboard-compact-separator" aria-hidden="true">|</span>
+                  <span class="dashboard-compact-name" data-compact-name data-full-name="{{ card.patient_name }}" data-short-name="{{ card.short_name }}">{{ card.patient_name }}</span>
+                  <span class="dashboard-compact-separator" aria-hidden="true">|</span>
+                  <span class="dashboard-compact-inline">{{ card.sex_age }}</span>
+                </div>
+              </button>
+              {% if card.phone_number %}
+                <a class="dashboard-compact-call" href="tel:{{ card.phone_number }}" data-compact-action>Call</a>
+              {% else %}
+                <span class="dashboard-compact-call is-disabled">Call</span>
+              {% endif %}
             </div>
-          </div>
+            <div id="overdue-card-detail-{{ forloop.counter }}" class="dashboard-compact-details" data-compact-details hidden>
+              <div class="dashboard-compact-detail-block">
+                <span class="dashboard-compact-detail-label">Overdue</span>
+                <span class="dashboard-compact-task-line">{{ card.task_titles|join:' &bull; ' }}</span>
+              </div>
+            </div>
+          </article>
         {% empty %}
           <div class="dashboard-module-empty">No overdue tasks.</div>
         {% endfor %}
+        </div>
       </div>
     </section>
 
-    <section class="dashboard-module dashboard-module--awaiting mt-4" data-dashboard-module="awaiting">
+    <section class="dashboard-module dashboard-module--awaiting mt-4" data-dashboard-module="awaiting" data-compact-module data-compact-limit="10">
       <div class="dashboard-module-header">
-        <div>
-          <span class="dashboard-module-kicker">Reports</span>
-          <h2 class="h6">Awaiting Reports</h2>
-          <p class="dashboard-module-copy">Per-task report follow-up without changing the current dashboard order.</p>
-        </div>
-        <span class="dashboard-module-badge">{{ awaiting_tasks|length }} task{{ awaiting_tasks|length|pluralize }}</span>
+        <h2 class="h6">Awaiting Reports</h2>
+        {% if awaiting_rows|length > 10 %}
+          <button type="button" class="btn dashboard-module-expand" data-compact-expand>Expand</button>
+        {% endif %}
       </div>
-      <div class="dashboard-module-body">
-        {% for task in awaiting_tasks %}
-          <a class="dashboard-module-row dashboard-awaiting-row" href="{% url 'patients:case_detail' task.case_id %}">
-            <div class="dashboard-awaiting-row-main">
-              <div class="dashboard-awaiting-row-name">{{ task.case.full_name }}</div>
-              <div class="dashboard-awaiting-row-task">{{ task.title }}</div>
-              <div class="dashboard-awaiting-row-copy">{{ task.case.diagnosis|default:task.case.category.name }}</div>
-            </div>
-            <div class="dashboard-awaiting-row-meta">
-              <span class="dashboard-awaiting-row-date">{{ task.due_date|date:'M d' }}</span>
-              <span class="dashboard-awaiting-row-category" style="{% category_theme_style task.case.category.name theme_category_colors %}">{{ task.case.category.name }}</span>
+      <div class="dashboard-module-body dashboard-module-body--compact">
+        <div class="dashboard-compact-list">
+        {% for row in awaiting_rows %}
+          <a class="dashboard-compact-link-row" data-compact-row href="{% url 'patients:case_detail' row.case_id %}"{% if forloop.counter > 10 %} hidden{% endif %} style="{% category_theme_style row.category_name theme_category_colors %}">
+            <div class="dashboard-compact-row-top">
+              <div class="dashboard-compact-link">
+                <div class="dashboard-compact-summary">
+                  <span class="dashboard-compact-name" data-compact-name data-full-name="{{ row.patient_name }}" data-short-name="{{ row.short_name }}">{{ row.patient_name }}</span>
+                  <span class="dashboard-compact-separator" aria-hidden="true">|</span>
+                  <span class="dashboard-compact-inline">{{ row.sex_age }}</span>
+                  <span class="dashboard-compact-separator" aria-hidden="true">|</span>
+                  <span class="dashboard-compact-inline">{{ row.report_detail }}</span>
+                </div>
+              </div>
             </div>
           </a>
         {% empty %}
           <div class="dashboard-module-empty">No awaiting-report tasks.</div>
         {% endfor %}
+        </div>
       </div>
       <p class="dashboard-case-counts mb-0"><strong>Cases:</strong> Active {{ active_case_count }} &middot; Completed {{ completed_case_count }}</p>
     </section>
@@ -1363,73 +1676,157 @@
   })();
 </script>
 
+<script>
+  (() => {
+    const mobileBreakpoint = window.matchMedia("(max-width: 767.98px)");
+    const measureCanvas = document.createElement("canvas");
+    const measureContext = measureCanvas.getContext("2d");
+
+    const applyCompactNameFallback = (scope = document) => {
+      scope.querySelectorAll("[data-compact-name]").forEach((nameEl) => {
+        const fullName = nameEl.dataset.fullName || nameEl.textContent || "";
+        const shortName = nameEl.dataset.shortName || fullName;
+        nameEl.textContent = fullName;
+        nameEl.setAttribute("title", fullName);
+        if (!mobileBreakpoint.matches) {
+          return;
+        }
+
+        const summaryLine = nameEl.closest(".dashboard-compact-summary");
+        const computedStyle = window.getComputedStyle(nameEl);
+        if (measureContext) {
+          measureContext.font = [
+            computedStyle.fontStyle,
+            computedStyle.fontVariant,
+            computedStyle.fontWeight,
+            computedStyle.fontSize,
+            computedStyle.fontFamily,
+          ].join(" ");
+        }
+        const measuredFullNameWidth = measureContext
+          ? measureContext.measureText(fullName).width
+          : nameEl.scrollWidth;
+        if (
+          (summaryLine && summaryLine.scrollWidth > summaryLine.clientWidth + 1)
+          || measuredFullNameWidth > nameEl.clientWidth + 1
+        ) {
+          nameEl.textContent = shortName;
+        }
+      });
+    };
+
+    const syncCompactModule = (module) => {
+      const rows = Array.from(module.querySelectorAll("[data-compact-row]"));
+      const limit = Number(module.dataset.compactLimit || "10");
+      const isExpanded = module.dataset.compactExpanded === "true";
+      const expandButton = module.querySelector("[data-compact-expand]");
+
+      rows.forEach((row, index) => {
+        row.hidden = !isExpanded && index >= limit;
+      });
+
+      const hiddenOpenRow = module.querySelector("[data-compact-row].is-open[hidden]");
+      if (hiddenOpenRow) {
+        hiddenOpenRow.classList.remove("is-open");
+        const hiddenToggle = hiddenOpenRow.querySelector("[data-compact-toggle]");
+        const hiddenDetails = hiddenOpenRow.querySelector("[data-compact-details]");
+        if (hiddenToggle) {
+          hiddenToggle.setAttribute("aria-expanded", "false");
+        }
+        if (hiddenDetails) {
+          hiddenDetails.hidden = true;
+        }
+      }
+
+      if (expandButton) {
+        if (rows.length <= limit) {
+          expandButton.hidden = true;
+        } else {
+          expandButton.hidden = false;
+          expandButton.textContent = isExpanded ? "Collapse list" : `Expand ${rows.length - limit} more`;
+          expandButton.setAttribute("aria-expanded", isExpanded ? "true" : "false");
+        }
+      }
+
+      applyCompactNameFallback(module);
+    };
+
+    const initializeCompactModules = () => {
+      document.querySelectorAll("[data-compact-module]").forEach((module) => {
+        if (module.dataset.compactBound === "true") {
+          return;
+        }
+        module.dataset.compactBound = "true";
+        module.dataset.compactExpanded = "false";
+
+        module.addEventListener("click", (event) => {
+          const expandButton = event.target.closest("[data-compact-expand]");
+          if (expandButton && module.contains(expandButton)) {
+            module.dataset.compactExpanded = module.dataset.compactExpanded === "true" ? "false" : "true";
+            syncCompactModule(module);
+            return;
+          }
+
+          const toggle = event.target.closest("[data-compact-toggle]");
+          if (!toggle || !module.contains(toggle)) {
+            return;
+          }
+
+          const row = toggle.closest("[data-compact-row]");
+          const isOpen = row && row.classList.contains("is-open");
+          module.querySelectorAll("[data-compact-row].is-open").forEach((openRow) => {
+            openRow.classList.remove("is-open");
+            const openToggle = openRow.querySelector("[data-compact-toggle]");
+            const openDetails = openRow.querySelector("[data-compact-details]");
+            if (openToggle) {
+              openToggle.setAttribute("aria-expanded", "false");
+            }
+            if (openDetails) {
+              openDetails.hidden = true;
+            }
+          });
+
+          if (row && !isOpen) {
+            row.classList.add("is-open");
+            toggle.setAttribute("aria-expanded", "true");
+            const details = row.querySelector("[data-compact-details]");
+            if (details) {
+              details.hidden = false;
+            }
+            row.dispatchEvent(new CustomEvent("dashboardcompactopen", { bubbles: true }));
+          }
+
+          syncCompactModule(module);
+        });
+
+        syncCompactModule(module);
+      });
+    };
+
+    window.dashboardCompactUI = { applyCompactNameFallback };
+
+    const initialize = () => {
+      initializeCompactModules();
+      applyCompactNameFallback(document);
+    };
+
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", initialize, { once: true });
+    } else {
+      initialize();
+    }
+
+    window.addEventListener("resize", () => applyCompactNameFallback(document));
+  })();
+</script>
+
 {% if show_recent_cases_panel %}
   {{ recent_cases|json_script:"recent-cases-payload" }}
   <div
     id="recent-case-endpoints"
     data-list-url="{% url 'patients:recent_cases' %}"
     data-update-url-template="{% url 'patients:recent_case_update' 0 %}"
-    data-task-complete-url-template="{% url 'patients:task_quick_complete' 0 %}"
-    data-task-reschedule-url-template="{% url 'patients:task_quick_reschedule' 0 %}"
-    data-task-note-url-template="{% url 'patients:task_quick_note' 0 %}"
   ></div>
-
-  <div class="modal fade" id="recentCaseModal" tabindex="-1" aria-labelledby="recentCaseModalTitle" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-scrollable modal-fullscreen-sm-down">
-      <div class="modal-content">
-        <div class="modal-header">
-          <div>
-            <h2 class="modal-title h5 mb-1" id="recentCaseModalTitle">Recently Added</h2>
-            <p class="text-muted small mb-0" id="recentCaseModalSubtitle"></p>
-          </div>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-        </div>
-        <div class="modal-body">
-          <div id="recent-case-feedback" class="alert recent-case-feedback d-none" role="alert"></div>
-
-          <div class="recent-case-overview">
-            <div class="recent-case-overview-card">
-              <span class="label">Name</span>
-              <span class="value" id="recent-case-name">-</span>
-            </div>
-            <div class="recent-case-overview-card">
-              <span class="label">Age</span>
-              <span class="value" id="recent-case-age">-</span>
-            </div>
-            <div class="recent-case-overview-card">
-              <span class="label">Sex</span>
-              <span class="value" id="recent-case-gender">-</span>
-            </div>
-          </div>
-
-          <form id="recent-case-form" class="row g-3">
-            <div class="col-12">
-              <label class="form-label" for="recent-case-diagnosis">Diagnosis</label>
-              <input class="form-control" id="recent-case-diagnosis" name="diagnosis" />
-            </div>
-            <div class="col-12">
-              <label class="form-label" for="recent-case-notes">Notes</label>
-              <textarea class="form-control" id="recent-case-notes" name="notes" rows="4"></textarea>
-            </div>
-          </form>
-
-          <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-4 mb-2">
-            <div>
-              <h3 class="h6 mb-0">Tasks</h3>
-              <p class="recent-case-modal-muted mb-0">Quick complete, reschedule, or note updates without leaving the dashboard.</p>
-            </div>
-            <a id="recent-case-open-detail" class="btn btn-sm btn-outline-primary" href="#">Open full case</a>
-          </div>
-          <div id="recent-case-task-list" class="recent-case-task-list"></div>
-        </div>
-        <div class="modal-footer">
-          <span id="recent-case-readonly-copy" class="text-muted small me-auto d-none">Reception access is read-only in this panel.</span>
-          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
-          <button type="submit" class="btn btn-primary" id="recent-case-save" form="recent-case-form">Save</button>
-        </div>
-      </div>
-    </div>
-  </div>
 
   <script>
     (() => {
@@ -1439,37 +1836,20 @@
         const panelEl = document.querySelector("[data-recent-case-panel]");
         const rowList = document.querySelector("[data-recent-case-list]");
         const toggleButton = document.querySelector("[data-recent-case-toggle]");
-        const modalEl = document.getElementById("recentCaseModal");
-        if (!payloadEl || !endpointsEl || !panelEl || !rowList || !modalEl || !window.bootstrap) {
+        if (!payloadEl || !endpointsEl || !panelEl || !rowList || panelEl.dataset.recentCaseBound === "true") {
           return;
         }
+        panelEl.dataset.recentCaseBound = "true";
 
         const initialCases = JSON.parse(payloadEl.textContent || "[]");
         const caseStore = new Map(initialCases.map((entry) => [entry.id, entry]));
         const caseOrder = initialCases.map((entry) => entry.id);
+        const listLimit = Number(panelEl.dataset.compactLimit || "10");
         const listUrl = endpointsEl.dataset.listUrl;
         const updateUrlTemplate = endpointsEl.dataset.updateUrlTemplate;
-        const taskCompleteUrlTemplate = endpointsEl.dataset.taskCompleteUrlTemplate;
-        const taskRescheduleUrlTemplate = endpointsEl.dataset.taskRescheduleUrlTemplate;
-        const taskNoteUrlTemplate = endpointsEl.dataset.taskNoteUrlTemplate;
-        const recentCaseModal = new window.bootstrap.Modal(modalEl);
-
-        const feedbackEl = document.getElementById("recent-case-feedback");
-        const titleEl = document.getElementById("recentCaseModalTitle");
-        const subtitleEl = document.getElementById("recentCaseModalSubtitle");
-        const nameEl = document.getElementById("recent-case-name");
-        const ageEl = document.getElementById("recent-case-age");
-        const genderEl = document.getElementById("recent-case-gender");
-        const diagnosisEl = document.getElementById("recent-case-diagnosis");
-        const notesEl = document.getElementById("recent-case-notes");
-        const caseForm = document.getElementById("recent-case-form");
-        const saveButton = document.getElementById("recent-case-save");
-        const readonlyCopyEl = document.getElementById("recent-case-readonly-copy");
-        const openDetailEl = document.getElementById("recent-case-open-detail");
-        const taskListEl = document.getElementById("recent-case-task-list");
-
-        let currentCaseId = null;
-        let isExpanded = false;
+        let fullCasesLoaded = false;
+        let listExpanded = false;
+        let openCaseId = null;
 
         const escapeHtml = (value) =>
           String(value ?? "")
@@ -1492,236 +1872,10 @@
           return decodeURIComponent(cookieValue.split("=").slice(1).join("="));
         };
 
-        const setFeedback = (message, level) => {
-          feedbackEl.className = `alert recent-case-feedback alert-${level}`;
-          feedbackEl.textContent = message;
-          feedbackEl.classList.remove("d-none");
-        };
-
-        const clearFeedback = () => {
-          feedbackEl.className = "alert recent-case-feedback d-none";
-          feedbackEl.textContent = "";
-        };
-
-        const renderCollapsedRow = (entry) => `
-          <button type="button" class="recent-case-row recent-case-row--collapsed" data-recent-case-trigger data-case-id="${entry.id}">
-            <div class="card-body">
-              <div class="recent-case-collapsed-line">
-                <span class="recent-case-name-wrap">
-                  <span class="fw-semibold recent-case-name recent-case-name--full">${escapeHtml(entry.name)}</span>
-                  <span class="fw-semibold recent-case-name recent-case-name--short">${escapeHtml(entry.first_name || entry.name)}</span>
-                </span>
-                <span class="recent-case-line-separator" aria-hidden="true">|</span>
-                <span class="recent-case-inline-meta">${escapeHtml(entry.gender_label)}</span>
-                <span class="recent-case-line-separator" aria-hidden="true">|</span>
-                <span class="recent-case-inline-meta">${escapeHtml(entry.age_label)}</span>
-                <span class="recent-case-line-separator" aria-hidden="true">|</span>
-                <span class="recent-case-inline-meta">Added ${escapeHtml(entry.created_at_display)}</span>
-              </div>
-            </div>
-          </button>
-        `;
-
-        const renderExpandedRow = (entry) => `
-          <button type="button" class="recent-case-row recent-case-row--expanded" data-recent-case-trigger data-case-id="${entry.id}">
-            <div class="card-body">
-              <div class="recent-case-row-top">
-                <span class="fw-semibold">${escapeHtml(entry.name)}</span>
-                ${entry.is_new_today ? '<span class="recent-case-badge">New</span>' : ""}
-              </div>
-              <div class="recent-case-meta">
-                <span>${escapeHtml(entry.age_label)}</span>
-                <span>${escapeHtml(entry.gender_label)}</span>
-                <span>Added ${escapeHtml(entry.created_at_display)}</span>
-              </div>
-              <div class="recent-case-diagnosis">${escapeHtml(entry.diagnosis_short)}</div>
-            </div>
-          </button>
-        `;
-
-        const syncRecentState = (hasRows) => {
-          const currentState = isExpanded ? "expanded" : "collapsed";
-          panelEl.dataset.recentCaseState = currentState;
-          rowList.dataset.recentCaseView = currentState;
-          if (!toggleButton) {
-            return;
-          }
-          toggleButton.classList.toggle("d-none", !hasRows);
-          toggleButton.textContent = isExpanded ? "Collapse" : "Expand";
-          toggleButton.setAttribute("aria-expanded", isExpanded ? "true" : "false");
-        };
-
-        const renderRecentRows = () => {
-          const rows = caseOrder
-            .map((caseId) => caseStore.get(caseId))
-            .filter(Boolean);
-          syncRecentState(rows.length > 0);
-          if (!rows.length) {
-            rowList.innerHTML = '<div class="recent-case-empty">No recent patients added.</div>';
-            return;
-          }
-
-          rowList.innerHTML = rows
-            .map((entry) => (isExpanded ? renderExpandedRow(entry) : renderCollapsedRow(entry)))
-            .join("");
-        };
-
-        const renderTasks = (entry) => {
-          const tasks = Array.isArray(entry.tasks) ? entry.tasks : [];
-          if (!tasks.length) {
-            taskListEl.innerHTML = '<div class="recent-case-empty">No tasks available.</div>';
-            return;
-          }
-
-          taskListEl.innerHTML = tasks
-            .map(
-              (task) => `
-                <article class="recent-case-task" data-task-id="${task.id}">
-                  <div class="recent-case-task-top">
-                    <div>
-                      <div class="fw-semibold">${escapeHtml(task.title)}</div>
-                      <div class="recent-case-task-meta">
-                        <span>Due ${escapeHtml(task.due_date_display)}</span>
-                        <span>${escapeHtml(task.status_label)}</span>
-                      </div>
-                    </div>
-                    ${entry.can_edit ? `<a class="btn btn-sm btn-outline-primary" href="${escapeHtml(task.edit_url)}">Edit page</a>` : ""}
-                  </div>
-                  ${
-                    task.notes
-                      ? `<div class="recent-case-task-notes">Notes: ${escapeHtml(task.notes)}</div>`
-                      : ""
-                  }
-                  ${
-                    entry.can_edit
-                      ? `
-                        <div class="recent-case-task-actions">
-                          ${
-                            task.can_complete
-                              ? `<button type="button" class="btn btn-sm btn-primary" data-task-action="complete" data-task-id="${task.id}">Complete</button>`
-                              : ""
-                          }
-                          ${
-                            task.can_reschedule
-                              ? `<button type="button" class="btn btn-sm btn-outline-primary" data-task-toggle="reschedule" data-task-id="${task.id}">Reschedule</button>`
-                              : ""
-                          }
-                          ${
-                            task.can_note
-                              ? `<button type="button" class="btn btn-sm btn-outline-secondary" data-task-toggle="note" data-task-id="${task.id}">Note</button>`
-                              : ""
-                          }
-                          ${
-                            task.is_locked_until_due
-                              ? '<span class="recent-case-modal-muted">Locked until due date for ANC.</span>'
-                              : ""
-                          }
-                        </div>
-                        ${
-                          task.can_reschedule
-                            ? `
-                              <form class="recent-case-inline-form is-hidden" data-task-form="reschedule" data-task-id="${task.id}">
-                                <input
-                                  id="recent-case-due-date-${task.id}"
-                                  class="form-control form-control-sm"
-                                  type="date"
-                                  name="due_date"
-                                  value="${escapeHtml(task.due_date)}"
-                                  required
-                                  data-crayons-datepicker="true"
-                                  data-crayons-datepicker-format="dd/MM/yyyy"
-                                  data-crayons-datepicker-locale="en-IN"
-                                  data-crayons-datepicker-placeholder="dd/mm/yyyy"
-                                  data-crayons-datepicker-show-footer="false"
-                                />
-                                <button type="submit" class="btn btn-sm btn-outline-primary align-self-start">Save date</button>
-                              </form>
-                            `
-                            : ""
-                        }
-                        ${
-                          task.can_note
-                            ? `
-                              <form class="recent-case-inline-form is-hidden" data-task-form="note" data-task-id="${task.id}">
-                                <textarea class="form-control form-control-sm" name="note" rows="2" required>${escapeHtml(task.notes || "")}</textarea>
-                                <button type="submit" class="btn btn-sm btn-outline-secondary align-self-start">Save note</button>
-                              </form>
-                            `
-                            : ""
-                        }
-                      `
-                      : ""
-                  }
-                </article>
-              `,
-            )
-            .join("");
-        };
-
-        const renderModal = (entry) => {
-          titleEl.textContent = entry.name || "Recently Added";
-          subtitleEl.textContent = entry.can_edit
-            ? "Review and update the minimal case details from the dashboard."
-            : "Read-only recent case snapshot.";
-          nameEl.textContent = entry.name || "-";
-          ageEl.textContent = entry.age_label || "-";
-          genderEl.textContent = entry.gender_label || "-";
-          diagnosisEl.value = entry.diagnosis || "";
-          notesEl.value = entry.notes || "";
-          diagnosisEl.readOnly = !entry.can_edit;
-          notesEl.readOnly = !entry.can_edit;
-          saveButton.classList.toggle("d-none", !entry.can_edit);
-          readonlyCopyEl.classList.toggle("d-none", entry.can_edit);
-          openDetailEl.href = entry.detail_url;
-          renderTasks(entry);
-        };
-
-        const upsertCase = (entry) => {
-          if (!entry || typeof entry.id !== "number") {
-            return;
-          }
-          caseStore.set(entry.id, entry);
-          if (!caseOrder.includes(entry.id)) {
-            caseOrder.push(entry.id);
-          }
-        };
-
-        const fetchRecentCases = async () => {
-          const response = await fetch(`${listUrl}?limit=10`, {
-            headers: { "X-Requested-With": "XMLHttpRequest" },
-          });
-          if (!response.ok) {
-            throw new Error("Could not refresh recent cases.");
-          }
-          const payload = await response.json();
-          const rows = Array.isArray(payload.results) ? payload.results : [];
-          caseStore.clear();
-          caseOrder.splice(0, caseOrder.length, ...rows.map((entry) => entry.id));
-          rows.forEach((entry) => caseStore.set(entry.id, entry));
-          renderRecentRows();
-        };
-
-        const openCaseModal = async (caseId) => {
-          currentCaseId = caseId;
-          clearFeedback();
-          let entry = caseStore.get(caseId);
-          if (!entry || !Array.isArray(entry.tasks)) {
-            await fetchRecentCases();
-            entry = caseStore.get(caseId);
-          }
-          if (!entry) {
-            setFeedback("Could not load the selected case.", "danger");
-            return;
-          }
-          renderModal(entry);
-          recentCaseModal.show();
-        };
-
         const handleJsonResponse = async (response) => {
           const payload = await response.json().catch(() => ({}));
           if (!response.ok) {
-            const errorMessage = payload.message || "Request failed.";
-            throw new Error(errorMessage);
+            throw new Error(payload.message || "Request failed.");
           }
           return payload;
         };
@@ -1739,113 +1893,272 @@
           return handleJsonResponse(response);
         };
 
-        if (toggleButton) {
-          toggleButton.addEventListener("click", () => {
-            isExpanded = !isExpanded;
-            renderRecentRows();
+        const upsertCase = (entry) => {
+          if (!entry || typeof entry.id !== "number") {
+            return;
+          }
+          caseStore.set(entry.id, entry);
+          if (!caseOrder.includes(entry.id)) {
+            caseOrder.push(entry.id);
+          }
+        };
+
+        const renderTasks = (entry) => {
+          if (!Array.isArray(entry.tasks)) {
+            return '<div class="dashboard-module-empty">Loading tasks...</div>';
+          }
+          const tasks = entry.tasks;
+          if (!tasks.length) {
+            return '<div class="dashboard-module-empty">No tasks available.</div>';
+          }
+          return `
+            <div class="dashboard-compact-task-list">
+              ${tasks
+                .map(
+                  (task) => `
+                    <article class="dashboard-compact-task">
+                      <div class="dashboard-compact-task-title">${escapeHtml(task.title)}</div>
+                      <div class="dashboard-compact-task-meta">
+                        <span>Due ${escapeHtml(task.due_date_display)}</span>
+                        <span>${escapeHtml(task.status_label)}</span>
+                      </div>
+                      ${
+                        task.notes
+                          ? `<div class="dashboard-compact-task-note">Notes: ${escapeHtml(task.notes)}</div>`
+                          : ""
+                      }
+                    </article>
+                  `,
+                )
+                .join("")}
+            </div>
+          `;
+        };
+
+        const renderRecentDetail = (entry, feedback = null) => `
+          <div class="dashboard-compact-detail-header">
+            <div>
+              <div class="dashboard-compact-detail-label">Recent case</div>
+              <div class="dashboard-compact-muted">${
+                entry.can_edit
+                  ? "Update case notes and review tasks without leaving the dashboard."
+                  : "Review tasks and notes from this read-only dashboard snapshot."
+              }</div>
+            </div>
+            <a class="btn btn-sm btn-outline-primary" href="${escapeHtml(entry.detail_url)}" data-compact-action>Open full case</a>
+          </div>
+          <div class="dashboard-compact-feedback alert alert-${feedback ? feedback.level : "success"}${feedback ? "" : " is-hidden"}">${
+            feedback ? escapeHtml(feedback.message) : ""
+          }</div>
+          <form class="dashboard-compact-notes-form" data-recent-case-form data-case-id="${entry.id}">
+            <input type="hidden" name="diagnosis" value="${escapeHtml(entry.diagnosis_input || "")}">
+            <div>
+              <label class="form-label" for="recent-case-notes-${entry.id}">Notes</label>
+              <textarea class="form-control form-control-sm" id="recent-case-notes-${entry.id}" name="notes" rows="3"${
+                entry.can_edit ? "" : " readonly"
+              }>${escapeHtml(entry.notes || "")}</textarea>
+            </div>
+            <div class="dashboard-compact-notes-actions">
+              ${
+                entry.can_edit
+                  ? '<button type="submit" class="btn btn-sm btn-primary">Save notes</button>'
+                  : '<span class="dashboard-compact-readonly">Reception access is read-only in this panel.</span>'
+              }
+            </div>
+          </form>
+          <div class="dashboard-compact-detail-block">
+            <span class="dashboard-compact-detail-label">Tasks</span>
+            ${renderTasks(entry)}
+          </div>
+        `;
+
+        const fetchRecentCases = async () => {
+          const response = await fetch(`${listUrl}?limit=all`, {
+            headers: { "X-Requested-With": "XMLHttpRequest" },
           });
-        }
+          if (!response.ok) {
+            throw new Error("Could not refresh recent cases.");
+          }
+          const payload = await response.json();
+          const rows = Array.isArray(payload.results) ? payload.results : [];
+          rows.forEach((entry) => upsertCase(entry));
+          fullCasesLoaded = true;
+          return rows;
+        };
+
+        const closeRecentRow = (row) => {
+          if (!row) {
+            return;
+          }
+          row.classList.remove("is-open");
+          row.querySelector("[data-recent-case-trigger]")?.setAttribute("aria-expanded", "false");
+          const detailEl = row.querySelector("[data-recent-case-detail]");
+          if (detailEl) {
+            detailEl.hidden = true;
+          }
+          if (openCaseId === Number(row.dataset.caseId)) {
+            openCaseId = null;
+          }
+        };
+
+        const syncRecentList = () => {
+          const rows = Array.from(rowList.querySelectorAll("[data-recent-case-row]"));
+          rows.forEach((row, index) => {
+            row.hidden = !listExpanded && index >= listLimit;
+          });
+
+          const hiddenOpenRow = rowList.querySelector("[data-recent-case-row].is-open[hidden]");
+          if (hiddenOpenRow) {
+            closeRecentRow(hiddenOpenRow);
+          }
+
+          if (toggleButton) {
+            if (rows.length <= listLimit) {
+              toggleButton.hidden = true;
+            } else {
+              toggleButton.hidden = false;
+              toggleButton.textContent = listExpanded ? "Collapse list" : `Expand ${rows.length - listLimit} more`;
+              toggleButton.setAttribute("aria-expanded", listExpanded ? "true" : "false");
+            }
+          }
+
+          window.dashboardCompactUI?.applyCompactNameFallback(panelEl);
+        };
+
+        const renderRecentRow = (row, entry, feedback = null) => {
+          const detailEl = row.querySelector("[data-recent-case-detail]");
+          const summaryEl = row.querySelector(".dashboard-compact-summary");
+          if (!detailEl || !summaryEl) {
+            return;
+          }
+          summaryEl.innerHTML = `
+            <span class="dashboard-compact-name" data-compact-name data-full-name="${escapeHtml(entry.name)}" data-short-name="${escapeHtml(entry.short_name || entry.first_name || entry.name)}">${escapeHtml(entry.name)}</span>
+            <span class="dashboard-compact-separator" aria-hidden="true">|</span>
+            <span class="dashboard-compact-inline">${escapeHtml(entry.gender_label)}</span>
+            <span class="dashboard-compact-separator" aria-hidden="true">|</span>
+            <span class="dashboard-compact-inline">${escapeHtml(entry.age_label)}</span>
+            <span class="dashboard-compact-separator" aria-hidden="true">|</span>
+            <span class="dashboard-compact-inline">Added ${escapeHtml(entry.created_at_display)}</span>
+          `;
+          detailEl.innerHTML = renderRecentDetail(entry, feedback);
+          row.style.setProperty("--theme-category-bg", entry.category_bg_color || "");
+          row.style.setProperty("--theme-category-text", entry.category_text_color || "");
+          row.style.setProperty("--theme-category-border", entry.category_border_color || "");
+          if (window.dashboardCompactUI) {
+            window.dashboardCompactUI.applyCompactNameFallback(panelEl);
+          }
+        };
+
+        const hydrateRecentRow = async (row, feedback = null) => {
+          const caseId = Number(row.dataset.caseId);
+          let entry = caseStore.get(caseId);
+          if (!entry) {
+            return;
+          }
+          if (!fullCasesLoaded || !Array.isArray(entry.tasks)) {
+            renderRecentRow(row, entry, feedback);
+            await fetchRecentCases();
+            entry = caseStore.get(caseId);
+          }
+          if (!entry) {
+            throw new Error("Could not load the selected case.");
+          }
+          renderRecentRow(row, entry, feedback);
+        };
+
+        rowList.querySelectorAll("[data-recent-case-row]").forEach((row) => {
+          const entry = caseStore.get(Number(row.dataset.caseId));
+          if (entry) {
+            renderRecentRow(row, entry);
+          }
+        });
+
+        toggleButton?.addEventListener("click", () => {
+          listExpanded = !listExpanded;
+          syncRecentList();
+        });
 
         rowList.addEventListener("click", async (event) => {
           const trigger = event.target.closest("[data-recent-case-trigger]");
-          if (!trigger) {
+          if (!trigger || !rowList.contains(trigger)) {
             return;
           }
-          try {
-            await openCaseModal(Number(trigger.dataset.caseId));
-          } catch (error) {
-            setFeedback(error.message, "danger");
-          }
-        });
 
-        caseForm.addEventListener("submit", async (event) => {
-          event.preventDefault();
-          if (!currentCaseId) {
+          const row = trigger.closest("[data-recent-case-row]");
+          if (!row) {
             return;
           }
-          const entry = caseStore.get(currentCaseId);
-          if (!entry || !entry.can_edit) {
-            return;
-          }
-          clearFeedback();
-          saveButton.disabled = true;
-          try {
-            const payload = await postForm(
-              clampReplaceId(updateUrlTemplate, currentCaseId),
-              new FormData(caseForm),
-            );
-            upsertCase(payload.case);
-            renderRecentRows();
-            renderModal(payload.case);
-            setFeedback(payload.message || "Recent case updated.", "success");
-          } catch (error) {
-            setFeedback(error.message, "danger");
-          } finally {
-            saveButton.disabled = false;
-          }
-        });
 
-        taskListEl.addEventListener("click", async (event) => {
-          const completeButton = event.target.closest("[data-task-action='complete']");
-          if (completeButton) {
-            event.preventDefault();
-            clearFeedback();
-            try {
-              const payload = await postForm(
-                clampReplaceId(taskCompleteUrlTemplate, Number(completeButton.dataset.taskId)),
-                new FormData(),
-              );
-              if (payload.case) {
-                upsertCase(payload.case);
-                renderRecentRows();
-                renderModal(payload.case);
-              }
-              setFeedback(payload.message || "Task updated.", "success");
-            } catch (error) {
-              setFeedback(error.message, "danger");
+          const caseId = Number(row.dataset.caseId);
+          const isOpen = row.classList.contains("is-open");
+          rowList.querySelectorAll("[data-recent-case-row].is-open").forEach((openRow) => closeRecentRow(openRow));
+
+          if (isOpen) {
+            syncRecentList();
+            return;
+          }
+
+          row.classList.add("is-open");
+          trigger.setAttribute("aria-expanded", "true");
+          const detailEl = row.querySelector("[data-recent-case-detail]");
+          if (detailEl) {
+            detailEl.hidden = false;
+          }
+          openCaseId = caseId;
+
+          try {
+            await hydrateRecentRow(row);
+          } catch (error) {
+            const entry = caseStore.get(caseId);
+            if (entry) {
+              renderRecentRow(row, entry, { message: error.message, level: "danger" });
             }
-            return;
           }
 
-          const formToggle = event.target.closest("[data-task-toggle]");
-          if (!formToggle) {
-            return;
-          }
-          const taskId = formToggle.dataset.taskId;
-          const targetType = formToggle.dataset.taskToggle;
-          taskListEl
-            .querySelectorAll(`[data-task-form='${targetType}'][data-task-id='${taskId}']`)
-            .forEach((form) => form.classList.toggle("is-hidden"));
+          syncRecentList();
         });
 
-        taskListEl.addEventListener("submit", async (event) => {
-          const form = event.target.closest("[data-task-form]");
+        rowList.addEventListener("submit", async (event) => {
+          const form = event.target.closest("[data-recent-case-form]");
           if (!form) {
             return;
           }
           event.preventDefault();
-          clearFeedback();
-          const taskId = Number(form.dataset.taskId);
-          const formType = form.dataset.taskForm;
-          const urlTemplate = formType === "reschedule" ? taskRescheduleUrlTemplate : taskNoteUrlTemplate;
+          const row = form.closest("[data-recent-case-row]");
+          const caseId = Number(form.dataset.caseId);
           const submitButton = form.querySelector("button[type='submit']");
-          submitButton.disabled = true;
+          if (submitButton) {
+            submitButton.disabled = true;
+          }
           try {
-            const payload = await postForm(clampReplaceId(urlTemplate, taskId), new FormData(form));
+            const payload = await postForm(
+              clampReplaceId(updateUrlTemplate, caseId),
+              new FormData(form),
+            );
             if (payload.case) {
               upsertCase(payload.case);
-              renderRecentRows();
-              renderModal(payload.case);
             }
-            setFeedback(payload.message || "Task updated.", "success");
+            if (row) {
+              await hydrateRecentRow(row, {
+                message: payload.message || "Recent case updated.",
+                level: "success",
+              });
+            }
           } catch (error) {
-            setFeedback(error.message, "danger");
+            if (row) {
+              await hydrateRecentRow(row, {
+                message: error.message,
+                level: "danger",
+              });
+            }
           } finally {
-            submitButton.disabled = false;
+            if (submitButton) {
+              submitButton.disabled = false;
+            }
           }
         });
 
-        renderRecentRows();
+        syncRecentList();
       };
 
       if (document.readyState === "loading") {

@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026.03.18.02.10
+- Reworked the dashboard `Today`, `Recently Added`, `Overdue`, and `Awaiting Reports` modules into a shared compact-row layout with category tinting, inline expand behavior where needed, and mobile-friendly condensed rows.
+- Replaced the `Recently Added` modal workflow with inline notes and task review, preserved `Open full case`, and expanded the dashboard/recent payloads to include compact sex-age, short-name, due-date, and category theme metadata.
+- Simplified the module headers so they show only the title, moved long-list `Expand` controls to the top-right of each module, and fixed the `Awaiting Reports` expand-button contrast so the label stays readable before hover.
+- Added dashboard regression coverage for the compact-row markup, inline recent detail container, expanded recent-case API payload, awaiting-row rendering, and the streamlined Recent header behavior.
+
 ## 2026.03.17.22.40
 - Renamed the `Non-Surgical` category to `Medicine` across the live dashboard, case list, global search, theme preview, and validation copy.
 - Updated category matching, theming, and case-form behavior so `Medicine` is the canonical category name while legacy `Non Surgical` spellings still map to the same internal filter and style bucket.

@@ -54,6 +54,7 @@ THEME_DEFAULTS = {
     },
     "dashboard": {
         "today": {"bg": "#cfe2ff", "text": "#052c65"},
+        "recent": {"bg": "#b6d4fe", "text": "#084298"},
         "upcoming": {"bg": "#cff4fc", "text": "#055160"},
         "overdue": {"bg": "#f8d7da", "text": "#842029"},
     },
@@ -106,6 +107,7 @@ PAIR_GROUPS = (
     ("alerts", "danger"),
     ("alerts", "light"),
     ("dashboard", "today"),
+    ("dashboard", "recent"),
     ("dashboard", "upcoming"),
     ("dashboard", "overdue"),
     ("case_status", "active"),
@@ -176,6 +178,7 @@ THEME_FORM_SECTIONS = [
         "title": "Dashboard",
         "rows": [
             {"label": "Today Card", "fields": [{"name": "dashboard__today__bg", "label": "Background"}, {"name": "dashboard__today__text", "label": "Text"}]},
+            {"label": "Recently Added Card", "fields": [{"name": "dashboard__recent__bg", "label": "Background"}, {"name": "dashboard__recent__text", "label": "Text"}]},
             {"label": "Upcoming Card", "fields": [{"name": "dashboard__upcoming__bg", "label": "Background"}, {"name": "dashboard__upcoming__text", "label": "Text"}]},
             {"label": "Overdue Card", "fields": [{"name": "dashboard__overdue__bg", "label": "Background"}, {"name": "dashboard__overdue__text", "label": "Text"}]},
         ],

@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026.03.19.16.20
+- Shifted the new `Recently Added` default again to a clearer primary-blue subtle palette so it stays visibly blue while remaining distinct from the cyan `Upcoming` module.
+
+## 2026.03.19.16.19
+- Tuned the new `Recently Added` dashboard default from a very light blue to a clearer medium-light blue so it separates more obviously from the cyan `Upcoming` module on the live dashboard.
+
+## 2026.03.19.16.18
+- Added a dedicated dashboard theme color pair for `Recently Added` so it no longer shares the same blue-cyan treatment as `Upcoming`.
+- Wired the new `Recently Added` dashboard color into Theme settings and the live appearance preview so admins can adjust it later without editing code.
+
+## 2026.03.19.16.09
+- Increased the dashboard module shell tint so `Today`, `Recently Added`, `Overdue`, `Awaiting Reports`, and `Upcoming` separate more clearly at a glance instead of reading as nearly identical white cards.
+- Strengthened dashboard module and upcoming-schedule border treatments, and slightly intensified the Upcoming day-chip fill so the page hierarchy is easier to scan without changing the existing theme tokens.
+
 ## 2026.03.19.13.13
 - Rebuilt `/patients/cases/<id>/edit/` to match the new case-intake visual system with the same split shell, category tiles, create-style field cards, ANC GPAL stepper controls, sticky summary rail, and mobile save bar while keeping edit-specific behavior intact.
 - Added edit-only HTMX preview and duplicate-identity helper endpoints so draft workflow changes and self-excluding UHID/phone warnings refresh live without implying that starter tasks will be recreated.

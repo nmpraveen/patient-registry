@@ -3789,6 +3789,8 @@ class MedtrackViewTests(TestCase):
                 "nav__bg": "#123456",
                 "case_header__bg": "#654321",
                 "shell__page_bg": "#faf0e6",
+                "dashboard__recent__bg": "#c7ddff",
+                "dashboard__recent__text": "#163ea8",
             },
             category_overrides={"ANC": {"bg": "#abcdef", "text": "#123456"}},
         )
@@ -3801,10 +3803,13 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(theme_settings.tokens["nav"]["bg"], "#123456")
         self.assertEqual(theme_settings.tokens["case_header"]["bg"], "#654321")
         self.assertEqual(theme_settings.tokens["shell"]["page_bg"], "#faf0e6")
+        self.assertEqual(theme_settings.tokens["dashboard"]["recent"]["bg"], "#c7ddff")
+        self.assertEqual(theme_settings.tokens["dashboard"]["recent"]["text"], "#163ea8")
         self.assertEqual(anc.theme_bg_color, "#abcdef")
         self.assertEqual(anc.theme_text_color, "#123456")
         self.assertContains(response, "--theme-nav-bg: #123456;")
         self.assertContains(response, "--theme-case-header-bg: #654321;")
+        self.assertContains(response, "--theme-dashboard-recent-bg: #c7ddff;")
         self.assertContains(response, "Theme settings saved.")
 
     def test_theme_settings_restore_defaults_resets_saved_values(self):
@@ -3827,6 +3832,7 @@ class MedtrackViewTests(TestCase):
         theme_settings.refresh_from_db()
         anc.refresh_from_db()
         self.assertEqual(theme_settings.tokens["nav"]["bg"], "#0d6efd")
+        self.assertEqual(theme_settings.tokens["dashboard"]["recent"]["bg"], "#b6d4fe")
         self.assertEqual(anc.theme_bg_color, "#d1e7dd")
         self.assertEqual(anc.theme_text_color, "#0f5132")
         self.assertContains(response, "Theme restored to defaults.")

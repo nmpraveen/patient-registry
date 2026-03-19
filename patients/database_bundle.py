@@ -194,7 +194,7 @@ def load_bundle_archive(bundle_bytes):
 
 def build_patient_data_payload():
     cases = (
-        Case.objects.select_related("category", "created_by")
+        Case.objects.select_related("category", "created_by", "archived_by")
         .prefetch_related(
             Prefetch(
                 "tasks",
@@ -269,6 +269,9 @@ def _serialize_case(case):
         "alternate_phone_number": case.alternate_phone_number,
         "category_name": case.category.name,
         "status": case.status,
+        "is_archived": case.is_archived,
+        "archived_at": _serialize_datetime(case.archived_at),
+        "archived_by_username": _username(case.archived_by),
         "diagnosis": case.diagnosis,
         "ncd_flags": case.ncd_flags,
         "referred_by": case.referred_by,
@@ -501,6 +504,9 @@ def _import_payload(payload, categories_by_name, users_by_username):
             alternate_phone_number=case_data.get("alternate_phone_number", ""),
             category=category,
             status=case_data.get("status", ""),
+            is_archived=bool(case_data.get("is_archived", False)),
+            archived_at=_parse_datetime(case_data.get("archived_at"), "archived_at"),
+            archived_by=users_by_username.get(case_data.get("archived_by_username")),
             diagnosis=case_data.get("diagnosis", ""),
             ncd_flags=case_data.get("ncd_flags") or [],
             referred_by=case_data.get("referred_by", ""),
@@ -524,7 +530,7 @@ def _import_payload(payload, categories_by_name, users_by_username):
             notes=case_data.get("notes", ""),
             created_by=users_by_username.get(case_data.get("created_by_username")),
         )
-        case.full_clean(exclude=_blank_model_fields(case, "created_by"))
+        case.full_clean(exclude=_blank_model_fields(case, "created_by", "archived_by"))
         case.save()
         _restore_timestamps(
             case,
@@ -626,7 +632,7 @@ def _restore_timestamps(instance, *, created_at=None, updated_at=None):
 def _collect_usernames(payload):
     usernames = set()
     for case_data in payload.get("cases", []):
-        for key in ("created_by_username",):
+        for key in ("created_by_username", "archived_by_username"):
             username = case_data.get(key)
             if username:
                 usernames.add(username)

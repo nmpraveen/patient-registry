@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026.03.19.17.05
+- Expanded admin `Case Management` so each case now offers both `Archive` and `Delete Permanently` actions instead of delete-only handling.
+- Added a real archive state on cases, hid archived cases from the dashboard, recent cases, search/autocomplete, and the main case list, while keeping archived records available on the admin case-management page.
+- Updated patient-data bundle export/import and regression coverage so archived cases keep their archive metadata during backup and restore.
+
+## 2026.03.19.16.50
+- Added an admin-only `Case Management` settings module and dedicated `/patients/settings/case-management/` page for reviewing stored cases and removing a case from the app.
+- Built a two-step permanent-delete flow with an explicit confirmation panel before removal, plus linked-record impact counts so admins can see what will be deleted.
+- Added regression coverage for case-management access control, search filtering, confirmation enforcement, and successful cascade deletion of linked case data.
+
 ## 2026.03.19.16.20
 - Shifted the new `Recently Added` default again to a clearer primary-blue subtle palette so it stays visibly blue while remaining distinct from the cyan `Upcoming` module.
 

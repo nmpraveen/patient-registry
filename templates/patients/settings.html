@@ -122,7 +122,7 @@
       <div class="settings-kicker">Admin Workspace</div>
       <h1 class="h3 mb-2 mt-2">Settings</h1>
       <p class="text-muted mb-0">
-        Category-based administration for users, workflow defaults, device access, backups, theme controls, and utilities.
+        Category-based administration for users, workflow defaults, case lifecycle tools, device access, backups, theme controls, and utilities.
       </p>
     </div>
     <div class="settings-hub-search">
@@ -131,7 +131,7 @@
         class="form-control"
         id="settings-filter"
         type="search"
-        placeholder="Search users, backups, theme, categories..."
+        placeholder="Search users, cases, backups, theme..."
         autocomplete="off"
       />
     </div>
@@ -295,6 +295,48 @@
       <div class="settings-card-links">
         {% if database_settings_available %}
           <a class="btn btn-primary btn-sm" href="{% url 'patients:settings_database' %}">Open Database Management</a>
+        {% else %}
+          <span class="btn btn-primary btn-sm disabled" aria-disabled="true">Run Migrations First</span>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+
+  <section class="settings-card" data-settings-card data-settings-search="case management archive delete remove hard delete permanently delete case records">
+    <div class="settings-card-body">
+      <div>
+        <div class="settings-kicker">Records</div>
+        <h2 class="h5 mt-2 mb-1">Case Management</h2>
+        <p class="text-muted mb-0">Archive cases out of day-to-day workflows or permanently delete them when a record truly needs to be removed.</p>
+      </div>
+      <div class="settings-metric-grid">
+        <div class="settings-metric">
+          <div class="settings-metric-value">{% if case_management_available %}{{ total_case_count }}{% else %}Unavailable{% endif %}</div>
+          <div class="settings-metric-label">Total cases</div>
+        </div>
+        <div class="settings-metric">
+          <div class="settings-metric-value">{% if case_management_available %}{{ active_case_count }}{% else %}Unavailable{% endif %}</div>
+          <div class="settings-metric-label">Active cases</div>
+        </div>
+        <div class="settings-metric">
+          <div class="settings-metric-value">{% if case_management_available %}{{ archived_case_count }}{% else %}Unavailable{% endif %}</div>
+          <div class="settings-metric-label">Archived cases</div>
+        </div>
+        <div class="settings-metric">
+          <div class="settings-metric-value">{% if case_management_available %}{{ completed_case_count }}{% else %}Unavailable{% endif %}</div>
+          <div class="settings-metric-label">Completed cases</div>
+        </div>
+        <div class="settings-metric">
+          <div class="settings-metric-value">{% if case_management_available %}{{ inactive_case_count }}{% else %}Unavailable{% endif %}</div>
+          <div class="settings-metric-label">Cancelled / lost</div>
+        </div>
+      </div>
+      <div class="small text-muted">
+        Archive keeps the record but hides it from normal workflows. Permanent delete removes the case and its linked tasks, vitals, call logs, and activity logs.
+      </div>
+      <div class="settings-card-links">
+        {% if case_management_available %}
+          <a class="btn btn-primary btn-sm" href="{% url 'patients:settings_case_management' %}">Open Case Management</a>
         {% else %}
           <span class="btn btn-primary btn-sm disabled" aria-disabled="true">Run Migrations First</span>
         {% endif %}

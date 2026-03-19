@@ -3086,6 +3086,173 @@ class MedtrackViewTests(TestCase):
         self.assertContains(database_response, database_bundle.IMPORT_CONFIRMATION_PHRASE)
         self.assertContains(database_response, "Automatic backup scheduler")
 
+    def test_admin_settings_page_shows_case_management_link_and_page_requires_manage_settings(self):
+        target_case = self.create_bundle_case(uhid="UH-CASE-MGMT-001", phone_number="9000000191")
+
+        self.client.force_login(self.user)
+        forbidden_get = self.client.get(reverse("patients:settings_case_management"))
+        forbidden_post = self.client.post(
+            reverse("patients:settings_case_management"),
+            {"action": "request_delete", "case_id": str(target_case.pk)},
+        )
+
+        self.assertEqual(forbidden_get.status_code, 403)
+        self.assertEqual(forbidden_post.status_code, 403)
+
+        self.login_as_admin()
+        settings_response = self.client.get(reverse("patients:settings"))
+        case_management_response = self.client.get(reverse("patients:settings_case_management"))
+
+        self.assertEqual(settings_response.status_code, 200)
+        self.assertContains(settings_response, reverse("patients:settings_case_management"))
+        self.assertEqual(case_management_response.status_code, 200)
+        self.assertContains(case_management_response, "Case Management")
+        self.assertContains(case_management_response, "Archive")
+        self.assertContains(case_management_response, "Permanent delete")
+        self.assertContains(case_management_response, "UH-CASE-MGMT-001")
+
+    def test_case_management_page_search_filters_cases(self):
+        self.create_bundle_case(
+            uhid="UH-CASE-SEARCH-001",
+            first_name="Unique",
+            last_name="Target",
+            phone_number="9000000192",
+        )
+        self.create_bundle_case(
+            uhid="UH-CASE-SEARCH-002",
+            first_name="Other",
+            last_name="Patient",
+            phone_number="9000000193",
+        )
+        self.login_as_admin()
+
+        response = self.client.get(reverse("patients:settings_case_management"), {"q": "Unique"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "UH-CASE-SEARCH-001")
+        self.assertNotContains(response, "UH-CASE-SEARCH-002")
+        self.assertContains(response, "Found 1 matching case")
+
+    def test_case_management_delete_requires_confirmation_and_removes_linked_records(self):
+        target_case = self.create_bundle_case(uhid="UH-CASE-DELETE-001", phone_number="9000000194")
+        other_case = self.create_bundle_case(uhid="UH-CASE-DELETE-002", phone_number="9000000195")
+        task = Task.objects.create(
+            case=target_case,
+            title="Delete review",
+            due_date=timezone.localdate(),
+            created_by=self.user,
+        )
+        VitalEntry.objects.create(
+            case=target_case,
+            recorded_at=timezone.now(),
+            pr=72,
+            created_by=self.user,
+            updated_by=self.user,
+        )
+        CaseActivityLog.objects.create(case=target_case, task=task, user=self.user, note="Delete me")
+        CallLog.objects.create(case=target_case, task=task, outcome=CallOutcome.NO_ANSWER, notes="Delete me", staff_user=self.user)
+
+        self.login_as_admin()
+
+        direct_delete_response = self.client.post(
+            reverse("patients:settings_case_management"),
+            {"action": "delete_case", "case_id": str(target_case.pk)},
+            follow=True,
+        )
+
+        self.assertEqual(direct_delete_response.status_code, 200)
+        self.assertTrue(Case.objects.filter(pk=target_case.pk).exists())
+        self.assertContains(direct_delete_response, "Please review the confirmation panel before deleting a case.")
+
+        confirm_response = self.client.post(
+            reverse("patients:settings_case_management"),
+            {"action": "request_delete", "case_id": str(target_case.pk)},
+            follow=True,
+        )
+
+        self.assertEqual(confirm_response.status_code, 200)
+        self.assertContains(confirm_response, "Confirm permanent delete")
+        self.assertContains(confirm_response, "UH-CASE-DELETE-001")
+        self.assertContains(confirm_response, "1 task")
+        self.assertContains(confirm_response, "1 vital entry")
+        self.assertContains(confirm_response, "1 call log")
+        self.assertContains(confirm_response, "1 activity log")
+
+        delete_response = self.client.post(
+            reverse("patients:settings_case_management"),
+            {"action": "delete_case", "case_id": str(target_case.pk)},
+            follow=True,
+        )
+
+        self.assertEqual(delete_response.status_code, 200)
+        self.assertFalse(Case.objects.filter(pk=target_case.pk).exists())
+        self.assertTrue(Case.objects.filter(pk=other_case.pk).exists())
+        self.assertFalse(Task.objects.filter(pk=task.pk).exists())
+        self.assertFalse(VitalEntry.objects.filter(case_id=target_case.pk).exists())
+        self.assertFalse(CaseActivityLog.objects.filter(case_id=target_case.pk).exists())
+        self.assertFalse(CallLog.objects.filter(case_id=target_case.pk).exists())
+        self.assertContains(delete_response, "Deleted case UH-CASE-DELETE-001")
+
+    def test_case_management_archive_hides_case_from_daily_views_but_keeps_record(self):
+        archived_case = self.create_bundle_case(
+            uhid="UH-CASE-ARCHIVE-001",
+            first_name="Archive",
+            last_name="Hidden",
+            phone_number="9000000196",
+            diagnosis="Archive target",
+        )
+        visible_case = self.create_bundle_case(
+            uhid="UH-CASE-ARCHIVE-002",
+            first_name="Visible",
+            last_name="Patient",
+            phone_number="9000000197",
+            diagnosis="Visible target",
+        )
+        Task.objects.create(
+            case=archived_case,
+            title="Archive task",
+            due_date=timezone.localdate(),
+            created_by=self.user,
+        )
+        Task.objects.create(
+            case=visible_case,
+            title="Visible task",
+            due_date=timezone.localdate(),
+            created_by=self.user,
+        )
+
+        self.login_as_admin()
+        response = self.client.post(
+            reverse("patients:settings_case_management"),
+            {"action": "archive_case", "case_id": str(archived_case.pk)},
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        archived_case.refresh_from_db()
+        self.assertTrue(archived_case.is_archived)
+        self.assertContains(response, "Archived case UH-CASE-ARCHIVE-001")
+        self.assertContains(response, "Archived")
+
+        case_list_response = self.client.get(reverse("patients:case_list"))
+        self.assertEqual(case_list_response.status_code, 200)
+        self.assertNotContains(case_list_response, "UH-CASE-ARCHIVE-001")
+        self.assertContains(case_list_response, "UH-CASE-ARCHIVE-002")
+
+        dashboard_response = self.client.get(reverse("patients:dashboard"))
+        self.assertEqual(dashboard_response.status_code, 200)
+        today_case_ids = {card["case_id"] for card in dashboard_response.context["today_cards"]}
+        self.assertNotIn(archived_case.pk, today_case_ids)
+        self.assertIn(visible_case.pk, today_case_ids)
+
+        search_response = self.client.get(reverse("patients:universal_case_search"), {"q": "Archive target"})
+        self.assertEqual(search_response.status_code, 200)
+        self.assertEqual(search_response.json()["results"], [])
+
+        detail_response = self.client.get(reverse("patients:case_detail", args=[archived_case.pk]))
+        self.assertEqual(detail_response.status_code, 200)
+        self.assertContains(detail_response, "Archive Hidden")
+
     def test_database_management_export_returns_zip_bundle(self):
         self.login_as_admin()
         case = self.create_bundle_case(uhid="UH-EXPORT-001", phone_number="9000000101")

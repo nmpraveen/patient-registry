@@ -1,0 +1,211 @@
+{% extends 'base.html' %}
+{% block title %}Case Management | MEDTRACK{% endblock %}
+{% block content %}
+<style>
+  .settings-shell-header {
+    padding: 1.35rem;
+    border: 1px solid var(--theme-shell-surface-border);
+    border-radius: 1.25rem;
+    background: linear-gradient(135deg, var(--theme-shell-surface-bg), var(--theme-shell-surface-hover-bg));
+    box-shadow: 0 16px 32px var(--theme-shell-shadow);
+    margin-bottom: 1rem;
+  }
+
+  .settings-panel-card {
+    border: 1px solid var(--theme-shell-surface-border);
+    border-radius: 1.1rem;
+    background: var(--theme-shell-surface-bg);
+    box-shadow: 0 14px 30px var(--theme-shell-shadow);
+  }
+
+  .settings-panel-card .card-body {
+    padding: 1.25rem;
+  }
+
+  .case-management-impact {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .case-management-table td,
+  .case-management-table th {
+    vertical-align: middle;
+  }
+</style>
+
+<section class="settings-shell-header">
+  <div class="d-flex flex-column flex-lg-row justify-content-between gap-3 align-items-lg-center">
+    <div>
+      <h1 class="h4 mb-1">Case Management</h1>
+      <p class="text-muted mb-0">Search cases, archive them out of normal workflows, or permanently delete them when an admin needs to remove the record completely.</p>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+      <a class="btn btn-outline-secondary btn-sm" href="{% url 'patients:settings' %}">Back to Settings</a>
+      <a class="btn btn-outline-primary btn-sm" href="{% url 'patients:settings_database' %}">Open Database Management</a>
+    </div>
+  </div>
+</section>
+
+<div class="alert alert-warning" role="alert">
+  <div class="fw-semibold mb-1">Archive</div>
+  <div class="small mb-3">
+    Archiving keeps the case record and linked history, but hides it from the dashboard, recent cases, search, autocomplete, and the main case list.
+  </div>
+  <div class="fw-semibold mb-1">Permanent delete</div>
+  <div class="small">
+    Deleting a case removes the case itself plus linked tasks, vitals, call logs, and activity logs. This cannot be undone from this page, so take a backup first if you may need the record later.
+  </div>
+</div>
+
+{% if pending_delete_case %}
+  <div class="card settings-panel-card mb-3 border-danger">
+    <div class="card-body">
+      <div class="d-flex flex-column flex-lg-row justify-content-between gap-3">
+        <div>
+          <h2 class="h5 text-danger mb-1">Confirm permanent delete</h2>
+          <div class="fw-semibold">{{ pending_delete_case.full_name|default:pending_delete_case.patient_name }}</div>
+          <div class="text-muted small">
+            {{ pending_delete_case.uhid }} | {{ pending_delete_case.category.name }} | {{ pending_delete_case.get_status_display }}{% if pending_delete_case.is_archived %} | Archived{% endif %}
+          </div>
+        </div>
+        <a class="btn btn-outline-secondary btn-sm align-self-lg-start" href="{% url 'patients:case_detail' pending_delete_case.pk %}">Open Full Case</a>
+      </div>
+      <div class="case-management-impact mt-3">
+        <span class="badge text-bg-danger">{{ pending_delete_case.task_count }} task{{ pending_delete_case.task_count|pluralize }}</span>
+        <span class="badge text-bg-danger">{{ pending_delete_case.vital_count }} vital entr{{ pending_delete_case.vital_count|pluralize:"y,ies" }}</span>
+        <span class="badge text-bg-danger">{{ pending_delete_case.call_log_count }} call log{{ pending_delete_case.call_log_count|pluralize }}</span>
+        <span class="badge text-bg-danger">{{ pending_delete_case.activity_log_count }} activity log{{ pending_delete_case.activity_log_count|pluralize }}</span>
+      </div>
+      <p class="small text-muted mt-3 mb-3">Only use this when the whole record needs to be removed from MEDTRACK. If the case should stay in history, edit its status instead of deleting it.</p>
+      <div class="d-flex flex-wrap gap-2">
+        <form method="post" class="m-0">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="delete_case" />
+          <input type="hidden" name="case_id" value="{{ pending_delete_case.pk }}" />
+          <input type="hidden" name="q" value="{{ query }}" />
+          <button class="btn btn-danger" type="submit">Delete Case Permanently</button>
+        </form>
+        <form method="post" class="m-0">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="cancel_delete" />
+          <input type="hidden" name="q" value="{{ query }}" />
+          <button class="btn btn-outline-secondary" type="submit">Cancel</button>
+        </form>
+      </div>
+    </div>
+  </div>
+{% endif %}
+
+<div class="card settings-panel-card mb-3">
+  <div class="card-body">
+    <form method="get" class="row g-2 align-items-end">
+      <div class="col-12 col-lg-8">
+        <label class="form-label" for="case-management-search">Search cases</label>
+        <input
+          class="form-control"
+          id="case-management-search"
+          name="q"
+          type="search"
+          value="{{ query }}"
+          placeholder="Search UHID, name, phone, diagnosis, or place"
+          autocomplete="off"
+        />
+      </div>
+      <div class="col-12 col-lg-4 d-flex gap-2">
+        <button class="btn btn-primary" type="submit">Search</button>
+        {% if query %}
+          <a class="btn btn-outline-secondary" href="{% url 'patients:settings_case_management' %}">Clear</a>
+        {% endif %}
+      </div>
+    </form>
+    <div class="small text-muted mt-3">
+      {% if query %}
+        {% if match_count > result_limit %}
+          Showing the latest {{ result_limit }} matching case{{ result_limit|pluralize }} out of {{ match_count }} result{{ match_count|pluralize }}.
+        {% else %}
+          Found {{ match_count }} matching case{{ match_count|pluralize }}.
+        {% endif %}
+      {% else %}
+        {% if match_count > result_limit %}
+          Showing the latest {{ result_limit }} case{{ result_limit|pluralize }} out of {{ match_count }} total case{{ match_count|pluralize }}.
+        {% else %}
+          Showing all {{ match_count }} case{{ match_count|pluralize }}.
+        {% endif %}
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="card settings-panel-card">
+  <div class="card-body">
+    {% if cases %}
+      <div class="table-responsive">
+        <table class="table case-management-table align-middle mb-0">
+          <thead>
+            <tr>
+              <th scope="col">Case</th>
+              <th scope="col">Category</th>
+              <th scope="col">Status</th>
+              <th scope="col">Updated</th>
+              <th scope="col">Linked records</th>
+              <th scope="col" class="text-end">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for listed_case in cases %}
+              <tr{% if pending_delete_case and listed_case.pk == pending_delete_case.pk %} class="table-danger"{% endif %}>
+                <td>
+                  <div class="fw-semibold">{{ listed_case.full_name|default:listed_case.patient_name }}</div>
+                  <div class="text-muted small">
+                    {{ listed_case.uhid }}{% if listed_case.phone_number %} | {{ listed_case.phone_number }}{% endif %}
+                  </div>
+                </td>
+                <td>{{ listed_case.category.name }}</td>
+                <td>
+                  <div>{{ listed_case.get_status_display }}</div>
+                  {% if listed_case.is_archived %}
+                    <div class="small text-warning-emphasis">Archived</div>
+                  {% endif %}
+                </td>
+                <td>{{ listed_case.updated_at|date:"M j, Y g:i A" }}</td>
+                <td class="small text-muted">
+                  {{ listed_case.task_count }} task{{ listed_case.task_count|pluralize }},
+                  {{ listed_case.vital_count }} vital entr{{ listed_case.vital_count|pluralize:"y,ies" }},
+                  {{ listed_case.call_log_count }} call log{{ listed_case.call_log_count|pluralize }},
+                  {{ listed_case.activity_log_count }} activity log{{ listed_case.activity_log_count|pluralize }}
+                </td>
+                <td>
+                  <div class="d-flex flex-wrap justify-content-end gap-2">
+                    <a class="btn btn-outline-primary btn-sm" href="{% url 'patients:case_detail' listed_case.pk %}">Open</a>
+                    {% if not listed_case.is_archived %}
+                      <form method="post" class="m-0">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="archive_case" />
+                        <input type="hidden" name="case_id" value="{{ listed_case.pk }}" />
+                        <input type="hidden" name="q" value="{{ query }}" />
+                        <button class="btn btn-outline-warning btn-sm" type="submit">Archive</button>
+                      </form>
+                    {% endif %}
+                    <form method="post" class="m-0">
+                      {% csrf_token %}
+                      <input type="hidden" name="action" value="request_delete" />
+                      <input type="hidden" name="case_id" value="{{ listed_case.pk }}" />
+                      <input type="hidden" name="q" value="{{ query }}" />
+                      <button class="btn btn-outline-danger btn-sm" type="submit">
+                        {% if pending_delete_case and listed_case.pk == pending_delete_case.pk %}Review Delete{% else %}Delete Permanently{% endif %}
+                      </button>
+                    </form>
+                  </div>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="text-muted">No cases matched that search.</div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

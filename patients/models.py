@@ -645,6 +645,15 @@ class Case(models.Model):
     alternate_phone_number = models.CharField(max_length=10, blank=True)
     category = models.ForeignKey(DepartmentConfig, on_delete=models.PROTECT, related_name="cases")
     status = models.CharField(max_length=32, choices=CaseStatus.choices, default=CaseStatus.ACTIVE)
+    is_archived = models.BooleanField(default=False)
+    archived_at = models.DateTimeField(blank=True, null=True)
+    archived_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="archived_cases",
+    )
 
     diagnosis = models.CharField(max_length=255, blank=True)
     ncd_flags = models.JSONField(default=list, blank=True)
@@ -690,6 +699,16 @@ class Case(models.Model):
         self.last_name = normalize_case_name(self.last_name)
         self.place = normalize_case_name(self.place)
         self.patient_name = self.full_name
+
+    def set_archived(self, *, archived, user=None):
+        if archived:
+            self.is_archived = True
+            self.archived_at = timezone.now()
+            self.archived_by = user if getattr(user, "is_authenticated", False) else None
+        else:
+            self.is_archived = False
+            self.archived_at = None
+            self.archived_by = None
 
     def clean(self):
         phone_errors = {}

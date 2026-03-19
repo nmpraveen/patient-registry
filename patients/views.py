@@ -142,6 +142,8 @@ DATE_INPUT_FORMATS = ("%Y-%m-%d", "%d/%m/%Y")
 
 CHANGELOG_FILE = Path(settings.BASE_DIR) / "CHANGELOG.md"
 SETTINGS_SCHEMA_WARNING_HINT = "Run python manage.py migrate on the VPS and reload this page."
+CASE_MANAGEMENT_RESULT_LIMIT = 50
+CASE_DELETE_CONFIRM_SESSION_KEY = "settings_case_delete_confirm_pk"
 TIMELINE_FILTER_OPTIONS = (
     ("all", "All"),
     ("calls", "Calls"),
@@ -526,6 +528,51 @@ def _settings_url(view_name, **params):
     return f"{base_url}?{query}" if query else base_url
 
 
+def _visible_case_queryset(queryset=None):
+    queryset = queryset if queryset is not None else Case.objects.all()
+    return queryset.filter(is_archived=False)
+
+
+def _visible_task_queryset(queryset=None):
+    queryset = queryset if queryset is not None else Task.objects.all()
+    return queryset.filter(case__is_archived=False)
+
+
+def _case_management_queryset(query=""):
+    queryset = (
+        Case.objects.select_related("category")
+        .annotate(
+            task_count=Count("tasks", distinct=True),
+            vital_count=Count("vitals", distinct=True),
+            activity_log_count=Count("activity_logs", distinct=True),
+            call_log_count=Count("call_logs", distinct=True),
+        )
+        .order_by("-updated_at", "-id")
+    )
+    normalized_query = (query or "").strip()
+    if normalized_query:
+        queryset = queryset.filter(
+            Q(uhid__icontains=normalized_query)
+            | Q(first_name__icontains=normalized_query)
+            | Q(last_name__icontains=normalized_query)
+            | Q(patient_name__icontains=normalized_query)
+            | Q(phone_number__icontains=normalized_query)
+            | Q(alternate_phone_number__icontains=normalized_query)
+            | Q(place__icontains=normalized_query)
+            | Q(diagnosis__icontains=normalized_query)
+        )
+    return queryset
+
+
+def _case_delete_summary(case):
+    return {
+        "task_count": case.tasks.count(),
+        "vital_count": case.vitals.count(),
+        "activity_log_count": case.activity_logs.count(),
+        "call_log_count": case.call_logs.count(),
+    }
+
+
 def _display_user_name(user):
     if not user:
         return ""
@@ -615,7 +662,7 @@ def _recent_case_task_queryset():
 
 
 def _recent_case_queryset(limit=None, *, include_tasks=True):
-    queryset = (
+    queryset = _visible_case_queryset(
         Case.objects.select_related("category")
         .only(
             "id",
@@ -1569,7 +1616,7 @@ class DashboardView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
         return schedule_days
 
     def _task_queryset(self):
-        return (
+        return _visible_task_queryset(
             Task.objects.select_related("case", "case__category")
             .only(*self.task_only_fields)
             .order_by("due_date", "case_id", "id")
@@ -1610,7 +1657,7 @@ class DashboardView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
                     upcoming_tasks.append(task)
 
         awaiting_tasks = list(self._task_queryset().filter(status=TaskStatus.AWAITING_REPORTS))
-        case_counts = Case.objects.aggregate(
+        case_counts = _visible_case_queryset().aggregate(
             active_case_count=Count("id", filter=Q(status=CaseStatus.ACTIVE)),
             completed_case_count=Count("id", filter=Q(status=CaseStatus.COMPLETED)),
             anc_case_count=Count("id", filter=Q(status=CaseStatus.ACTIVE) & CASE_CATEGORY_GROUP_FILTERS["anc"]),
@@ -1740,7 +1787,7 @@ class CaseListView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
             .annotate(total=Count("id"))
             .values("total")[:1]
         )
-        queryset = (
+        queryset = _visible_case_queryset(
             Case.objects.select_related("category")
             .only(
                 "id",
@@ -1882,7 +1929,7 @@ class CaseAutocompleteView(LoginRequiredMixin, CaseDataAccessMixin, View):
 
         grouped = {}
 
-        queryset = (
+        queryset = _visible_case_queryset(
             Case.objects.exclude(**{f"{field}__isnull": True})
             .exclude(**{field: ""})
             .filter(**{f"{field}__istartswith": normalized_query.split(" ", 1)[0]})
@@ -1961,38 +2008,41 @@ class UniversalCaseSearchView(LoginRequiredMixin, CaseDataAccessMixin, View):
         call_note_matches = Exists(_matching_call_note_queryset(query))
 
         cases = list(
-            Case.objects.select_related("category")
-            .annotate(
-                search_matches_note_activity=note_activity_matches,
-                search_matches_call_notes=call_note_matches,
+            _visible_case_queryset(
+                Case.objects.select_related("category")
+                .annotate(
+                    search_matches_note_activity=note_activity_matches,
+                    search_matches_call_notes=call_note_matches,
+                )
+                .filter(
+                    direct_query
+                    | Q(notes__icontains=query)
+                    | Q(search_matches_note_activity=True)
+                    | Q(search_matches_call_notes=True)
+                )
+                .filter(category_query)
+                .only(
+                    "id",
+                    "uhid",
+                    "first_name",
+                    "last_name",
+                    "patient_name",
+                    "age",
+                    "place",
+                    "diagnosis",
+                    "notes",
+                    "phone_number",
+                    "high_risk",
+                    "referred_by",
+                    "ncd_flags",
+                    "updated_at",
+                    "category__name",
+                    "category__theme_bg_color",
+                    "category__theme_text_color",
+                    "gender",
+                )
             )
-            .filter(
-                direct_query
-                | Q(notes__icontains=query)
-                | Q(search_matches_note_activity=True)
-                | Q(search_matches_call_notes=True)
-            )
-            .filter(category_query)
-            .only(
-                "id",
-                "uhid",
-                "first_name",
-                "last_name",
-                "patient_name",
-                "age",
-                "place",
-                "diagnosis",
-                "notes",
-                "phone_number",
-                "high_risk",
-                "referred_by",
-                "ncd_flags",
-                "updated_at",
-                "category__name",
-                "category__theme_bg_color",
-                "category__theme_text_color",
-                "gender",
-            )[:150]
+            [:150]
         )
 
         matching_note_logs = {}
@@ -2289,7 +2339,9 @@ def _build_case_identity_matches(form, *, exclude_case_id=None):
 
     if phone_values:
         phone_match_map = OrderedDict((digits_only, []) for digits_only in phone_values.keys())
-        phone_queryset = Case.objects.filter(Q(phone_number__in=phone_values.keys()) | Q(alternate_phone_number__in=phone_values.keys()))
+        phone_queryset = Case.objects.filter(
+            Q(phone_number__in=phone_values.keys()) | Q(alternate_phone_number__in=phone_values.keys())
+        )
         if exclude_case_id is not None:
             phone_queryset = phone_queryset.exclude(pk=exclude_case_id)
         phone_matches = (
@@ -4103,6 +4155,127 @@ class DatabaseManagementSettingsView(LoginRequiredMixin, View):
         return redirect("patients:settings_database")
 
 
+class CaseManagementSettingsView(LoginRequiredMixin, View):
+    template_name = "patients/settings_case_management.html"
+
+    def _check_access(self, request):
+        if not has_capability(request.user, "manage_settings"):
+            return HttpResponseForbidden("Only admins can access settings.")
+        return None
+
+    def _clear_delete_confirmation(self, request):
+        request.session.pop(CASE_DELETE_CONFIRM_SESSION_KEY, None)
+
+    def _pending_delete_case(self, request, confirm_case_id):
+        session_case_id = request.session.get(CASE_DELETE_CONFIRM_SESSION_KEY)
+        if not confirm_case_id or str(session_case_id) != str(confirm_case_id):
+            return None
+        pending_case = _case_management_queryset().filter(pk=confirm_case_id).first()
+        if pending_case is None:
+            self._clear_delete_confirmation(request)
+        return pending_case
+
+    def _build_context(self, *, query="", pending_delete_case=None):
+        normalized_query = (query or "").strip()
+        queryset = _case_management_queryset(normalized_query)
+        return {
+            "query": normalized_query,
+            "cases": list(queryset[:CASE_MANAGEMENT_RESULT_LIMIT]),
+            "match_count": queryset.count(),
+            "result_limit": CASE_MANAGEMENT_RESULT_LIMIT,
+            "pending_delete_case": pending_delete_case,
+        }
+
+    def get(self, request):
+        denied = self._check_access(request)
+        if denied:
+            return denied
+
+        query = request.GET.get("q", "")
+        pending_delete_case = self._pending_delete_case(request, request.GET.get("confirm_case"))
+        return render(
+            request,
+            self.template_name,
+            self._build_context(query=query, pending_delete_case=pending_delete_case),
+        )
+
+    def post(self, request):
+        denied = self._check_access(request)
+        if denied:
+            return denied
+
+        action = request.POST.get("action")
+        query = request.POST.get("q", "")
+        case_id = request.POST.get("case_id")
+        redirect_url = _settings_url("patients:settings_case_management", q=query)
+
+        if action == "request_delete":
+            case = get_object_or_404(Case, pk=case_id)
+            request.session[CASE_DELETE_CONFIRM_SESSION_KEY] = case.pk
+            return redirect(_settings_url("patients:settings_case_management", q=query, confirm_case=case.pk))
+
+        if action == "archive_case":
+            case = get_object_or_404(Case, pk=case_id)
+            if case.is_archived:
+                messages.info(request, f"Case {case} is already archived.")
+                return redirect(redirect_url)
+
+            case.set_archived(archived=True, user=request.user)
+            case.save(update_fields=["is_archived", "archived_at", "archived_by", "updated_at"])
+            create_case_activity(
+                case=case,
+                user=request.user,
+                event_type=ActivityEventType.SYSTEM,
+                note="Case archived from admin case management.",
+            )
+            self._clear_delete_confirmation(request)
+            messages.success(
+                request,
+                (
+                    f"Archived case {case}. It is now hidden from the dashboard, recent cases, "
+                    "search, autocomplete, and the main case list."
+                ),
+            )
+            return redirect(redirect_url)
+
+        if action == "cancel_delete":
+            self._clear_delete_confirmation(request)
+            return redirect(redirect_url)
+
+        if action == "delete_case":
+            case = Case.objects.filter(pk=case_id).first()
+            if case is None:
+                self._clear_delete_confirmation(request)
+                messages.error(request, "That case no longer exists.")
+                return redirect(redirect_url)
+
+            confirmed_case_id = request.session.get(CASE_DELETE_CONFIRM_SESSION_KEY)
+            if str(confirmed_case_id) != str(case.pk):
+                messages.error(request, "Please review the confirmation panel before deleting a case.")
+                return redirect(redirect_url)
+
+            case_label = str(case)
+            delete_summary = _case_delete_summary(case)
+            with transaction.atomic():
+                case.delete()
+            self._clear_delete_confirmation(request)
+            messages.success(
+                request,
+                (
+                    f"Deleted case {case_label} and its linked data "
+                    f"({delete_summary['task_count']} task(s), "
+                    f"{delete_summary['vital_count']} vital entr"
+                    f"{'y' if delete_summary['vital_count'] == 1 else 'ies'}, "
+                    f"{delete_summary['call_log_count']} call log(s), "
+                    f"and {delete_summary['activity_log_count']} activity log(s))."
+                ),
+            )
+            return redirect(redirect_url)
+
+        messages.error(request, "Unknown case management action.")
+        return redirect(redirect_url)
+
+
 class ThemeSettingsView(LoginRequiredMixin, View):
     template_name = "patients/settings_theme.html"
 
@@ -4370,6 +4543,33 @@ class AdminSettingsView(LoginRequiredMixin, View):
             "next_backup_at": None,
         }
 
+    def _case_management_context(self):
+        counts = Case.objects.aggregate(
+            total_case_count=Count("pk"),
+            active_case_count=Count("pk", filter=Q(status=CaseStatus.ACTIVE, is_archived=False)),
+            archived_case_count=Count("pk", filter=Q(is_archived=True)),
+            completed_case_count=Count("pk", filter=Q(status=CaseStatus.COMPLETED, is_archived=False)),
+            inactive_case_count=Count(
+                "pk",
+                filter=Q(status__in=[CaseStatus.CANCELLED, CaseStatus.LOSS_TO_FOLLOW_UP], is_archived=False),
+            ),
+        )
+        return {
+            "case_management_available": True,
+            **counts,
+        }
+
+    @staticmethod
+    def _case_management_fallback():
+        return {
+            "case_management_available": False,
+            "total_case_count": 0,
+            "active_case_count": 0,
+            "archived_case_count": 0,
+            "completed_case_count": 0,
+            "inactive_case_count": 0,
+        }
+
     def _theme_context(self):
         departments = list(DepartmentConfig.objects.order_by("name"))
         theme_settings = ThemeSettings.get_solo()
@@ -4424,6 +4624,12 @@ class AdminSettingsView(LoginRequiredMixin, View):
                 self._database_context,
                 fallback=self._database_fallback(),
                 warning="Backup schedule data is unavailable until database migrations are applied on this server.",
+                warnings=schema_warnings,
+            ),
+            **self._collect_settings_section(
+                self._case_management_context,
+                fallback=self._case_management_fallback(),
+                warning="Case management data is unavailable until database migrations are applied on this server.",
                 warnings=schema_warnings,
             ),
             **self._collect_settings_section(

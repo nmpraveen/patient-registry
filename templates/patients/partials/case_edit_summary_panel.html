@@ -1,0 +1,107 @@
+<aside id="case-edit-summary-panel" class="case-create-summary-panel"{% if oob_swap %} hx-swap-oob="{{ oob_swap }}"{% endif %}>
+  <section class="case-create-summary-card">
+    <div class="case-create-summary-card__top">
+      <p class="case-create-card__eyebrow">Edit Summary</p>
+      <h2 class="case-create-summary-card__title">{{ case_edit_summary_state.title }}</h2>
+      <p class="case-create-summary-card__copy case-create-help-text">{{ case_edit_summary_state.copy }}</p>
+    </div>
+
+    <div class="case-create-summary-stat">
+      <span class="case-create-summary-stat__label">Open tasks</span>
+      <span class="case-create-summary-stat__value">{{ case_edit_summary_state.open_task_count }}</span>
+    </div>
+
+    <div class="d-flex flex-wrap gap-2">
+      <span class="case-create-inline-chip">{{ case_edit_summary_state.status_label }}</span>
+      <span class="case-create-inline-chip is-active">{{ case_edit_summary_state.category_name }}</span>
+      {% if case_edit_summary_state.is_high_risk %}
+        <span class="case-create-inline-chip is-active">High-risk</span>
+      {% endif %}
+    </div>
+
+    {% if case_create_state.missing_inputs %}
+      <div class="alert alert-warning case-create-summary-alert mb-0">
+        Add {{ case_create_state.missing_inputs|join:", " }} to keep this workflow update valid before saving.
+      </div>
+    {% elif not case_create_state.has_category %}
+      <div class="alert alert-info case-create-summary-alert mb-0">
+        Select a category to review the workflow summary.
+      </div>
+    {% endif %}
+
+    <dl class="case-create-summary-facts">
+      {% for fact in case_edit_summary_state.facts %}
+        <div>
+          <dt>{{ fact.label }}</dt>
+          <dd>{{ fact.value }}</dd>
+        </div>
+      {% endfor %}
+      <div>
+        <dt>All tasks</dt>
+        <dd>{{ case_edit_summary_state.total_task_count }}</dd>
+      </div>
+    </dl>
+
+    <section class="case-edit-change-log" aria-live="polite">
+      <div class="case-edit-change-log__header">
+        <div>
+          <p class="case-create-card__eyebrow mb-1">Changed Fields</p>
+          <h3 class="h6 mb-1">Unsaved edits</h3>
+          <p class="case-create-help-text mb-0">Any field that changes appears here before it is saved.</p>
+        </div>
+        <span class="case-edit-change-count">{{ case_edit_summary_state.changed_fields_count }}</span>
+      </div>
+
+      {% if case_edit_summary_state.changed_fields %}
+        <div class="case-edit-change-list">
+          {% for change in case_edit_summary_state.changed_fields %}
+            <article class="case-edit-change-card">
+              <div class="case-edit-change-card__header">
+                <h4 class="case-edit-change-label">{{ change.label }}</h4>
+              </div>
+              <div class="case-edit-change-row">
+                <span class="case-edit-change-before">{{ change.before }}</span>
+                <span class="case-edit-change-arrow" aria-hidden="true">&rarr;</span>
+                <span class="case-edit-change-after">{{ change.after }}</span>
+              </div>
+              {% if change.added or change.removed %}
+                <div class="case-edit-change-detail-list">
+                  {% if change.added %}
+                    <p class="case-edit-change-detail">
+                      <span class="case-edit-change-detail__label">Added</span>
+                      <span class="case-edit-change-after">{{ change.added }}</span>
+                    </p>
+                  {% endif %}
+                  {% if change.removed %}
+                    <p class="case-edit-change-detail">
+                      <span class="case-edit-change-detail__label">Removed</span>
+                      <span class="case-edit-change-after">{{ change.removed }}</span>
+                    </p>
+                  {% endif %}
+                </div>
+              {% endif %}
+            </article>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="case-edit-change-empty">No unsaved changes yet.</div>
+      {% endif %}
+    </section>
+
+    {% if case_create_state.reminder_due_date %}
+      <div class="case-create-summary-note">
+        ANC RCH bypass remains active. Saving without an RCH number keeps the reminder schedule aligned to {{ case_create_state.reminder_due_date|date:"d M Y" }}.
+      </div>
+    {% endif %}
+
+    <div class="case-create-summary-actions">
+      <button class="btn btn-primary btn-lg" type="submit" form="case-edit-form" data-case-edit-submit-button>
+        <span class="case-edit-submit-label">Save Changes</span>
+        <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+      </button>
+      <a class="btn btn-outline-secondary" href="{% url 'patients:case_detail' case.pk %}">Cancel</a>
+    </div>
+
+    <p class="case-create-summary-footnote case-create-help-text mb-0">The summary reflects unsaved form values. Editing a case does not recreate starter tasks.</p>
+  </section>
+</aside>

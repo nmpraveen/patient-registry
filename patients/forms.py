@@ -85,6 +85,9 @@ class CaseForm(StyledModelForm):
         ensure_default_departments()
         super().__init__(*args, **kwargs)
         self.fields["category"].queryset = self.fields["category"].queryset.order_by("name")
+        self.fields["category"].widget = forms.RadioSelect()
+        self.fields["category"].empty_label = None
+        self.fields["category"].widget.choices = self.fields["category"].choices
         self.fields["uhid"].label = "UHID"
         self.fields["rch_number"].label = "RCH number"
         self.fields["rch_bypass"].label = "RCH bypass"
@@ -97,9 +100,6 @@ class CaseForm(StyledModelForm):
             self.fields["ncd_flags"].initial = self.instance.ncd_flags
             self.fields["anc_high_risk_reasons"].initial = self.instance.anc_high_risk_reasons
         else:
-            self.fields["category"].widget = forms.RadioSelect()
-            self.fields["category"].empty_label = None
-            self.fields["category"].widget.choices = self.fields["category"].choices
             self.fields["status"].widget = forms.HiddenInput()
             self.fields["status"].required = False
             self.initial.setdefault("status", CaseStatus.ACTIVE)

@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026.03.19.13.13
+- Rebuilt `/patients/cases/<id>/edit/` to match the new case-intake visual system with the same split shell, category tiles, create-style field cards, ANC GPAL stepper controls, sticky summary rail, and mobile save bar while keeping edit-specific behavior intact.
+- Added edit-only HTMX preview and duplicate-identity helper endpoints so draft workflow changes and self-excluding UHID/phone warnings refresh live without implying that starter tasks will be recreated.
+- Upgraded the edit summary rail into a true pending-changes panel so unsaved GPAL, risk-factor, workflow, and note edits are called out in red with before/after diffs and added/removed list details.
+- Expanded the edit preview refresh wiring and regression coverage so more draft field changes immediately appear in the summary rail, and restored a hidden global-search help string needed by the authenticated layout test suite.
+
 ## 2026.03.19.03.14
 - Split Docker Compose into a shared base plus a tracked `docker-compose.dev.yml` overlay so local bind-mount behavior stays in git while VPS-only Docker settings can live in a private `docker-compose.override.yml`.
 - Updated local Test NNH wrappers and docs so they use the dev overlay and automatically include a private local override file when present, preserving the existing local demo workflow.

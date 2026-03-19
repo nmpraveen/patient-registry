@@ -1,5 +1,6 @@
 import io
 import re
+from copy import deepcopy
 import hashlib
 import json
 import tempfile
@@ -15,7 +16,7 @@ from django.contrib.auth.models import Group
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
 from django.core.management.base import CommandError
-from django.db import connection
+from django.db import ProgrammingError, connection
 from django.test import TestCase
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
@@ -2725,6 +2726,37 @@ class MedtrackViewTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, reverse("patients:changelog"))
+
+    def test_admin_settings_page_handles_missing_settings_schema_gracefully(self):
+        self.login_as_admin()
+
+        with patch(
+            "patients.views.DeviceApprovalPolicy.get_solo",
+            side_effect=ProgrammingError('relation "patients_deviceapprovalpolicy" does not exist'),
+        ):
+            response = self.client.get(reverse("patients:settings"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Some settings modules are unavailable on this server.")
+        self.assertContains(response, "Run python manage.py migrate on the VPS and reload this page.")
+        self.assertContains(
+            response,
+            "Device access data is unavailable until database migrations are applied on this server.",
+        )
+        self.assertContains(response, "Run Migrations First")
+
+    def test_admin_settings_page_handles_legacy_theme_tokens_missing_new_fields(self):
+        self.login_as_admin()
+        theme_settings = ThemeSettings.get_solo()
+        legacy_tokens = deepcopy(merge_theme_tokens(theme_settings.tokens))
+        legacy_tokens["buttons"].pop("success", None)
+        ThemeSettings.objects.filter(pk=theme_settings.pk).update(tokens=legacy_tokens)
+
+        response = self.client.get(reverse("patients:settings"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Theme settings are currently using defaults.")
+        self.assertNotContains(response, "Some settings modules are unavailable on this server.")
 
     def test_admin_settings_page_shows_theme_link_and_theme_page_requires_manage_settings(self):
         self.client.force_login(self.user)

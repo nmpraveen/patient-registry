@@ -138,6 +138,18 @@
   </div>
 </section>
 
+{% if settings_schema_warnings %}
+  <div class="alert alert-warning" role="alert">
+    <div class="fw-semibold mb-2">Some settings modules are unavailable on this server.</div>
+    <div class="small mb-2">{{ settings_schema_warning_hint }}</div>
+    <ul class="mb-0 ps-3">
+      {% for warning in settings_schema_warnings %}
+        <li>{{ warning }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+{% endif %}
+
 <div class="settings-card-grid" id="settings-card-grid">
   <section class="settings-card" data-settings-card data-settings-search="user management users roles permissions temporary password notes">
     <div class="settings-card-body">
@@ -148,25 +160,29 @@
       </div>
       <div class="settings-metric-grid">
         <div class="settings-metric">
-          <div class="settings-metric-value">{{ total_user_count }}</div>
+          <div class="settings-metric-value">{% if user_management_available %}{{ total_user_count }}{% else %}Unavailable{% endif %}</div>
           <div class="settings-metric-label">Total users</div>
         </div>
         <div class="settings-metric">
-          <div class="settings-metric-value">{{ active_user_count }}</div>
+          <div class="settings-metric-value">{% if user_management_available %}{{ active_user_count }}{% else %}Unavailable{% endif %}</div>
           <div class="settings-metric-label">Active users</div>
         </div>
         <div class="settings-metric">
-          <div class="settings-metric-value">{{ settings_admin_count }}</div>
+          <div class="settings-metric-value">{% if user_management_available %}{{ settings_admin_count }}{% else %}Unavailable{% endif %}</div>
           <div class="settings-metric-label">Settings admins</div>
         </div>
         <div class="settings-metric">
-          <div class="settings-metric-value">{{ users_with_temp_note_count }}</div>
+          <div class="settings-metric-value">{% if user_management_available %}{{ users_with_temp_note_count }}{% else %}Unavailable{% endif %}</div>
           <div class="settings-metric-label">Temp notes stored</div>
         </div>
       </div>
       <div class="settings-card-links">
-        <a class="btn btn-primary btn-sm" href="{% url 'patients:settings_user_management' %}">Open User Management</a>
-        <a class="btn btn-outline-primary btn-sm" href="{% url 'patients:settings_user_management' %}?tab=roles">Open Roles</a>
+        {% if user_management_available %}
+          <a class="btn btn-primary btn-sm" href="{% url 'patients:settings_user_management' %}">Open User Management</a>
+          <a class="btn btn-outline-primary btn-sm" href="{% url 'patients:settings_user_management' %}?tab=roles">Open Roles</a>
+        {% else %}
+          <span class="btn btn-primary btn-sm disabled" aria-disabled="true">Run Migrations First</span>
+        {% endif %}
       </div>
     </div>
   </section>
@@ -182,23 +198,21 @@
       </div>
       <div class="settings-metric-grid">
         <div class="settings-metric">
-          <div class="settings-metric-value">{{ category_count }}</div>
+          <div class="settings-metric-value">{% if workflow_settings_available %}{{ category_count }}{% else %}Unavailable{% endif %}</div>
           <div class="settings-metric-label">Categories</div>
         </div>
         <div class="settings-metric">
-          <div class="settings-metric-value">{{ category_action_count }}</div>
+          <div class="settings-metric-value">{% if workflow_settings_available %}{{ category_action_count }}{% else %}Unavailable{% endif %}</div>
           <div class="settings-metric-label">Predefined actions</div>
         </div>
       </div>
-      <div class="small text-muted">
-        {% if category_name_preview %}
-          Current categories: {{ category_name_preview }}{% if category_count > 3 %}, and more.{% endif %}
-        {% else %}
-          No categories configured yet.
-        {% endif %}
-      </div>
+      <div class="small text-muted">{{ workflow_status_text }}</div>
       <div class="settings-card-links">
-        <a class="btn btn-primary btn-sm" href="{% url 'patients:settings_categories' %}">Open Categories</a>
+        {% if workflow_settings_available %}
+          <a class="btn btn-primary btn-sm" href="{% url 'patients:settings_categories' %}">Open Categories</a>
+        {% else %}
+          <span class="btn btn-primary btn-sm disabled" aria-disabled="true">Run Migrations First</span>
+        {% endif %}
       </div>
     </div>
   </section>
@@ -212,24 +226,28 @@
       </div>
       <div class="settings-metric-grid">
         <div class="settings-metric">
-          <div class="settings-metric-value">{{ pending_device_count }}</div>
+          <div class="settings-metric-value">{% if device_access_available %}{{ pending_device_count }}{% else %}Unavailable{% endif %}</div>
           <div class="settings-metric-label">Pending approvals</div>
         </div>
         <div class="settings-metric">
-          <div class="settings-metric-value">{{ approved_device_count }}</div>
+          <div class="settings-metric-value">{% if device_access_available %}{{ approved_device_count }}{% else %}Unavailable{% endif %}</div>
           <div class="settings-metric-label">Approved devices</div>
         </div>
         <div class="settings-metric">
-          <div class="settings-metric-value">{{ device_target_user_count }}</div>
+          <div class="settings-metric-value">{% if device_access_available %}{{ device_target_user_count }}{% else %}Unavailable{% endif %}</div>
           <div class="settings-metric-label">Pilot users</div>
         </div>
         <div class="settings-metric">
-          <div class="settings-metric-value">{% if device_policy_enabled %}On{% else %}Off{% endif %}</div>
+          <div class="settings-metric-value">{% if device_access_available %}{% if device_policy_enabled %}On{% else %}Off{% endif %}{% else %}Unavailable{% endif %}</div>
           <div class="settings-metric-label">Pilot status</div>
         </div>
       </div>
       <div class="settings-card-links">
-        <a class="btn btn-primary btn-sm" href="{% url 'patients:settings_device_access' %}">Open Device Access</a>
+        {% if device_access_available %}
+          <a class="btn btn-primary btn-sm" href="{% url 'patients:settings_device_access' %}">Open Device Access</a>
+        {% else %}
+          <span class="btn btn-primary btn-sm disabled" aria-disabled="true">Run Migrations First</span>
+        {% endif %}
       </div>
     </div>
   </section>
@@ -244,26 +262,42 @@
       <div class="settings-metric-grid">
         <div class="settings-metric">
           <div class="settings-metric-value">
-            {% if last_backup_at %}{{ last_backup_status }}{% else %}Never{% endif %}
+            {% if database_settings_available %}
+              {% if last_backup_at %}{{ last_backup_status }}{% else %}Never{% endif %}
+            {% else %}
+              Unavailable
+            {% endif %}
           </div>
           <div class="settings-metric-label">Last backup</div>
         </div>
         <div class="settings-metric">
           <div class="settings-metric-value">
-            {% if next_backup_at %}{{ next_backup_at|date:"M j" }}{% else %}Not set{% endif %}
+            {% if database_settings_available %}
+              {% if next_backup_at %}{{ next_backup_at|date:"M j" }}{% else %}Not set{% endif %}
+            {% else %}
+              Unavailable
+            {% endif %}
           </div>
           <div class="settings-metric-label">Next backup</div>
         </div>
       </div>
       <div class="small text-muted">
-        {% if last_backup_at %}
-          Last run: {{ last_backup_at|date:"M j, Y g:i A" }}
+        {% if database_settings_available %}
+          {% if last_backup_at %}
+            Last run: {{ last_backup_at|date:"M j, Y g:i A" }}
+          {% else %}
+            Automatic backup status has not been recorded yet.
+          {% endif %}
         {% else %}
-          Automatic backup status has not been recorded yet.
+          Backup schedule data is unavailable until database migrations are applied on this server.
         {% endif %}
       </div>
       <div class="settings-card-links">
-        <a class="btn btn-primary btn-sm" href="{% url 'patients:settings_database' %}">Open Database Management</a>
+        {% if database_settings_available %}
+          <a class="btn btn-primary btn-sm" href="{% url 'patients:settings_database' %}">Open Database Management</a>
+        {% else %}
+          <span class="btn btn-primary btn-sm disabled" aria-disabled="true">Run Migrations First</span>
+        {% endif %}
       </div>
     </div>
   </section>
@@ -277,23 +311,31 @@
       </div>
       <div class="settings-metric-grid">
         <div class="settings-metric">
-          <div class="settings-metric-value">{{ custom_theme_token_count }}</div>
+          <div class="settings-metric-value">{% if theme_settings_available %}{{ custom_theme_token_count }}{% else %}Unavailable{% endif %}</div>
           <div class="settings-metric-label">Custom token values</div>
         </div>
         <div class="settings-metric">
-          <div class="settings-metric-value">{{ custom_category_theme_count }}</div>
+          <div class="settings-metric-value">{% if theme_settings_available %}{{ custom_category_theme_count }}{% else %}Unavailable{% endif %}</div>
           <div class="settings-metric-label">Custom category colors</div>
         </div>
       </div>
       <div class="small text-muted">
-        {% if theme_has_customizations %}
-          Custom appearance values are active.
+        {% if theme_settings_available %}
+          {% if theme_has_customizations %}
+            Custom appearance values are active.
+          {% else %}
+            Theme settings are currently using defaults.
+          {% endif %}
         {% else %}
-          Theme settings are currently using defaults.
+          Theme settings data is unavailable until database migrations are applied on this server.
         {% endif %}
       </div>
       <div class="settings-card-links">
-        <a class="btn btn-primary btn-sm" href="{% url 'patients:settings_theme' %}">Open Theme Settings</a>
+        {% if theme_settings_available %}
+          <a class="btn btn-primary btn-sm" href="{% url 'patients:settings_theme' %}">Open Theme Settings</a>
+        {% else %}
+          <span class="btn btn-primary btn-sm disabled" aria-disabled="true">Run Migrations First</span>
+        {% endif %}
       </div>
     </div>
   </section>

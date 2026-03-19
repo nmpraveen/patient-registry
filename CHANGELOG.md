@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026.03.19.01.29
+- Hardened `/patients/settings/` so missing settings-related tables or columns on a deployed server no longer crash the page with a 500 during schema drift.
+- Added an admin-facing warning on the Settings hub that points operators to `python manage.py migrate`, shows unavailable sections clearly, and disables links to settings modules that depend on the missing schema.
+- Fixed the Settings hub theme summary so legacy or partial saved theme-token JSON is merged with defaults before counting customizations, preventing `KeyError` crashes from older theme rows.
+- Added regression coverage for both the degraded settings-hub path when device-access settings schema is absent and the legacy theme-token payload that reproduced the VPS failure.
+
 ## 2026.03.18.23.57
 - Rebuilt `/patients/cases/new/` into a responsive case-intake workflow with a split layout, sticky save actions, live starter-task preview, inline identity warnings, and HTMX-driven workflow/duplicate-check updates while keeping the existing Django route and server-side validation rules.
 - Simplified the day-to-day intake flow by defaulting the page to a low-copy mode with a `Show Help` toggle, removing the visible new-case status control, switching category selection to themed radio cards, and tightening the default ANC path with hidden gender selection plus normalized ANC field labels and alignment.

@@ -16,7 +16,7 @@ from django.contrib.auth.models import Group
 from django.contrib.auth.views import LoginView
 from django.core.management import call_command
 from django.core.exceptions import ValidationError
-from django.db import transaction
+from django.db import OperationalError, ProgrammingError, transaction
 from django.db.models import (
     BooleanField,
     Case as QueryCase,
@@ -103,7 +103,14 @@ from .models import (
     plan_default_tasks,
     workflow_key_for_case,
 )
-from .theme import build_theme_category_colors, flatten_theme_tokens, get_default_category_theme, mix_colors, resolve_category_theme
+from .theme import (
+    build_theme_category_colors,
+    flatten_theme_tokens,
+    get_default_category_theme,
+    merge_theme_tokens,
+    mix_colors,
+    resolve_category_theme,
+)
 
 NON_SURGICAL_CASE_FILTER = (
     Q(category__name__iexact="Medicine")
@@ -131,6 +138,7 @@ DATE_INPUT_FORMATS = ("%Y-%m-%d", "%d/%m/%Y")
 
 
 CHANGELOG_FILE = Path(settings.BASE_DIR) / "CHANGELOG.md"
+SETTINGS_SCHEMA_WARNING_HINT = "Run python manage.py migrate on the VPS and reload this page."
 TIMELINE_FILTER_OPTIONS = (
     ("all", "All"),
     ("calls", "Calls"),
@@ -530,6 +538,31 @@ def _settings_admin_user_count():
         .distinct()
         .count()
     )
+
+
+def _is_missing_settings_schema_error(exc):
+    message = " ".join(
+        part
+        for part in (
+            str(exc),
+            str(getattr(exc, "__cause__", "")),
+            str(getattr(exc, "__context__", "")),
+        )
+        if part
+    ).lower()
+    if any(token in message for token in ("no such table", "no such column", "has no column named")):
+        return True
+    if any(token in message for token in ("undefined table", "undefined column")):
+        return True
+    return "does not exist" in message and any(token in message for token in ("relation", "table", "column"))
+
+
+def _custom_theme_token_count(saved_tokens):
+    if not isinstance(saved_tokens, dict):
+        return 0
+    default_flat = flatten_theme_tokens(merge_theme_tokens({}))
+    merged_flat = flatten_theme_tokens(merge_theme_tokens(saved_tokens))
+    return sum(1 for field_name, value in merged_flat.items() if value != default_flat[field_name])
 
 
 def _settings_user_queryset(query=""):
@@ -3770,45 +3803,187 @@ class AdminSettingsView(LoginRequiredMixin, View):
     template_name = "patients/settings.html"
 
     def _check_access(self, request):
-        if not has_capability(request.user, "manage_settings"):
+        try:
+            allowed = has_capability(request.user, "manage_settings")
+        except (OperationalError, ProgrammingError) as exc:
+            if _is_missing_settings_schema_error(exc) and (
+                request.user.is_superuser or request.user.groups.filter(name="Admin").exists()
+            ):
+                return None
+            raise
+        if not allowed:
             return HttpResponseForbidden("Only admins can access settings.")
         return None
 
-    def get(self, request):
-        denied = self._check_access(request)
-        if denied:
-            return denied
-        ensure_default_role_settings()
-        ensure_default_departments()
+    def _collect_settings_section(self, builder, *, fallback, warning, warnings):
+        try:
+            return builder()
+        except (OperationalError, ProgrammingError) as exc:
+            if not _is_missing_settings_schema_error(exc):
+                raise
+            warnings.append(warning)
+            return fallback
+
+    def _ensure_defaults(self, warnings):
+        bootstrap_steps = (
+            (ensure_default_role_settings, "Role settings data is unavailable until database migrations are applied on this server."),
+            (ensure_default_departments, "Category settings data is unavailable until database migrations are applied on this server."),
+        )
+        for callback, warning in bootstrap_steps:
+            try:
+                callback()
+            except (OperationalError, ProgrammingError) as exc:
+                if not _is_missing_settings_schema_error(exc):
+                    raise
+                warnings.append(warning)
+
+    def _user_management_context(self):
         User = get_user_model()
+        return {
+            "user_management_available": True,
+            "total_user_count": User.objects.count(),
+            "active_user_count": User.objects.filter(is_active=True).count(),
+            "settings_admin_count": _settings_admin_user_count(),
+            "users_with_temp_note_count": UserAdminNote.objects.exclude(temporary_password_note="").count(),
+        }
+
+    @staticmethod
+    def _user_management_fallback():
+        return {
+            "user_management_available": False,
+            "total_user_count": 0,
+            "active_user_count": 0,
+            "settings_admin_count": 0,
+            "users_with_temp_note_count": 0,
+        }
+
+    def _workflow_context(self):
         departments = list(DepartmentConfig.objects.order_by("name"))
+        category_name_preview = ", ".join(department.name for department in departments[:3])
+        if category_name_preview:
+            workflow_status_text = f"Current categories: {category_name_preview}"
+            if len(departments) > 3:
+                workflow_status_text = f"{workflow_status_text}, and more."
+        else:
+            workflow_status_text = "No categories configured yet."
+        return {
+            "workflow_settings_available": True,
+            "category_count": len(departments),
+            "category_action_count": sum(len(department.predefined_actions or []) for department in departments),
+            "workflow_status_text": workflow_status_text,
+        }
+
+    @staticmethod
+    def _workflow_fallback():
+        return {
+            "workflow_settings_available": False,
+            "category_count": 0,
+            "category_action_count": 0,
+            "workflow_status_text": "Category settings data is unavailable until database migrations are applied on this server.",
+        }
+
+    def _device_access_context(self):
         device_policy = DeviceApprovalPolicy.get_solo()
+        return {
+            "device_access_available": True,
+            "device_policy_enabled": device_policy.enabled,
+            "device_target_user_count": device_policy.target_users.count(),
+            "pending_device_count": StaffDeviceCredential.objects.filter(status=StaffDeviceCredentialStatus.PENDING).count(),
+            "approved_device_count": StaffDeviceCredential.objects.filter(status=StaffDeviceCredentialStatus.APPROVED).count(),
+        }
+
+    @staticmethod
+    def _device_access_fallback():
+        return {
+            "device_access_available": False,
+            "device_policy_enabled": False,
+            "device_target_user_count": 0,
+            "pending_device_count": 0,
+            "approved_device_count": 0,
+        }
+
+    def _database_context(self):
         schedule = PatientDataBackupSchedule.get_solo()
-        next_backup_at = schedule.next_backup_at()
+        return {
+            "database_settings_available": True,
+            "last_backup_at": schedule.last_backup_at,
+            "last_backup_status": schedule.get_last_backup_status_display(),
+            "next_backup_at": schedule.next_backup_at(),
+        }
+
+    @staticmethod
+    def _database_fallback():
+        return {
+            "database_settings_available": False,
+            "last_backup_at": None,
+            "last_backup_status": "",
+            "next_backup_at": None,
+        }
+
+    def _theme_context(self):
+        departments = list(DepartmentConfig.objects.order_by("name"))
         theme_settings = ThemeSettings.get_solo()
+        custom_theme_token_count = _custom_theme_token_count(theme_settings.tokens)
         custom_category_theme_count = 0
         for department in departments:
             default_theme = get_default_category_theme(department.name)
             if department.theme_bg_color != default_theme["bg"] or department.theme_text_color != default_theme["text"]:
                 custom_category_theme_count += 1
-        context = {
-            "total_user_count": User.objects.count(),
-            "active_user_count": User.objects.filter(is_active=True).count(),
-            "settings_admin_count": _settings_admin_user_count(),
-            "users_with_temp_note_count": UserAdminNote.objects.exclude(temporary_password_note="").count(),
-            "category_count": len(departments),
-            "category_action_count": sum(len(department.predefined_actions or []) for department in departments),
-            "category_name_preview": ", ".join(department.name for department in departments[:3]),
-            "device_policy_enabled": device_policy.enabled,
-            "device_target_user_count": device_policy.target_users.count(),
-            "pending_device_count": StaffDeviceCredential.objects.filter(status=StaffDeviceCredentialStatus.PENDING).count(),
-            "approved_device_count": StaffDeviceCredential.objects.filter(status=StaffDeviceCredentialStatus.APPROVED).count(),
-            "last_backup_at": schedule.last_backup_at,
-            "last_backup_status": schedule.get_last_backup_status_display(),
-            "next_backup_at": next_backup_at,
-            "theme_has_customizations": bool(theme_settings.tokens) or custom_category_theme_count > 0,
-            "custom_theme_token_count": len(flatten_theme_tokens(theme_settings.tokens)) if theme_settings.tokens else 0,
+        return {
+            "theme_settings_available": True,
+            "theme_has_customizations": custom_theme_token_count > 0 or custom_category_theme_count > 0,
+            "custom_theme_token_count": custom_theme_token_count,
             "custom_category_theme_count": custom_category_theme_count,
+        }
+
+    @staticmethod
+    def _theme_fallback():
+        return {
+            "theme_settings_available": False,
+            "theme_has_customizations": False,
+            "custom_theme_token_count": 0,
+            "custom_category_theme_count": 0,
+        }
+
+    def get(self, request):
+        denied = self._check_access(request)
+        if denied:
+            return denied
+        schema_warnings = []
+        self._ensure_defaults(schema_warnings)
+        context = {
+            **self._collect_settings_section(
+                self._user_management_context,
+                fallback=self._user_management_fallback(),
+                warning="User management metrics are unavailable until database migrations are applied on this server.",
+                warnings=schema_warnings,
+            ),
+            **self._collect_settings_section(
+                self._workflow_context,
+                fallback=self._workflow_fallback(),
+                warning="Category settings data is unavailable until database migrations are applied on this server.",
+                warnings=schema_warnings,
+            ),
+            **self._collect_settings_section(
+                self._device_access_context,
+                fallback=self._device_access_fallback(),
+                warning="Device access data is unavailable until database migrations are applied on this server.",
+                warnings=schema_warnings,
+            ),
+            **self._collect_settings_section(
+                self._database_context,
+                fallback=self._database_fallback(),
+                warning="Backup schedule data is unavailable until database migrations are applied on this server.",
+                warnings=schema_warnings,
+            ),
+            **self._collect_settings_section(
+                self._theme_context,
+                fallback=self._theme_fallback(),
+                warning="Theme settings data is unavailable until database migrations are applied on this server.",
+                warnings=schema_warnings,
+            ),
+            "settings_schema_warnings": list(dict.fromkeys(schema_warnings)),
+            "settings_schema_warning_hint": SETTINGS_SCHEMA_WARNING_HINT,
             "security_highlights": [
                 {"label": "HTTPS redirect", "enabled": settings.SECURE_SSL_REDIRECT},
                 {"label": "Secure session cookie", "enabled": settings.SESSION_COOKIE_SECURE},

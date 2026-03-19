@@ -9,6 +9,9 @@ fi
 BACKUP_DIR="$1"
 SQL_FILE="$BACKUP_DIR/database.sql"
 ENV_FILE="$BACKUP_DIR/.env.backup"
+COMPOSE_FILE="$BACKUP_DIR/docker-compose.yml.backup"
+DEV_COMPOSE_FILE="$BACKUP_DIR/docker-compose.dev.yml.backup"
+OVERRIDE_COMPOSE_FILE="$BACKUP_DIR/docker-compose.override.yml.backup"
 
 if [ ! -f "$SQL_FILE" ]; then
   echo "Missing $SQL_FILE" >&2
@@ -18,6 +21,18 @@ fi
 if [ -f "$ENV_FILE" ]; then
   cp "$ENV_FILE" .env
   echo "Restored .env from backup"
+fi
+if [ -f "$COMPOSE_FILE" ]; then
+  cp "$COMPOSE_FILE" docker-compose.yml
+  echo "Restored docker-compose.yml from backup"
+fi
+if [ -f "$DEV_COMPOSE_FILE" ]; then
+  cp "$DEV_COMPOSE_FILE" docker-compose.dev.yml
+  echo "Restored docker-compose.dev.yml from backup"
+fi
+if [ -f "$OVERRIDE_COMPOSE_FILE" ]; then
+  cp "$OVERRIDE_COMPOSE_FILE" docker-compose.override.yml
+  echo "Restored docker-compose.override.yml from backup"
 fi
 if [ -f .env ]; then
   set -a

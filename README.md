@@ -19,8 +19,16 @@ A Django + PostgreSQL MVP for **case-based follow-up tracking**.
 
 ```bash
 cp .env.example .env
-docker compose up --build
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 ```
+
+Local development uses:
+- `docker-compose.yml` as the shared base config
+- `docker-compose.dev.yml` as the tracked local-dev overlay that enables the source bind mount
+
+If you keep a private local override file, add `-f docker-compose.override.yml` to explicit multi-file commands. The checked-in local-dev PowerShell wrappers do this automatically when that file exists.
+
+For a private VPS, keep server-only Docker settings in an untracked `docker-compose.override.yml`. Docker Compose auto-loads that file for `up`, `exec`, `ps`, and `logs`, so host-specific settings stay off GitHub while commands like `update_medtrack` remain unchanged.
 
 Create admin user:
 
@@ -112,6 +120,8 @@ This backs up:
 - PostgreSQL dump (`database.sql`)
 - `.env`
 - `docker-compose.yml`
+- `docker-compose.dev.yml` if present
+- `docker-compose.override.yml` if present
 - current app commit hash
 
 This remains the recommended full-environment disaster-recovery backup.
@@ -122,6 +132,8 @@ This remains the recommended full-environment disaster-recovery backup.
 git pull
 docker compose up -d --build
 ```
+
+If the VPS uses a private `docker-compose.override.yml`, `git pull` leaves that file untouched because it is untracked and server-local.
 
 ### 3) Apply migrations
 

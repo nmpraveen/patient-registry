@@ -19,6 +19,12 @@ docker compose exec -T db pg_dump -U "${POSTGRES_USER:-patient_registry}" "${POS
 echo "[2/3] Backing up env/config files..."
 cp .env "$OUT_DIR/.env.backup"
 cp docker-compose.yml "$OUT_DIR/docker-compose.yml.backup"
+if [ -f docker-compose.dev.yml ]; then
+  cp docker-compose.dev.yml "$OUT_DIR/docker-compose.dev.yml.backup"
+fi
+if [ -f docker-compose.override.yml ]; then
+  cp docker-compose.override.yml "$OUT_DIR/docker-compose.override.yml.backup"
+fi
 
 echo "[3/3] Recording app commit..."
 git rev-parse --short HEAD > "$OUT_DIR/app_commit.txt"

@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.03.19.03.14
+- Split Docker Compose into a shared base plus a tracked `docker-compose.dev.yml` overlay so local bind-mount behavior stays in git while VPS-only Docker settings can live in a private `docker-compose.override.yml`.
+- Updated local Test NNH wrappers and docs so they use the dev overlay and automatically include a private local override file when present, preserving the existing local demo workflow.
+- Expanded backup and restore scripts to capture and restore compose overlay files when they exist, and added ignore rules for private override and ad-hoc VPS backup artifacts.
+
 ## 2026.03.19.01.29
 - Hardened `/patients/settings/` so missing settings-related tables or columns on a deployed server no longer crash the page with a 500 during schema drift.
 - Added an admin-facing warning on the Settings hub that points operators to `python manage.py migrate`, shows unavailable sections clearly, and disables links to settings modules that depend on the missing schema.

@@ -1,0 +1,47 @@
+<div
+  class="case-create-gpla-counter case-create-grid{% if show_inline_errors and field.errors %} is-invalid{% endif %}"
+  data-gpla-counter
+  data-gpla-name="{{ field.html_name }}"
+  data-gpla-summary="{{ summary_code }}"
+>
+  <div id="{{ field.id_for_label }}_label" class="case-create-gpla-counter__label">{{ label }}</div>
+  <input
+    type="hidden"
+    name="{{ field.html_name }}"
+    id="{{ field.id_for_label }}"
+    value="{{ field.value|default_if_none:'' }}"
+    data-gpla-input
+    data-gpla-min="0"
+    data-gpla-max="10"
+  />
+  <div
+    class="case-create-gpla-stepper"
+    id="{{ field.id_for_label }}_stepper"
+    role="group"
+    aria-labelledby="{{ field.id_for_label }}_label"
+    {% if show_inline_errors and field.errors %}aria-describedby="{{ field.id_for_label }}_errors"{% endif %}
+  >
+    <button
+      type="button"
+      class="case-create-gpla-stepper__button"
+      data-gpla-step="decrement"
+      aria-label="Decrease {{ label }}"
+      aria-controls="{{ field.id_for_label }}"
+    >-</button>
+    <div class="case-create-gpla-stepper__value" data-gpla-value aria-live="polite" aria-atomic="true">0</div>
+    <button
+      type="button"
+      class="case-create-gpla-stepper__button"
+      data-gpla-step="increment"
+      aria-label="Increase {{ label }}"
+      aria-controls="{{ field.id_for_label }}"
+    >+</button>
+  </div>
+  {% if show_inline_errors and field.errors %}
+    <div id="{{ field.id_for_label }}_errors">
+      {% for error in field.errors %}
+        <div class="invalid-feedback d-block">{{ error }}</div>
+      {% endfor %}
+    </div>
+  {% endif %}
+</div>

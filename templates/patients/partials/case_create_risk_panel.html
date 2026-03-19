@@ -1,0 +1,61 @@
+<section id="case-create-risk-panel" class="case-create-card"{% if oob_swap %} hx-swap-oob="{{ oob_swap }}"{% endif %}>
+  <div class="case-create-card__header">
+    <div>
+      <p class="case-create-card__eyebrow">Risk Snapshot</p>
+      <h2 class="h5 mb-1">Risk Factors</h2>
+      <p class="case-create-card__subtitle case-create-help-text mb-0">Capture chronic disease context for every case, then add ANC-specific risk qualifiers only when they matter.</p>
+    </div>
+  </div>
+  <div class="case-create-card__body">
+    <div class="row g-3">
+      <div class="col-12 case-create-grid{% if show_inline_errors and form.ncd_flags.errors %} is-invalid{% endif %}">
+        <label class="form-label">{{ form.ncd_flags.label }}</label>
+        <div class="case-create-pill-grid">
+          {% for choice in form.ncd_flags %}
+            <label class="case-create-pill-check">
+              {{ choice.tag }}
+              <span>{{ choice.choice_label }}</span>
+            </label>
+          {% endfor %}
+        </div>
+        {% if show_inline_errors and form.ncd_flags.errors %}
+          {% for error in form.ncd_flags.errors %}
+            <div class="invalid-feedback d-block">{{ error }}</div>
+          {% endfor %}
+        {% endif %}
+      </div>
+
+      {% if case_create_state.show_anc_fields %}
+        {% include 'patients/partials/case_create_field.html' with field=form.high_risk col_class='col-12 col-lg-6' %}
+
+        <div class="col-12 case-create-grid{% if show_inline_errors and form.anc_high_risk_reasons.errors %} is-invalid{% endif %}">
+          <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
+            <label class="form-label mb-0">{{ form.anc_high_risk_reasons.label }}</label>
+            <span class="case-create-inline-chip {% if case_create_state.show_anc_reasons %}is-active{% endif %}">ANC only</span>
+          </div>
+          {% if case_create_state.show_anc_reasons %}
+            <div class="case-create-pill-grid">
+              {% for choice in form.anc_high_risk_reasons %}
+                <label class="case-create-pill-check">
+                  {{ choice.tag }}
+                  <span>{{ choice.choice_label }}</span>
+                </label>
+              {% endfor %}
+            </div>
+          {% else %}
+            <div class="case-create-note">Switch on high-risk to capture ANC risk reasons. The preview rail will then include the high-risk signal in the workflow summary.</div>
+          {% endif %}
+          {% if show_inline_errors and form.anc_high_risk_reasons.errors %}
+            {% for error in form.anc_high_risk_reasons.errors %}
+              <div class="invalid-feedback d-block">{{ error }}</div>
+            {% endfor %}
+          {% endif %}
+        </div>
+      {% else %}
+        <div class="col-12">
+          <div class="case-create-note case-create-help-text">ANC-only high-risk controls appear here when the selected category is ANC.</div>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</section>

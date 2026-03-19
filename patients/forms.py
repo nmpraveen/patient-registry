@@ -16,6 +16,7 @@ from .models import (
     CaseStatus,
     DepartmentConfig,
     DeviceApprovalPolicy,
+    Gender,
     PatientDataBackupSchedule,
     NonCommunicableDisease,
     RoleSetting,
@@ -84,13 +85,26 @@ class CaseForm(StyledModelForm):
         ensure_default_departments()
         super().__init__(*args, **kwargs)
         self.fields["category"].queryset = self.fields["category"].queryset.order_by("name")
+        self.fields["uhid"].label = "UHID"
+        self.fields["rch_number"].label = "RCH number"
+        self.fields["rch_bypass"].label = "RCH bypass"
+        self.fields["lmp"].label = "LMP"
+        self.fields["edd"].label = "EDD"
+        self.fields["usg_edd"].label = "USG EDD"
         for field_name in ["date_of_birth", "lmp", "edd", "usg_edd", "surgery_date", "review_date"]:
             self.fields[field_name].input_formats = DATE_INPUT_FORMATS
         if self.instance and self.instance.pk:
             self.fields["ncd_flags"].initial = self.instance.ncd_flags
             self.fields["anc_high_risk_reasons"].initial = self.instance.anc_high_risk_reasons
+        else:
+            self.fields["category"].widget = forms.RadioSelect()
+            self.fields["category"].empty_label = None
+            self.fields["category"].widget.choices = self.fields["category"].choices
+            self.fields["status"].widget = forms.HiddenInput()
+            self.fields["status"].required = False
+            self.initial.setdefault("status", CaseStatus.ACTIVE)
 
-        gpla_choices = [("", "-")] + [(i, i) for i in range(1, 11)]
+        gpla_choices = [("", "-")] + [(i, i) for i in range(0, 11)]
         for field_name in ["gravida", "para", "abortions", "living"]:
             self.fields[field_name].widget = forms.Select(choices=gpla_choices)
 
@@ -105,6 +119,9 @@ class CaseForm(StyledModelForm):
             cleaned_data["age"] = years if has_had_birthday else years - 1
         elif entered_age is None:
             self.add_error("age", "Enter age when date of birth is not available.")
+
+        if not self.instance.pk and not cleaned_data.get("status"):
+            cleaned_data["status"] = CaseStatus.ACTIVE
 
         category = cleaned_data.get("category")
         category_name = category.name.upper() if category else ""
@@ -123,6 +140,7 @@ class CaseForm(StyledModelForm):
             if p + a > g:
                 self.add_error("abortions", "P + A cannot exceed G.")
         if category_name == "ANC":
+            cleaned_data["gender"] = cleaned_data.get("gender") or Gender.FEMALE
             rch_number = (cleaned_data.get("rch_number") or "").strip()
             if rch_number and not rch_number.isdigit():
                 self.add_error("rch_number", "RCH number must contain digits only.")

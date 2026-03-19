@@ -1,0 +1,89 @@
+<section id="case-create-workflow-panel" class="case-create-card case-create-card--workflow"{% if oob_swap %} hx-swap-oob="{{ oob_swap }}"{% endif %}>
+  <div class="case-create-card__header">
+    <div>
+      <p class="case-create-card__eyebrow">{{ case_create_state.workflow_copy.eyebrow }}</p>
+      <h2 class="h5 mb-1">Workflow Details</h2>
+      <p class="case-create-card__subtitle case-create-help-text mb-0">{{ case_create_state.workflow_copy.body }}</p>
+    </div>
+  </div>
+  <div class="case-create-card__body">
+    {% if not case_create_state.has_category %}
+      <div class="case-create-empty-state">
+        <div class="case-create-empty-state__icon" aria-hidden="true">+</div>
+        <div>
+          <h3 class="h6 mb-1">Category-first layout</h3>
+          <p class="case-create-help-text mb-0">Pick ANC, Surgery, or Medicine first. The relevant clinical fields will appear here and the live preview rail will update beside the form.</p>
+        </div>
+      </div>
+    {% else %}
+      {% if not case_create_state.show_anc_fields %}
+        <div class="case-create-helper">
+          <strong>{{ case_create_state.workflow_copy.title }}</strong>
+          {% if case_create_state.pathway_label %}
+            <span> Current pathway: {{ case_create_state.pathway_label }}.</span>
+          {% endif %}
+        </div>
+      {% endif %}
+
+      {% if case_create_state.show_anc_fields %}
+        <div class="row g-3">
+          {% include 'patients/partials/case_create_field.html' with field=form.rch_number col_class='col-12 col-md-6' %}
+          {% include 'patients/partials/case_create_field.html' with field=form.rch_bypass col_class='col-12 col-md-6 case-create-field--control-offset' help_text='If bypassed, a recurring RCH reminder task is scheduled every 2 weeks until captured.' help_class='case-create-help-text' %}
+          {% include 'patients/partials/case_create_field.html' with field=form.lmp col_class='col-12 col-md-4' label='LMP' %}
+          {% include 'patients/partials/case_create_field.html' with field=form.edd col_class='col-12 col-md-4' label='EDD' %}
+          {% include 'patients/partials/case_create_field.html' with field=form.usg_edd col_class='col-12 col-md-4' label='USG EDD' %}
+          <div class="col-12">
+            <div class="case-create-gpla-shell">
+              <div class="case-create-gpla-header">
+                <h3 class="case-create-gpla-title">Obstetric history (GPAL)</h3>
+                <button
+                  type="button"
+                  class="case-create-gpla-primi"
+                  data-gpla-primi-toggle
+                  aria-pressed="false"
+                  aria-label="Toggle Primi preset"
+                >
+                  <span class="case-create-gpla-primi__radio" aria-hidden="true"></span>
+                  <span class="case-create-gpla-primi__label">Primi</span>
+                </button>
+              </div>
+              <div class="case-create-gpla-stage">
+                <div class="case-create-gpla-grid">
+                  {% include 'patients/partials/case_create_gpla_counter.html' with field=form.gravida label='Gravida' summary_code='G' %}
+                  {% include 'patients/partials/case_create_gpla_counter.html' with field=form.para label='Para' summary_code='P' %}
+                  {% include 'patients/partials/case_create_gpla_counter.html' with field=form.abortions label='Abortions' summary_code='A' %}
+                  {% include 'patients/partials/case_create_gpla_counter.html' with field=form.living label='Living' summary_code='L' %}
+                </div>
+                <div id="case-create-gpla-summary" class="case-create-gpla-summary" aria-live="polite">G0 P0 A0 L0</div>
+              </div>
+            </div>
+          </div>
+          <div class="col-12">
+            <div id="case-create-gpla-warning" class="alert alert-warning py-2 px-3 small d-none mb-0">Living children can exceed para when there were multiple births.</div>
+          </div>
+        </div>
+      {% elif case_create_state.show_surgery_fields %}
+        <div class="row g-3">
+          {% include 'patients/partials/case_create_field.html' with field=form.surgical_pathway col_class='col-12 col-lg-6' %}
+          {% include 'patients/partials/case_create_field.html' with field=form.surgery_done col_class='col-12 col-lg-6' %}
+          {% if form.surgical_pathway.value == 'PLANNED_SURGERY' %}
+            {% include 'patients/partials/case_create_field.html' with field=form.surgery_date col_class='col-12 col-lg-6' %}
+          {% elif form.surgical_pathway.value == 'SURVEILLANCE' %}
+            {% include 'patients/partials/case_create_field.html' with field=form.review_date col_class='col-12 col-lg-6' %}
+          {% else %}
+            <div class="col-12 col-lg-8">
+              <div class="case-create-note case-create-help-text">
+                Choose a pathway to reveal the final scheduling field. Planned surgery uses the surgery date; surveillance uses a review date.
+              </div>
+            </div>
+          {% endif %}
+        </div>
+      {% elif case_create_state.show_medicine_fields %}
+        <div class="row g-3">
+          {% include 'patients/partials/case_create_field.html' with field=form.review_frequency col_class='col-12 col-lg-6' %}
+          {% include 'patients/partials/case_create_field.html' with field=form.review_date col_class='col-12 col-lg-6' %}
+        </div>
+      {% endif %}
+    {% endif %}
+  </div>
+</section>

@@ -55,8 +55,10 @@ from .models import (
     ThemeSettings,
     UserAdminNote,
     VitalEntry,
+    build_default_tasks,
     ensure_default_departments,
     ensure_default_role_settings,
+    plan_default_tasks,
 )
 from .theme import (
     field_name_to_css_var,
@@ -72,6 +74,8 @@ class MedtrackModelTests(TestCase):
     def setUp(self):
         self.user = get_user_model().objects.create_user(username="doctor", password="pw12345")
         self.anc, _ = DepartmentConfig.objects.get_or_create(name="ANC", defaults={"predefined_actions": ["USG"], "metadata_template": {"lmp": "date"}})
+        self.surgery, _ = DepartmentConfig.objects.get_or_create(name="Surgery", defaults={"predefined_actions": ["LAB TEST"], "metadata_template": {"surgical_pathway": "String"}})
+        self.medicine, _ = DepartmentConfig.objects.get_or_create(name="Medicine", defaults={"predefined_actions": ["Consultant Review"], "metadata_template": {"review_date": "Date"}})
 
     def test_case_save_normalizes_patient_names_and_place(self):
         case = Case.objects.create(
@@ -140,6 +144,69 @@ class MedtrackModelTests(TestCase):
         self.assertEqual(case.first_name, "  FIRST   NAME  ")
         self.assertEqual(case.last_name, "  mR  ")
         self.assertEqual(case.patient_name, "  FIRST   NAME     mR  ")
+
+    def test_plan_default_tasks_for_anc_returns_preview_without_writing_tasks(self):
+        preview_case = Case(
+            uhid="UH-PLAN-ANC",
+            first_name="Preview",
+            last_name="ANC",
+            phone_number="9000000004",
+            category=self.anc,
+            lmp=timezone.localdate() - timedelta(days=56),
+            edd=timezone.localdate() + timedelta(days=210),
+        )
+
+        task_plan = plan_default_tasks(preview_case)
+
+        self.assertGreaterEqual(len(task_plan), 20)
+        self.assertEqual(task_plan[0]["title"], "Routine prenatal check up")
+        self.assertFalse(Task.objects.exists())
+
+    def test_plan_default_tasks_matches_persisted_planned_surgery_tasks(self):
+        preview_case = Case(
+            uhid="UH-PLAN-SURG",
+            first_name="Preview",
+            last_name="Surgery",
+            phone_number="9000000005",
+            category=self.surgery,
+            surgical_pathway=SurgicalPathway.PLANNED_SURGERY,
+            surgery_date=timezone.localdate() + timedelta(days=7),
+        )
+
+        task_plan = plan_default_tasks(preview_case)
+        persisted_case = Case.objects.create(
+            uhid="UH-PLAN-SURG",
+            first_name="Preview",
+            last_name="Surgery",
+            phone_number="9000000005",
+            category=self.surgery,
+            surgical_pathway=SurgicalPathway.PLANNED_SURGERY,
+            surgery_date=timezone.localdate() + timedelta(days=7),
+            created_by=self.user,
+        )
+        created_tasks = build_default_tasks(persisted_case, self.user)
+
+        self.assertEqual(
+            [(item["title"], item["due_date"], item["task_type"], item["frequency_label"]) for item in task_plan],
+            [(task.title, task.due_date, task.task_type, task.frequency_label) for task in created_tasks],
+        )
+
+    def test_plan_default_tasks_for_medicine_uses_first_predefined_action(self):
+        preview_case = Case(
+            uhid="UH-PLAN-MED",
+            first_name="Preview",
+            last_name="Medicine",
+            phone_number="9000000006",
+            category=self.medicine,
+            review_frequency="MONTHLY",
+            review_date=timezone.localdate() + timedelta(days=14),
+        )
+
+        task_plan = plan_default_tasks(preview_case)
+
+        self.assertEqual(len(task_plan), 1)
+        self.assertEqual(task_plan[0]["title"], "Consultant Review")
+        self.assertEqual(task_plan[0]["task_type"], TaskType.CUSTOM)
 
     def test_anc_case_requires_lmp_edd(self):
         case = Case(
@@ -1155,6 +1222,13 @@ class MedtrackViewTests(TestCase):
 
         self.assertEqual(response.status_code, 403)
 
+    def test_case_create_view_is_forbidden_without_case_create_capability(self):
+        self.login_as_role("Nurse", username="nurse_case_create")
+
+        response = self.client.get(reverse("patients:case_create"))
+
+        self.assertEqual(response.status_code, 403)
+
     def test_quick_case_create_saves_minimal_case_and_tasks(self):
         review_date = timezone.localdate() + timedelta(days=7)
         self.client.force_login(self.user)
@@ -1271,6 +1345,29 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(response.status_code, 302)
         case = Case.objects.get(uhid="UH222")
         self.assertGreaterEqual(case.tasks.count(), 20)
+
+    def test_case_create_sets_created_by_and_logs_case_created_activity(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("patients:case_create"),
+            {
+                "uhid": "UH-CREATE-ACTIVITY",
+                "first_name": "Log",
+                "last_name": "Check",
+                "phone_number": "9876543200",
+                "category": self.surgery.id,
+                "status": CaseStatus.ACTIVE,
+                "age": "38",
+                "surgical_pathway": SurgicalPathway.PLANNED_SURGERY,
+                "surgery_date": (timezone.localdate() + timedelta(days=7)).isoformat(),
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        case = Case.objects.get(uhid="UH-CREATE-ACTIVITY")
+        self.assertEqual(case.created_by, self.user)
+        self.assertTrue(case.activity_logs.filter(note__icontains="Case created with 5 starter task").exists())
 
     def test_anc_task_cannot_complete_before_due_date(self):
         self.client.force_login(self.user)
@@ -2372,6 +2469,26 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertGreaterEqual(DepartmentConfig.objects.count(), 3)
 
+    def test_case_create_page_renders_preview_shell_and_default_workflow_state(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("patients:case_create"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Show Help")
+        self.assertContains(response, 'id="case-create-preview-sync"')
+        self.assertContains(response, reverse("patients:case_create_preview"))
+        self.assertContains(response, reverse("patients:case_create_identity_check"))
+        self.assertContains(response, 'id="case-create-shell-state" data-workflow-key="generic"')
+        self.assertContains(response, 'name="status"')
+        self.assertContains(response, 'id="id_status"')
+        self.assertNotContains(response, '<label for="id_status">')
+        self.assertContains(response, "case-create-choice-grid")
+        self.assertContains(response, "case-create-choice")
+        self.assertContains(response, "case-create-gender-field")
+        self.assertGreater(len(list(response.context["form"]["category"])), 0)
+        self.assertNotContains(response, '<select name="category"')
+
     def test_case_create_invalid_submission_includes_inline_validation_hooks(self):
         self.client.force_login(self.user)
         response = self.client.post(
@@ -2390,6 +2507,191 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "invalid-feedback")
         self.assertContains(response, "This field is required.")
+        self.assertContains(response, "case-create-field")
+
+    def test_case_create_defaults_status_to_active_when_not_submitted(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("patients:case_create"),
+            {
+                "uhid": "UH-DEFAULT-STATUS",
+                "first_name": "Default",
+                "last_name": "Status",
+                "phone_number": "9876500459",
+                "category": self.surgery.id,
+                "age": "32",
+                "surgical_pathway": SurgicalPathway.SURVEILLANCE,
+                "review_date": (timezone.localdate() + timedelta(days=9)).isoformat(),
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        created_case = Case.objects.get(uhid="UH-DEFAULT-STATUS")
+        self.assertEqual(created_case.status, CaseStatus.ACTIVE)
+
+    def test_case_create_defaults_anc_gender_to_female_when_not_submitted(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("patients:case_create"),
+            {
+                "uhid": "UH-ANC-FEMALE",
+                "first_name": "Anc",
+                "last_name": "Default",
+                "phone_number": "9876500460",
+                "category": self.anc.id,
+                "age": "25",
+                "lmp": (timezone.localdate() - timedelta(days=42)).isoformat(),
+                "edd": (timezone.localdate() + timedelta(days=238)).isoformat(),
+                "rch_bypass": "on",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        created_case = Case.objects.get(uhid="UH-ANC-FEMALE")
+        self.assertEqual(created_case.gender, Gender.FEMALE)
+        self.assertIsNone(created_case.gravida)
+        self.assertIsNone(created_case.para)
+        self.assertIsNone(created_case.abortions)
+        self.assertIsNone(created_case.living)
+
+    def test_case_create_persists_explicit_zero_gpla_values_for_anc(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("patients:case_create"),
+            {
+                "uhid": "UH-ANC-ZERO-GPLA",
+                "first_name": "Anc",
+                "last_name": "Zero",
+                "phone_number": "9876500461",
+                "category": self.anc.id,
+                "age": "24",
+                "lmp": (timezone.localdate() - timedelta(days=49)).isoformat(),
+                "edd": (timezone.localdate() + timedelta(days=231)).isoformat(),
+                "rch_bypass": "on",
+                "gravida": "0",
+                "para": "0",
+                "abortions": "0",
+                "living": "0",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        created_case = Case.objects.get(uhid="UH-ANC-ZERO-GPLA")
+        self.assertEqual(created_case.gravida, 0)
+        self.assertEqual(created_case.para, 0)
+        self.assertEqual(created_case.abortions, 0)
+        self.assertEqual(created_case.living, 0)
+
+    def test_case_create_invalid_anc_gpla_submission_shows_inline_error(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("patients:case_create"),
+            {
+                "uhid": "UH-ANC-GPLA-INVALID",
+                "first_name": "Anc",
+                "last_name": "Invalid",
+                "phone_number": "9876500462",
+                "category": self.anc.id,
+                "age": "28",
+                "lmp": (timezone.localdate() - timedelta(days=56)).isoformat(),
+                "edd": (timezone.localdate() + timedelta(days=224)).isoformat(),
+                "rch_bypass": "on",
+                "gravida": "1",
+                "para": "2",
+                "abortions": "0",
+                "living": "0",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "P cannot exceed G.")
+        self.assertContains(response, "data-gpla-counter")
+
+    def test_case_create_invalid_anc_zero_gpla_submission_shows_inline_error(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("patients:case_create"),
+            {
+                "uhid": "UH-ANC-GPLA-ZERO-INVALID",
+                "first_name": "Anc",
+                "last_name": "ZeroInvalid",
+                "phone_number": "9876500463",
+                "category": self.anc.id,
+                "age": "29",
+                "lmp": (timezone.localdate() - timedelta(days=63)).isoformat(),
+                "edd": (timezone.localdate() + timedelta(days=217)).isoformat(),
+                "rch_bypass": "on",
+                "gravida": "0",
+                "para": "0",
+                "abortions": "1",
+                "living": "0",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "P + A cannot exceed G.")
+        self.assertContains(response, "data-gpla-counter")
+        self.assertFalse(Case.objects.filter(uhid="UH-ANC-GPLA-ZERO-INVALID").exists())
+
+    def test_case_create_duplicate_active_uhid_returns_inline_error(self):
+        Case.objects.create(
+            uhid="UH-DUPLICATE",
+            first_name="Existing",
+            last_name="Case",
+            phone_number="9876500450",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=10),
+            created_by=self.user,
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("patients:case_create"),
+            {
+                "uhid": "UH-DUPLICATE",
+                "first_name": "New",
+                "last_name": "Case",
+                "phone_number": "9876500451",
+                "category": self.surgery.id,
+                "status": CaseStatus.ACTIVE,
+                "age": "29",
+                "surgical_pathway": SurgicalPathway.SURVEILLANCE,
+                "review_date": (timezone.localdate() + timedelta(days=11)).isoformat(),
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "No duplicate active cases are allowed for the same UHID.")
+
+    def test_case_create_invalid_phone_numbers_return_inline_error(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("patients:case_create"),
+            {
+                "uhid": "UH-PHONE-INVALID",
+                "first_name": "Phone",
+                "last_name": "Invalid",
+                "phone_number": "12345",
+                "alternate_phone_number": "abc",
+                "category": self.surgery.id,
+                "status": CaseStatus.ACTIVE,
+                "age": "41",
+                "surgical_pathway": SurgicalPathway.SURVEILLANCE,
+                "review_date": (timezone.localdate() + timedelta(days=8)).isoformat(),
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Phone number must be exactly 10 digits.")
+        self.assertContains(response, "Alternate phone number must be exactly 10 digits.")
 
 
     def test_admin_settings_page_access_and_summary_links(self):
@@ -3763,6 +4065,159 @@ class MedtrackViewTests(TestCase):
             self.assertEqual(form.fields[field_name].widget.attrs["data-crayons-datepicker-locale"], "en-IN")
             self.assertEqual(form.fields[field_name].widget.attrs["data-crayons-datepicker-show-footer"], "false")
 
+    def test_case_create_preview_requires_authentication(self):
+        response = self.client.post(reverse("patients:case_create_preview"), {"category": self.anc.id})
+
+        self.assertEqual(response.status_code, 302)
+
+    def test_case_create_preview_requires_case_create_capability(self):
+        self.login_as_role("Nurse", username="nurse_preview")
+
+        response = self.client.post(reverse("patients:case_create_preview"), {"category": self.anc.id})
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_case_create_preview_returns_anc_oob_fragment_without_writing_records(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("patients:case_create_preview"),
+            {
+                "category": self.anc.id,
+                "lmp": (timezone.localdate() - timedelta(days=56)).isoformat(),
+                "edd": (timezone.localdate() + timedelta(days=210)).isoformat(),
+                "rch_bypass": "on",
+            },
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'hx-swap-oob="outerHTML"')
+        self.assertContains(response, "Routine prenatal check up")
+        self.assertContains(response, "RCH bypass is active")
+        self.assertFalse(Case.objects.filter(uhid="UH-PREVIEW").exists())
+        self.assertFalse(Task.objects.exists())
+
+    def test_case_create_preview_supports_generic_category_without_review_date(self):
+        custom_category = DepartmentConfig.objects.create(
+            name="Custom Clinic",
+            predefined_actions=["Custom Review"],
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("patients:case_create_preview"),
+            {
+                "category": custom_category.id,
+            },
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Capture the next clinical action clearly.")
+        self.assertContains(response, "Custom Review")
+        self.assertNotContains(response, "Add review date to unlock the starter-task preview.")
+
+    def test_case_create_preview_renders_gpla_stepper_controls_for_anc(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("patients:case_create_preview"),
+            {
+                "category": self.anc.id,
+            },
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "data-gpla-counter")
+        self.assertContains(response, "data-gpla-primi-toggle")
+        self.assertContains(response, "Primi")
+        self.assertContains(response, 'id="case-create-gpla-summary"')
+        self.assertContains(response, "G0 P0 A0 L0")
+        self.assertNotContains(response, '<select name="gravida"')
+
+    def test_case_create_identity_check_requires_case_create_capability(self):
+        self.login_as_role("Nurse", username="nurse_identity")
+
+        response = self.client.post(reverse("patients:case_create_identity_check"), {"uhid": "UH001"})
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_case_create_identity_check_warns_on_active_uhid_and_phone_matches(self):
+        existing_case = Case.objects.create(
+            uhid="UH-ID-CHECK",
+            first_name="Existing",
+            last_name="Record",
+            phone_number="9876500550",
+            alternate_phone_number="9876500551",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=6),
+            created_by=self.user,
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("patients:case_create_identity_check"),
+            {
+                "uhid": "UH-ID-CHECK",
+                "phone_number": "9876500550",
+            },
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Existing case uses this UHID")
+        self.assertContains(response, "Phone number matches an existing case")
+        self.assertContains(response, reverse("patients:case_detail", kwargs={"pk": existing_case.pk}))
+
+    def test_case_create_identity_check_shows_both_phone_warnings_when_one_number_has_many_matches(self):
+        self.client.force_login(self.user)
+        base_time = timezone.now()
+        for index in range(8):
+            crowded_case = Case.objects.create(
+                uhid=f"UH-ID-CROWD-{index}",
+                first_name="Crowded",
+                last_name="Phone",
+                phone_number="9876500660",
+                category=self.surgery,
+                status=CaseStatus.ACTIVE,
+                surgical_pathway=SurgicalPathway.SURVEILLANCE,
+                review_date=timezone.localdate() + timedelta(days=5),
+                created_by=self.user,
+            )
+            Case.objects.filter(pk=crowded_case.pk).update(updated_at=base_time + timedelta(minutes=index))
+
+        alternate_match = Case.objects.create(
+            uhid="UH-ID-ALT",
+            first_name="Alternate",
+            last_name="Phone",
+            phone_number="9876500770",
+            alternate_phone_number="9876500771",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=6),
+            created_by=self.user,
+        )
+        Case.objects.filter(pk=alternate_match.pk).update(updated_at=base_time - timedelta(days=2))
+
+        response = self.client.post(
+            reverse("patients:case_create_identity_check"),
+            {
+                "phone_number": "9876500660",
+                "alternate_phone_number": "9876500771",
+            },
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Phone number matches an existing case")
+        self.assertContains(response, "Alternate phone number matches an existing case")
+        self.assertContains(response, reverse("patients:case_detail", kwargs={"pk": alternate_match.pk}))
+
     def test_dashboard_recent_panel_uses_inline_detail_container_without_modal_markup(self):
         self.client.force_login(self.user)
         self.create_recent_case()
@@ -4328,6 +4783,33 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Clinical details will appear here as the case record is updated.")
         self.assertContains(response, "0 of 0 tasks completed")
+
+    def test_case_detail_identity_header_shows_zero_gpla_summary(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-IDENTITY-GPLA-ZERO",
+            first_name="Zero",
+            last_name="GPLA",
+            phone_number="9876500211",
+            category=self.anc,
+            status=CaseStatus.ACTIVE,
+            gender=Gender.FEMALE,
+            lmp=timezone.localdate() - timedelta(days=56),
+            edd=timezone.localdate() + timedelta(days=224),
+            rch_bypass=True,
+            gravida=0,
+            para=0,
+            abortions=0,
+            living=0,
+            created_by=self.user,
+        )
+
+        response = self.client.get(reverse("patients:case_detail", kwargs={"pk": case.pk}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Obstetric Summary")
+        self.assertContains(response, "G0 P0 A0 L0")
+        self.assertNotContains(response, "Clinical details will appear here as the case record is updated.")
 
     def test_case_detail_uses_latest_vitals_timestamp(self):
         self.client.force_login(self.user)

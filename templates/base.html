@@ -1069,6 +1069,7 @@
         }
       }
     </style>
+    {% block extra_head %}{% endblock %}
   </head>
   <body class="app-shell">
     <nav class="navbar navbar-expand-md navbar-dark app-nav mb-4">
@@ -1154,6 +1155,7 @@
       crossorigin="anonymous"
     ></script>
     <script src="{% static 'patients/datepicker.js' %}" defer></script>
+    {% block extra_scripts %}{% endblock %}
     {% if user.is_authenticated %}
       <script>
         (() => {

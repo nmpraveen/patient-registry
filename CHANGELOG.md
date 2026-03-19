@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.03.18.23.57
+- Rebuilt `/patients/cases/new/` into a responsive case-intake workflow with a split layout, sticky save actions, live starter-task preview, inline identity warnings, and HTMX-driven workflow/duplicate-check updates while keeping the existing Django route and server-side validation rules.
+- Simplified the day-to-day intake flow by defaulting the page to a low-copy mode with a `Show Help` toggle, removing the visible new-case status control, switching category selection to themed radio cards, and tightening the default ANC path with hidden gender selection plus normalized ANC field labels and alignment.
+- Added the new ANC `Obstetric history (GPAL)` section with compact plus/minus controls, a `Primi` preset, live `Gx Px Ax Lx` summary, preserved null-versus-zero save semantics, and compatibility fixes so explicit zero GPLA values continue to render correctly in edit/detail views.
+
 ## 2026.03.18.17.05
 - Simplified the top navigation search field by removing the long explanatory placeholder text and replacing it with a compact magnifying-glass treatment while keeping the same search behavior and accessibility label.
 

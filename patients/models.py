@@ -692,10 +692,13 @@ class Case(models.Model):
         self.patient_name = self.full_name
 
     def clean(self):
+        phone_errors = {}
         if self.phone_number and (not self.phone_number.isdigit() or len(self.phone_number) != 10):
-            raise ValidationError({"phone_number": "Phone number must be exactly 10 digits."})
+            phone_errors["phone_number"] = "Phone number must be exactly 10 digits."
         if self.alternate_phone_number and (not self.alternate_phone_number.isdigit() or len(self.alternate_phone_number) != 10):
-            raise ValidationError({"alternate_phone_number": "Alternate phone number must be exactly 10 digits."})
+            phone_errors["alternate_phone_number"] = "Alternate phone number must be exactly 10 digits."
+        if phone_errors:
+            raise ValidationError(phone_errors)
 
         if self.status == CaseStatus.ACTIVE:
             duplicate_qs = Case.objects.filter(uhid=self.uhid, status=CaseStatus.ACTIVE)
@@ -962,6 +965,23 @@ def is_anc_case(case: Case) -> bool:
     return bool(case and case.category_id and case.category.name.upper() == "ANC")
 
 
+def workflow_key_for_category_name(name: str) -> str:
+    normalized_name = " ".join((name or "").replace("-", " ").split()).upper()
+    if normalized_name == "ANC":
+        return "anc"
+    if normalized_name == "SURGERY":
+        return "surgery"
+    if normalized_name in {"MEDICINE", "NON SURGICAL", "NONSURGICAL"}:
+        return "medicine"
+    return "generic"
+
+
+def workflow_key_for_case(case: Case) -> str:
+    if not case or not getattr(case, "category_id", None):
+        return "generic"
+    return workflow_key_for_category_name(case.category.name)
+
+
 def open_rch_reminder_queryset(case: Case):
     return case.tasks.filter(title=RCH_REMINDER_TASK_TITLE, status=TaskStatus.SCHEDULED)
 
@@ -996,12 +1016,12 @@ def cancel_open_rch_reminders(case: Case) -> int:
     return len(reminder_ids)
 
 
-def build_default_tasks(case: Case, actor):
-    category_name = case.category.name.upper()
+def plan_default_tasks(case: Case):
+    workflow_key = workflow_key_for_case(case)
     tasks = []
     today = timezone.localdate()
 
-    if category_name == "ANC":
+    if workflow_key == "anc":
         start_date = case.lmp or today
         anc_schedule = {
             2: [
@@ -1042,36 +1062,86 @@ def build_default_tasks(case: Case, actor):
                     task_type = TaskType.LAB
                 elif "scan" in title.lower() or "injection" in title.lower() or "nst" in title.lower():
                     task_type = TaskType.PROCEDURE
-                tasks.append((title, due, task_type, f"ANC month {month}"))
-    elif category_name == "SURGERY":
+                tasks.append(
+                    {
+                        "title": title,
+                        "due_date": due,
+                        "task_type": task_type,
+                        "frequency_label": f"ANC month {month}",
+                    }
+                )
+    elif workflow_key == "surgery":
         if case.surgical_pathway == SurgicalPathway.PLANNED_SURGERY:
             base_date = case.surgery_date or today
             tasks.extend(
                 [
-                    ("Lab test", base_date - timedelta(days=7), TaskType.LAB, "Pre-op"),
-                    ("Xray", base_date - timedelta(days=7), TaskType.PROCEDURE, "Pre-op"),
-                    ("ECG", base_date - timedelta(days=7), TaskType.PROCEDURE, "Pre-op"),
-                    ("Inform Anesthetist", base_date - timedelta(days=5), TaskType.CALL, "Pre-op"),
-                    ("Surgery Date", base_date, TaskType.PROCEDURE, "Planned surgery"),
+                    {
+                        "title": "Lab test",
+                        "due_date": base_date - timedelta(days=7),
+                        "task_type": TaskType.LAB,
+                        "frequency_label": "Pre-op",
+                    },
+                    {
+                        "title": "Xray",
+                        "due_date": base_date - timedelta(days=7),
+                        "task_type": TaskType.PROCEDURE,
+                        "frequency_label": "Pre-op",
+                    },
+                    {
+                        "title": "ECG",
+                        "due_date": base_date - timedelta(days=7),
+                        "task_type": TaskType.PROCEDURE,
+                        "frequency_label": "Pre-op",
+                    },
+                    {
+                        "title": "Inform Anesthetist",
+                        "due_date": base_date - timedelta(days=5),
+                        "task_type": TaskType.CALL,
+                        "frequency_label": "Pre-op",
+                    },
+                    {
+                        "title": "Surgery Date",
+                        "due_date": base_date,
+                        "task_type": TaskType.PROCEDURE,
+                        "frequency_label": "Planned surgery",
+                    },
                 ]
             )
         else:
             review = case.review_date or today + timedelta(days=30)
-            tasks.append(("Surveillance Review", review, TaskType.VISIT, case.get_review_frequency_display() or "Review"))
+            tasks.append(
+                {
+                    "title": "Surveillance Review",
+                    "due_date": review,
+                    "task_type": TaskType.VISIT,
+                    "frequency_label": case.get_review_frequency_display() or "Review",
+                }
+            )
     else:
         review = case.review_date or today + timedelta(days=30)
         action = case.category.predefined_actions[0] if case.category.predefined_actions else "Review by consultant"
-        tasks.append((action, review, TaskType.CUSTOM, case.get_review_frequency_display() or "Review"))
+        tasks.append(
+            {
+                "title": action,
+                "due_date": review,
+                "task_type": TaskType.CUSTOM,
+                "frequency_label": case.get_review_frequency_display() or "Review",
+            }
+        )
 
+    return tasks
+
+
+def build_default_tasks(case: Case, actor):
     created = []
-    for title, due_date, task_type, frequency_label in tasks:
+    for task_plan in plan_default_tasks(case):
         created.append(
             Task.objects.create(
                 case=case,
-                title=title,
-                due_date=due_date,
-                task_type=task_type,
-                frequency_label=frequency_label,
+                title=task_plan["title"],
+                due_date=task_plan["due_date"],
+                task_type=task_plan["task_type"],
+                frequency_label=task_plan["frequency_label"],
                 created_by=actor,
             )
         )

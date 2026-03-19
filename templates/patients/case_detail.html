@@ -860,10 +860,10 @@
               <div class="identity-detail-value">{{ case.usg_edd|date:'d M Y' }}</div>
             </div>
           {% endif %}
-          {% if case.gravida %}
+          {% if case.gravida != None or case.para != None or case.abortions != None or case.living != None %}
             <div class="identity-detail-item">
               <div class="identity-detail-label">Obstetric Summary</div>
-              <div class="identity-detail-value">G{{ case.gravida }} P{{ case.para|default:0 }} A{{ case.abortions|default:0 }} L{{ case.living|default:0 }}</div>
+              <div class="identity-detail-value">G{{ case.gravida|default:0 }} P{{ case.para|default:0 }} A{{ case.abortions|default:0 }} L{{ case.living|default:0 }}</div>
             </div>
           {% endif %}
           {% if case.anc_high_risk_reason_labels %}
@@ -876,7 +876,7 @@
               </div>
             </div>
           {% endif %}
-          {% if not case.diagnosis and not case.edd and not case.lmp and not case.usg_edd and not case.gravida and not case.anc_high_risk_reason_labels %}
+          {% if not case.diagnosis and not case.edd and not case.lmp and not case.usg_edd and case.gravida == None and case.para == None and case.abortions == None and case.living == None and not case.anc_high_risk_reason_labels %}
             <div class="identity-detail-item identity-detail-item--full">
               <div class="identity-detail-empty">Clinical details will appear here as the case record is updated.</div>
             </div>

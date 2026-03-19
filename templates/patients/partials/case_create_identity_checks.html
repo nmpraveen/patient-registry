@@ -1,0 +1,25 @@
+{% if case_create_identity_matches %}
+  <div class="case-create-warning-stack">
+    {% for match in case_create_identity_matches %}
+      <article class="alert alert-{{ match.kind }} case-create-warning-card mb-0">
+        <div class="d-flex flex-column gap-2">
+          <div>
+            <strong>{{ match.title }}</strong>
+            <div class="small mt-1">{{ match.caption }}</div>
+          </div>
+          <div class="small"><strong>Submitted value:</strong> {{ match.value }}</div>
+          <div class="case-create-match-list">
+            {% for case in match.cases %}
+              <a class="case-create-match-link" href="{% url 'patients:case_detail' case.pk %}">
+                <span class="case-create-match-link__name">{{ case.full_name|default:case.patient_name }}</span>
+                <span class="case-create-match-link__meta">{{ case.uhid }} &middot; {{ case.category.name }} &middot; {{ case.get_status_display }}</span>
+              </a>
+            {% endfor %}
+          </div>
+        </div>
+      </article>
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="case-create-identity-status">No exact UHID or 10-digit phone matches detected yet.</div>
+{% endif %}

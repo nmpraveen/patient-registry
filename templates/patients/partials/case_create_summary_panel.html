@@ -1,0 +1,71 @@
+<aside id="case-create-summary-panel" class="case-create-summary-panel"{% if oob_swap %} hx-swap-oob="{{ oob_swap }}"{% endif %}>
+  <section class="case-create-summary-card">
+    <div class="case-create-summary-card__top">
+      <p class="case-create-card__eyebrow">{{ case_create_state.workflow_copy.eyebrow }}</p>
+      <h2 class="case-create-summary-card__title">{{ case_create_state.workflow_copy.title }}</h2>
+      <p class="case-create-summary-card__copy case-create-help-text">{{ case_create_state.workflow_copy.body }}</p>
+    </div>
+
+    <div class="case-create-summary-stat">
+      <span class="case-create-summary-stat__label">Starter tasks</span>
+      <span class="case-create-summary-stat__value">{{ case_create_state.task_preview_total }}</span>
+    </div>
+
+    {% if case_create_state.missing_inputs %}
+      <div class="alert alert-warning case-create-summary-alert mb-0">
+        Add {{ case_create_state.missing_inputs|join:", " }} to unlock the starter-task preview.
+      </div>
+    {% elif not case_create_state.has_category %}
+      <div class="alert alert-info case-create-summary-alert mb-0">
+        Select a category to reveal the live workflow summary.
+      </div>
+    {% endif %}
+
+    {% if case_create_state.summary_facts %}
+      <dl class="case-create-summary-facts">
+        {% for fact in case_create_state.summary_facts %}
+          <div>
+            <dt>{{ fact.label }}</dt>
+            <dd>{{ fact.value }}</dd>
+          </div>
+        {% endfor %}
+      </dl>
+    {% endif %}
+
+    {% if case_create_state.task_preview %}
+      <div class="case-create-summary-list">
+        {% for task in case_create_state.task_preview %}
+          <div class="case-create-summary-task">
+            <div>
+              <strong>{{ task.title }}</strong>
+              <div class="small text-muted">{{ task.frequency_label }}</div>
+            </div>
+            <div class="text-end small">
+              <div>{{ task.due_date_display }}</div>
+              <div class="text-muted">{{ task.task_type_label }}</div>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+      {% if case_create_state.task_preview_remaining %}
+        <div class="case-create-summary-more">+ {{ case_create_state.task_preview_remaining }} more tasks will be created after save.</div>
+      {% endif %}
+    {% endif %}
+
+    {% if case_create_state.reminder_due_date %}
+      <div class="case-create-summary-note">
+        RCH bypass is active. A reminder call task will be scheduled for {{ case_create_state.reminder_due_date|date:"d M Y" }} if the case is saved without an RCH number.
+      </div>
+    {% endif %}
+
+    <div class="case-create-summary-actions">
+      <button class="btn btn-primary btn-lg" type="submit" form="case-create-form" data-case-submit-button>
+        <span class="case-create-submit-label">Save Case</span>
+        <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+      </button>
+      <a class="btn btn-outline-secondary" href="{% url 'patients:dashboard' %}">Cancel</a>
+    </div>
+
+    <p class="case-create-summary-footnote case-create-help-text mb-0">The preview updates from unsaved form values and stays advisory until the final server-side save.</p>
+  </section>
+</aside>

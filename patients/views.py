@@ -4,7 +4,7 @@ import secrets
 from urllib.parse import urlencode
 from base64 import urlsafe_b64encode
 from collections import OrderedDict
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from difflib import SequenceMatcher
 from pathlib import Path
 
@@ -79,11 +79,13 @@ from .models import (
     RCH_REMINDER_INTERVAL_DAYS,
     RCH_REMINDER_TASK_TITLE,
     RoleSetting,
+    SurgicalPathway,
     STAFF_PILOT_ROLE_NAME,
     STAFF_ROLE_NAME,
     StaffDeviceCredential,
     StaffDeviceCredentialStatus,
     Task,
+    TaskType,
     TaskStatus,
     ThemeSettings,
     UserAdminNote,
@@ -98,6 +100,8 @@ from .models import (
     frequency_to_days,
     generate_quick_entry_uhid,
     is_anc_case,
+    plan_default_tasks,
+    workflow_key_for_case,
 )
 from .theme import build_theme_category_colors, flatten_theme_tokens, get_default_category_theme, mix_colors, resolve_category_theme
 
@@ -2065,15 +2069,289 @@ class UniversalCaseSearchView(LoginRequiredMixin, CaseDataAccessMixin, View):
         return JsonResponse({"results": results})
 
 
-class CaseCreateView(LoginRequiredMixin, CreateView):
-    model = Case
-    form_class = CaseForm
-    template_name = "patients/case_form.html"
+CASE_CREATE_WORKFLOW_COPY = {
+    "empty": {
+        "eyebrow": "Start With A Pathway",
+        "title": "Select a category to shape the form.",
+        "body": "The workflow section and starter-task preview will adjust as soon as category and scheduling details are entered.",
+    },
+    "anc": {
+        "eyebrow": "ANC Flow",
+        "title": "ANC details",
+        "body": "LMP and at least one EDD unlock the prenatal schedule preview. Risk details and RCH follow-up stay in the same lane.",
+    },
+    "surgery": {
+        "eyebrow": "Surgery Flow",
+        "title": "Choose planned surgery or surveillance.",
+        "body": "The planner switches between pre-op tasks and a lighter surveillance review track based on pathway selection.",
+    },
+    "medicine": {
+        "eyebrow": "Medicine Flow",
+        "title": "Anchor follow-up around the next review date.",
+        "body": "Use review frequency and the next review date to frame the handoff and the first follow-up task.",
+    },
+    "generic": {
+        "eyebrow": "Workflow",
+        "title": "Capture the next clinical action clearly.",
+        "body": "The preview will reflect the category's first predefined action once the follow-up date is available.",
+    },
+}
 
+
+def _normalize_optional_text(value):
+    return " ".join(str(value or "").split()).strip()
+
+
+def _coerce_checkbox_value(value):
+    return value in {True, "true", "True", "1", "on", "yes"}
+
+
+def _parse_optional_date_value(value):
+    if isinstance(value, date):
+        return value
+    normalized = _normalize_optional_text(value)
+    if not normalized:
+        return None
+    try:
+        return _parse_date_input(normalized)
+    except ValueError:
+        return None
+
+
+def _bound_form_value(form, field_name):
+    cleaned_data = getattr(form, "cleaned_data", None) or {}
+    if field_name in cleaned_data:
+        return cleaned_data[field_name]
+    if form.is_bound:
+        return form.data.get(field_name)
+    return form.initial.get(field_name, form[field_name].value())
+
+
+def _resolve_preview_category(form):
+    category = _bound_form_value(form, "category")
+    if isinstance(category, DepartmentConfig):
+        return category
+    if category in ("", None):
+        return None
+    try:
+        return DepartmentConfig.objects.get(pk=category)
+    except (DepartmentConfig.DoesNotExist, TypeError, ValueError):
+        return None
+
+
+def _build_preview_case(form):
+    category = _resolve_preview_category(form)
+    preview_case = Case(category=category) if category else Case()
+    preview_case.category = category
+    if category:
+        preview_case.category_id = category.pk
+    preview_case.rch_number = _normalize_optional_text(_bound_form_value(form, "rch_number"))
+    preview_case.rch_bypass = bool(_bound_form_value(form, "rch_bypass")) if "rch_bypass" in (getattr(form, "cleaned_data", None) or {}) else _coerce_checkbox_value(_bound_form_value(form, "rch_bypass"))
+    preview_case.lmp = _parse_optional_date_value(_bound_form_value(form, "lmp"))
+    preview_case.edd = _parse_optional_date_value(_bound_form_value(form, "edd"))
+    preview_case.usg_edd = _parse_optional_date_value(_bound_form_value(form, "usg_edd"))
+    preview_case.review_date = _parse_optional_date_value(_bound_form_value(form, "review_date"))
+    preview_case.surgery_date = _parse_optional_date_value(_bound_form_value(form, "surgery_date"))
+    preview_case.surgical_pathway = _normalize_optional_text(_bound_form_value(form, "surgical_pathway"))
+    preview_case.review_frequency = _normalize_optional_text(_bound_form_value(form, "review_frequency"))
+    preview_case.high_risk = bool(_bound_form_value(form, "high_risk")) if "high_risk" in (getattr(form, "cleaned_data", None) or {}) else _coerce_checkbox_value(_bound_form_value(form, "high_risk"))
+    return preview_case
+
+
+def _serialize_task_preview(task_plan):
+    task_type = task_plan["task_type"]
+    task_type_label = TaskType(task_type).label if task_type in TaskType.values else task_type.title()
+    due_date = task_plan["due_date"]
+    return {
+        "title": task_plan["title"],
+        "due_date": due_date,
+        "due_date_display": due_date.strftime("%d %b %Y"),
+        "task_type": task_type,
+        "task_type_label": task_type_label,
+        "frequency_label": task_plan["frequency_label"],
+    }
+
+
+def _build_case_create_identity_matches(form):
+    matches = []
+    uhid_value = _normalize_optional_text(_bound_form_value(form, "uhid"))
+    if len(uhid_value) >= 3:
+        uhid_matches = list(
+            Case.objects.filter(uhid__iexact=uhid_value)
+            .select_related("category")
+            .only("id", "uhid", "first_name", "last_name", "patient_name", "status", "category__name")
+            .order_by("-updated_at")[:3]
+        )
+        if uhid_matches:
+            matches.append(
+                {
+                    "kind": "danger" if any(case.status == CaseStatus.ACTIVE for case in uhid_matches) else "warning",
+                    "title": "Existing case uses this UHID",
+                    "caption": "Review before saving to avoid duplicate active records.",
+                    "value": uhid_value,
+                    "cases": uhid_matches,
+                }
+            )
+
+    phone_values = OrderedDict()
+    for field_name, label in (("phone_number", "Phone number"), ("alternate_phone_number", "Alternate phone number")):
+        digits_only = "".join(ch for ch in _normalize_optional_text(_bound_form_value(form, field_name)) if ch.isdigit())
+        if len(digits_only) == 10:
+            phone_values.setdefault(digits_only, []).append(label)
+
+    if phone_values:
+        phone_match_map = OrderedDict((digits_only, []) for digits_only in phone_values.keys())
+        phone_matches = (
+            Case.objects.filter(Q(phone_number__in=phone_values.keys()) | Q(alternate_phone_number__in=phone_values.keys()))
+            .select_related("category")
+            .only(
+                "id",
+                "uhid",
+                "first_name",
+                "last_name",
+                "patient_name",
+                "phone_number",
+                "alternate_phone_number",
+                "status",
+                "category__name",
+            )
+            .order_by("-updated_at")
+        )
+        for case in phone_matches:
+            matched_numbers = []
+            if case.phone_number in phone_match_map:
+                matched_numbers.append(case.phone_number)
+            if case.alternate_phone_number in phone_match_map and case.alternate_phone_number != case.phone_number:
+                matched_numbers.append(case.alternate_phone_number)
+            for digits_only in matched_numbers:
+                if len(phone_match_map[digits_only]) < 4:
+                    phone_match_map[digits_only].append(case)
+            if all(len(grouped_cases) >= 4 for grouped_cases in phone_match_map.values()):
+                break
+
+        for digits_only, labels in phone_values.items():
+            matching_cases = phone_match_map[digits_only]
+            if matching_cases:
+                matches.append(
+                    {
+                        "kind": "warning",
+                        "title": f"{' / '.join(labels)} matches an existing case",
+                        "caption": "Phone matches do not block saving, but they are worth checking before creating a new record.",
+                        "value": digits_only,
+                        "cases": matching_cases,
+                    }
+                )
+    return matches
+
+
+def _build_case_create_state(form):
+    if form.is_bound:
+        form.is_valid()
+
+    preview_case = _build_preview_case(form)
+    workflow_key = workflow_key_for_case(preview_case)
+    has_category = bool(getattr(preview_case, "category_id", None))
+    preview_category = preview_case.category if has_category else None
+    copy_key = workflow_key if has_category else "empty"
+    workflow_copy = CASE_CREATE_WORKFLOW_COPY[copy_key]
+    pathway_label = preview_case.get_surgical_pathway_display() if preview_case.surgical_pathway else ""
+
+    missing_inputs = []
+    if has_category:
+        if workflow_key == "anc":
+            if not preview_case.lmp:
+                missing_inputs.append("LMP")
+            if not (preview_case.edd or preview_case.usg_edd):
+                missing_inputs.append("EDD or USG EDD")
+        elif workflow_key == "surgery":
+            if not preview_case.surgical_pathway:
+                missing_inputs.append("surgical pathway")
+            elif preview_case.surgical_pathway == SurgicalPathway.PLANNED_SURGERY and not preview_case.surgery_date:
+                missing_inputs.append("surgery date")
+            elif preview_case.surgical_pathway == SurgicalPathway.SURVEILLANCE and not preview_case.review_date:
+                missing_inputs.append("review date")
+        elif workflow_key == "medicine":
+            if not preview_case.review_date:
+                missing_inputs.append("review date")
+
+    planned_tasks = []
+    if has_category and not missing_inputs:
+        planned_tasks = [_serialize_task_preview(task_plan) for task_plan in plan_default_tasks(preview_case)]
+
+    reminder_due_date = None
+    if workflow_key == "anc" and has_category and preview_case.rch_bypass and not preview_case.rch_number:
+        reminder_due_date = timezone.localdate() + timedelta(days=RCH_REMINDER_INTERVAL_DAYS)
+
+    summary_facts = []
+    if workflow_key == "anc":
+        if preview_case.trimester:
+            summary_facts.append({"label": "Trimester", "value": preview_case.trimester})
+        if preview_case.effective_edd:
+            summary_facts.append({"label": "Effective EDD", "value": preview_case.effective_edd.strftime("%d %b %Y")})
+        if reminder_due_date:
+            summary_facts.append({"label": "RCH reminder", "value": reminder_due_date.strftime("%d %b %Y")})
+    elif workflow_key == "surgery":
+        if pathway_label:
+            summary_facts.append({"label": "Pathway", "value": pathway_label})
+        if preview_case.surgery_date:
+            summary_facts.append({"label": "Surgery date", "value": preview_case.surgery_date.strftime("%d %b %Y")})
+        if preview_case.review_date:
+            summary_facts.append({"label": "Review date", "value": preview_case.review_date.strftime("%d %b %Y")})
+    else:
+        if preview_case.review_date:
+            summary_facts.append({"label": "Review date", "value": preview_case.review_date.strftime("%d %b %Y")})
+        if preview_case.review_frequency:
+            summary_facts.append({"label": "Review rhythm", "value": preview_case.get_review_frequency_display()})
+
+    return {
+        "workflow_key": workflow_key,
+        "workflow_copy": workflow_copy,
+        "workflow_title": preview_category.name if preview_category else "No category selected",
+        "pathway_label": pathway_label,
+        "task_preview": planned_tasks[:6],
+        "task_preview_total": len(planned_tasks),
+        "task_preview_remaining": max(len(planned_tasks) - 6, 0),
+        "reminder_due_date": reminder_due_date,
+        "missing_inputs": missing_inputs,
+        "summary_facts": summary_facts,
+        "show_anc_fields": workflow_key == "anc",
+        "show_surgery_fields": workflow_key == "surgery",
+        "show_medicine_fields": workflow_key in {"medicine", "generic"} and has_category,
+        "show_anc_reasons": workflow_key == "anc" and preview_case.high_risk,
+        "preview_ready": has_category and not missing_inputs,
+        "has_category": has_category,
+    }
+
+
+class CaseCreateAccessMixin:
     def dispatch(self, request, *args, **kwargs):
         if not has_capability(request.user, "case_create"):
             return HttpResponseForbidden("You do not have permission to create cases.")
         return super().dispatch(request, *args, **kwargs)
+
+
+class CaseCreateContextMixin:
+    create_template_name = "patients/case_create.html"
+    preview_template_name = "patients/partials/case_create_preview_response.html"
+    identity_check_template_name = "patients/partials/case_create_identity_checks.html"
+
+    def _build_case_create_context(self, form, *, show_inline_errors=False):
+        return {
+            "case_create_state": _build_case_create_state(form),
+            "case_create_identity_matches": _build_case_create_identity_matches(form),
+            "show_inline_errors": show_inline_errors,
+        }
+
+
+class CaseCreateView(LoginRequiredMixin, CaseCreateAccessMixin, CaseCreateContextMixin, CreateView):
+    model = Case
+    form_class = CaseForm
+    template_name = CaseCreateContextMixin.create_template_name
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context.update(self._build_case_create_context(context["form"], show_inline_errors=self.request.method == "POST"))
+        return context
 
     def form_valid(self, form):
         form.instance.created_by = self.request.user
@@ -2101,6 +2379,26 @@ class CaseCreateView(LoginRequiredMixin, CreateView):
 
     def get_success_url(self):
         return reverse("patients:case_detail", kwargs={"pk": self.object.pk})
+
+
+class CaseCreatePreviewView(LoginRequiredMixin, CaseCreateAccessMixin, CaseCreateContextMixin, View):
+    def post(self, request):
+        form = CaseForm(data=request.POST)
+        context = {
+            "form": form,
+            **self._build_case_create_context(form, show_inline_errors=False),
+        }
+        return render(request, self.preview_template_name, context)
+
+
+class CaseCreateIdentityCheckView(LoginRequiredMixin, CaseCreateAccessMixin, CaseCreateContextMixin, View):
+    def post(self, request):
+        form = CaseForm(data=request.POST)
+        context = {
+            "form": form,
+            **self._build_case_create_context(form, show_inline_errors=False),
+        }
+        return render(request, self.identity_check_template_name, context)
 
 
 class QuickCaseCreateView(LoginRequiredMixin, CreateView):

@@ -37,6 +37,7 @@ from django.urls import reverse, reverse_lazy
 from django.utils.crypto import constant_time_compare
 from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
+from django.utils.text import Truncator
 from django.views import View
 from django.views.generic import CreateView, DetailView, ListView, UpdateView
 
@@ -64,6 +65,7 @@ from .forms import (
 )
 from .models import (
     ActivityEventType,
+    AncHighRiskReason,
     CallCommunicationStatus,
     CallLog,
     Case,
@@ -73,6 +75,7 @@ from .models import (
     DeviceApprovalPolicy,
     DEVICE_APPROVAL_MAX_APPROVED,
     Gender,
+    NonCommunicableDisease,
     PatientDataBackupSchedule,
     PatientDataBackupTrigger,
     QUICK_ENTRY_DETAILS_TASK_TITLE,
@@ -2151,6 +2154,34 @@ def _parse_optional_date_value(value):
         return None
 
 
+def _parse_optional_int_value(value):
+    if value in ("", None):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _bound_form_list(form, field_name):
+    cleaned_data = getattr(form, "cleaned_data", None) or {}
+    if field_name in cleaned_data:
+        value = cleaned_data[field_name] or []
+    elif form.is_bound:
+        if hasattr(form.data, "getlist"):
+            value = form.data.getlist(field_name)
+        else:
+            value = form.data.get(field_name, [])
+    else:
+        value = form.initial.get(field_name, form[field_name].value())
+
+    if value in ("", None):
+        return []
+    if isinstance(value, (list, tuple, set)):
+        return [item for item in value if item not in ("", None)]
+    return [value]
+
+
 def _bound_form_value(form, field_name):
     cleaned_data = getattr(form, "cleaned_data", None) or {}
     if field_name in cleaned_data:
@@ -2178,6 +2209,19 @@ def _build_preview_case(form):
     preview_case.category = category
     if category:
         preview_case.category_id = category.pk
+    preview_case.uhid = _normalize_optional_text(_bound_form_value(form, "uhid"))
+    preview_case.first_name = _normalize_optional_text(_bound_form_value(form, "first_name"))
+    preview_case.last_name = _normalize_optional_text(_bound_form_value(form, "last_name"))
+    preview_case.gender = _normalize_optional_text(_bound_form_value(form, "gender"))
+    preview_case.date_of_birth = _parse_optional_date_value(_bound_form_value(form, "date_of_birth"))
+    preview_case.age = _parse_optional_int_value(_bound_form_value(form, "age"))
+    preview_case.place = _normalize_optional_text(_bound_form_value(form, "place"))
+    preview_case.phone_number = _normalize_optional_text(_bound_form_value(form, "phone_number"))
+    preview_case.alternate_phone_number = _normalize_optional_text(_bound_form_value(form, "alternate_phone_number"))
+    preview_case.status = _normalize_optional_text(_bound_form_value(form, "status"))
+    preview_case.diagnosis = _normalize_optional_text(_bound_form_value(form, "diagnosis"))
+    preview_case.referred_by = _normalize_optional_text(_bound_form_value(form, "referred_by"))
+    preview_case.notes = _normalize_optional_text(_bound_form_value(form, "notes"))
     preview_case.rch_number = _normalize_optional_text(_bound_form_value(form, "rch_number"))
     preview_case.rch_bypass = bool(_bound_form_value(form, "rch_bypass")) if "rch_bypass" in (getattr(form, "cleaned_data", None) or {}) else _coerce_checkbox_value(_bound_form_value(form, "rch_bypass"))
     preview_case.lmp = _parse_optional_date_value(_bound_form_value(form, "lmp"))
@@ -2186,8 +2230,17 @@ def _build_preview_case(form):
     preview_case.review_date = _parse_optional_date_value(_bound_form_value(form, "review_date"))
     preview_case.surgery_date = _parse_optional_date_value(_bound_form_value(form, "surgery_date"))
     preview_case.surgical_pathway = _normalize_optional_text(_bound_form_value(form, "surgical_pathway"))
+    preview_case.surgery_done = bool(_bound_form_value(form, "surgery_done")) if "surgery_done" in (getattr(form, "cleaned_data", None) or {}) else _coerce_checkbox_value(_bound_form_value(form, "surgery_done"))
     preview_case.review_frequency = _normalize_optional_text(_bound_form_value(form, "review_frequency"))
     preview_case.high_risk = bool(_bound_form_value(form, "high_risk")) if "high_risk" in (getattr(form, "cleaned_data", None) or {}) else _coerce_checkbox_value(_bound_form_value(form, "high_risk"))
+    preview_case.gravida = _parse_optional_int_value(_bound_form_value(form, "gravida"))
+    preview_case.para = _parse_optional_int_value(_bound_form_value(form, "para"))
+    preview_case.abortions = _parse_optional_int_value(_bound_form_value(form, "abortions"))
+    preview_case.living = _parse_optional_int_value(_bound_form_value(form, "living"))
+    preview_case.ncd_flags = _bound_form_list(form, "ncd_flags")
+    preview_case.anc_high_risk_reasons = _bound_form_list(form, "anc_high_risk_reasons")
+    if workflow_key_for_case(preview_case) == "anc":
+        preview_case.gender = Gender.FEMALE
     return preview_case
 
 
@@ -2205,13 +2258,15 @@ def _serialize_task_preview(task_plan):
     }
 
 
-def _build_case_create_identity_matches(form):
+def _build_case_identity_matches(form, *, exclude_case_id=None):
     matches = []
     uhid_value = _normalize_optional_text(_bound_form_value(form, "uhid"))
     if len(uhid_value) >= 3:
+        uhid_queryset = Case.objects.filter(uhid__iexact=uhid_value)
+        if exclude_case_id is not None:
+            uhid_queryset = uhid_queryset.exclude(pk=exclude_case_id)
         uhid_matches = list(
-            Case.objects.filter(uhid__iexact=uhid_value)
-            .select_related("category")
+            uhid_queryset.select_related("category")
             .only("id", "uhid", "first_name", "last_name", "patient_name", "status", "category__name")
             .order_by("-updated_at")[:3]
         )
@@ -2234,9 +2289,11 @@ def _build_case_create_identity_matches(form):
 
     if phone_values:
         phone_match_map = OrderedDict((digits_only, []) for digits_only in phone_values.keys())
+        phone_queryset = Case.objects.filter(Q(phone_number__in=phone_values.keys()) | Q(alternate_phone_number__in=phone_values.keys()))
+        if exclude_case_id is not None:
+            phone_queryset = phone_queryset.exclude(pk=exclude_case_id)
         phone_matches = (
-            Case.objects.filter(Q(phone_number__in=phone_values.keys()) | Q(alternate_phone_number__in=phone_values.keys()))
-            .select_related("category")
+            phone_queryset.select_related("category")
             .only(
                 "id",
                 "uhid",
@@ -2277,7 +2334,11 @@ def _build_case_create_identity_matches(form):
     return matches
 
 
-def _build_case_create_state(form):
+def _build_case_create_identity_matches(form):
+    return _build_case_identity_matches(form)
+
+
+def _build_case_form_state(form, *, include_task_preview):
     if form.is_bound:
         form.is_valid()
 
@@ -2308,7 +2369,7 @@ def _build_case_create_state(form):
                 missing_inputs.append("review date")
 
     planned_tasks = []
-    if has_category and not missing_inputs:
+    if include_task_preview and has_category and not missing_inputs:
         planned_tasks = [_serialize_task_preview(task_plan) for task_plan in plan_default_tasks(preview_case)]
 
     reminder_due_date = None
@@ -2356,6 +2417,344 @@ def _build_case_create_state(form):
     }
 
 
+def _build_case_create_state(form):
+    return _build_case_form_state(form, include_task_preview=True)
+
+
+def _build_case_edit_state(form):
+    return _build_case_form_state(form, include_task_preview=False)
+
+
+def _format_case_edit_text(value, *, empty_label="Not set"):
+    text = str(value or "").strip()
+    return text or empty_label
+
+
+def _format_case_edit_notes(value):
+    text = str(value or "").strip()
+    if not text:
+        return "Empty"
+    compact = " ".join(text.split())
+    return Truncator(compact).chars(80)
+
+
+def _format_case_edit_date(value):
+    return value.strftime("%d %b %Y") if value else "Not set"
+
+
+def _format_case_edit_bool(value, *, true_label="Yes", false_label="No"):
+    return true_label if value else false_label
+
+
+def _format_case_edit_choice_list(values, choice_map, *, empty_label="None"):
+    labels = []
+    seen = set()
+    for value in values or []:
+        if value in seen:
+            continue
+        seen.add(value)
+        labels.append(choice_map.get(value, str(value).replace("_", " ").title()))
+    return ", ".join(labels) if labels else empty_label
+
+
+def _format_case_edit_gpla(values):
+    if all(value is None for value in values):
+        return "Not set"
+    rendered = [str(value) if value is not None else "-" for value in values]
+    return f"G{rendered[0]} P{rendered[1]} A{rendered[2]} L{rendered[3]}"
+
+
+def _append_case_edit_change(changes, *, label, before, after, formatter, compare_before=None, compare_after=None):
+    normalized_before = compare_before if compare_before is not None else before
+    normalized_after = compare_after if compare_after is not None else after
+    if normalized_before == normalized_after:
+        return
+    changes.append(
+        {
+            "label": label,
+            "before": formatter(before),
+            "after": formatter(after),
+        }
+    )
+
+
+def _append_case_edit_list_change(changes, *, label, before, after, choice_map, empty_label="None"):
+    before_list = list(before or [])
+    after_list = list(after or [])
+    before_set = set(before_list)
+    after_set = set(after_list)
+    if before_set == after_set:
+        return
+
+    changes.append(
+        {
+            "label": label,
+            "before": _format_case_edit_choice_list(before_list, choice_map, empty_label=empty_label),
+            "after": _format_case_edit_choice_list(after_list, choice_map, empty_label=empty_label),
+            "added": _format_case_edit_choice_list(
+                [value for value in after_list if value not in before_set],
+                choice_map,
+                empty_label="",
+            ),
+            "removed": _format_case_edit_choice_list(
+                [value for value in before_list if value not in after_set],
+                choice_map,
+                empty_label="",
+            ),
+        }
+    )
+
+
+def _build_case_edit_change_items(form, case, preview_case):
+    changes = []
+    status_choices = dict(CaseStatus.choices)
+    gender_choices = dict(Gender.choices)
+    ncd_choice_map = dict(NonCommunicableDisease.choices)
+    anc_choice_map = dict(AncHighRiskReason.choices)
+
+    _append_case_edit_change(
+        changes,
+        label="UHID",
+        before=case.uhid,
+        after=preview_case.uhid,
+        formatter=_format_case_edit_text,
+    )
+    _append_case_edit_change(
+        changes,
+        label="First name",
+        before=case.first_name,
+        after=preview_case.first_name,
+        formatter=_format_case_edit_text,
+    )
+    _append_case_edit_change(
+        changes,
+        label="Last name",
+        before=case.last_name,
+        after=preview_case.last_name,
+        formatter=_format_case_edit_text,
+    )
+    _append_case_edit_change(
+        changes,
+        label="Status",
+        before=case.status,
+        after=preview_case.status or case.status,
+        formatter=lambda value: status_choices.get(value, _format_case_edit_text(value)),
+    )
+    _append_case_edit_change(
+        changes,
+        label="Category",
+        before=case.category.name if case.category_id else "",
+        after=preview_case.category.name if getattr(preview_case, "category_id", None) else "",
+        formatter=_format_case_edit_text,
+    )
+    _append_case_edit_change(
+        changes,
+        label="Gender",
+        before=case.gender,
+        after=preview_case.gender,
+        formatter=lambda value: gender_choices.get(value, _format_case_edit_text(value)),
+    )
+    _append_case_edit_change(
+        changes,
+        label="Date of birth",
+        before=case.date_of_birth,
+        after=preview_case.date_of_birth,
+        formatter=_format_case_edit_date,
+    )
+    _append_case_edit_change(
+        changes,
+        label="Age",
+        before=case.age,
+        after=preview_case.age,
+        formatter=lambda value: str(value) if value is not None else "Not set",
+    )
+    _append_case_edit_change(
+        changes,
+        label="Place",
+        before=case.place,
+        after=preview_case.place,
+        formatter=_format_case_edit_text,
+    )
+    _append_case_edit_change(
+        changes,
+        label="Phone number",
+        before=case.phone_number,
+        after=preview_case.phone_number,
+        formatter=_format_case_edit_text,
+    )
+    _append_case_edit_change(
+        changes,
+        label="Alternate phone",
+        before=case.alternate_phone_number,
+        after=preview_case.alternate_phone_number,
+        formatter=_format_case_edit_text,
+        compare_before=(case.alternate_phone_number or "").strip(),
+        compare_after=(preview_case.alternate_phone_number or "").strip(),
+    )
+    _append_case_edit_change(
+        changes,
+        label="Diagnosis",
+        before=case.diagnosis,
+        after=preview_case.diagnosis,
+        formatter=_format_case_edit_text,
+    )
+    _append_case_edit_change(
+        changes,
+        label="Referred by",
+        before=case.referred_by,
+        after=preview_case.referred_by,
+        formatter=_format_case_edit_text,
+        compare_before=(case.referred_by or "").strip(),
+        compare_after=(preview_case.referred_by or "").strip(),
+    )
+    _append_case_edit_change(
+        changes,
+        label="Notes",
+        before=case.notes,
+        after=preview_case.notes,
+        formatter=_format_case_edit_notes,
+        compare_before=(case.notes or "").strip(),
+        compare_after=(preview_case.notes or "").strip(),
+    )
+    _append_case_edit_change(
+        changes,
+        label="High risk",
+        before=case.high_risk,
+        after=preview_case.high_risk,
+        formatter=lambda value: _format_case_edit_bool(value, true_label="Enabled", false_label="Off"),
+    )
+    _append_case_edit_change(
+        changes,
+        label="RCH number",
+        before=case.rch_number,
+        after=preview_case.rch_number,
+        formatter=_format_case_edit_text,
+        compare_before=(case.rch_number or "").strip(),
+        compare_after=(preview_case.rch_number or "").strip(),
+    )
+    _append_case_edit_change(
+        changes,
+        label="RCH bypass",
+        before=case.rch_bypass,
+        after=preview_case.rch_bypass,
+        formatter=lambda value: _format_case_edit_bool(value, true_label="Enabled", false_label="Disabled"),
+    )
+    _append_case_edit_change(
+        changes,
+        label="LMP",
+        before=case.lmp,
+        after=preview_case.lmp,
+        formatter=_format_case_edit_date,
+    )
+    _append_case_edit_change(
+        changes,
+        label="EDD",
+        before=case.edd,
+        after=preview_case.edd,
+        formatter=_format_case_edit_date,
+    )
+    _append_case_edit_change(
+        changes,
+        label="USG EDD",
+        before=case.usg_edd,
+        after=preview_case.usg_edd,
+        formatter=_format_case_edit_date,
+    )
+    _append_case_edit_change(
+        changes,
+        label="Surgical pathway",
+        before=case.surgical_pathway,
+        after=preview_case.surgical_pathway,
+        formatter=lambda value: Case(surgical_pathway=value).get_surgical_pathway_display() if value else "Not set",
+    )
+    _append_case_edit_change(
+        changes,
+        label="Surgery done",
+        before=case.surgery_done,
+        after=preview_case.surgery_done,
+        formatter=lambda value: _format_case_edit_bool(value, true_label="Yes", false_label="No"),
+    )
+    _append_case_edit_change(
+        changes,
+        label="Surgery date",
+        before=case.surgery_date,
+        after=preview_case.surgery_date,
+        formatter=_format_case_edit_date,
+    )
+    _append_case_edit_change(
+        changes,
+        label="Review rhythm",
+        before=case.review_frequency,
+        after=preview_case.review_frequency,
+        formatter=lambda value: Case(review_frequency=value).get_review_frequency_display() if value else "Not set",
+    )
+    _append_case_edit_change(
+        changes,
+        label="Review date",
+        before=case.review_date,
+        after=preview_case.review_date,
+        formatter=_format_case_edit_date,
+    )
+    _append_case_edit_change(
+        changes,
+        label="GPAL",
+        before=(case.gravida, case.para, case.abortions, case.living),
+        after=(preview_case.gravida, preview_case.para, preview_case.abortions, preview_case.living),
+        formatter=_format_case_edit_gpla,
+    )
+    _append_case_edit_list_change(
+        changes,
+        label="NCD flags",
+        before=case.ncd_flags,
+        after=preview_case.ncd_flags,
+        choice_map=ncd_choice_map,
+    )
+    _append_case_edit_list_change(
+        changes,
+        label="ANC risk reasons",
+        before=case.anc_high_risk_reasons,
+        after=preview_case.anc_high_risk_reasons,
+        choice_map=anc_choice_map,
+    )
+    return changes
+
+
+def _build_case_edit_summary_state(form, case, case_form_state):
+    preview_case = _build_preview_case(form)
+    status_value = preview_case.status or case.status
+    status_label = dict(CaseStatus.choices).get(status_value, status_value.replace("_", " ").title() if status_value else "Not set")
+    category = _resolve_preview_category(form) or case.category
+    change_items = _build_case_edit_change_items(form, case, preview_case)
+
+    summary_facts = [
+        {"label": "UHID", "value": preview_case.uhid or case.uhid or "-"},
+        {"label": "Status", "value": status_label},
+        {"label": "Category", "value": category.name if category else "Not selected"},
+    ]
+
+    sex_age_label = _case_sex_age_label(preview_case)
+    if sex_age_label != "-":
+        summary_facts.append({"label": "Sex / Age", "value": sex_age_label})
+    if preview_case.place:
+        summary_facts.append({"label": "Place", "value": preview_case.place})
+    if preview_case.phone_number:
+        summary_facts.append({"label": "Phone", "value": preview_case.phone_number})
+    summary_facts.extend(case_form_state["summary_facts"])
+
+    return {
+        "title": preview_case.full_name or case.full_name or "Edit Case",
+        "copy": "Draft updates appear here while you edit. The snapshot stays current, and changed fields are called out below before you save.",
+        "status_label": status_label,
+        "category_name": category.name if category else "Not selected",
+        "is_high_risk": bool(preview_case.high_risk),
+        "facts": summary_facts,
+        "changed_fields": change_items,
+        "changed_fields_count": len(change_items),
+        "total_task_count": case.tasks.count(),
+        "open_task_count": case.tasks.exclude(status__in=[TaskStatus.COMPLETED, TaskStatus.CANCELLED]).count(),
+    }
+
+
 class CaseCreateAccessMixin:
     def dispatch(self, request, *args, **kwargs):
         if not has_capability(request.user, "case_create"):
@@ -2372,6 +2771,33 @@ class CaseCreateContextMixin:
         return {
             "case_create_state": _build_case_create_state(form),
             "case_create_identity_matches": _build_case_create_identity_matches(form),
+            "show_inline_errors": show_inline_errors,
+        }
+
+
+class CaseUpdateAccessMixin:
+    def dispatch(self, request, *args, **kwargs):
+        if not has_capability(request.user, "case_edit"):
+            return HttpResponseForbidden("You do not have permission to edit cases.")
+        return super().dispatch(request, *args, **kwargs)
+
+
+class CaseUpdateContextMixin:
+    template_name = "patients/case_edit.html"
+    preview_template_name = "patients/partials/case_edit_preview_response.html"
+    identity_check_template_name = "patients/partials/case_create_identity_checks.html"
+
+    def _build_case_update_context(self, form, case, *, show_inline_errors=False):
+        original_case = case
+        if form.is_bound and case.pk:
+            # ModelForm validation mutates the bound instance, so capture a pristine copy
+            # before building preview state used for the change summary.
+            original_case = Case.objects.select_related("category").get(pk=case.pk)
+        case_form_state = _build_case_edit_state(form)
+        return {
+            "case_create_state": case_form_state,
+            "case_create_identity_matches": _build_case_identity_matches(form, exclude_case_id=case.pk),
+            "case_edit_summary_state": _build_case_edit_summary_state(form, original_case, case_form_state),
             "show_inline_errors": show_inline_errors,
         }
 
@@ -2557,15 +2983,15 @@ class CaseVitalsDetailView(LoginRequiredMixin, DetailView):
         return super().dispatch(request, *args, **kwargs)
 
 
-class CaseUpdateView(LoginRequiredMixin, UpdateView):
+class CaseUpdateView(LoginRequiredMixin, CaseUpdateAccessMixin, CaseUpdateContextMixin, UpdateView):
     model = Case
     form_class = CaseForm
-    template_name = "patients/case_form.html"
+    template_name = CaseUpdateContextMixin.template_name
 
-    def dispatch(self, request, *args, **kwargs):
-        if not has_capability(request.user, "case_edit"):
-            return HttpResponseForbidden("You do not have permission to edit cases.")
-        return super().dispatch(request, *args, **kwargs)
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context.update(self._build_case_update_context(context["form"], self.object, show_inline_errors=self.request.method == "POST"))
+        return context
 
     def form_valid(self, form):
         case = self.get_object()
@@ -2629,6 +3055,30 @@ class CaseUpdateView(LoginRequiredMixin, UpdateView):
 
     def get_success_url(self):
         return reverse("patients:case_detail", kwargs={"pk": self.object.pk})
+
+
+class CaseUpdatePreviewView(LoginRequiredMixin, CaseUpdateAccessMixin, CaseUpdateContextMixin, View):
+    def post(self, request, pk):
+        case = get_object_or_404(Case, pk=pk)
+        form = CaseForm(data=request.POST, instance=case)
+        context = {
+            "case": case,
+            "form": form,
+            **self._build_case_update_context(form, case, show_inline_errors=False),
+        }
+        return render(request, self.preview_template_name, context)
+
+
+class CaseUpdateIdentityCheckView(LoginRequiredMixin, CaseUpdateAccessMixin, CaseUpdateContextMixin, View):
+    def post(self, request, pk):
+        case = get_object_or_404(Case, pk=pk)
+        form = CaseForm(data=request.POST, instance=case)
+        context = {
+            "case": case,
+            "form": form,
+            **self._build_case_update_context(form, case, show_inline_errors=False),
+        }
+        return render(request, self.identity_check_template_name, context)
 
 
 class TaskCreateView(LoginRequiredMixin, View):

@@ -38,6 +38,7 @@ from .models import (
     DeviceApprovalPolicy,
     DEVICE_APPROVAL_MAX_APPROVED,
     Gender,
+    NonCommunicableDisease,
     PatientDataBackupSchedule,
     PatientDataBackupStatus,
     PatientDataBackupTrigger,
@@ -4498,6 +4499,234 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(case.last_name, "Mr")
         self.assertEqual(case.place, "New Delhi")
         self.assertEqual(case.patient_name, "Last Name Mr")
+
+    def test_case_edit_page_uses_new_case_shell_with_status_and_summary_rail(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-EDIT-SHELL",
+            first_name="Asha",
+            last_name="Devi",
+            place="Pune",
+            phone_number="9876500880",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=7),
+            created_by=self.user,
+        )
+
+        response = self.client.get(reverse("patients:case_edit", kwargs={"pk": case.pk}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'id="case-edit-form"')
+        self.assertContains(response, 'id="case-edit-preview-sync"')
+        self.assertContains(response, 'id="case-edit-identity-sync"')
+        self.assertContains(response, 'id="case-edit-summary-panel"')
+        self.assertContains(response, "Edit Summary")
+        self.assertContains(response, "data-case-edit-submit-button")
+        self.assertContains(response, "case-create-choice-grid")
+        self.assertContains(response, 'type="radio" name="category"')
+        self.assertContains(response, 'name="status"')
+
+    def test_case_edit_preview_requires_case_edit_capability(self):
+        self.login_as_role("Nurse", username="nurse_edit_preview")
+        case = Case.objects.create(
+            uhid="UH-EDIT-PREVIEW-AUTH",
+            first_name="Protected",
+            last_name="Case",
+            phone_number="9876500881",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=5),
+            created_by=self.user,
+        )
+
+        response = self.client.post(reverse("patients:case_edit_preview", kwargs={"pk": case.pk}), {"category": self.anc.id})
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_case_edit_preview_returns_oob_fragment_without_starter_task_language(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-EDIT-PREVIEW",
+            first_name="Edited",
+            last_name="ANC",
+            phone_number="9876500882",
+            category=self.anc,
+            status=CaseStatus.ACTIVE,
+            lmp=timezone.localdate() - timedelta(days=56),
+            edd=timezone.localdate() + timedelta(days=210),
+            rch_bypass=True,
+            created_by=self.user,
+        )
+        Task.objects.create(
+            case=case,
+            title="Routine prenatal check up",
+            due_date=timezone.localdate() + timedelta(days=2),
+            created_by=self.user,
+        )
+
+        response = self.client.post(
+            reverse("patients:case_edit_preview", kwargs={"pk": case.pk}),
+            {
+                "uhid": case.uhid,
+                "first_name": case.first_name,
+                "last_name": case.last_name,
+                "phone_number": case.phone_number,
+                "category": self.anc.id,
+                "status": CaseStatus.ACTIVE,
+                "age": "26",
+                "lmp": case.lmp.isoformat(),
+                "edd": case.edd.isoformat(),
+                "rch_bypass": "on",
+            },
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'hx-swap-oob="outerHTML"')
+        self.assertContains(response, "Edit Summary")
+        self.assertContains(response, "Open tasks")
+        self.assertContains(response, "Editing a case does not recreate starter tasks.")
+        self.assertNotContains(response, "Starter tasks")
+
+    def test_case_edit_preview_summary_shows_empty_state_when_nothing_changed(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-EDIT-NO-CHANGES",
+            first_name="Calm",
+            last_name="Draft",
+            phone_number="9876500894",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            age=32,
+            place="Nagpur",
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=10),
+            created_by=self.user,
+        )
+
+        response = self.client.post(
+            reverse("patients:case_edit_preview", kwargs={"pk": case.pk}),
+            {
+                "uhid": case.uhid,
+                "first_name": case.first_name,
+                "last_name": case.last_name,
+                "phone_number": case.phone_number,
+                "category": self.surgery.id,
+                "status": case.status,
+                "age": str(case.age),
+                "place": case.place,
+                "surgical_pathway": case.surgical_pathway,
+                "review_date": case.review_date.isoformat(),
+            },
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "No unsaved changes yet.")
+
+    def test_case_edit_preview_summary_lists_changed_fields_and_risk_details(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-EDIT-DIFFS",
+            first_name="Draft",
+            last_name="Review",
+            phone_number="9876500884",
+            category=self.anc,
+            status=CaseStatus.ACTIVE,
+            age=27,
+            high_risk=True,
+            lmp=timezone.localdate() - timedelta(days=56),
+            edd=timezone.localdate() + timedelta(days=210),
+            gravida=2,
+            para=1,
+            abortions=0,
+            living=1,
+            ncd_flags=[NonCommunicableDisease.T2DM],
+            anc_high_risk_reasons=[AncHighRiskReason.ANEMIA],
+            notes="Initial summary note",
+            created_by=self.user,
+        )
+
+        response = self.client.post(
+            reverse("patients:case_edit_preview", kwargs={"pk": case.pk}),
+            {
+                "uhid": case.uhid,
+                "first_name": case.first_name,
+                "last_name": case.last_name,
+                "phone_number": case.phone_number,
+                "category": self.anc.id,
+                "status": CaseStatus.ACTIVE,
+                "age": "28",
+                "high_risk": "on",
+                "lmp": case.lmp.isoformat(),
+                "edd": case.edd.isoformat(),
+                "gravida": "4",
+                "para": "2",
+                "abortions": "1",
+                "living": "2",
+                "ncd_flags": [NonCommunicableDisease.T2DM, NonCommunicableDisease.SHTN],
+                "anc_high_risk_reasons": [AncHighRiskReason.PREVIOUS_LSCS],
+                "notes": "Updated note for summary panel",
+            },
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Changed Fields")
+        self.assertContains(response, 'class="case-edit-change-after"')
+        self.assertContains(response, "GPAL")
+        self.assertContains(response, "G2 P1 A0 L1")
+        self.assertContains(response, "G4 P2 A1 L2")
+        self.assertContains(response, "NCD flags")
+        self.assertContains(response, "Added")
+        self.assertContains(response, "SHTN")
+        self.assertContains(response, "Removed")
+        self.assertContains(response, "Anemia")
+        self.assertContains(response, "Previous LSCS")
+        self.assertContains(response, "Updated note for summary panel")
+
+    def test_case_edit_identity_check_excludes_current_case_and_shows_other_matches(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-EDIT-IDENTITY",
+            first_name="Primary",
+            last_name="Record",
+            phone_number="9876500883",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=8),
+            created_by=self.user,
+        )
+        other_case = Case.objects.create(
+            uhid="UH-EDIT-IDENTITY-OTHER",
+            first_name="Sibling",
+            last_name="Record",
+            phone_number="9876500883",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=9),
+            created_by=self.user,
+        )
+
+        response = self.client.post(
+            reverse("patients:case_edit_identity_check", kwargs={"pk": case.pk}),
+            {
+                "uhid": case.uhid,
+                "phone_number": case.phone_number,
+            },
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, "Existing case uses this UHID")
+        self.assertContains(response, "Phone number matches an existing case")
+        self.assertContains(response, reverse("patients:case_detail", kwargs={"pk": other_case.pk}))
+        self.assertNotContains(response, reverse("patients:case_detail", kwargs={"pk": case.pk}))
 
     def test_completing_rch_reminder_schedules_next_reminder_when_rch_missing(self):
         self.client.force_login(self.user)

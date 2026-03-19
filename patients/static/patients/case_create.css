@@ -441,6 +441,20 @@
   gap: 0.75rem;
 }
 
+.autocomplete-panel {
+  position: absolute;
+  top: calc(100% + 0.25rem);
+  left: 0;
+  right: 0;
+  z-index: 1050;
+  max-height: 13rem;
+  overflow-y: auto;
+}
+
+.autocomplete-panel .list-group-item {
+  cursor: pointer;
+}
+
 .case-create-warning-card {
   border-radius: 1rem;
 }
@@ -553,6 +567,120 @@
   text-align: right;
 }
 
+.case-edit-change-log {
+  display: grid;
+  gap: 0.85rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid var(--theme-shell-surface-border);
+}
+
+.case-edit-change-log__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.case-edit-change-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2rem;
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  background: var(--theme-alerts-danger-bg);
+  color: var(--theme-alerts-danger-text);
+  font-size: 0.88rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.case-edit-change-list {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.case-edit-change-card {
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.9rem 0.95rem;
+  border: 1px solid var(--theme-alerts-danger-border);
+  border-left-width: 4px;
+  border-radius: 1rem;
+  background: var(--theme-alerts-danger-bg);
+  background: color-mix(in srgb, var(--theme-alerts-danger-bg) 48%, #fff);
+}
+
+.case-edit-change-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.case-edit-change-label {
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.case-edit-change-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 0.7rem;
+  align-items: start;
+}
+
+.case-edit-change-before,
+.case-edit-change-after {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.case-edit-change-before {
+  color: var(--theme-shell-muted-text);
+}
+
+.case-edit-change-arrow {
+  color: var(--theme-alerts-danger-text);
+  font-weight: 700;
+}
+
+.case-edit-change-after {
+  color: var(--theme-alerts-danger-text);
+  font-weight: 700;
+}
+
+.case-edit-change-detail-list {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.case-edit-change-detail {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.65rem;
+  align-items: start;
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.case-edit-change-detail__label {
+  color: var(--theme-shell-muted-text);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.case-edit-change-empty {
+  padding: 0.95rem 1rem;
+  border: 1px dashed var(--theme-shell-surface-border);
+  border-radius: 1rem;
+  color: var(--theme-shell-muted-text);
+  font-weight: 600;
+  text-align: center;
+}
+
 .case-create-summary-list {
   display: grid;
   gap: 0.7rem;
@@ -642,6 +770,19 @@
   .case-create-hero .card-body {
     padding-left: 1rem;
     padding-right: 1rem;
+  }
+
+  .case-edit-change-log__header,
+  .case-edit-change-row {
+    grid-template-columns: 1fr;
+  }
+
+  .case-edit-change-log__header {
+    display: grid;
+  }
+
+  .case-edit-change-arrow {
+    display: none;
   }
 
   .case-create-gpla-shell {

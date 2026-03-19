@@ -1,0 +1,190 @@
+{% extends 'base.html' %}
+{% load static theme_tags %}
+{% block title %}Edit Case | MEDTRACK{% endblock %}
+{% block extra_head %}
+  <link rel="stylesheet" href="{% static 'patients/case_create.css' %}" />
+{% endblock %}
+{% block content %}
+  <article id="case-edit-shell" class="case-create-shell" data-workflow-key="{{ case_create_state.workflow_key }}">
+    <div id="case-edit-shell-state" data-workflow-key="{{ case_create_state.workflow_key }}" hidden></div>
+
+    <section class="case-create-toolbar">
+      <h1 class="case-create-toolbar__title mb-0">Edit Case</h1>
+      <button
+        type="button"
+        class="btn btn-outline-secondary case-create-help-toggle"
+        data-case-edit-help-toggle
+        aria-pressed="false"
+      >
+        Show Help
+      </button>
+    </section>
+
+    <section class="case-create-hero case-create-help-block card border-0">
+      <div class="card-body">
+        <div class="case-create-hero__copy">
+          <p class="case-create-card__eyebrow mb-2">Case Update</p>
+          <h1 class="case-create-hero__title">Refresh the case details, review the draft summary, then save changes once.</h1>
+          <p class="case-create-hero__text mb-0">
+            The workflow sections adapt to the selected category, duplicate identity cues appear live, and the summary rail reflects draft edits without recreating starter tasks.
+          </p>
+        </div>
+        <div class="case-create-hero__steps" aria-label="Workflow sections">
+          <span>Case type</span>
+          <span>Identity</span>
+          <span>Workflow</span>
+          <span>Risk</span>
+          <span>Referral</span>
+        </div>
+      </div>
+    </section>
+
+    {% if form.non_field_errors %}
+      <div class="alert alert-danger">
+        {% for error in form.non_field_errors %}
+          <div>{{ error }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    <div
+      id="case-edit-preview-sync"
+      hx-post="{% url 'patients:case_edit_preview' case.pk %}"
+      hx-trigger="case-edit-preview-refresh"
+      hx-include="#case-edit-form"
+      hx-swap="none"
+      hx-sync="this:replace"
+      hidden
+    ></div>
+    <div
+      id="case-edit-identity-sync"
+      hx-post="{% url 'patients:case_edit_identity_check' case.pk %}"
+      hx-trigger="case-edit-identity-refresh"
+      hx-include="#case-edit-form"
+      hx-target="#case-edit-identity-checks"
+      hx-swap="innerHTML"
+      hx-sync="this:replace"
+      hidden
+    ></div>
+
+    <div class="case-create-layout">
+      <form method="post" id="case-edit-form" class="case-create-main" data-case-autocomplete-url="{% url 'patients:case_autocomplete' %}">
+        {% csrf_token %}
+
+        <section class="case-create-card">
+          <div class="case-create-card__header">
+            <div>
+              <p class="case-create-card__eyebrow">Step 1</p>
+              <h2 class="h5 mb-1">Case Type</h2>
+              <p class="case-create-card__subtitle case-create-help-text mb-0">Update the clinical lane and case status together before adjusting pathway-specific details.</p>
+            </div>
+          </div>
+          <div class="case-create-card__body">
+            <div class="row g-3 align-items-start">
+              <div class="col-12 col-xl-8 case-create-grid{% if show_inline_errors and form.category.errors %} is-invalid{% endif %}">
+                <label class="form-label d-block mb-2">
+                  Category
+                  <span class="text-danger">*</span>
+                </label>
+                <div class="case-create-choice-grid">
+                  {% for choice in form.category %}
+                    {% with category=choice.data.value.instance category_name=choice.data.value.instance.name|upper %}
+                      <label
+                        class="case-create-choice"
+                        style="{% category_theme_style category theme_category_colors %}"
+                        data-workflow-key="{% if category_name == 'ANC' %}anc{% elif category_name == 'SURGERY' %}surgery{% elif category_name == 'MEDICINE' or category_name == 'NON SURGICAL' or category_name == 'NON-SURGICAL' or category_name == 'NONSURGICAL' %}medicine{% else %}generic{% endif %}"
+                      >
+                        {{ choice.tag }}
+                        <span>{{ choice.choice_label }}</span>
+                      </label>
+                    {% endwith %}
+                  {% endfor %}
+                </div>
+                {% if show_inline_errors and form.category.errors %}
+                  {% for error in form.category.errors %}
+                    <div class="invalid-feedback d-block">{{ error }}</div>
+                  {% endfor %}
+                {% endif %}
+              </div>
+              {% include 'patients/partials/case_create_field.html' with field=form.status col_class='col-12 col-xl-4' %}
+            </div>
+          </div>
+        </section>
+
+        <section class="case-create-card">
+          <div class="case-create-card__header">
+            <div>
+              <p class="case-create-card__eyebrow">Step 2</p>
+              <h2 class="h5 mb-1">Identity & Contact</h2>
+              <p class="case-create-card__subtitle case-create-help-text mb-0">Adjust identifiers carefully. Exact UHID and 10-digit phone matches will surface below and ignore this case itself.</p>
+            </div>
+          </div>
+          <div class="case-create-card__body">
+            <div class="row g-3">
+              {% include 'patients/partials/case_create_field.html' with field=form.uhid col_class='col-12 col-lg-4' label='UHID' %}
+              {% include 'patients/partials/case_create_field.html' with field=form.first_name col_class='col-12 col-lg-4' %}
+              {% include 'patients/partials/case_create_field.html' with field=form.last_name col_class='col-12 col-lg-4' %}
+              {% include 'patients/partials/case_create_field.html' with field=form.gender col_class='col-12 col-md-4 case-create-gender-field' %}
+              {% include 'patients/partials/case_create_field.html' with field=form.date_of_birth col_class='col-12 col-md-4' help_text='When DOB is entered, age is auto-calculated.' help_class='case-create-help-text' %}
+              {% include 'patients/partials/case_create_field.html' with field=form.age col_class='col-12 col-md-4' help_text='Enter age manually only if DOB is unknown.' %}
+              {% include 'patients/partials/case_create_field.html' with field=form.place col_class='col-12 col-md-4' %}
+              {% include 'patients/partials/case_create_field.html' with field=form.phone_number col_class='col-12 col-md-4' %}
+              {% include 'patients/partials/case_create_field.html' with field=form.alternate_phone_number col_class='col-12 col-md-4' %}
+            </div>
+            <div id="case-edit-identity-checks" class="mt-3">
+              {% include 'patients/partials/case_create_identity_checks.html' %}
+            </div>
+          </div>
+        </section>
+
+        <section class="case-create-card">
+          <div class="case-create-card__header">
+            <div>
+              <p class="case-create-card__eyebrow">Step 3</p>
+              <h2 class="h5 mb-1">Clinical Snapshot</h2>
+              <p class="case-create-card__subtitle case-create-help-text mb-0">Keep diagnosis visible while the workflow section below switches to the relevant pathway-specific controls.</p>
+            </div>
+          </div>
+          <div class="case-create-card__body">
+            <div class="row g-3 mb-3">
+              {% include 'patients/partials/case_create_field.html' with field=form.diagnosis col_class='col-12 col-lg-8' %}
+            </div>
+            {% include 'patients/partials/case_create_workflow_panel.html' %}
+          </div>
+        </section>
+
+        {% include 'patients/partials/case_create_risk_panel.html' %}
+
+        <section class="case-create-card">
+          <div class="case-create-card__header">
+            <div>
+              <p class="case-create-card__eyebrow">Step 5</p>
+              <h2 class="h5 mb-1">Referral & Notes</h2>
+              <p class="case-create-card__subtitle case-create-help-text mb-0">Finish with referral context and notes that continue to travel with the case detail page.</p>
+            </div>
+          </div>
+          <div class="case-create-card__body">
+            <div class="row g-3">
+              {% include 'patients/partials/case_create_field.html' with field=form.referred_by col_class='col-12 col-lg-5' %}
+              {% include 'patients/partials/case_create_field.html' with field=form.notes col_class='col-12 col-lg-7' %}
+            </div>
+          </div>
+        </section>
+      </form>
+
+      {% include 'patients/partials/case_edit_summary_panel.html' %}
+    </div>
+
+    <div class="case-create-mobile-bar d-lg-none">
+      <button class="btn btn-primary" type="submit" form="case-edit-form" data-case-edit-submit-button>
+        <span class="case-edit-submit-label">Save Changes</span>
+        <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+      </button>
+      <a class="btn btn-outline-secondary" href="{% url 'patients:case_detail' case.pk %}">Cancel</a>
+    </div>
+  </article>
+{% endblock %}
+{% block extra_scripts %}
+  <script src="https://cdn.jsdelivr.net/npm/htmx.org@1.9.12/dist/htmx.min.js" crossorigin="anonymous"></script>
+  <script src="{% static 'patients/case_edit.js' %}" defer></script>
+{% endblock %}

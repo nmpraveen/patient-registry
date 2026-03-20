@@ -386,6 +386,13 @@ class MedtrackViewTests(TestCase):
         self.client.force_login(user)
         return user
 
+    def ajax_post(self, url, data=None):
+        return self.client.post(
+            url,
+            data or {},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+
     def enable_device_access_for(self, *users):
         policy = DeviceApprovalPolicy.get_solo()
         policy.enabled = True
@@ -1436,6 +1443,90 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertFalse(case.tasks.filter(title="Future ANC Create").exists())
 
+    def test_task_create_supports_ajax_json_and_redirect_fallback(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-TASK-AJAX",
+            first_name="Task",
+            last_name="Ajax",
+            phone_number="9998887766",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=8),
+            created_by=self.user,
+        )
+        due_date = timezone.localdate() + timedelta(days=2)
+
+        ajax_response = self.ajax_post(
+            reverse("patients:task_create", kwargs={"pk": case.pk}),
+            {
+                "title": "Ajax created task",
+                "due_date": due_date.isoformat(),
+                "status": TaskStatus.SCHEDULED,
+                "assigned_user": "",
+                "task_type": TaskType.CUSTOM,
+                "frequency_label": "",
+                "notes": "Created via XHR",
+            },
+        )
+        redirect_response = self.client.post(
+            reverse("patients:task_create", kwargs={"pk": case.pk}),
+            {
+                "title": "Redirect created task",
+                "due_date": (due_date + timedelta(days=1)).isoformat(),
+                "status": TaskStatus.SCHEDULED,
+                "assigned_user": "",
+                "task_type": TaskType.CUSTOM,
+                "frequency_label": "",
+                "notes": "Created via redirect",
+            },
+        )
+
+        self.assertEqual(ajax_response.status_code, 200)
+        self.assertEqual(redirect_response.status_code, 302)
+
+        ajax_data = ajax_response.json()
+        self.assertEqual(ajax_data["message"], "Task added.")
+        self.assertEqual(ajax_data["task"]["title"], "Ajax created task")
+        self.assertEqual(ajax_data["task"]["due_date"], due_date.isoformat())
+        self.assertEqual(ajax_data["task"]["status"], TaskStatus.SCHEDULED)
+        self.assertTrue(case.tasks.filter(title="Ajax created task").exists())
+        self.assertTrue(case.tasks.filter(title="Redirect created task").exists())
+
+    def test_task_create_ajax_validation_errors_return_json(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-TASK-AJAX-INVALID",
+            first_name="Task",
+            last_name="Invalid",
+            phone_number="9998887765",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=8),
+            created_by=self.user,
+        )
+
+        response = self.ajax_post(
+            reverse("patients:task_create", kwargs={"pk": case.pk}),
+            {
+                "title": "",
+                "due_date": "",
+                "status": TaskStatus.SCHEDULED,
+                "assigned_user": "",
+                "task_type": TaskType.CUSTOM,
+                "frequency_label": "",
+                "notes": "",
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        payload = response.json()
+        self.assertEqual(payload["message"], "Could not add task. Please check the inputs.")
+        self.assertIn("title", payload["errors"])
+        self.assertIn("due_date", payload["errors"])
+
     def test_case_detail_allows_note_only_role(self):
         ensure_default_role_settings()
         caller_group, _ = Group.objects.get_or_create(name="Caller")
@@ -1797,6 +1888,12 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Action Center")
         self.assertContains(response, "Clinical Timeline")
+        self.assertContains(response, 'data-testid="case-detail-shell"')
+        self.assertContains(response, 'data-testid="case-detail-hero"')
+        self.assertContains(response, 'data-testid="case-detail-workspace"')
+        self.assertContains(response, 'data-testid="case-detail-sidebar"')
+        self.assertContains(response, 'data-testid="case-detail-timeline"')
+        self.assertContains(response, 'data-testid="case-detail-mobile-quick-actions"')
         self.assertContains(response, "Nurse follow-up note")
         self.assertContains(response, "Confirm visit timing [Task: Timeline task]")
         self.assertNotContains(response, "Task created for timeline")
@@ -2040,6 +2137,126 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(reschedule_response.json()["task"]["due_date"], new_due_date.isoformat())
         self.assertEqual(note_response.json()["task"]["notes"], "Updated from modal")
         self.assertEqual(complete_response.json()["task"]["status"], TaskStatus.COMPLETED)
+
+    def test_add_case_note_supports_ajax_json_and_redirect_fallback(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-NOTE-AJAX",
+            first_name="Note",
+            last_name="Ajax",
+            phone_number="9876505777",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=8),
+            created_by=self.user,
+        )
+
+        ajax_response = self.ajax_post(
+            reverse("patients:case_note_create", kwargs={"pk": case.pk}),
+            {"note": "Created via XHR"},
+        )
+        redirect_response = self.client.post(
+            reverse("patients:case_note_create", kwargs={"pk": case.pk}),
+            {"note": "Created via redirect"},
+        )
+
+        self.assertEqual(ajax_response.status_code, 200)
+        self.assertEqual(redirect_response.status_code, 302)
+        self.assertEqual(ajax_response.json()["message"], "Note added.")
+        self.assertTrue(case.activity_logs.filter(note="Created via XHR").exists())
+        self.assertTrue(case.activity_logs.filter(note="Created via redirect").exists())
+
+    def test_add_case_note_ajax_validation_errors_return_json(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-NOTE-AJAX-INVALID",
+            first_name="Note",
+            last_name="Invalid",
+            phone_number="9876505778",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=8),
+            created_by=self.user,
+        )
+
+        response = self.ajax_post(
+            reverse("patients:case_note_create", kwargs={"pk": case.pk}),
+            {"note": ""},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        payload = response.json()
+        self.assertEqual(payload["message"], "Could not save note.")
+        self.assertIn("note", payload["errors"])
+
+    def test_add_call_log_supports_ajax_json_and_redirect_fallback(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-CALL-AJAX",
+            first_name="Call",
+            last_name="Ajax",
+            phone_number="9876505888",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=8),
+            created_by=self.user,
+        )
+        task = Task.objects.create(
+            case=case,
+            title="Call task",
+            due_date=timezone.localdate(),
+            status=TaskStatus.SCHEDULED,
+            created_by=self.user,
+        )
+
+        ajax_response = self.ajax_post(
+            reverse("patients:case_call_create", kwargs={"pk": case.pk}),
+            {"task": task.pk, "outcome": CallOutcome.NO_ANSWER, "notes": "Created via XHR"},
+        )
+        redirect_response = self.client.post(
+            reverse("patients:case_call_create", kwargs={"pk": case.pk}),
+            {"task": task.pk, "outcome": CallOutcome.CALL_BACK_LATER, "notes": "Created via redirect"},
+        )
+
+        self.assertEqual(ajax_response.status_code, 200)
+        self.assertEqual(redirect_response.status_code, 302)
+        self.assertEqual(ajax_response.json()["message"], "Call outcome logged.")
+        self.assertTrue(case.call_logs.filter(notes="Created via XHR").exists())
+        self.assertTrue(case.call_logs.filter(notes="Created via redirect").exists())
+
+    def test_add_call_log_ajax_validation_errors_return_json(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-CALL-AJAX-INVALID",
+            first_name="Call",
+            last_name="Invalid",
+            phone_number="9876505889",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=8),
+            created_by=self.user,
+        )
+        Task.objects.create(
+            case=case,
+            title="Call task invalid",
+            due_date=timezone.localdate(),
+            status=TaskStatus.SCHEDULED,
+            created_by=self.user,
+        )
+
+        response = self.ajax_post(
+            reverse("patients:case_call_create", kwargs={"pk": case.pk}),
+            {"task": "", "outcome": CallOutcome.NO_ANSWER, "notes": "Missing task"},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        payload = response.json()
+        self.assertEqual(payload["message"], "Could not log call outcome.")
+        self.assertIn("task", payload["errors"])
 
     def test_case_detail_marks_task_date_inputs_for_crayons_datepicker(self):
         self.client.force_login(self.user)

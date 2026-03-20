@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026.03.20.00.08
+- Rebuilt `/patients/cases/<id>/` into a modular case workspace with dedicated case-detail assets, a compact patient hero, category-aware surface tinting, stronger task focus, richer clinical sidebar cards, and purpose-built desktop/mobile layouts.
+- Added inline case-page action flows for quick task creation, note capture, call logging, task completion, rescheduling, and timeline/log jumps while preserving the existing Django routes, permission checks, and non-JavaScript fallbacks.
+- Expanded case-detail summary data and regression coverage so the redesigned page keeps long-name handling, vitals empty states, progress counts, risk/category metadata, timeline behavior, and AJAX response paths under test.
+- Updated the local Test NNH startup workflow so same-LAN devices can open the demo server by LAN IP, and passed `CSRF_TRUSTED_ORIGINS` through Docker Compose so the mobile-login path works with that local workflow.
+
 ## 2026.03.19.17.05
 - Expanded admin `Case Management` so each case now offers both `Archive` and `Delete Permanently` actions instead of delete-only handling.
 - Added a real archive state on cases, hid archived cases from the dashboard, recent cases, search/autocomplete, and the main case list, while keeping archived records available on the admin case-management page.

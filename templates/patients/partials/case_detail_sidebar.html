@@ -1,0 +1,149 @@
+{% load theme_tags %}
+<div class="case-detail-sidebar-stack" data-testid="case-detail-sidebar">
+  <aside class="identity-vitals-panel case-detail-panel">
+    <div class="identity-vitals-card-header">
+      <p class="identity-vitals-title">Vitals</p>
+      <p class="identity-vitals-timestamp">
+        {% if latest_vitals_recorded_at %}
+          {{ latest_vitals_recorded_at|date:'d-m-y H:i' }}
+        {% else %}
+          No record yet
+        {% endif %}
+      </p>
+    </div>
+
+    {% if vitals_summary_metrics %}
+      <div class="identity-vitals-list">
+        {% for metric in vitals_summary_metrics %}
+          <div class="identity-vital-item">
+            <div class="identity-vital-meta">
+              <span class="identity-vital-label">{{ metric.label }}</span>
+              <span class="identity-vital-value status-{{ metric.status }}">{{ metric.value_display }}</span>
+            </div>
+            <div class="identity-vital-meter" aria-hidden="true">
+              <span class="identity-vital-meter-fill status-{{ metric.status }}{% if metric.value_display != 'N/A' %} has-value{% endif %}" style="--identity-vital-percent: {{ metric.percent }};"></span>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="identity-vitals-empty">No vitals have been recorded for this patient yet.</div>
+    {% endif %}
+
+    <div class="identity-vitals-footer">
+      <a class="identity-vitals-link" href="{{ vitals_detail_url }}">
+        <svg class="case-detail-icon" aria-hidden="true"><use href="#case-detail-icon-vitals"></use></svg>
+        <span>Open Vitals Trends</span>
+      </a>
+      {% if not has_vitals and can_vitals_edit %}
+        <a class="btn btn-sm btn-outline-secondary" href="{% url 'patients:vitals_create' case.id %}">Add Vitals</a>
+      {% endif %}
+    </div>
+  </aside>
+
+  <aside class="case-detail-rail-card case-detail-panel">
+    <div class="case-detail-rail-card__header">
+      <p class="case-detail-label mb-0">Upcoming queue</p>
+      <span class="case-detail-chip case-detail-chip--neutral">{{ prominent_tasks|length }} shown</span>
+    </div>
+    {% if prominent_tasks %}
+      <div class="case-detail-queue">
+        {% for task in prominent_tasks|slice:":3" %}
+          <article class="case-detail-queue__item{% if task.status == 'COMPLETED' %} is-completed{% elif task.due_date < today and task.status != 'CANCELLED' %} is-overdue{% endif %}">
+            <div class="case-detail-queue__meta">
+              <span class="case-detail-queue__title">{{ task.title }}</span>
+              <span class="task-status-pill status-{{ task.status|slugify }}">{{ task.get_status_display }}</span>
+            </div>
+            <div class="case-detail-queue__subline">
+              Due {{ task.due_date|date:'d-m-y' }}
+              {% if task.latest_call_summary %}
+                <span>Last call {{ task.latest_call_summary.outcome }}</span>
+              {% endif %}
+            </div>
+          </article>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="case-detail-muted mb-0">No open tasks are ready right now.</p>
+    {% endif %}
+  </aside>
+
+  <aside class="case-detail-rail-card case-detail-panel">
+    <div class="case-detail-rail-card__header">
+      <p class="case-detail-label mb-0">Clinical Details</p>
+      <span class="case-detail-chip case-detail-chip--neutral">Overview</span>
+    </div>
+
+    <div class="case-detail-summary-chips">
+      <span class="case-detail-chip theme-category-chip {% if case.category.name|lower == 'anc' %}category-anc{% elif case.category.name|lower == 'surgery' %}category-surgery{% elif case.category.name|lower == 'medicine' or case.category.name|lower == 'non surgical' or case.category.name|lower == 'non-surgical' or case.category.name|lower == 'nonsurgical' %}category-non-surgical{% else %}category-other{% endif %}" style="{% category_theme_style case.category theme_category_colors %}">{{ case.category.name }}</span>
+      {% if case.high_risk %}
+        <span class="case-detail-chip app-pill high-risk">High-risk</span>
+      {% endif %}
+      <span class="case-detail-chip case-detail-chip--neutral">{{ case.get_status_display }}</span>
+    </div>
+
+    <div class="case-detail-summary-list">
+      {% if case.diagnosis %}
+        <div class="case-detail-summary-list__wide">
+          <div class="case-detail-facts__label">Diagnosis</div>
+          <div class="case-detail-facts__value">{{ case.diagnosis }}</div>
+        </div>
+      {% endif %}
+
+      {% if case.gravida != None or case.para != None or case.abortions != None or case.living != None %}
+        <div class="case-detail-summary-list__wide">
+          <div class="case-detail-facts__label">Obstetric Summary</div>
+          <div class="case-detail-facts__value">G{{ case.gravida|default:0 }} P{{ case.para|default:0 }} A{{ case.abortions|default:0 }} L{{ case.living|default:0 }}</div>
+        </div>
+      {% endif %}
+
+      {% if case.review_date %}
+        <div>
+          <div class="case-detail-facts__label">Review date</div>
+          <div class="case-detail-facts__value">{{ case.review_date|date:'d M Y' }}</div>
+        </div>
+      {% endif %}
+
+      {% if case.surgery_date %}
+        <div>
+          <div class="case-detail-facts__label">Surgery date</div>
+          <div class="case-detail-facts__value">{{ case.surgery_date|date:'d M Y' }}</div>
+        </div>
+      {% endif %}
+
+      {% if case.referred_by %}
+        <div class="case-detail-summary-list__wide">
+          <div class="case-detail-facts__label">Referred by</div>
+          <div class="case-detail-summary-referral">
+            <svg class="case-detail-icon" aria-hidden="true"><use href="#identity-icon-referral"></use></svg>
+            <span class="case-detail-facts__value">{{ case.referred_by }}</span>
+          </div>
+        </div>
+      {% endif %}
+
+      {% if case.notes %}
+        <div class="case-detail-summary-list__wide">
+          <div class="case-detail-facts__label">Notes</div>
+          <div class="case-detail-facts__value case-detail-facts__value--soft">{{ case.notes|truncatechars:160 }}</div>
+        </div>
+      {% endif %}
+
+      {% if case.anc_high_risk_reason_labels %}
+        <div class="case-detail-summary-list__wide">
+          <p class="case-detail-facts__label case-detail-facts__label--stacked mb-2">High-risk Reasons</p>
+          <div class="case-detail-reason-list" aria-label="High-risk reasons">
+            {% for reason in case.anc_high_risk_reason_labels %}
+              <span class="case-detail-reason-pill">{{ reason }}</span>
+            {% endfor %}
+          </div>
+        </div>
+      {% endif %}
+
+      {% if not case.diagnosis and case.gravida == None and case.para == None and case.abortions == None and case.living == None and not case.anc_high_risk_reason_labels and not case.referred_by and not case.notes %}
+        <div class="case-detail-summary-list__wide">
+          <p class="case-detail-empty mb-0">Clinical details will appear here as the case record is updated.</p>
+        </div>
+      {% endif %}
+    </div>
+  </aside>
+</div>

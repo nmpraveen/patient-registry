@@ -1,0 +1,259 @@
+<section class="case-detail-panel case-detail-tasks">
+  <div class="case-detail-section-head">
+    <div>
+      <p class="case-detail-label mb-1">Task workspace</p>
+      <h2 class="h5 mb-1">Actionable Tasks</h2>
+      <p class="case-detail-muted mb-0">Overdue tasks rise to the top, then the next open tasks up to five.</p>
+    </div>
+    <div class="case-detail-task-summary">
+      <span class="case-detail-chip">{{ prominent_tasks|length }} focus tasks</span>
+      <span class="case-detail-chip">{{ tasks|length }} total tasks</span>
+    </div>
+  </div>
+
+  <div class="case-detail-table-wrap d-none d-lg-block">
+    <table class="table align-middle case-task-table">
+      <thead>
+        <tr>
+          <th>Task</th>
+          <th>Due</th>
+          <th>Status</th>
+          <th>Completed On</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for task in prominent_tasks %}
+          <tr {% if task.status == 'COMPLETED' %}class="task-row-completed"{% elif task.due_date < today %}class="task-row-overdue"{% elif case.category.name|upper == 'ANC' and task.due_date > today %}class="table-secondary"{% endif %}>
+            <td>
+              <div class="case-task-title">{{ task.title }}</div>
+              {% if task.latest_call_summary %}
+                <div class="case-task-call">Call: {{ task.latest_call_summary.outcome }} at {{ task.latest_call_summary.logged_at|date:'d-m-y H:i' }}</div>
+              {% endif %}
+            </td>
+            <td>{{ task.due_date|date:'d-m-y' }}</td>
+            <td><span class="task-status-pill status-{{ task.status|slugify }}">{{ task.get_status_display }}</span></td>
+            <td>{% if task.status == 'COMPLETED' %}{{ task.completed_at|default:task.due_date|date:'d-m-y' }}{% else %}-{% endif %}</td>
+            <td class="case-task-actions">
+              {% if can_task_edit %}
+                {% if case.category.name|upper == 'ANC' and task.due_date > today %}
+                  <span class="case-detail-muted">Locked until due date</span>
+                {% else %}
+                  <form method="post" action="{% url 'patients:task_quick_complete' task.id %}" class="d-inline" data-case-ajax-form="true">
+                    {% csrf_token %}
+                    <button class="btn btn-sm btn-primary" type="submit">Complete</button>
+                  </form>
+                {% endif %}
+                <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#reschedule-{{ task.id }}" aria-expanded="false" aria-controls="reschedule-{{ task.id }}">Reschedule</button>
+                <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#note-{{ task.id }}" aria-expanded="false" aria-controls="note-{{ task.id }}">Note</button>
+              {% else %}
+                <span class="case-detail-muted">Read only</span>
+              {% endif %}
+            </td>
+          </tr>
+          <tr class="task-inline-row">
+            <td colspan="5">
+              <div class="collapse mb-2" id="reschedule-{{ task.id }}">
+                <form method="post" action="{% url 'patients:task_quick_reschedule' task.id %}" class="row g-2" data-case-ajax-form="true">
+                  {% csrf_token %}
+                  <div class="col-12 col-md-5">
+                    <input
+                      id="task-reschedule-date-{{ task.id }}"
+                      class="form-control form-control-sm"
+                      type="date"
+                      name="due_date"
+                      required
+                      data-crayons-datepicker="true"
+                      data-crayons-datepicker-format="dd/MM/yyyy"
+                      data-crayons-datepicker-locale="en-IN"
+                      data-crayons-datepicker-placeholder="dd/mm/yyyy"
+                      data-crayons-datepicker-show-footer="false"
+                    />
+                  </div>
+                  <div class="col-12 col-md-3">
+                    <button class="btn btn-sm btn-outline-primary w-100" type="submit">Save date</button>
+                  </div>
+                </form>
+              </div>
+              <div class="collapse" id="note-{{ task.id }}">
+                <form method="post" action="{% url 'patients:task_quick_note' task.id %}" class="row g-2" data-case-ajax-form="true">
+                  {% csrf_token %}
+                  <div class="col-12 col-md-8">
+                    <textarea class="form-control form-control-sm" name="note" rows="2" required>{{ task.notes }}</textarea>
+                  </div>
+                  <div class="col-12 col-md-3">
+                    <button class="btn btn-sm btn-outline-secondary w-100" type="submit">Save note</button>
+                  </div>
+                </form>
+              </div>
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="5">No open tasks available.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="task-mobile-list actionable-task-mobile-list d-lg-none" data-testid="actionable-task-mobile-list">
+    {% for task in prominent_tasks %}
+      <article class="task-mobile-card {% if task.status == 'COMPLETED' %}task-mobile-completed{% elif task.due_date < today and task.status != 'CANCELLED' %}task-mobile-overdue{% endif %}">
+        <div class="task-mobile-title">{{ task.title }}</div>
+        <div class="task-mobile-meta">
+          <span class="label">Due</span><span>{{ task.due_date|date:'d-m-y' }}</span>
+          <span class="label">Status</span><span><span class="task-status-pill status-{{ task.status|slugify }}">{{ task.get_status_display }}</span></span>
+          <span class="label">Completed On</span><span>{% if task.status == 'COMPLETED' %}{{ task.completed_at|default:task.due_date|date:'d-m-y' }}{% else %}-{% endif %}</span>
+          {% if task.latest_call_summary %}
+            <span class="label">Latest Call</span><span>{{ task.latest_call_summary.outcome }} ({{ task.latest_call_summary.logged_at|date:'d-m-y H:i' }})</span>
+          {% endif %}
+        </div>
+        <div class="task-mobile-actions">
+          {% if can_task_edit %}
+            {% if case.category.name|upper == 'ANC' and task.due_date > today %}
+              <span class="case-detail-muted">Locked until due date</span>
+            {% else %}
+              <form method="post" action="{% url 'patients:task_quick_complete' task.id %}" data-case-ajax-form="true">
+                {% csrf_token %}
+                <button class="btn btn-sm btn-primary w-100" type="submit">Complete</button>
+              </form>
+            {% endif %}
+            <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#reschedule-mobile-{{ task.id }}" aria-expanded="false" aria-controls="reschedule-mobile-{{ task.id }}">Reschedule</button>
+            <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#note-mobile-{{ task.id }}" aria-expanded="false" aria-controls="note-mobile-{{ task.id }}">Note</button>
+          {% else %}
+            <span class="case-detail-muted">You do not have permission to edit tasks.</span>
+          {% endif %}
+        </div>
+        <div class="collapse mt-2" id="reschedule-mobile-{{ task.id }}">
+          <form method="post" action="{% url 'patients:task_quick_reschedule' task.id %}" class="row g-2" data-case-ajax-form="true">
+            {% csrf_token %}
+            <div class="col-12">
+              <input
+                id="task-reschedule-mobile-date-{{ task.id }}"
+                class="form-control form-control-sm"
+                type="date"
+                name="due_date"
+                required
+                data-crayons-datepicker="true"
+                data-crayons-datepicker-format="dd/MM/yyyy"
+                data-crayons-datepicker-locale="en-IN"
+                data-crayons-datepicker-placeholder="dd/mm/yyyy"
+                data-crayons-datepicker-show-footer="false"
+              />
+            </div>
+            <div class="col-12">
+              <button class="btn btn-sm btn-outline-primary w-100" type="submit">Save date</button>
+            </div>
+          </form>
+        </div>
+        <div class="collapse mt-2" id="note-mobile-{{ task.id }}">
+          <form method="post" action="{% url 'patients:task_quick_note' task.id %}" class="row g-2" data-case-ajax-form="true">
+            {% csrf_token %}
+            <div class="col-12">
+              <textarea class="form-control form-control-sm" name="note" rows="2" required>{{ task.notes }}</textarea>
+            </div>
+            <div class="col-12">
+              <button class="btn btn-sm btn-outline-secondary w-100" type="submit">Save note</button>
+            </div>
+          </form>
+        </div>
+      </article>
+    {% empty %}
+      <p class="case-detail-muted mb-0">No open tasks available.</p>
+    {% endfor %}
+  </div>
+
+  <div class="case-detail-all-tasks">
+    <div class="case-detail-subsection-head">
+      <div>
+        <h3 class="h6 mb-1">All Tasks</h3>
+        <p class="case-detail-muted mb-0">Filter the full task list without leaving the page.</p>
+      </div>
+      <div class="case-detail-filter-bar" role="group" aria-label="All tasks filters">
+        <label class="form-check form-check-inline mb-0">
+          <input class="form-check-input" type="checkbox" value="open" data-task-filter checked />
+          <span class="form-check-label">Open</span>
+        </label>
+        <label class="form-check form-check-inline mb-0">
+          <input class="form-check-input" type="checkbox" value="completed" data-task-filter checked />
+          <span class="form-check-label">Completed</span>
+        </label>
+        <label class="form-check form-check-inline mb-0">
+          <input class="form-check-input" type="checkbox" value="cancelled" data-task-filter checked />
+          <span class="form-check-label">Cancelled</span>
+        </label>
+      </div>
+    </div>
+
+    <div class="case-detail-table-wrap d-none d-lg-block">
+      <table class="table table-sm align-middle case-task-table" id="all-task-table">
+        <thead>
+          <tr>
+            <th>Task</th>
+            <th>Due</th>
+            <th>Status</th>
+            <th>Completed On</th>
+            <th>Latest Call</th>
+            <th>Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for task in tasks %}
+            <tr
+              data-task-bucket="{% if task.status == 'COMPLETED' %}completed{% elif task.status == 'CANCELLED' %}cancelled{% else %}open{% endif %}"
+              {% if task.status == 'COMPLETED' %}
+                class="task-row-completed"
+              {% elif task.status != 'CANCELLED' and task.due_date < today %}
+                class="task-row-overdue"
+              {% endif %}
+            >
+              <td>
+                <div class="case-task-title">{{ task.title }}</div>
+              </td>
+              <td>{{ task.due_date|date:'d-m-y' }}</td>
+              <td><span class="task-status-pill status-{{ task.status|slugify }}">{{ task.get_status_display }}</span></td>
+              <td>{% if task.status == 'COMPLETED' %}{{ task.completed_at|default:task.due_date|date:'d-m-y' }}{% else %}-{% endif %}</td>
+              <td>
+                {% if task.latest_call_summary %}
+                  {{ task.latest_call_summary.outcome }} ({{ task.latest_call_summary.logged_at|date:'d-m-y H:i' }})
+                {% else %}
+                  -
+                {% endif %}
+              </td>
+              <td>{{ task.notes|default:"-" }}</td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="6">No tasks available.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="task-mobile-list all-task-mobile-list d-lg-none" id="all-task-mobile-list" data-testid="all-task-mobile-list">
+      {% for task in tasks %}
+        <article
+          data-task-bucket="{% if task.status == 'COMPLETED' %}completed{% elif task.status == 'CANCELLED' %}cancelled{% else %}open{% endif %}"
+          class="task-mobile-card {% if task.status == 'COMPLETED' %}task-mobile-completed{% elif task.status != 'CANCELLED' and task.due_date < today %}task-mobile-overdue{% endif %}"
+        >
+          <div class="task-mobile-title">{{ task.title }}</div>
+          <div class="task-mobile-meta">
+            <span class="label">Due</span><span>{{ task.due_date|date:'d-m-y' }}</span>
+            <span class="label">Status</span><span><span class="task-status-pill status-{{ task.status|slugify }}">{{ task.get_status_display }}</span></span>
+            <span class="label">Completed On</span><span>{% if task.status == 'COMPLETED' %}{{ task.completed_at|default:task.due_date|date:'d-m-y' }}{% else %}-{% endif %}</span>
+            <span class="label">Latest Call</span>
+            <span>
+              {% if task.latest_call_summary %}
+                {{ task.latest_call_summary.outcome }} ({{ task.latest_call_summary.logged_at|date:'d-m-y H:i' }})
+              {% else %}
+                -
+              {% endif %}
+            </span>
+            <span class="label">Notes</span><span>{{ task.notes|default:"-" }}</span>
+          </div>
+        </article>
+      {% empty %}
+        <p class="case-detail-muted mb-0">No tasks available.</p>
+      {% endfor %}
+    </div>
+    <p id="all-task-empty" class="case-detail-empty mt-3 d-none">No tasks match selected filters.</p>
+  </div>
+</section>

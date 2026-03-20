@@ -1,0 +1,117 @@
+{% load theme_tags %}
+<section class="case-detail-hero case-detail-panel" data-testid="case-detail-hero">
+  <div class="case-detail-hero__accent" aria-hidden="true"></div>
+
+  <div class="case-detail-hero__body">
+    <div class="case-detail-hero__identity-row">
+      <div class="case-detail-avatar identity-avatar" aria-hidden="true">
+        <span>{{ case_initials }}</span>
+      </div>
+
+      <div class="case-detail-identity">
+        <div class="case-detail-title-row">
+          <h1 class="case-detail-title{% if case_name_size_class %} {{ case_name_size_class }}{% endif %}">{{ case.full_name }}</h1>
+          <div class="case-detail-status-pill case-detail-status-pill--{{ case.status|slugify }}">
+            <span class="case-detail-status-pill__dot"></span>
+            <span>{{ case.get_status_display }}</span>
+          </div>
+        </div>
+
+        <div class="case-detail-meta-row">
+          <span class="case-detail-uhid">UHID. {{ case.uhid }}</span>
+
+          {% if case.gender %}
+            <span class="case-detail-meta-sep" aria-hidden="true"></span>
+            <span class="case-detail-meta-item">
+              <span class="case-detail-meta-gender" aria-hidden="true">
+                {% if case.gender == 'FEMALE' %}
+                  &#9792;
+                {% elif case.gender == 'MALE' %}
+                  &#9794;
+                {% else %}
+                  &#9676;
+                {% endif %}
+              </span>
+              <span>{{ case.get_gender_display }}</span>
+            </span>
+          {% endif %}
+
+          {% if case_age_label != "-" %}
+            <span class="case-detail-meta-sep" aria-hidden="true"></span>
+            <span class="case-detail-meta-item">{{ case_age_label }}</span>
+          {% endif %}
+
+          {% if case.place %}
+            <span class="case-detail-meta-sep" aria-hidden="true"></span>
+            <span class="case-detail-meta-item">{{ case.place }}</span>
+          {% endif %}
+
+          {% if case.phone_number %}
+            <span class="case-detail-meta-sep" aria-hidden="true"></span>
+            <a class="case-detail-phone-link" href="tel:{{ case.phone_number }}">
+              <svg class="case-detail-icon" aria-hidden="true"><use href="#identity-icon-phone"></use></svg>
+              <span>{{ case.phone_number }}</span>
+            </a>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="case-detail-divider case-detail-divider--identity" aria-hidden="true"></div>
+
+    <div class="case-detail-hero__metrics-row">
+      <div class="case-detail-visit-block">
+        <div class="case-detail-visit-block__label">Next Visit</div>
+        {% if next_task %}
+          <div class="case-detail-visit-block__day">{{ next_task.due_date|date:'d' }}</div>
+          <div class="case-detail-visit-block__meta">{{ next_task.due_date|date:'M Y' }}</div>
+        {% elif case.review_date %}
+          <div class="case-detail-visit-block__day">{{ case.review_date|date:'d' }}</div>
+          <div class="case-detail-visit-block__meta">{{ case.review_date|date:'M Y' }}</div>
+        {% elif case.surgery_date %}
+          <div class="case-detail-visit-block__day">{{ case.surgery_date|date:'d' }}</div>
+          <div class="case-detail-visit-block__meta">{{ case.surgery_date|date:'M Y' }}</div>
+        {% else %}
+          <div class="case-detail-visit-block__value case-detail-visit-block__value--empty">Not set</div>
+        {% endif %}
+      </div>
+
+      <div class="case-detail-divider case-detail-divider--stats" aria-hidden="true"></div>
+
+      <div class="case-detail-progress-block">
+        <div class="case-detail-progress">
+          <div
+            class="case-detail-progress__ring"
+            style="--case-progress: {{ progress_percent }};"
+            role="progressbar"
+            aria-label="Task completion"
+            aria-valuenow="{{ progress_percent }}"
+            aria-valuemin="0"
+            aria-valuemax="100"
+          >
+            <span>{{ progress_percent }}%</span>
+          </div>
+
+          <div class="case-detail-progress__copy">
+            <p class="case-detail-label mb-0">Task Completion</p>
+            <p class="case-detail-progress__value mb-0">{{ completed_task_count }}/{{ total_task_count|default:0 }}</p>
+            <span class="visually-hidden">{{ completed_task_count }} of {{ total_task_count }} tasks completed</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="case-detail-divider case-detail-divider--actions" aria-hidden="true"></div>
+
+    <div class="case-detail-hero__actions">
+      <a class="btn btn-primary case-detail-action" href="{% url 'patients:case_edit' case.id %}">
+        <svg class="case-detail-icon" aria-hidden="true"><use href="#case-detail-icon-edit"></use></svg>
+        <span>Edit</span>
+      </a>
+      <a class="btn btn-outline-secondary case-detail-action log-jump" href="{{ logs_url }}">
+        <svg class="case-detail-icon" aria-hidden="true"><use href="#case-detail-icon-logs"></use></svg>
+        <span>Logs</span>
+      </a>
+    </div>
+  </div>
+</section>

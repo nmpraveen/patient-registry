@@ -471,6 +471,49 @@ def _request_wants_json(request):
     return "application/json" in request.headers.get("Accept", "")
 
 
+def _task_bucket(task):
+    if task.status == TaskStatus.COMPLETED:
+        return "completed"
+    if task.status == TaskStatus.CANCELLED:
+        return "cancelled"
+    return "open"
+
+
+def _task_is_overdue(task, today):
+    return task.status not in {TaskStatus.COMPLETED, TaskStatus.CANCELLED} and task.due_date < today
+
+
+def _task_completed_on_display(task):
+    if task.status != TaskStatus.COMPLETED:
+        return "-"
+    completed_at = timezone.localtime(task.completed_at) if task.completed_at else None
+    return (completed_at or task.due_date).strftime("%d-%m-%y")
+
+
+def _due_relative_label(due_date, today):
+    delta_days = (due_date - today).days
+    if delta_days == 0:
+        return "Today"
+    if delta_days == 1:
+        return "Tomorrow"
+    if delta_days == -1:
+        return "1 day overdue"
+    if delta_days < 0:
+        return f"{abs(delta_days)} days overdue"
+    return f"In {delta_days} days"
+
+
+def _latest_task_call_payload(task):
+    summary = getattr(task, "latest_call_summary", None)
+    if not summary:
+        return None
+    logged_at = summary["logged_at"]
+    return {
+        "outcome": summary["outcome"],
+        "logged_at": logged_at.isoformat(),
+        "logged_at_display": logged_at.strftime("%d-%m-%y %H:%M"),
+    }
+
 def _forbidden_response(request, message):
     if _request_wants_json(request):
         return JsonResponse({"message": message}, status=403)
@@ -704,14 +747,22 @@ def _serialize_recent_task(task, *, category_name, can_edit_tasks, today):
         can_edit_tasks=can_edit_tasks,
         today=today,
     )
+    latest_call_payload = _latest_task_call_payload(task)
     return {
         "id": task.id,
         "title": task.title,
         "due_date": task.due_date.isoformat(),
         "due_date_display": task.due_date.strftime("%d %b %Y"),
+        "due_relative_label": _due_relative_label(task.due_date, today),
         "status": task.status,
         "status_label": task.get_status_display(),
+        "bucket": _task_bucket(task),
+        "is_overdue": _task_is_overdue(task, today),
+        "completed_on_display": _task_completed_on_display(task),
+        "assigned_user_label": str(task.assigned_user) if task.assigned_user else "Unassigned",
+        "task_type_label": task.get_task_type_display(),
         "notes": task.notes or "",
+        "latest_call_summary": latest_call_payload,
         **action_flags,
         "edit_url": reverse("patients:task_edit", kwargs={"pk": task.pk}),
     }
@@ -952,6 +1003,223 @@ def _save_task_note_inline(task, *, note_text, user):
         note=f"{note_text} [Task: {task.title}]",
     )
     return True, "Task note saved."
+
+
+def _case_task_counts(tasks, today):
+    open_tasks = [task for task in tasks if task.status not in {TaskStatus.COMPLETED, TaskStatus.CANCELLED}]
+    overdue_count = sum(1 for task in open_tasks if task.due_date < today)
+    return {
+        "open": len(open_tasks),
+        "overdue": overdue_count,
+        "upcoming": len(open_tasks) - overdue_count,
+        "completed": sum(1 for task in tasks if task.status == TaskStatus.COMPLETED),
+        "cancelled": sum(1 for task in tasks if task.status == TaskStatus.CANCELLED),
+        "total": len(tasks),
+    }
+
+
+def _serialize_case_detail_task(task, *, user):
+    if task is None:
+        return None
+
+    can_edit_tasks = has_capability(user, "task_edit")
+    action_flags = _recent_task_action_flags(
+        task,
+        category_name=task.case.category.name,
+        can_edit_tasks=can_edit_tasks,
+        today=timezone.localdate(),
+    )
+    completed_at = timezone.localtime(task.completed_at) if task.completed_at else None
+    latest_call_summary = getattr(task, "latest_call_summary", None)
+    payload = {
+        "id": task.id,
+        "case_id": task.case_id,
+        "title": task.title,
+        "due_date": task.due_date.isoformat(),
+        "due_date_display": task.due_date.strftime("%d %b %Y"),
+        "status": task.status,
+        "status_label": task.get_status_display(),
+        "task_type": task.task_type,
+        "task_type_label": task.get_task_type_display(),
+        "frequency_label": task.frequency_label,
+        "notes": task.notes or "",
+        "assigned_user": _display_user_name(task.assigned_user),
+        "completed_at": completed_at.isoformat() if completed_at else None,
+        "completed_at_display": completed_at.strftime("%d %b %Y %H:%M") if completed_at else "",
+        "history_date_display": getattr(task, "history_date_display", ""),
+        "edit_url": reverse("patients:task_edit", kwargs={"pk": task.pk}),
+    }
+    payload.update(action_flags)
+    if latest_call_summary:
+        logged_at = latest_call_summary.get("logged_at")
+        payload["latest_call_summary"] = {
+            "outcome": latest_call_summary.get("outcome", ""),
+            "logged_at": logged_at.isoformat() if logged_at else None,
+            "logged_at_display": timezone.localtime(logged_at).strftime("%d %b %Y %H:%M") if logged_at else "",
+        }
+    else:
+        payload["latest_call_summary"] = None
+    return payload
+
+
+def _serialize_case_detail_activity(activity):
+    timestamp_local = timezone.localtime(activity.created_at)
+    is_task_note = (
+        activity.event_type == ActivityEventType.TASK
+        and activity.task_id is not None
+        and (
+            TASK_NOTE_MARKER in (activity.note or "")
+            or (activity.note or "").startswith(LEGACY_TASK_NOTE_PREFIX)
+        )
+    )
+    return {
+        "id": activity.id,
+        "event_type": activity.event_type,
+        "event_label": "Note" if is_task_note else activity.get_event_type_display(),
+        "timestamp": activity.created_at.isoformat(),
+        "timestamp_display": timestamp_local.strftime("%d %b %Y %H:%M"),
+        "actor": _display_user_name(activity.user) or "system",
+        "task_id": activity.task_id,
+        "task_title": activity.task.title if activity.task_id else "",
+        "headline": activity.note,
+        "details": "",
+    }
+
+
+def _serialize_case_detail_call_log(call_log):
+    timestamp_local = timezone.localtime(call_log.created_at)
+    return {
+        "id": call_log.id,
+        "task_id": call_log.task_id,
+        "task_title": call_log.task.title if call_log.task_id else "",
+        "outcome": call_log.outcome,
+        "outcome_label": call_log.get_outcome_display(),
+        "notes": call_log.notes or "",
+        "staff_user": _display_user_name(call_log.staff_user) or "system",
+        "created_at": call_log.created_at.isoformat(),
+        "created_at_display": timestamp_local.strftime("%d %b %Y %H:%M"),
+        "timeline_entry": {
+            "event_type": "CALL",
+            "event_label": "Call",
+            "timestamp": call_log.created_at.isoformat(),
+            "timestamp_display": timestamp_local.strftime("%d %b %Y %H:%M"),
+            "actor": _display_user_name(call_log.staff_user) or "system",
+            "task_title": call_log.task.title if call_log.task_id else "",
+            "headline": call_log.get_outcome_display(),
+            "details": call_log.notes or "",
+        },
+    }
+
+
+def _validation_error_payload(error):
+    if hasattr(error, "message_dict"):
+        return {key: [str(message) for message in messages] for key, messages in error.message_dict.items()}
+    messages_list = getattr(error, "messages", None) or [str(error)]
+    return {"__all__": [str(message) for message in messages_list]}
+
+
+def _build_case_detail_summary(case, *, user, tasks, call_logs, activity_logs, latest_vital, timeline_filter):
+    today = timezone.localdate()
+    task_sections = _build_actionable_task_sections(tasks, today, prominent_limit=5)
+    task_counts = _case_task_counts(tasks, today)
+    task_call_summary = _build_task_call_summary(call_logs)
+    for task in tasks:
+        task.latest_call_summary = task_call_summary.get(task.id)
+
+    next_task = task_sections["prominent_tasks"][0] if task_sections["prominent_tasks"] else None
+    latest_activity = activity_logs[0] if activity_logs else None
+    latest_call_log = call_logs[0] if call_logs else None
+    call_summary = CallLog.summarize_case(call_logs)
+    progress_percent = round((task_counts["completed"] / task_counts["total"]) * 100) if task_counts["total"] else 0
+
+    return {
+        "today": today,
+        "task_sections": task_sections,
+        "task_counts": task_counts,
+        "task_call_summary": task_call_summary,
+        "case_summary": {
+            "id": case.id,
+            "uhid": case.uhid,
+            "name": case.full_name or case.patient_name,
+            "short_name": _case_initials(case),
+            "age_label": _case_age_label(case),
+            "age_number": _case_age_number(case),
+            "sex_age": _case_sex_age_label(case),
+            "gender_label": case.get_gender_display() if case.gender else "-",
+            "gender_code": _case_gender_code(case),
+            "category_name": case.category.name,
+            "status": case.status,
+            "high_risk": case.high_risk,
+            "phone_number": case.phone_number or "",
+            "alternate_phone_number": case.alternate_phone_number or "",
+            "referred_by": case.referred_by or "",
+            "diagnosis": case.diagnosis or "",
+            "place": case.place or "",
+            "notes": case.notes or "",
+            "task_counts": task_counts,
+            "open_task_count": task_counts["open"],
+            "overdue_task_count": task_counts["overdue"],
+            "completed_task_count": task_counts["completed"],
+            "cancelled_task_count": task_counts["cancelled"],
+            "total_task_count": task_counts["total"],
+            "progress_percent": progress_percent,
+            "progress_class": "bg-success" if progress_percent >= 50 else "bg-warning",
+            "has_vitals": latest_vital is not None,
+            "latest_vitals_recorded_at": timezone.localtime(latest_vital.recorded_at).isoformat() if latest_vital else None,
+            "latest_vitals_recorded_at_display": timezone.localtime(latest_vital.recorded_at).strftime("%d %b %Y %H:%M")
+            if latest_vital
+            else "",
+            "latest_vitals_summary": _build_latest_vitals_summary(latest_vital),
+            "call_summary": {
+                "status": call_summary["status"],
+                "failed_attempt_count": call_summary["failed_attempt_count"],
+                "latest_outcome": call_summary["latest_outcome"],
+                "latest_logged_at": call_summary["latest_logged_at"].isoformat() if call_summary["latest_logged_at"] else None,
+                "latest_logged_at_display": timezone.localtime(call_summary["latest_logged_at"]).strftime("%d %b %Y %H:%M")
+                if call_summary["latest_logged_at"]
+                else "",
+            },
+            "next_task": _serialize_case_detail_task(next_task, user=user),
+            "latest_activity": _serialize_case_detail_activity(latest_activity) if latest_activity else None,
+            "latest_call_log": _serialize_case_detail_call_log(latest_call_log) if latest_call_log else None,
+        },
+        "next_task": next_task,
+        "latest_activity": latest_activity,
+        "latest_call_log": latest_call_log,
+        "timeline_entries": _build_timeline_entries(
+            call_logs=call_logs,
+            activity_logs=activity_logs,
+            timeline_filter=timeline_filter,
+        ),
+        "latest_vitals_recorded_at": timezone.localtime(latest_vital.recorded_at) if latest_vital else None,
+        "vitals_summary_metrics": _build_latest_vitals_summary(latest_vital),
+    }
+
+
+def _build_case_detail_json_payload(case, *, user):
+    tasks = list(case.tasks.select_related("assigned_user").select_related("case__category").order_by("due_date", "id"))
+    call_logs = list(case.call_logs.select_related("staff_user", "task", "task__case__category").order_by("-created_at", "-id"))
+    activity_logs = list(case.activity_logs.select_related("user", "task", "task__case__category").order_by("-created_at", "-id")[:200])
+    latest_vital = case.vitals.order_by("-recorded_at", "-id").first()
+    summary = _build_case_detail_summary(
+        case,
+        user=user,
+        tasks=tasks,
+        call_logs=call_logs,
+        activity_logs=activity_logs,
+        latest_vital=latest_vital,
+        timeline_filter="all",
+    )
+    return {
+        "case": summary["case_summary"],
+        "task_counts": summary["task_counts"],
+        "next_task": summary["case_summary"]["next_task"],
+        "latest_activity": summary["case_summary"]["latest_activity"],
+        "latest_call_log": summary["case_summary"]["latest_call_log"],
+        "latest_vitals_recorded_at": summary["case_summary"]["latest_vitals_recorded_at"],
+        "latest_vitals_summary": summary["case_summary"]["latest_vitals_summary"],
+        "call_summary": summary["case_summary"]["call_summary"],
+    }
 
 
 def _metric_status(value, *, low_lt=None, high_gt=None, high_gte=None, neutral=False):
@@ -1359,22 +1627,45 @@ def _build_task_call_summary(call_logs):
     return summary_by_task
 
 
+def _serialize_call_timeline_entry(call):
+    return {
+        "event_type": "CALL",
+        "event_label": "Call",
+        "timestamp": call.created_at,
+        "timestamp_local": timezone.localtime(call.created_at),
+        "actor": str(call.staff_user) if call.staff_user else "system",
+        "task_title": call.task.title if call.task_id else "",
+        "headline": call.get_outcome_display(),
+        "details": call.notes,
+    }
+
+
+def _serialize_activity_timeline_entry(activity):
+    is_task_note = (
+        activity.event_type == ActivityEventType.TASK
+        and activity.task_id is not None
+        and (
+            TASK_NOTE_MARKER in (activity.note or "")
+            or (activity.note or "").startswith(LEGACY_TASK_NOTE_PREFIX)
+        )
+    )
+    return {
+        "event_type": activity.event_type,
+        "event_label": "Note" if is_task_note else activity.get_event_type_display(),
+        "timestamp": activity.created_at,
+        "timestamp_local": timezone.localtime(activity.created_at),
+        "actor": str(activity.user) if activity.user else "system",
+        "task_title": activity.task.title if activity.task_id else "",
+        "headline": activity.note,
+        "details": "",
+        "is_task_note": is_task_note,
+    }
+
 def _build_timeline_entries(*, call_logs, activity_logs, timeline_filter):
     entries = []
     if timeline_filter in {"all", "calls"}:
         for call in call_logs:
-            entries.append(
-                {
-                    "event_type": "CALL",
-                    "event_label": "Call",
-                    "timestamp": call.created_at,
-                    "timestamp_local": timezone.localtime(call.created_at),
-                    "actor": str(call.staff_user) if call.staff_user else "system",
-                    "task_title": call.task.title if call.task_id else "",
-                    "headline": call.get_outcome_display(),
-                    "details": call.notes,
-                }
-            )
+            entries.append(_serialize_call_timeline_entry(call))
 
     if timeline_filter in {"all", "tasks", "notes"}:
         for activity in activity_logs:
@@ -1382,28 +1673,11 @@ def _build_timeline_entries(*, call_logs, activity_logs, timeline_filter):
                 continue
             if timeline_filter == "tasks" and activity.event_type != ActivityEventType.TASK:
                 continue
-            is_task_note = (
-                activity.event_type == ActivityEventType.TASK
-                and activity.task_id is not None
-                and (
-                    TASK_NOTE_MARKER in (activity.note or "")
-                    or (activity.note or "").startswith(LEGACY_TASK_NOTE_PREFIX)
-                )
-            )
-            if timeline_filter == "notes" and activity.event_type != ActivityEventType.NOTE and not is_task_note:
+            entry = _serialize_activity_timeline_entry(activity)
+            if timeline_filter == "notes" and activity.event_type != ActivityEventType.NOTE and not entry["is_task_note"]:
                 continue
-            entries.append(
-                {
-                    "event_type": activity.event_type,
-                    "event_label": "Note" if is_task_note else activity.get_event_type_display(),
-                    "timestamp": activity.created_at,
-                    "timestamp_local": timezone.localtime(activity.created_at),
-                    "actor": str(activity.user) if activity.user else "system",
-                    "task_title": activity.task.title if activity.task_id else "",
-                    "headline": activity.note,
-                    "details": "",
-                }
-            )
+            entry.pop("is_task_note", None)
+            entries.append(entry)
 
     entries.sort(key=lambda item: item["timestamp"], reverse=True)
     return entries
@@ -2956,9 +3230,9 @@ class CaseDetailView(LoginRequiredMixin, DetailView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         case = self.object
-        tasks = list(case.tasks.select_related("assigned_user").order_by("due_date", "id"))
-        call_logs = list(case.call_logs.select_related("staff_user", "task").order_by("-created_at", "-id"))
-        activity_logs = list(case.activity_logs.select_related("user", "task").order_by("-created_at", "-id")[:200])
+        tasks = list(case.tasks.select_related("assigned_user", "case__category").order_by("due_date", "id"))
+        call_logs = list(case.call_logs.select_related("staff_user", "task", "task__case__category").order_by("-created_at", "-id"))
+        activity_logs = list(case.activity_logs.select_related("user", "task", "task__case__category").order_by("-created_at", "-id")[:200])
         latest_vital = case.vitals.order_by("-recorded_at", "-id").first()
         today = timezone.localdate()
         task_sections = _build_actionable_task_sections(tasks, today, prominent_limit=5)
@@ -3004,6 +3278,25 @@ class CaseDetailView(LoginRequiredMixin, DetailView):
         context["can_task_edit"] = has_capability(self.request.user, "task_edit")
         context["can_note_add"] = has_capability(self.request.user, "note_add")
         context["can_vitals_edit"] = has_capability(self.request.user, "task_edit")
+        detail_summary = _build_case_detail_summary(
+            case,
+            user=self.request.user,
+            tasks=tasks,
+            call_logs=call_logs,
+            activity_logs=activity_logs,
+            latest_vital=latest_vital,
+            timeline_filter=timeline_filter,
+        )
+        context["task_counts"] = detail_summary["task_counts"]
+        context["open_task_count"] = detail_summary["task_counts"]["open"]
+        context["overdue_task_count"] = detail_summary["task_counts"]["overdue"]
+        context["cancelled_task_count"] = detail_summary["task_counts"]["cancelled"]
+        context["case_summary"] = detail_summary["case_summary"]
+        context["next_task"] = detail_summary["next_task"]
+        context["next_task_summary"] = detail_summary["case_summary"]["next_task"]
+        context["call_summary"] = detail_summary["case_summary"]["call_summary"]
+        context["latest_activity"] = detail_summary["latest_activity"]
+        context["latest_call_log"] = detail_summary["latest_call_log"]
         return context
 
     def dispatch(self, request, *args, **kwargs):
@@ -3136,8 +3429,8 @@ class CaseUpdateIdentityCheckView(LoginRequiredMixin, CaseUpdateAccessMixin, Cas
 class TaskCreateView(LoginRequiredMixin, View):
     def post(self, request, pk):
         if not has_capability(request.user, "task_create"):
-            return HttpResponseForbidden("You do not have permission to create tasks.")
-        case = get_object_or_404(Case, pk=pk)
+            return _forbidden_response(request, "You do not have permission to create tasks.")
+        case = get_object_or_404(Case.objects.select_related("category"), pk=pk)
         form = TaskForm(request.POST)
         if form.is_valid():
             task = form.save(commit=False)
@@ -3146,7 +3439,15 @@ class TaskCreateView(LoginRequiredMixin, View):
             try:
                 task.full_clean()
                 task.save()
-            except ValidationError:
+            except ValidationError as exc:
+                if _request_wants_json(request):
+                    return JsonResponse(
+                        {
+                            "message": "Could not add task. Please check the inputs.",
+                            "errors": _validation_error_payload(exc),
+                        },
+                        status=400,
+                    )
                 messages.error(request, "Could not add task. Please check the inputs.")
             else:
                 create_case_activity(
@@ -3156,8 +3457,20 @@ class TaskCreateView(LoginRequiredMixin, View):
                     event_type=ActivityEventType.TASK,
                     note=f"Task created: {task.title}",
                 )
+                if _request_wants_json(request):
+                    payload = _build_case_detail_json_payload(case, user=request.user)
+                    payload["message"] = "Task added."
+                    payload["task"] = _serialize_case_detail_task(task, user=request.user)
+                    payload["activity"] = payload["latest_activity"]
+                    payload["timeline_entry"] = payload["latest_activity"]
+                    return JsonResponse(payload)
                 messages.success(request, "Task added.")
         else:
+            if _request_wants_json(request):
+                return JsonResponse(
+                    {"message": "Could not add task. Please check the inputs.", "errors": form.errors.get_json_data()},
+                    status=400,
+                )
             messages.error(request, "Could not add task. Please check the inputs.")
         return redirect("patients:case_detail", pk=pk)
 
@@ -3252,8 +3565,8 @@ class TaskUpdateView(LoginRequiredMixin, UpdateView):
 class AddCaseNoteView(LoginRequiredMixin, View):
     def post(self, request, pk):
         if not has_capability(request.user, "note_add"):
-            return HttpResponseForbidden("You do not have permission to add notes.")
-        case = get_object_or_404(Case, pk=pk)
+            return _forbidden_response(request, "You do not have permission to add notes.")
+        case = get_object_or_404(Case.objects.select_related("category"), pk=pk)
         form = ActivityLogForm(request.POST)
         if form.is_valid():
             log = form.save(commit=False)
@@ -3261,8 +3574,21 @@ class AddCaseNoteView(LoginRequiredMixin, View):
             log.user = request.user
             log.event_type = ActivityEventType.NOTE
             log.save()
+            if _request_wants_json(request):
+                payload = _build_case_detail_json_payload(case, user=request.user)
+                payload["message"] = "Note added."
+                payload["activity"] = _serialize_case_detail_activity(
+                    case.activity_logs.select_related("user", "task").order_by("-created_at", "-id").first()
+                )
+                payload["timeline_entry"] = payload["activity"]
+                return JsonResponse(payload)
             messages.success(request, "Note added.")
         else:
+            if _request_wants_json(request):
+                return JsonResponse(
+                    {"message": "Could not save note.", "errors": form.errors.get_json_data()},
+                    status=400,
+                )
             messages.error(request, "Could not save note.")
         return redirect("patients:case_detail", pk=pk)
 
@@ -3270,8 +3596,8 @@ class AddCaseNoteView(LoginRequiredMixin, View):
 class AddCallLogView(LoginRequiredMixin, View):
     def post(self, request, pk):
         if not has_capability(request.user, "note_add"):
-            return HttpResponseForbidden("You do not have permission to add call logs.")
-        case = get_object_or_404(Case, pk=pk)
+            return _forbidden_response(request, "You do not have permission to add call logs.")
+        case = get_object_or_404(Case.objects.select_related("category"), pk=pk)
         form = CallLogForm(request.POST)
         form.fields["task"].queryset = case.tasks.all()
         if form.is_valid():
@@ -3286,8 +3612,21 @@ class AddCallLogView(LoginRequiredMixin, View):
                 event_type=ActivityEventType.CALL,
                 note=f"Call outcome logged: {log.get_outcome_display()}",
             )
+            if _request_wants_json(request):
+                payload = _build_case_detail_json_payload(case, user=request.user)
+                payload["message"] = "Call outcome logged."
+                payload["call_log"] = _serialize_case_detail_call_log(
+                    case.call_logs.select_related("staff_user", "task").order_by("-created_at", "-id").first()
+                )
+                payload["timeline_entry"] = payload["call_log"]["timeline_entry"]
+                return JsonResponse(payload)
             messages.success(request, "Call outcome logged.")
         else:
+            if _request_wants_json(request):
+                return JsonResponse(
+                    {"message": "Could not log call outcome.", "errors": form.errors.get_json_data()},
+                    status=400,
+                )
             messages.error(request, "Could not log call outcome.")
         return redirect("patients:case_detail", pk=pk)
 

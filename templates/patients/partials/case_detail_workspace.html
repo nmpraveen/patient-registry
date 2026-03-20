@@ -1,0 +1,154 @@
+<section class="case-detail-workspace case-detail-panel" id="action-center" data-testid="case-detail-workspace">
+  <div class="case-detail-section-head">
+    <div>
+      <p class="case-detail-label mb-1">Action Center</p>
+      <h2 class="h5 mb-1">One action at a time</h2>
+      <p class="case-detail-muted mb-0">Switch between task, call, and note without leaving the page.</p>
+    </div>
+    <div class="case-detail-workspace__actions">
+      <button type="button" class="btn btn-sm btn-outline-primary case-detail-launch is-active" data-case-composer-trigger="task" aria-pressed="true">
+        <svg class="case-detail-icon" aria-hidden="true"><use href="#case-detail-icon-task"></use></svg>
+        <span>Add Task</span>
+      </button>
+      <button type="button" class="btn btn-sm btn-outline-success case-detail-launch" data-case-composer-trigger="call" aria-pressed="false">
+        <svg class="case-detail-icon" aria-hidden="true"><use href="#case-detail-icon-call"></use></svg>
+        <span>Log Call</span>
+      </button>
+      <button type="button" class="btn btn-sm btn-outline-warning case-detail-launch" data-case-composer-trigger="note" aria-pressed="false">
+        <svg class="case-detail-icon" aria-hidden="true"><use href="#case-detail-icon-note"></use></svg>
+        <span>Add Note</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="case-composer" data-case-composer data-case-active-pane="task">
+    <div class="case-composer__panels">
+      <div class="case-composer__panel is-active" data-case-composer-panel="task" id="action-card-task">
+        <div class="case-composer__panel-head">
+          <div>
+            <p class="case-detail-label mb-1">Quick Task</p>
+            <h3 class="h6 mb-1">Create a follow-up task</h3>
+            <p class="case-detail-muted mb-0">Keep the default task type and ownership flow unchanged.</p>
+          </div>
+        </div>
+        {% if can_task_create %}
+          <form method="post" action="{% url 'patients:task_create' case.id %}" class="case-composer__form" data-case-ajax-form="true">
+            {% csrf_token %}
+            <div class="case-composer__grid">
+              <div class="case-composer__field case-composer__field--wide">
+                <label class="form-label small" for="{{ task_form.title.id_for_label }}">Task</label>
+                {{ task_form.title }}
+              </div>
+              <div class="case-composer__field">
+                <label class="form-label small" for="{{ task_form.due_date.id_for_label }}">Due date</label>
+                {{ task_form.due_date }}
+              </div>
+            </div>
+            <input type="hidden" name="status" value="SCHEDULED" />
+            <input type="hidden" name="assigned_user" value="" />
+            <input type="hidden" name="task_type" value="CUSTOM" />
+            <input type="hidden" name="frequency_label" value="" />
+            <input type="hidden" name="notes" value="" />
+            <div class="case-composer__footer">
+              <button class="btn btn-primary" type="submit">
+                <svg class="case-detail-icon" aria-hidden="true"><use href="#case-detail-icon-plus"></use></svg>
+                <span>Add task</span>
+              </button>
+            </div>
+          </form>
+        {% else %}
+          <p class="case-detail-muted mb-0">You do not have permission to add tasks.</p>
+        {% endif %}
+      </div>
+
+      <div class="case-composer__panel" data-case-composer-panel="call" id="action-card-call">
+        <div class="case-composer__panel-head">
+          <div>
+            <p class="case-detail-label mb-1">Call log</p>
+            <h3 class="h6 mb-1">Capture a call outcome</h3>
+            <p class="case-detail-muted mb-0">Select the task that the call belongs to, then record the outcome.</p>
+          </div>
+        </div>
+        {% if can_note_add %}
+          <form method="post" action="{% url 'patients:case_call_create' case.id %}" class="case-composer__form" data-case-ajax-form="true">
+            {% csrf_token %}
+            <div class="case-composer__grid">
+              <div class="case-composer__field">
+                <label class="form-label small" for="{{ call_log_form.task.id_for_label }}">{{ call_log_form.task.label }}</label>
+                {{ call_log_form.task }}
+              </div>
+              <div class="case-composer__field">
+                <label class="form-label small" for="{{ call_log_form.outcome.id_for_label }}">{{ call_log_form.outcome.label }}</label>
+                {{ call_log_form.outcome }}
+              </div>
+              <div class="case-composer__field case-composer__field--wide">
+                <label class="form-label small" for="{{ call_log_form.notes.id_for_label }}">{{ call_log_form.notes.label }}</label>
+                {{ call_log_form.notes }}
+              </div>
+            </div>
+            <div class="case-composer__footer">
+              <button class="btn btn-success" type="submit">
+                <svg class="case-detail-icon" aria-hidden="true"><use href="#case-detail-icon-call"></use></svg>
+                <span>Log call</span>
+              </button>
+            </div>
+          </form>
+        {% else %}
+          <p class="case-detail-muted mb-0">You do not have permission to log calls.</p>
+        {% endif %}
+      </div>
+
+      <div class="case-composer__panel" data-case-composer-panel="note" id="action-card-note">
+        <div class="case-composer__panel-head">
+          <div>
+            <p class="case-detail-label mb-1">Quick note</p>
+            <h3 class="h6 mb-1">Add a progress note</h3>
+            <p class="case-detail-muted mb-0">Keep the note concise and tied to the case follow-up trail.</p>
+          </div>
+        </div>
+        {% if can_note_add %}
+          <form method="post" action="{% url 'patients:case_note_create' case.id %}" class="case-composer__form" data-case-ajax-form="true">
+            {% csrf_token %}
+            <div class="case-composer__grid">
+              <div class="case-composer__field case-composer__field--wide">
+                <label class="form-label small" for="{{ log_form.note.id_for_label }}">{{ log_form.note.label }}</label>
+                {{ log_form.note }}
+              </div>
+            </div>
+            <div class="case-composer__footer">
+              <button class="btn btn-warning" type="submit">
+                <svg class="case-detail-icon" aria-hidden="true"><use href="#case-detail-icon-note"></use></svg>
+                <span>Save note</span>
+              </button>
+            </div>
+          </form>
+        {% else %}
+          <p class="case-detail-muted mb-0">You do not have permission to add notes.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="case-detail-mobile-dock d-lg-none" aria-label="Mobile quick actions" data-testid="case-detail-mobile-quick-actions">
+    <button type="button" class="btn btn-primary case-detail-mobile-dock__button" data-case-composer-trigger="task" aria-pressed="true">
+      <svg class="case-detail-icon" aria-hidden="true"><use href="#case-detail-icon-task"></use></svg>
+      <span>Task</span>
+    </button>
+    <button type="button" class="btn btn-outline-success case-detail-mobile-dock__button" data-case-composer-trigger="call" aria-pressed="false">
+      <svg class="case-detail-icon" aria-hidden="true"><use href="#case-detail-icon-call"></use></svg>
+      <span>Call</span>
+    </button>
+    <button type="button" class="btn btn-outline-warning case-detail-mobile-dock__button" data-case-composer-trigger="note" aria-pressed="false">
+      <svg class="case-detail-icon" aria-hidden="true"><use href="#case-detail-icon-note"></use></svg>
+      <span>Note</span>
+    </button>
+    <button type="button" class="btn btn-outline-secondary case-detail-mobile-dock__button" data-case-jump="tasks">
+      <svg class="case-detail-icon" aria-hidden="true"><use href="#case-detail-icon-task"></use></svg>
+      <span>Tasks</span>
+    </button>
+    <button type="button" class="btn btn-outline-secondary case-detail-mobile-dock__button" data-case-jump="timeline">
+      <svg class="case-detail-icon" aria-hidden="true"><use href="#case-detail-icon-calendar"></use></svg>
+      <span>Timeline</span>
+    </button>
+  </div>
+</section>

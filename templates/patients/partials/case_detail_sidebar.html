@@ -43,33 +43,6 @@
 
   <aside class="case-detail-rail-card case-detail-panel">
     <div class="case-detail-rail-card__header">
-      <p class="case-detail-label mb-0">Upcoming queue</p>
-      <span class="case-detail-chip case-detail-chip--neutral">{{ prominent_tasks|length }} shown</span>
-    </div>
-    {% if prominent_tasks %}
-      <div class="case-detail-queue">
-        {% for task in prominent_tasks|slice:":3" %}
-          <article class="case-detail-queue__item{% if task.status == 'COMPLETED' %} is-completed{% elif task.due_date < today and task.status != 'CANCELLED' %} is-overdue{% endif %}">
-            <div class="case-detail-queue__meta">
-              <span class="case-detail-queue__title">{{ task.title }}</span>
-              <span class="task-status-pill status-{{ task.status|slugify }}">{{ task.get_status_display }}</span>
-            </div>
-            <div class="case-detail-queue__subline">
-              Due {{ task.due_date|date:'d-m-y' }}
-              {% if task.latest_call_summary %}
-                <span>Last call {{ task.latest_call_summary.outcome }}</span>
-              {% endif %}
-            </div>
-          </article>
-        {% endfor %}
-      </div>
-    {% else %}
-      <p class="case-detail-muted mb-0">No open tasks are ready right now.</p>
-    {% endif %}
-  </aside>
-
-  <aside class="case-detail-rail-card case-detail-panel">
-    <div class="case-detail-rail-card__header">
       <p class="case-detail-label mb-0">Clinical Details</p>
       <span class="case-detail-chip case-detail-chip--neutral">Overview</span>
     </div>

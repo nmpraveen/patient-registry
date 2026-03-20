@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026.03.20.04.36
+- Kept mobile Actionable Task buttons on a single row, tightened their card layout, and switched overdue accents and pills to a clearer red treatment that matches the requested mockup more closely.
+- Moved the shared task reschedule/note editor into per-task inline anchor slots so it now opens directly under the clicked actionable row or mobile card instead of below the full task list.
+- Removed the case-detail `Upcoming queue` sidebar module and deleted the old task helper copy that was no longer wanted in the task workspace/editor flow.
+
+## 2026.03.20.04.17
+- Rebuilt the case-detail `Actionable Tasks` and `All Tasks` module into the new cleaner desktop table plus mobile card system, with overdue/focus/total counters, urgency strips, dot-status pills, and a collapsed full-history section.
+- Replaced per-row task reschedule and note collapses with one shared in-page task editor panel that powers both desktop and mobile task actions while keeping the existing AJAX endpoints and task-selection logic unchanged.
+- Added regression coverage for the new task-module DOM contract, including the shared editor, collapsed history toggle, mobile task lists, locked future ANC actions, and the updated case-detail datepicker markup.
+
 ## 2026.03.20.03.31
 - Tightened the case-detail Action Center follow-up styling so the idle task, call, and note cards separate more clearly from the workspace background while preserving the new compact mockup layout.
 - Limited the case-detail `Log Call` task selector to upcoming open tasks only, excluding overdue, completed, and cancelled tasks from the in-page call workflow.

@@ -1549,7 +1549,7 @@ class MedtrackViewTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
 
-    def test_case_detail_task_table_replaces_freq_with_completed_on(self):
+    def test_case_detail_actionable_table_omits_completed_on_column(self):
         self.client.force_login(self.user)
         case = Case.objects.create(
             uhid="UH-COMP-COL",
@@ -1573,8 +1573,13 @@ class MedtrackViewTests(TestCase):
         response = self.client.get(reverse("patients:case_detail", kwargs={"pk": case.pk}))
 
         self.assertEqual(response.status_code, 200)
+        html = response.content.decode("utf-8")
+        actionable_start = html.index("Actionable Tasks")
+        all_tasks_start = html.index("All Tasks")
+        actionable_html = html[actionable_start:all_tasks_start]
+        self.assertNotIn("<th>Completed On</th>", actionable_html)
+        self.assertNotIn("<th>Assigned</th>", actionable_html)
         self.assertContains(response, "<th>Completed On</th>", html=True)
-        self.assertNotContains(response, "<th>Assigned</th>", html=True)
 
     def test_case_detail_uses_high_risk_and_category_pill_classes(self):
         self.client.force_login(self.user)
@@ -1656,15 +1661,16 @@ class MedtrackViewTests(TestCase):
         )
         Task.objects.create(
             case=case,
-            title="Open row style",
-            due_date=timezone.localdate(),
+            title="Completed row style",
+            due_date=timezone.localdate() - timedelta(days=1),
+            status=TaskStatus.COMPLETED,
             created_by=self.user,
         )
 
         response = self.client.get(reverse("patients:case_detail", kwargs={"pk": case.pk}))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, ".task-row-completed td")
+        self.assertContains(response, "case-task-history-row--completed")
         self.assertNotContains(response, "table-success")
 
     def test_case_detail_shows_all_tasks_master_list_with_filters(self):
@@ -1705,20 +1711,68 @@ class MedtrackViewTests(TestCase):
         response = self.client.get(reverse("patients:case_detail", kwargs={"pk": case.pk}))
 
         self.assertEqual(response.status_code, 200)
+        html = response.content.decode("utf-8")
         self.assertContains(response, "All Tasks")
+        self.assertEqual(response.context["overdue_task_count"], 0)
+        self.assertEqual(response.context["open_task_count"], 1)
+        self.assertEqual(response.context["completed_task_count"], 1)
+        self.assertEqual(response.context["total_task_count"], 3)
         self.assertContains(response, 'data-task-filter')
         self.assertContains(response, 'data-task-bucket="open"')
         self.assertContains(response, 'data-task-bucket="completed"')
         self.assertContains(response, 'data-task-bucket="cancelled"')
         self.assertContains(response, 'data-testid="actionable-task-mobile-list"')
         self.assertContains(response, 'data-testid="all-task-mobile-list"')
+        self.assertContains(response, 'data-testid="all-tasks-toggle"')
+        self.assertContains(response, 'data-testid="all-tasks-panel"')
         self.assertContains(response, 'id="action-card-task"')
         self.assertContains(response, 'id="action-card-call"')
         self.assertContains(response, 'id="action-card-note"')
         self.assertContains(response, 'id="all-task-table"')
+        self.assertEqual(html.count("<th>Completed On</th>"), 1)
+        self.assertEqual(html.count('data-task-filter'), 3)
+        self.assertNotContains(response, 'data-bs-target="#reschedule-')
+        self.assertNotContains(response, 'data-bs-target="#note-')
+        self.assertNotContains(response, "Upcoming queue")
+        self.assertNotContains(response, "Overdue tasks rise to the top, then the next open tasks up to five.")
         self.assertContains(response, "Clinical Timeline")
         self.assertNotContains(response, "More Open Tasks")
         self.assertNotContains(response, "Completed / Cancelled History")
+
+    def test_case_detail_locked_future_anc_task_keeps_reschedule_and_note_actions(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-THEME-LOCKED-ANC",
+            first_name="Locked",
+            last_name="ANC",
+            phone_number="9876504998",
+            category=self.anc,
+            status=CaseStatus.ACTIVE,
+            gender=Gender.FEMALE,
+            lmp=timezone.localdate() - timedelta(days=70),
+            edd=timezone.localdate() + timedelta(days=210),
+            created_by=self.user,
+        )
+        Task.objects.create(
+            case=case,
+            title="Future ANC task",
+            due_date=timezone.localdate() + timedelta(days=5),
+            status=TaskStatus.SCHEDULED,
+            created_by=self.user,
+        )
+
+        response = self.client.get(reverse("patients:case_detail", kwargs={"pk": case.pk}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Locked until due date")
+        html = response.content.decode("utf-8")
+        actionable_start = html.index("Actionable Tasks")
+        all_tasks_start = html.index("All Tasks")
+        actionable_html = html[actionable_start:all_tasks_start]
+        self.assertIn("Reschedule", actionable_html)
+        self.assertIn("Note", actionable_html)
+        self.assertNotIn("Complete", actionable_html)
+        self.assertNotIn("task_quick_complete", actionable_html)
 
     def test_case_detail_uses_toned_overdue_row_class(self):
         self.client.force_login(self.user)
@@ -1744,7 +1798,7 @@ class MedtrackViewTests(TestCase):
         response = self.client.get(reverse("patients:case_detail", kwargs={"pk": case.pk}))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "task-row-overdue")
+        self.assertContains(response, "case-task-row--overdue")
         self.assertNotContains(response, "table-danger")
 
     def test_case_detail_completed_task_shows_completed_at_date(self):
@@ -1886,6 +1940,7 @@ class MedtrackViewTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
+        html = response.content.decode("utf-8")
         self.assertContains(response, "Action Center")
         self.assertContains(response, "Add Task")
         self.assertContains(response, "Log Call")
@@ -1911,6 +1966,16 @@ class MedtrackViewTests(TestCase):
         self.assertNotContains(response, 'data-case-active-pane="call"')
         self.assertNotContains(response, 'data-case-active-pane="note"')
         self.assertNotRegex(response.content.decode("utf-8"), r'data-case-composer-panel="(?:task|call|note)"[^>]*is-active')
+        self.assertEqual(html.count('data-testid="case-task-editor"'), 1)
+        self.assertEqual(html.count('data-task-editor-trigger="reschedule"'), 2)
+        self.assertEqual(html.count('data-task-editor-trigger="note"'), 2)
+        self.assertEqual(html.count('data-task-editor-form="reschedule"'), 1)
+        self.assertEqual(html.count('data-task-editor-form="note"'), 1)
+        self.assertNotRegex(html, r'id="reschedule-\d+"')
+        self.assertNotRegex(html, r'id="note-\d+"')
+        self.assertNotContains(response, "Upcoming queue")
+        self.assertNotContains(response, "Pick a new due date without leaving the task workspace.")
+        self.assertNotContains(response, "Add context that stays attached to this task in the case history.")
         self.assertContains(response, "Nurse follow-up note")
         self.assertContains(response, "Confirm visit timing [Task: Timeline task]")
         self.assertNotContains(response, "Task created for timeline")
@@ -2395,11 +2460,10 @@ class MedtrackViewTests(TestCase):
 
         response = self.client.get(reverse("patients:case_detail", kwargs={"pk": case.pk}))
 
-        self.assertContains(response, 'data-crayons-datepicker="true"', count=3)
-        self.assertContains(response, 'data-crayons-datepicker-format="dd/MM/yyyy"', count=3)
-        self.assertContains(response, 'data-crayons-datepicker-show-footer="false"', count=3)
-        self.assertContains(response, f'id="task-reschedule-date-{case.tasks.first().id}"')
-        self.assertContains(response, f'id="task-reschedule-mobile-date-{case.tasks.first().id}"')
+        self.assertContains(response, 'data-crayons-datepicker="true"', count=2)
+        self.assertContains(response, 'data-crayons-datepicker-format="dd/MM/yyyy"', count=2)
+        self.assertContains(response, 'data-crayons-datepicker-show-footer="false"', count=2)
+        self.assertContains(response, 'id="task-shared-reschedule-date"')
 
     def test_recent_case_update_persists_changes_and_logs_activity(self):
         self.client.force_login(self.user)

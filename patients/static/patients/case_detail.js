@@ -31,6 +31,24 @@
   const taskEditorNoteForm = shell.querySelector("[data-task-editor-form='note']");
   const taskEditorDateInput = shell.querySelector("#task-shared-reschedule-date");
   const taskEditorNoteInput = shell.querySelector("#task-shared-note");
+  const vitalsEditor = shell.querySelector("[data-vitals-editor]");
+  const vitalsTabButtons = Array.from(shell.querySelectorAll("[data-vitals-tab]"));
+  const vitalsTabPanels = Array.from(shell.querySelectorAll("[data-vitals-panel]"));
+  const vitalsEditorTriggers = Array.from(shell.querySelectorAll("[data-vitals-editor-trigger]"));
+  const vitalsEditorCloseButtons = Array.from(shell.querySelectorAll("[data-vitals-editor-close]"));
+  const vitalsEditorLabel = shell.querySelector("[data-vitals-editor-label]");
+  const vitalsEditorTitle = shell.querySelector("[data-vitals-editor-title]");
+  const vitalsEditorSubtitle = shell.querySelector("[data-vitals-editor-subtitle]");
+  const vitalsEditorForm = shell.querySelector("[data-vitals-editor-form]");
+  const vitalsEditorDefaultAction = vitalsEditorForm?.getAttribute("action") || "";
+  const vitalsRecordedAtInput = vitalsEditorForm?.querySelector("[name='recorded_at']");
+  const vitalsSystolicInput = vitalsEditorForm?.querySelector("[name='bp_systolic']");
+  const vitalsDiastolicInput = vitalsEditorForm?.querySelector("[name='bp_diastolic']");
+  const vitalsPulseInput = vitalsEditorForm?.querySelector("[name='pr']");
+  const vitalsSpo2Input = vitalsEditorForm?.querySelector("[name='spo2']");
+  const vitalsWeightInput = vitalsEditorForm?.querySelector("[name='weight_kg']");
+  const vitalsHemoglobinInput = vitalsEditorForm?.querySelector("[name='hemoglobin']");
+  const vitalsEditorSubmit = vitalsEditorForm?.querySelector("button[type='submit']");
   const logJumps = Array.from(shell.querySelectorAll(".log-jump"));
   const jumpButtons = Array.from(shell.querySelectorAll("[data-case-jump]"));
   const timeline = shell.querySelector("#clinical-timeline");
@@ -49,6 +67,21 @@
     },
   };
 
+  const vitalsEditorCopy = {
+    create: {
+      label: "Add Reading",
+      title: "Capture a vitals check-in",
+      subtitle: "Blood pressure is saved as one paired reading.",
+      submit: "Save Reading",
+    },
+    edit: {
+      label: "Edit Latest",
+      title: "Update the latest vitals reading",
+      subtitle: "Adjust the current profile snapshot without leaving this page.",
+      submit: "Save Changes",
+    },
+  };
+
   const setComposer = (value) => {
     const next = value || "";
     if (composer) {
@@ -63,6 +96,21 @@
     });
     composerPanels.forEach((panel) => {
       panel.classList.toggle("is-active", panel.dataset.caseComposerPanel === next);
+    });
+  };
+
+  const setVitalsTab = (tabId) => {
+    const nextTab = tabId || "";
+    vitalsTabButtons.forEach((button) => {
+      const active = button.dataset.vitalsTab === nextTab;
+      button.classList.toggle("is-active", active);
+      button.setAttribute("aria-selected", active ? "true" : "false");
+      button.setAttribute("tabindex", active ? "0" : "-1");
+    });
+    vitalsTabPanels.forEach((panel) => {
+      const active = panel.dataset.vitalsPanel === nextTab;
+      panel.classList.toggle("is-active", active);
+      panel.hidden = !active;
     });
   };
 
@@ -198,6 +246,111 @@
       taskEditorNoteForm.hidden = true;
       taskEditorNoteForm.action = "";
     }
+  };
+
+  const clearVitalsEditorTriggers = () => {
+    vitalsEditorTriggers.forEach((button) => {
+      button.classList.remove("is-active");
+      button.setAttribute("aria-expanded", "false");
+    });
+  };
+
+  const resetVitalsEditorFields = () => {
+    if (!vitalsEditorForm) {
+      return;
+    }
+    vitalsEditorForm.reset();
+  };
+
+  const applyVitalsEditorValues = (trigger) => {
+    if (!trigger) {
+      return;
+    }
+    if (vitalsRecordedAtInput) {
+      vitalsRecordedAtInput.value = trigger.dataset.vitalsRecordedAt || vitalsRecordedAtInput.value || "";
+    }
+    if (vitalsSystolicInput) {
+      vitalsSystolicInput.value = trigger.dataset.vitalsBpSystolic || "";
+    }
+    if (vitalsDiastolicInput) {
+      vitalsDiastolicInput.value = trigger.dataset.vitalsBpDiastolic || "";
+    }
+    if (vitalsPulseInput) {
+      vitalsPulseInput.value = trigger.dataset.vitalsPr || "";
+    }
+    if (vitalsSpo2Input) {
+      vitalsSpo2Input.value = trigger.dataset.vitalsSpo2 || "";
+    }
+    if (vitalsWeightInput) {
+      vitalsWeightInput.value = trigger.dataset.vitalsWeightKg || "";
+    }
+    if (vitalsHemoglobinInput) {
+      vitalsHemoglobinInput.value = trigger.dataset.vitalsHemoglobin || "";
+    }
+  };
+
+  const setVitalsEditor = (mode, trigger = null) => {
+    if (!vitalsEditor || !vitalsEditorForm) {
+      return;
+    }
+
+    const nextMode = mode || "";
+    if (!nextMode || !trigger) {
+      vitalsEditor.hidden = true;
+      vitalsEditor.dataset.vitalsEditorMode = "";
+      vitalsEditorForm.action = vitalsEditorDefaultAction;
+      resetVitalsEditorFields();
+      clearVitalsEditorTriggers();
+      if (vitalsEditorLabel) {
+        vitalsEditorLabel.textContent = vitalsEditorCopy.create.label;
+      }
+      if (vitalsEditorTitle) {
+        vitalsEditorTitle.textContent = vitalsEditorCopy.create.title;
+      }
+      if (vitalsEditorSubtitle) {
+        vitalsEditorSubtitle.textContent = vitalsEditorCopy.create.subtitle;
+      }
+      if (vitalsEditorSubmit) {
+        vitalsEditorSubmit.textContent = vitalsEditorCopy.create.submit;
+      }
+      return;
+    }
+
+    const copy = vitalsEditorCopy[nextMode];
+    if (!copy) {
+      return;
+    }
+
+    vitalsEditor.hidden = false;
+    vitalsEditor.dataset.vitalsEditorMode = nextMode;
+    vitalsEditorForm.action = trigger.dataset.vitalsUrl || vitalsEditorDefaultAction;
+    resetVitalsEditorFields();
+    if (nextMode === "edit") {
+      applyVitalsEditorValues(trigger);
+    }
+    clearVitalsEditorTriggers();
+    trigger.classList.add("is-active");
+    trigger.setAttribute("aria-expanded", "true");
+
+    if (vitalsEditorLabel) {
+      vitalsEditorLabel.textContent = copy.label;
+    }
+    if (vitalsEditorTitle) {
+      vitalsEditorTitle.textContent = copy.title;
+    }
+    if (vitalsEditorSubtitle) {
+      vitalsEditorSubtitle.textContent = copy.subtitle;
+    }
+    if (vitalsEditorSubmit) {
+      vitalsEditorSubmit.textContent = copy.submit;
+    }
+
+    window.requestAnimationFrame(() => {
+      if (window.matchMedia("(max-width: 991.98px)").matches) {
+        vitalsEditor.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
+      vitalsRecordedAtInput?.focus();
+    });
   };
 
   const placeTaskEditor = (trigger) => {
@@ -345,6 +498,26 @@
     });
   });
 
+  vitalsEditorTriggers.forEach((button) => {
+    button.addEventListener("click", () => {
+      const isSameMode = vitalsEditor?.dataset.vitalsEditorMode === button.dataset.vitalsEditorTrigger;
+      const shouldCollapse = !vitalsEditor?.hidden && isSameMode;
+      setVitalsEditor(shouldCollapse ? "" : button.dataset.vitalsEditorTrigger, shouldCollapse ? null : button);
+    });
+  });
+
+  vitalsTabButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      setVitalsTab(button.dataset.vitalsTab);
+    });
+  });
+
+  vitalsEditorCloseButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      setVitalsEditor("");
+    });
+  });
+
   if (allTaskToggle) {
     allTaskToggle.addEventListener("click", () => {
       const nextOpen = allTaskBody?.hidden ?? true;
@@ -419,6 +592,9 @@
         if (form.closest("[data-task-editor]")) {
           setTaskEditor("");
         }
+        if (form.closest("[data-vitals-editor]")) {
+          setVitalsEditor("");
+        }
         window.setTimeout(() => {
           window.location.reload();
         }, 300);
@@ -439,6 +615,8 @@
 
   setComposer("");
   setTaskEditor("");
+  setVitalsTab(vitalsTabButtons[0]?.dataset.vitalsTab || "");
+  setVitalsEditor("");
   setAllTaskOpen(false);
   filterTasks();
 })();

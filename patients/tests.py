@@ -307,14 +307,29 @@ class ThemeSystemTests(TestCase):
         merged = merge_theme_tokens(
             {
                 "buttons": {"primary": {"bg": "#112233", "text": "#ffffff"}},
-                "vitals_chart": {"bp_systolic": "#112233"},
+                "vitals_chart": {"blood_pressure": "#112233"},
             }
         )
 
         self.assertEqual(merged["buttons"]["primary"]["border"], mix_colors("#112233", "#ffffff", 0.20))
         self.assertEqual(merged["buttons"]["primary"]["hover_bg"], mix_colors("#112233", "#ffffff", 0.10))
         self.assertEqual(merged["buttons"]["success"]["bg"], "#198754")
-        self.assertEqual(merged["vitals_chart"]["bp_systolic_fill"], rgba_string("#112233", 0.18))
+        self.assertEqual(merged["vitals_chart"]["blood_pressure_fill"], rgba_string("#112233", 0.18))
+
+    def test_merge_theme_tokens_maps_legacy_bp_chart_tokens_to_blood_pressure(self):
+        merged = merge_theme_tokens(
+            {
+                "vitals_chart": {
+                    "bp_systolic": "#112233",
+                    "bp_diastolic": "#445566",
+                }
+            }
+        )
+
+        self.assertEqual(merged["vitals_chart"]["blood_pressure"], "#112233")
+        self.assertEqual(merged["vitals_chart"]["blood_pressure_fill"], rgba_string("#112233", 0.18))
+        self.assertNotIn("bp_systolic", merged["vitals_chart"])
+        self.assertNotIn("bp_diastolic", merged["vitals_chart"])
 
     def test_theme_settings_singleton_normalizes_tokens_on_save(self):
         theme = ThemeSettings(tokens={"shell": {"page_bg": "#ABCDEF"}})
@@ -3173,6 +3188,10 @@ class MedtrackViewTests(TestCase):
         self.assertContains(theme_response, "Theme Settings")
         self.assertContains(theme_response, "Success Button")
         self.assertContains(theme_response, "buttons__success__bg")
+        self.assertContains(theme_response, "Blood Pressure Chart")
+        self.assertContains(theme_response, "vitals_chart__blood_pressure")
+        self.assertContains(theme_response, "Vitals Module")
+        self.assertNotContains(theme_response, "bp-systolic")
 
     def test_admin_settings_page_shows_device_access_link_and_page_requires_manage_settings(self):
         pending_user = get_user_model().objects.create_user(username="pilot-target", password="strong-password-123")
@@ -5417,6 +5436,67 @@ class MedtrackViewTests(TestCase):
         self.assertFalse(VitalEntry.objects.filter(case=case).exists())
         self.assertContains(response, "Enter diastolic BP")
 
+    def test_vitals_create_returns_json_for_sidebar_ajax(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-VITALS-AJAX-CREATE",
+            first_name="Vitals",
+            last_name="AjaxCreate",
+            phone_number="9876500200",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=10),
+            created_by=self.user,
+        )
+
+        response = self.client.post(
+            reverse("patients:vitals_create", kwargs={"pk": case.pk}),
+            {
+                "recorded_at": timezone.localtime(timezone.now()).strftime("%Y-%m-%dT%H:%M"),
+                "bp_systolic": "118",
+                "bp_diastolic": "76",
+                "pr": "82",
+            },
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+            HTTP_ACCEPT="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["message"], "Vitals recorded.")
+        self.assertEqual(payload["case"]["latest_vitals_snapshot"]["blood_pressure"]["value_display"], "118/76 mmHg")
+        self.assertEqual(payload["case"]["recent_vitals_preview"][0]["blood_pressure"]["value_compact"], "118/76")
+
+    def test_vitals_create_returns_json_errors_for_sidebar_ajax(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-VITALS-AJAX-ERROR",
+            first_name="Vitals",
+            last_name="AjaxError",
+            phone_number="9876500200",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=10),
+            created_by=self.user,
+        )
+
+        response = self.client.post(
+            reverse("patients:vitals_create", kwargs={"pk": case.pk}),
+            {
+                "recorded_at": timezone.localtime(timezone.now()).strftime("%Y-%m-%dT%H:%M"),
+                "bp_systolic": "120",
+            },
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+            HTTP_ACCEPT="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        payload = response.json()
+        self.assertEqual(payload["message"], "Could not record vitals. Please check the inputs.")
+        self.assertIn("bp_diastolic", payload["errors"])
+
     def test_vitals_edit_updates_audit_fields(self):
         self.client.force_login(self.user)
         editor = get_user_model().objects.create_user(username="editor", password="strong-password-123")
@@ -5456,6 +5536,48 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(vital.updated_by, editor)
         self.assertEqual(vital.hemoglobin, Decimal("11.2"))
 
+    def test_vitals_edit_returns_json_for_sidebar_ajax(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-VITALS-AJAX-EDIT",
+            first_name="Vitals",
+            last_name="AjaxEdit",
+            phone_number="9876500201",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=10),
+            created_by=self.user,
+        )
+        vital = VitalEntry.objects.create(
+            case=case,
+            recorded_at=timezone.now(),
+            bp_systolic=120,
+            bp_diastolic=80,
+            pr=78,
+            created_by=self.user,
+            updated_by=self.user,
+        )
+
+        response = self.client.post(
+            reverse("patients:vitals_edit", kwargs={"pk": vital.pk}),
+            {
+                "recorded_at": timezone.localtime(vital.recorded_at).strftime("%Y-%m-%dT%H:%M"),
+                "bp_systolic": "124",
+                "bp_diastolic": "82",
+                "pr": "84",
+            },
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+            HTTP_ACCEPT="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["message"], "Vitals updated.")
+        vital.refresh_from_db()
+        self.assertEqual(vital.bp_systolic, 124)
+        self.assertEqual(payload["case"]["latest_vitals_snapshot"]["blood_pressure"]["value_display"], "124/82 mmHg")
+
     def test_case_detail_renders_vitals_link_and_meta_section(self):
         self.client.force_login(self.user)
         case = Case.objects.create(
@@ -5484,12 +5606,22 @@ class MedtrackViewTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, reverse("patients:case_vitals", kwargs={"pk": case.pk}))
-        self.assertContains(response, "Open Vitals Trends")
+        self.assertContains(response, "View Full History")
         self.assertContains(response, "Clinical Details")
-        self.assertContains(response, "Task Completion")
         self.assertContains(response, "Vitals")
-        self.assertContains(response, "BP Systolic")
+        self.assertContains(response, "Patient Vitals")
+        self.assertContains(response, "Snapshot")
+        self.assertContains(response, "Trends")
+        self.assertContains(response, "History")
+        self.assertContains(response, "Blood Pressure")
+        self.assertContains(response, "Elevated")
+        self.assertContains(response, "Edit Latest")
+        self.assertContains(response, "+ Add")
         self.assertContains(response, "Hemoglobin")
+        self.assertNotContains(response, "Latest Snapshot")
+        self.assertNotContains(response, "Recent Readings")
+        self.assertNotContains(response, "BP Systolic")
+        self.assertNotContains(response, "BP Diastolic")
 
     def test_case_detail_identity_header_preserves_long_name_without_truncation(self):
         self.client.force_login(self.user)
@@ -5590,8 +5722,15 @@ class MedtrackViewTests(TestCase):
         self.assertContains(response, "app-pill high-risk")
         self.assertContains(response, "identity-vitals-panel")
         self.assertNotContains(response, 'class="identity-vitals-card"')
-        self.assertContains(response, "BP Systolic")
+        self.assertContains(response, "Blood Pressure")
+        self.assertContains(response, "Patient Vitals")
+        self.assertContains(response, "Snapshot")
+        self.assertContains(response, "Trends")
+        self.assertContains(response, "History")
         self.assertContains(response, "Hemoglobin")
+        self.assertNotContains(response, "Latest Snapshot")
+        self.assertNotContains(response, "Recent Readings")
+        self.assertNotContains(response, "BP Systolic")
 
     def test_case_detail_identity_header_shows_empty_clinical_state_for_sparse_case(self):
         self.client.force_login(self.user)
@@ -5673,8 +5812,11 @@ class MedtrackViewTests(TestCase):
         response = self.client.get(reverse("patients:case_detail", kwargs={"pk": case.pk}))
 
         self.assertEqual(response.status_code, 200)
-        latest_recorded = timezone.localtime(case.vitals.order_by("-recorded_at").first().recorded_at).strftime("%d-%m-%y %H:%M")
-        self.assertContains(response, latest_recorded)
+        latest_recorded = timezone.localtime(case.vitals.order_by("-recorded_at").first().recorded_at)
+        self.assertContains(
+            response,
+            f"Recorded {latest_recorded.strftime('%d %b %Y')} at {latest_recorded.strftime('%H:%M')}",
+        )
         self.assertContains(response, "SpO2")
         self.assertContains(response, "N/A")
 
@@ -5696,11 +5838,16 @@ class MedtrackViewTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, reverse("patients:vitals_create", kwargs={"pk": case.pk}))
-        self.assertContains(response, "Add Vitals")
+        self.assertContains(response, "+ Add")
         self.assertContains(response, reverse("patients:case_vitals", kwargs={"pk": case.pk}))
-        self.assertContains(response, "Open Vitals Trends")
+        self.assertContains(response, "View Full History")
+        self.assertContains(response, "Patient Vitals")
+        self.assertContains(response, "Snapshot")
+        self.assertContains(response, "Trends")
+        self.assertContains(response, "History")
         self.assertContains(response, "No vitals have been recorded for this patient yet.")
-        self.assertContains(response, "No record yet")
+        self.assertNotContains(response, "No record yet")
+        self.assertNotContains(response, "Edit Latest")
 
     def test_case_detail_removes_lower_vitals_section(self):
         self.client.force_login(self.user)
@@ -5792,14 +5939,15 @@ class MedtrackViewTests(TestCase):
         response = self.client.get(reverse("patients:case_vitals", kwargs={"pk": case.pk}))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'id="vitals-chart-bp-systolic"')
-        self.assertContains(response, 'id="vitals-chart-bp-diastolic"')
+        self.assertContains(response, 'id="vitals-chart-blood-pressure"')
         self.assertContains(response, 'id="vitals-chart-pr"')
         self.assertContains(response, 'id="vitals-chart-spo2"')
         self.assertContains(response, 'id="vitals-chart-weight"')
         self.assertContains(response, 'id="vitals-chart-hemoglobin"')
         self.assertContains(response, 'id="vitals-trend-data"')
         self.assertIsNotNone(response.context["vitals_trend_payload"])
+        self.assertNotContains(response, 'id="vitals-chart-bp-systolic"')
+        self.assertNotContains(response, 'id="vitals-chart-bp-diastolic"')
 
     def test_case_vitals_page_trend_payload_handles_partial_rows(self):
         self.client.force_login(self.user)
@@ -5817,6 +5965,7 @@ class MedtrackViewTests(TestCase):
         VitalEntry.objects.create(
             case=case,
             recorded_at=timezone.now() - timedelta(days=1),
+            bp_systolic=120,
             hemoglobin=Decimal("9.8"),
             created_by=self.user,
             updated_by=self.user,
@@ -5834,6 +5983,9 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.context["vitals_trend_payload"]
         self.assertEqual(len(payload["labels"]), 2)
+        self.assertEqual(payload["datasets"]["blood_pressure"][0]["display"], "120/- mmHg")
+        self.assertIsNone(payload["datasets"]["blood_pressure"][0]["range"])
+        self.assertEqual(payload["datasets"]["blood_pressure"][1]["display"], "N/A")
         self.assertEqual(payload["datasets"]["hemoglobin"], [9.8, None])
         self.assertEqual(payload["datasets"]["spo2"], [None, 97])
 

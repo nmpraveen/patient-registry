@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026.03.20.23.10
+- Fixed the compact vitals tile alignment on the case-detail page so the emoji, label, and value content now anchor left inside each stat tile instead of inheriting centered badge-style positioning from the shared vitals tier utility.
+
+## 2026.03.20.23.02
+- Fixed the compact vitals tile emoji regression on the case-detail page by passing the icon field through the vitals summary payload and replacing the corrupted source literals with safe Unicode escape values, so the rendered tiles now show the intended `💓`, `🫁`, `⚖️`, and `🩸` icons reliably.
+
+## 2026.03.20.22.59
+- Added the missing mockup emojis to the case-detail vitals stat tiles so Pulse, SpO2, Weight, and Hemoglobin now render with `💓`, `🫁`, `⚖️`, and `🩸` instead of text-only shorthand.
+- Compressed the vitals card sizing by reducing tile padding, value sizes, hero sizing, and tab/header spacing so the sidebar module sits closer to the rest of the case-detail typography instead of reading oversized.
+
+## 2026.03.20.22.52
+- Reworked the case-detail vitals module into the requested tabbed `Patient Vitals` card with `Snapshot`, `Trends`, and `History` views, a header `+ Add` action, a BP hero card, compact 2x2 metric tiles, and an inline history preview that links to the full vitals route.
+- Updated vitals comparison and history payloads so the case page now renders latest-vs-previous trend rows and a compact recent-history table without bringing back the older stacked sidebar layout.
+- Switched vitals status handling on the case page to the requested exact three-tier clinical thresholds and colors for blood pressure, pulse rate, SpO2, and hemoglobin, while keeping weight neutral and preserving the existing paired BP storage fields plus inline add/edit flow.
+
+## 2026.03.20.18.15
+- Rebuilt the case-detail vitals sidebar into a modern two-surface module with a combined `Blood Pressure` snapshot, compact recent-readings history, and always-visible vitals actions.
+- Added an inline sidebar vitals editor for add/edit flows, replaced the BP preset dropdown with paired systolic/diastolic inputs, and updated vitals create/edit views to support the shared AJAX response contract while preserving full-page fallbacks.
+- Refreshed the dedicated vitals history route to use one combined blood-pressure chart plus a cleaner audit table, and updated theme settings/preview/token compatibility so legacy BP chart colors map into the new `blood_pressure` chart token.
+
 ## 2026.03.20.04.36
 - Kept mobile Actionable Task buttons on a single row, tightened their card layout, and switched overdue accents and pills to a clearer red treatment that matches the requested mockup more closely.
 - Moved the shared task reschedule/note editor into per-task inline anchor slots so it now opens directly under the clicked actionable row or mobile card instead of below the full task list.

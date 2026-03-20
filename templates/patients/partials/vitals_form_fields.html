@@ -1,0 +1,63 @@
+<div class="case-vitals-form__grid">
+  <div class="case-vitals-form__field case-vitals-form__field--wide">
+    <label class="form-label small" for="{{ form.recorded_at.id_for_label }}">{{ form.recorded_at.label }}</label>
+    {{ form.recorded_at }}
+  </div>
+
+  <div class="case-vitals-form__field case-vitals-form__field--wide">
+    <div class="case-vitals-bp-group">
+      <label class="form-label small mb-2" for="{{ form.bp_systolic.id_for_label }}">Blood Pressure</label>
+      <div class="case-vitals-bp-inputs">
+        <div class="case-vitals-bp-input">
+          <span class="case-vitals-bp-input__label">{{ form.bp_systolic.label }}</span>
+          {{ form.bp_systolic }}
+        </div>
+        <div class="case-vitals-bp-divider" aria-hidden="true">/</div>
+        <div class="case-vitals-bp-input">
+          <span class="case-vitals-bp-input__label">{{ form.bp_diastolic.label }}</span>
+          {{ form.bp_diastolic }}
+        </div>
+      </div>
+      <p class="case-vitals-form__hint mb-0">Enter both values or leave both blank.</p>
+    </div>
+  </div>
+
+  <div class="case-vitals-form__field">
+    <label class="form-label small" for="{{ form.pr.id_for_label }}">{{ form.pr.label }}</label>
+    {{ form.pr }}
+  </div>
+
+  <div class="case-vitals-form__field">
+    <label class="form-label small" for="{{ form.spo2.id_for_label }}">{{ form.spo2.label }}</label>
+    {{ form.spo2 }}
+  </div>
+
+  <div class="case-vitals-form__field">
+    <label class="form-label small" for="{{ form.weight_kg.id_for_label }}">{{ form.weight_kg.label }}</label>
+    {{ form.weight_kg }}
+  </div>
+
+  <div class="case-vitals-form__field">
+    <label class="form-label small" for="{{ form.hemoglobin.id_for_label }}">{{ form.hemoglobin.label }}</label>
+    {{ form.hemoglobin }}
+  </div>
+</div>
+
+{% if show_hb_warning %}
+  <div class="case-vitals-form__messages">
+    <div class="case-vitals-form__message case-vitals-form__message--warning">{{ form.hb_warning_message }}</div>
+  </div>
+{% endif %}
+
+{% if form.non_field_errors or form.errors %}
+  <div class="case-vitals-form__messages">
+    {% for error in form.non_field_errors %}
+      <div class="case-vitals-form__message case-vitals-form__message--error">{{ error }}</div>
+    {% endfor %}
+    {% for field in form %}
+      {% for error in field.errors %}
+        <div class="case-vitals-form__message case-vitals-form__message--error">{{ field.label }}: {{ error }}</div>
+      {% endfor %}
+    {% endfor %}
+  </div>
+{% endif %}

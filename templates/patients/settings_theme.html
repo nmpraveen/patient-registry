@@ -147,6 +147,126 @@
     border-color: var(--theme-vitals-status-normal-border);
   }
 
+  .theme-preview-vitals {
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .theme-preview-vitals__surface {
+    padding: 0.8rem;
+    border-radius: 0.9rem;
+    border: 1px solid var(--theme-shell-surface-border);
+    background: color-mix(in srgb, var(--theme-shell-page-bg) 86%, white 14%);
+  }
+
+  .theme-preview-vitals__header,
+  .theme-preview-vitals__reading-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .theme-preview-vitals__header {
+    margin-bottom: 0.7rem;
+    color: var(--theme-shell-muted-text);
+    font-size: 0.73rem;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .theme-preview-vitals__bp {
+    padding: 0.8rem;
+    border-radius: 0.85rem;
+    border: 1px solid var(--theme-shell-surface-border);
+    background: linear-gradient(180deg, color-mix(in srgb, var(--theme-shell-surface-bg) 92%, white 8%) 0%, color-mix(in srgb, var(--theme-shell-page-bg) 88%, white 12%) 100%);
+    margin-bottom: 0.7rem;
+  }
+
+  .theme-preview-vitals__bp-label {
+    display: block;
+    color: var(--theme-shell-muted-text);
+    font-size: 0.7rem;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 0.25rem;
+  }
+
+  .theme-preview-vitals__bp-value {
+    display: block;
+    color: var(--theme-vitals-status-normal-text);
+    font-size: 1.15rem;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+  }
+
+  .theme-preview-vitals__metric-list {
+    display: grid;
+    gap: 0.5rem;
+  }
+
+  .theme-preview-vitals__metric-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .theme-preview-vitals__reading {
+    display: grid;
+    gap: 0.45rem;
+    padding: 0.65rem 0.7rem;
+    border-radius: 0.8rem;
+    border: 1px solid var(--theme-shell-surface-border);
+    background: var(--theme-shell-surface-bg);
+  }
+
+  .theme-preview-vitals__reading-time {
+    font-size: 0.78rem;
+    font-weight: 700;
+  }
+
+  .theme-preview-vitals__chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+
+  .theme-preview-vitals__chip {
+    display: inline-flex;
+    align-items: center;
+    min-height: 1.55rem;
+    padding: 0.14rem 0.48rem;
+    border-radius: 999px;
+    border: 1px solid var(--theme-shell-surface-border);
+    background: color-mix(in srgb, var(--theme-shell-page-bg) 86%, white 14%);
+    font-size: 0.72rem;
+    font-weight: 700;
+  }
+
+  .theme-preview-vitals__chart-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    margin-top: 0.7rem;
+  }
+
+  .theme-preview-vitals__chart-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+  }
+
+  .theme-preview-vitals__chart-swatch {
+    width: 0.85rem;
+    height: 0.85rem;
+    border-radius: 999px;
+  }
+
   .theme-section-card {
     border: 1px solid var(--theme-shell-surface-border);
     border-radius: 1rem;
@@ -341,18 +461,64 @@
       </div>
 
       <div class="theme-preview-card">
-        <h2>Status Chips</h2>
-        <div class="theme-preview-chip-row mb-3">
-          <span class="theme-preview-pill theme-preview-pill--case-active">Active</span>
-          <span class="theme-preview-pill theme-preview-pill--case-ltfu">Loss To Follow-up</span>
-        </div>
-        <div class="theme-preview-chip-row mb-3">
-          <span class="theme-preview-pill theme-preview-pill--task-scheduled">Scheduled</span>
-          <span class="theme-preview-pill theme-preview-pill--task-awaiting">Awaiting Reports</span>
-        </div>
-        <div class="theme-preview-chip-row">
-          <span class="theme-preview-pill theme-preview-pill--vitals-low">Hb 8.5</span>
-          <span class="theme-preview-pill theme-preview-pill--vitals-normal">SpO2 99%</span>
+        <h2>Vitals Module</h2>
+        <div class="theme-preview-vitals">
+          <div class="theme-preview-vitals__surface">
+            <div class="theme-preview-vitals__header">
+              <span>Latest Snapshot</span>
+              <span>20 Mar 2026 09:40</span>
+            </div>
+            <div class="theme-preview-vitals__bp">
+              <span class="theme-preview-vitals__bp-label">Blood Pressure</span>
+              <span class="theme-preview-vitals__bp-value">118/76 mmHg</span>
+            </div>
+            <div class="theme-preview-vitals__metric-list">
+              <div class="theme-preview-vitals__metric-row">
+                <span>Pulse Rate</span>
+                <span class="theme-preview-pill theme-preview-pill--vitals-normal">82 bpm</span>
+              </div>
+              <div class="theme-preview-vitals__metric-row">
+                <span>SpO2</span>
+                <span class="theme-preview-pill theme-preview-pill--vitals-normal">99%</span>
+              </div>
+              <div class="theme-preview-vitals__metric-row">
+                <span>Hemoglobin</span>
+                <span class="theme-preview-pill theme-preview-pill--vitals-low">8.5 g/dL</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="theme-preview-vitals__surface">
+            <div class="theme-preview-vitals__header">
+              <span>Recent Readings</span>
+              <span>4 saved</span>
+            </div>
+            <div class="theme-preview-vitals__reading">
+              <div class="theme-preview-vitals__reading-meta">
+                <span class="theme-preview-vitals__reading-time">20 Mar 2026 09:40</span>
+                <span class="theme-preview-pill theme-preview-pill--vitals-normal">118/76</span>
+              </div>
+              <div class="theme-preview-vitals__chip-row">
+                <span class="theme-preview-vitals__chip">PR 82 bpm</span>
+                <span class="theme-preview-vitals__chip">SpO2 99%</span>
+                <span class="theme-preview-vitals__chip">WT 62.5 kg</span>
+              </div>
+            </div>
+            <div class="theme-preview-vitals__chart-row">
+              <span class="theme-preview-vitals__chart-chip">
+                <span class="theme-preview-vitals__chart-swatch" style="background: var(--theme-vitals-chart-blood-pressure);"></span>
+                Blood Pressure
+              </span>
+              <span class="theme-preview-vitals__chart-chip">
+                <span class="theme-preview-vitals__chart-swatch" style="background: var(--theme-vitals-chart-pulse-rate);"></span>
+                Pulse
+              </span>
+              <span class="theme-preview-vitals__chart-chip">
+                <span class="theme-preview-vitals__chart-swatch" style="background: var(--theme-vitals-chart-hemoglobin);"></span>
+                Hb
+              </span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -520,8 +686,7 @@
       "vitals-status-na",
     ];
     const chartPrefixes = [
-      "bp-systolic",
-      "bp-diastolic",
+      "blood-pressure",
       "pulse-rate",
       "spo2",
       "weight",

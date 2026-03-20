@@ -2,7 +2,7 @@
 {% load static theme_tags %}
 {% block title %}Case {{ case.uhid }} | MEDTRACK{% endblock %}
 {% block extra_head %}
-  <link rel="stylesheet" href="{% static 'patients/case_detail.css' %}" />
+  <link rel="stylesheet" href="{% static 'patients/case_detail.css' %}?v={{ app_version }}" />
 {% endblock %}
 {% block content %}
   <article class="case-detail-shell" data-case-detail-shell data-testid="case-detail-shell" data-case-id="{{ case.id }}" style="{% category_theme_style case.category theme_category_colors %}">
@@ -26,5 +26,5 @@
   </article>
 {% endblock %}
 {% block extra_scripts %}
-  <script src="{% static 'patients/case_detail.js' %}" defer></script>
+  <script src="{% static 'patients/case_detail.js' %}?v={{ app_version }}" defer></script>
 {% endblock %}

@@ -1,235 +1,480 @@
 {% extends 'base.html' %}
+{% load static %}
 {% block title %}Vitals {{ case.uhid }} | MEDTRACK{% endblock %}
+{% block extra_head %}
+  <link rel="stylesheet" href="{% static 'patients/case_detail.css' %}?v={{ app_version }}" />
+  <style>
+    .vitals-page {
+      display: grid;
+      gap: 1rem;
+    }
+
+    .vitals-page__hero {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 1rem;
+    }
+
+    .vitals-page__hero-copy {
+      max-width: 40rem;
+    }
+
+    .vitals-page__hero-kicker {
+      margin: 0 0 0.35rem;
+      color: #94a3b8;
+      font-size: 0.72rem;
+      font-weight: 800;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    .vitals-page__hero-title {
+      margin: 0 0 0.35rem;
+      color: #0f172a;
+      font-size: clamp(1.7rem, 1.42rem + 0.65vw, 2.15rem);
+      font-weight: 800;
+      letter-spacing: -0.035em;
+    }
+
+    .vitals-page__hero-meta {
+      margin: 0;
+      color: #64748b;
+      font-size: 0.95rem;
+      font-weight: 600;
+    }
+
+    .vitals-page__hero-actions {
+      display: flex;
+      gap: 0.6rem;
+      flex-wrap: wrap;
+    }
+
+    .vitals-page__snapshot-grid {
+      display: grid;
+      gap: 1rem;
+      grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+    }
+
+    .vitals-page__snapshot-surface,
+    .vitals-page__trend-surface,
+    .vitals-page__history-surface {
+      overflow: hidden;
+    }
+
+    .vitals-page__snapshot-surface .case-vitals-primary {
+      margin-bottom: 1rem;
+    }
+
+    .vitals-page__summary-notes {
+      display: grid;
+      gap: 0.9rem;
+    }
+
+    .vitals-page__summary-note {
+      padding: 0.95rem 1rem;
+      border-radius: 1rem;
+      border: 1px solid color-mix(in srgb, var(--app-border) 74%, white 26%);
+      background: color-mix(in srgb, var(--theme-shell-page-bg) 88%, white 12%);
+    }
+
+    .vitals-page__summary-note-label {
+      margin-bottom: 0.25rem;
+      color: #94a3b8;
+      font-size: 0.72rem;
+      font-weight: 800;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .vitals-page__summary-note-value {
+      color: #0f172a;
+      font-size: 1.02rem;
+      font-weight: 700;
+    }
+
+    .vitals-page__summary-note-copy {
+      margin-top: 0.35rem;
+      color: #64748b;
+      font-size: 0.85rem;
+      line-height: 1.45;
+    }
+
+    .vitals-trend-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 1rem;
+    }
+
+    .vitals-chart-card {
+      padding: 1rem;
+      border-radius: 1rem;
+      border: 1px solid color-mix(in srgb, var(--app-border) 74%, white 26%);
+      background: #fff;
+    }
+
+    .vitals-chart-card__label {
+      margin: 0 0 0.15rem;
+      color: #94a3b8;
+      font-size: 0.7rem;
+      font-weight: 800;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .vitals-chart-card__title {
+      margin: 0 0 0.85rem;
+      color: #0f172a;
+      font-size: 1rem;
+      font-weight: 700;
+    }
+
+    .vitals-chart-wrap {
+      position: relative;
+      height: 240px;
+      width: 100%;
+    }
+
+    .vitals-history-table {
+      margin-bottom: 0;
+    }
+
+    .vitals-history-table thead th {
+      white-space: nowrap;
+    }
+
+    .vitals-history-table tbody tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .vitals-history-link {
+      font-weight: 700;
+      color: var(--theme-shell-link);
+      text-decoration: none;
+    }
+
+    .vitals-history-link:hover,
+    .vitals-history-link:focus {
+      color: var(--theme-shell-link-hover);
+      text-decoration: none;
+    }
+
+    @media (max-width: 991.98px) {
+      .vitals-page__snapshot-grid,
+      .vitals-trend-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 640px) {
+      .vitals-page__hero {
+        flex-direction: column;
+      }
+
+      .vitals-page__hero-actions .btn {
+        width: 100%;
+      }
+    }
+  </style>
+{% endblock %}
 {% block content %}
-<style>
-  .vitals-chart-wrap {
-    position: relative;
-    height: 240px;
-    width: 100%;
-  }
-
-  .vitals-status-pill {
-    display: inline-block;
-    border-radius: 999px;
-    padding: 0.2rem 0.55rem;
-    font-size: 0.72rem;
-    font-weight: 700;
-    border: 1px solid transparent;
-  }
-
-  .vitals-status-low {
-    color: var(--theme-vitals-status-low-text);
-    background: var(--theme-vitals-status-low-bg);
-    border-color: var(--theme-vitals-status-low-border);
-  }
-
-  .vitals-status-normal {
-    color: var(--theme-vitals-status-normal-text);
-    background: var(--theme-vitals-status-normal-bg);
-    border-color: var(--theme-vitals-status-normal-border);
-  }
-
-  .vitals-status-high {
-    color: var(--theme-vitals-status-high-text);
-    background: var(--theme-vitals-status-high-bg);
-    border-color: var(--theme-vitals-status-high-border);
-  }
-
-  .vitals-status-neutral {
-    color: var(--theme-vitals-status-neutral-text);
-    background: var(--theme-vitals-status-neutral-bg);
-    border-color: var(--theme-vitals-status-neutral-border);
-  }
-
-  .vitals-status-na {
-    color: var(--theme-vitals-status-na-text);
-    background: var(--theme-vitals-status-na-bg);
-    border-color: var(--theme-vitals-status-na-border);
-  }
-</style>
-
-<div class="d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between gap-2 mb-3">
-  <div>
-    <h1 class="h4 mb-1">Vitals Trends</h1>
-    <p class="text-muted mb-0">{{ case.full_name }} ({{ case.uhid }})</p>
-  </div>
-  <div class="d-flex gap-2">
-    {% if can_vitals_edit %}
-      <a class="btn btn-outline-primary btn-sm" href="{% url 'patients:vitals_create' case.id %}">Add Vitals</a>
-    {% endif %}
-    <a class="btn btn-outline-secondary btn-sm" href="{% url 'patients:case_detail' case.id %}">Back to Case</a>
-  </div>
-</div>
-
-{% if latest_vitals_summary %}
-  <div class="card mb-3">
-    <div class="card-body">
-      <div class="d-flex align-items-center justify-content-between mb-2">
-        <h2 class="h6 mb-0">Latest Snapshot</h2>
-        {% if latest_vitals_recorded_at %}
-          <small class="text-muted">{{ latest_vitals_recorded_at|date:'d-m-y H:i' }}</small>
+  <section class="vitals-page">
+    <div class="vitals-page__hero">
+      <div class="vitals-page__hero-copy">
+        <p class="vitals-page__hero-kicker">Vitals</p>
+        <h1 class="vitals-page__hero-title">Trends & History</h1>
+        <p class="vitals-page__hero-meta">{{ case.full_name }} ({{ case.uhid }})</p>
+      </div>
+      <div class="vitals-page__hero-actions">
+        {% if can_vitals_edit %}
+          <a class="btn btn-outline-primary" href="{{ vitals_create_url }}">Add Reading</a>
         {% endif %}
+        <a class="btn btn-outline-secondary" href="{% url 'patients:case_detail' case.id %}">Back to Case</a>
       </div>
-      <div class="row g-2">
-        {% for metric in latest_vitals_summary %}
-          <div class="col-12 col-md-6 col-xl-4">
-            <div class="d-flex align-items-center justify-content-between border rounded px-2 py-1">
-              <span class="small text-muted">{{ metric.label }}</span>
-              <span class="vitals-status-pill vitals-status-{{ metric.status }}">{{ metric.value_display }}</span>
-            </div>
+    </div>
+
+    <div class="vitals-page__snapshot-grid">
+      <section class="case-task-surface vitals-page__snapshot-surface">
+        <div class="case-vitals-surface__head">
+          <div>
+            <p class="case-detail-label mb-1">Latest Snapshot</p>
+            <h2 class="h6 mb-1">Current profile reading</h2>
           </div>
-        {% endfor %}
-      </div>
-    </div>
-  </div>
-{% endif %}
+          <div class="case-vitals-surface__stamp">
+            {% if latest_vitals_recorded_at %}
+              {{ latest_vitals_recorded_at|date:'d M Y H:i' }}
+            {% else %}
+              No record yet
+            {% endif %}
+          </div>
+        </div>
 
-{% if vitals_trend_payload %}
-  <div class="row g-3 mb-3">
-    <div class="col-12 col-lg-6">
-      <div class="card"><div class="card-body">
-        <h3 class="h6 mb-2">BP Systolic Trend</h3>
-        <div class="vitals-chart-wrap"><canvas id="vitals-chart-bp-systolic"></canvas></div>
-      </div></div>
-    </div>
-    <div class="col-12 col-lg-6">
-      <div class="card"><div class="card-body">
-        <h3 class="h6 mb-2">BP Diastolic Trend</h3>
-        <div class="vitals-chart-wrap"><canvas id="vitals-chart-bp-diastolic"></canvas></div>
-      </div></div>
-    </div>
-    <div class="col-12 col-lg-6">
-      <div class="card"><div class="card-body">
-        <h3 class="h6 mb-2">Pulse Rate Trend</h3>
-        <div class="vitals-chart-wrap"><canvas id="vitals-chart-pr"></canvas></div>
-      </div></div>
-    </div>
-    <div class="col-12 col-lg-6">
-      <div class="card"><div class="card-body">
-        <h3 class="h6 mb-2">SpO2 Trend</h3>
-        <div class="vitals-chart-wrap"><canvas id="vitals-chart-spo2"></canvas></div>
-      </div></div>
-    </div>
-    <div class="col-12 col-lg-6">
-      <div class="card"><div class="card-body">
-        <h3 class="h6 mb-2">Weight Trend</h3>
-        <div class="vitals-chart-wrap"><canvas id="vitals-chart-weight"></canvas></div>
-      </div></div>
-    </div>
-    <div class="col-12 col-lg-6">
-      <div class="card"><div class="card-body">
-        <h3 class="h6 mb-2">Hemoglobin Trend</h3>
-        <div class="vitals-chart-wrap"><canvas id="vitals-chart-hemoglobin"></canvas></div>
-      </div></div>
-    </div>
-  </div>
-  {{ vitals_trend_payload|json_script:"vitals-trend-data" }}
-{% else %}
-  <div class="card mb-3"><div class="card-body">
-    <p class="text-muted mb-0">No vitals recorded yet.</p>
-  </div></div>
-{% endif %}
+        {% if latest_vitals_snapshot %}
+          <div class="case-vitals-primary">
+            <div class="case-vitals-primary__label">Blood Pressure</div>
+            <div class="case-vitals-primary__value status-{{ latest_vitals_snapshot.blood_pressure.status }}">
+              {{ latest_vitals_snapshot.blood_pressure.value_display }}
+            </div>
+            <div class="case-vitals-primary__meta">Combined from the stored systolic and diastolic values.</div>
+          </div>
 
-<div class="card">
-  <div class="card-body">
-    <h2 class="h5 mb-2">Vitals History</h2>
-    {% if vitals %}
-      <div class="table-responsive">
-        <table class="table table-sm align-middle mb-0">
-          <thead>
-            <tr>
-              <th>Recorded</th>
-              <th>BP</th>
-              <th>PR</th>
-              <th>SpO2</th>
-              <th>WT (kg)</th>
-              <th>Hb</th>
-              <th class="d-none d-md-table-cell">Edited</th>
-              {% if can_vitals_edit %}<th></th>{% endif %}
-            </tr>
-          </thead>
-          <tbody>
-            {% for vital in vitals %}
-              <tr>
-                <td>{{ vital.recorded_at|date:'d-m-y H:i' }}</td>
-                <td>{% if vital.bp_systolic or vital.bp_diastolic %}{{ vital.bp_systolic|default:'-' }}/{{ vital.bp_diastolic|default:'-' }}{% else %}-{% endif %}</td>
-                <td>{{ vital.pr|default:'-' }}</td>
-                <td>{{ vital.spo2|default:'-' }}</td>
-                <td>{{ vital.weight_kg|default:'-' }}</td>
-                <td>{{ vital.hemoglobin|default:'-' }}</td>
-                <td class="d-none d-md-table-cell">{{ vital.updated_at|date:'d-m-y H:i' }} | {{ vital.updated_by|default:'system' }}</td>
-                {% if can_vitals_edit %}
-                  <td><a href="{% url 'patients:vitals_edit' vital.id %}">Edit</a></td>
-                {% endif %}
-              </tr>
+          <div class="case-vitals-secondary-grid">
+            {% for metric in latest_vitals_snapshot.secondary_metrics %}
+              <div class="case-vitals-metric-card">
+                <span class="case-vitals-metric-card__label">{{ metric.label }}</span>
+                <span class="vitals-status-pill vitals-status-{{ metric.status }}">{{ metric.value_display }}</span>
+              </div>
             {% endfor %}
-          </tbody>
-        </table>
-      </div>
+          </div>
+        {% else %}
+          <p class="case-vitals-empty mb-0">No vitals recorded yet.</p>
+        {% endif %}
+      </section>
+
+      <section class="case-task-surface vitals-page__snapshot-surface">
+        <div class="case-vitals-surface__head">
+          <div>
+            <p class="case-detail-label mb-1">Audit View</p>
+            <h2 class="h6 mb-1">Secondary history route</h2>
+          </div>
+        </div>
+
+        <div class="vitals-page__summary-notes">
+          <div class="vitals-page__summary-note">
+            <div class="vitals-page__summary-note-label">Entries</div>
+            <div class="vitals-page__summary-note-value">{{ vitals|length }}</div>
+            <div class="vitals-page__summary-note-copy">The patient profile page stays sidebar-first, while this route holds the full audit trail.</div>
+          </div>
+          <div class="vitals-page__summary-note">
+            <div class="vitals-page__summary-note-label">Blood Pressure</div>
+            <div class="vitals-page__summary-note-value">One chart, one history column, one paired tooltip</div>
+            <div class="vitals-page__summary-note-copy">Systolic and diastolic remain separate fields in storage but are presented as one module throughout the UI.</div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    {% if vitals_trend_payload %}
+      <section class="case-task-surface vitals-page__trend-surface">
+        <div class="case-task-surface__head">
+          <div>
+            <p class="case-detail-label mb-1">Trends</p>
+            <h2 class="h5 mb-1">Vitals over time</h2>
+            <p class="case-detail-muted mb-0">Floating blood pressure bars show the paired range from diastolic to systolic for each reading.</p>
+          </div>
+        </div>
+
+        <div class="vitals-trend-grid">
+          <article class="vitals-chart-card">
+            <p class="vitals-chart-card__label">Blood Pressure</p>
+            <h3 class="vitals-chart-card__title">Paired reading</h3>
+            <div class="vitals-chart-wrap"><canvas id="vitals-chart-blood-pressure"></canvas></div>
+          </article>
+          <article class="vitals-chart-card">
+            <p class="vitals-chart-card__label">Pulse Rate</p>
+            <h3 class="vitals-chart-card__title">BPM trend</h3>
+            <div class="vitals-chart-wrap"><canvas id="vitals-chart-pr"></canvas></div>
+          </article>
+          <article class="vitals-chart-card">
+            <p class="vitals-chart-card__label">SpO2</p>
+            <h3 class="vitals-chart-card__title">Oxygen saturation</h3>
+            <div class="vitals-chart-wrap"><canvas id="vitals-chart-spo2"></canvas></div>
+          </article>
+          <article class="vitals-chart-card">
+            <p class="vitals-chart-card__label">Weight</p>
+            <h3 class="vitals-chart-card__title">Weight in kg</h3>
+            <div class="vitals-chart-wrap"><canvas id="vitals-chart-weight"></canvas></div>
+          </article>
+          <article class="vitals-chart-card">
+            <p class="vitals-chart-card__label">Hemoglobin</p>
+            <h3 class="vitals-chart-card__title">Hb trend</h3>
+            <div class="vitals-chart-wrap"><canvas id="vitals-chart-hemoglobin"></canvas></div>
+          </article>
+        </div>
+      </section>
+      {{ vitals_trend_payload|json_script:"vitals-trend-data" }}
     {% else %}
-      <p class="text-muted mb-0">No vitals history yet.</p>
+      <section class="case-task-surface vitals-page__trend-surface">
+        <p class="case-vitals-empty mb-0">No vitals recorded yet.</p>
+      </section>
     {% endif %}
-  </div>
-</div>
 
-{% if vitals_trend_payload %}
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
-  <script>
-    (function() {
-      const dataEl = document.getElementById('vitals-trend-data');
-      if (!dataEl || typeof Chart === 'undefined') return;
-      const payload = JSON.parse(dataEl.textContent || '{}');
-      const labels = payload.labels || [];
-      const datasets = payload.datasets || {};
-      if (!labels.length) return;
+    <section class="case-task-surface case-task-surface--history vitals-page__history-surface">
+      <div class="case-task-surface__head">
+        <div>
+          <p class="case-detail-label mb-1">History</p>
+          <h2 class="h5 mb-1">All readings</h2>
+          <p class="case-detail-muted mb-0">The audit table keeps blood pressure in one column and preserves partial older rows safely.</p>
+        </div>
+      </div>
 
-      const chartConfigs = [
-        { id: 'vitals-chart-bp-systolic', label: 'BP Systolic', values: datasets.bp_systolic || [], border: '{{ theme_tokens.vitals_chart.bp_systolic }}', fill: '{{ theme_tokens.vitals_chart.bp_systolic_fill }}' },
-        { id: 'vitals-chart-bp-diastolic', label: 'BP Diastolic', values: datasets.bp_diastolic || [], border: '{{ theme_tokens.vitals_chart.bp_diastolic }}', fill: '{{ theme_tokens.vitals_chart.bp_diastolic_fill }}' },
-        { id: 'vitals-chart-pr', label: 'Pulse Rate', values: datasets.pr || [], border: '{{ theme_tokens.vitals_chart.pulse_rate }}', fill: '{{ theme_tokens.vitals_chart.pulse_rate_fill }}' },
-        { id: 'vitals-chart-spo2', label: 'SpO2', values: datasets.spo2 || [], border: '{{ theme_tokens.vitals_chart.spo2 }}', fill: '{{ theme_tokens.vitals_chart.spo2_fill }}' },
-        { id: 'vitals-chart-weight', label: 'Weight', values: datasets.weight || [], border: '{{ theme_tokens.vitals_chart.weight }}', fill: '{{ theme_tokens.vitals_chart.weight_fill }}' },
-        { id: 'vitals-chart-hemoglobin', label: 'Hemoglobin', values: datasets.hemoglobin || [], border: '{{ theme_tokens.vitals_chart.hemoglobin }}', fill: '{{ theme_tokens.vitals_chart.hemoglobin_fill }}' },
-      ];
+      {% if vitals_history_rows %}
+        <div class="table-responsive">
+          <table class="table table-sm align-middle vitals-history-table">
+            <thead>
+              <tr>
+                <th>Recorded</th>
+                <th>BP</th>
+                <th>PR</th>
+                <th>SpO2</th>
+                <th>Weight</th>
+                <th>Hb</th>
+                <th class="d-none d-lg-table-cell">Edited</th>
+                {% if can_vitals_edit %}<th></th>{% endif %}
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in vitals_history_rows %}
+                <tr>
+                  <td>{{ row.recorded_at_display }}</td>
+                  <td>{{ row.blood_pressure_display }}</td>
+                  <td>{{ row.pulse_rate_display }}</td>
+                  <td>{{ row.spo2_display }}</td>
+                  <td>{{ row.weight_display }}</td>
+                  <td>{{ row.hemoglobin_display }}</td>
+                  <td class="d-none d-lg-table-cell">{{ row.updated_at_display }} | {{ row.updated_by_display }}</td>
+                  {% if can_vitals_edit %}
+                    <td><a class="vitals-history-link" href="{{ row.edit_url }}">Edit</a></td>
+                  {% endif %}
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="case-vitals-empty mb-0">No vitals history yet.</p>
+      {% endif %}
+    </section>
+  </section>
+{% endblock %}
+{% block extra_scripts %}
+  {% if vitals_trend_payload %}
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+    <script>
+      (function() {
+        const dataEl = document.getElementById("vitals-trend-data");
+        if (!dataEl || typeof Chart === "undefined") return;
+        const payload = JSON.parse(dataEl.textContent || "{}");
+        const labels = payload.labels || [];
+        const datasets = payload.datasets || {};
+        if (!labels.length) return;
 
-      chartConfigs.forEach(function(config) {
-        const canvas = document.getElementById(config.id);
-        if (!canvas) return;
+        const buildLineChart = function(id, label, values, border, fill) {
+          const canvas = document.getElementById(id);
+          if (!canvas) return;
 
-        new Chart(canvas, {
-          type: 'line',
-          data: {
-            labels: labels,
-            datasets: [
-              {
-                label: config.label,
-                data: config.values,
-                borderColor: config.border,
-                backgroundColor: config.fill,
-                borderWidth: 2,
-                pointRadius: 2,
-                spanGaps: true,
-                tension: 0.25,
+          new Chart(canvas, {
+            type: "line",
+            data: {
+              labels: labels,
+              datasets: [
+                {
+                  label: label,
+                  data: values,
+                  borderColor: border,
+                  backgroundColor: fill,
+                  borderWidth: 2,
+                  pointRadius: 3,
+                  pointHoverRadius: 4,
+                  spanGaps: false,
+                  tension: 0.28,
+                  fill: true,
+                },
+              ],
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                legend: { display: false },
               },
-            ],
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-              legend: {
-                display: false,
+              scales: {
+                y: {
+                  beginAtZero: false,
+                },
               },
             },
-            scales: {
-              y: {
-                beginAtZero: false,
+          });
+        };
+
+        const bloodPressurePoints = datasets.blood_pressure || [];
+        const bloodPressureCanvas = document.getElementById("vitals-chart-blood-pressure");
+        if (bloodPressureCanvas) {
+          new Chart(bloodPressureCanvas, {
+            type: "bar",
+            data: {
+              labels: labels,
+              datasets: [
+                {
+                  label: "Blood Pressure",
+                  data: bloodPressurePoints.map((point) => point.range),
+                  borderColor: "{{ theme_tokens.vitals_chart.blood_pressure }}",
+                  backgroundColor: "{{ theme_tokens.vitals_chart.blood_pressure_fill }}",
+                  borderWidth: 2,
+                  borderRadius: 10,
+                  borderSkipped: false,
+                  barPercentage: 0.56,
+                  categoryPercentage: 0.72,
+                },
+              ],
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                legend: { display: false },
+                tooltip: {
+                  callbacks: {
+                    label: function(context) {
+                      const point = bloodPressurePoints[context.dataIndex] || {};
+                      return point.display && point.display !== "N/A"
+                        ? "Blood Pressure: " + point.display
+                        : "Blood Pressure: N/A";
+                    },
+                  },
+                },
+              },
+              scales: {
+                y: {
+                  beginAtZero: false,
+                  suggestedMin: 50,
+                  suggestedMax: 170,
+                },
               },
             },
-          },
-        });
-      });
-    })();
-  </script>
-{% endif %}
+          });
+        }
+
+        buildLineChart(
+          "vitals-chart-pr",
+          "Pulse Rate",
+          datasets.pr || [],
+          "{{ theme_tokens.vitals_chart.pulse_rate }}",
+          "{{ theme_tokens.vitals_chart.pulse_rate_fill }}"
+        );
+        buildLineChart(
+          "vitals-chart-spo2",
+          "SpO2",
+          datasets.spo2 || [],
+          "{{ theme_tokens.vitals_chart.spo2 }}",
+          "{{ theme_tokens.vitals_chart.spo2_fill }}"
+        );
+        buildLineChart(
+          "vitals-chart-weight",
+          "Weight",
+          datasets.weight || [],
+          "{{ theme_tokens.vitals_chart.weight }}",
+          "{{ theme_tokens.vitals_chart.weight_fill }}"
+        );
+        buildLineChart(
+          "vitals-chart-hemoglobin",
+          "Hemoglobin",
+          datasets.hemoglobin || [],
+          "{{ theme_tokens.vitals_chart.hemoglobin }}",
+          "{{ theme_tokens.vitals_chart.hemoglobin_fill }}"
+        );
+      })();
+    </script>
+  {% endif %}
 {% endblock %}

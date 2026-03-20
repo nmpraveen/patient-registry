@@ -1,44 +1,248 @@
 {% load theme_tags %}
 <div class="case-detail-sidebar-stack" data-testid="case-detail-sidebar">
-  <aside class="identity-vitals-panel case-detail-panel">
-    <div class="identity-vitals-card-header">
-      <p class="identity-vitals-title">Vitals</p>
-      <p class="identity-vitals-timestamp">
-        {% if latest_vitals_recorded_at %}
-          {{ latest_vitals_recorded_at|date:'d-m-y H:i' }}
-        {% else %}
-          No record yet
+  <aside class="identity-vitals-panel">
+    <section class="case-vitals-module" data-vitals-module>
+      <div class="case-vitals-module__header">
+        <div>
+          <p class="case-detail-label mb-1">Vitals</p>
+          <h2 class="case-vitals-module__title">Patient Vitals</h2>
+        </div>
+        {% if can_vitals_edit %}
+          <button
+            type="button"
+            class="case-vitals-module__add"
+            data-vitals-editor-trigger="create"
+            data-vitals-url="{{ vitals_create_url }}"
+            aria-expanded="false"
+            aria-controls="case-vitals-editor"
+          >
+            + Add
+          </button>
         {% endif %}
-      </p>
-    </div>
+      </div>
 
-    {% if vitals_summary_metrics %}
-      <div class="identity-vitals-list">
-        {% for metric in vitals_summary_metrics %}
-          <div class="identity-vital-item">
-            <div class="identity-vital-meta">
-              <span class="identity-vital-label">{{ metric.label }}</span>
-              <span class="identity-vital-value status-{{ metric.status }}">{{ metric.value_display }}</span>
+      <div class="case-vitals-tabs" role="tablist" aria-label="Vitals sections">
+        <button
+          type="button"
+          id="case-vitals-tab-snapshot"
+          class="case-vitals-tab is-active"
+          data-vitals-tab="snapshot"
+          role="tab"
+          aria-selected="true"
+          aria-controls="case-vitals-panel-snapshot"
+        >
+          Snapshot
+        </button>
+        <button
+          type="button"
+          id="case-vitals-tab-trends"
+          class="case-vitals-tab"
+          data-vitals-tab="trends"
+          role="tab"
+          aria-selected="false"
+          aria-controls="case-vitals-panel-trends"
+        >
+          Trends
+        </button>
+        <button
+          type="button"
+          id="case-vitals-tab-history"
+          class="case-vitals-tab"
+          data-vitals-tab="history"
+          role="tab"
+          aria-selected="false"
+          aria-controls="case-vitals-panel-history"
+        >
+          History
+        </button>
+      </div>
+
+      <section
+        id="case-vitals-panel-snapshot"
+        class="case-vitals-panel is-active"
+        data-vitals-panel="snapshot"
+        role="tabpanel"
+        aria-labelledby="case-vitals-tab-snapshot"
+      >
+        {% if latest_vitals_snapshot %}
+          <p class="case-vitals-panel__stamp">Recorded {{ latest_vitals_snapshot.recorded_at_date_display }} at {{ latest_vitals_snapshot.recorded_at_time_display }}</p>
+
+          <div class="case-vitals-hero case-vitals-hero--{{ latest_vitals_snapshot.blood_pressure.status }}">
+            <div>
+              <div class="case-vitals-hero__eyebrow">Blood Pressure</div>
+              <div class="case-vitals-hero__value">
+                {{ latest_vitals_snapshot.blood_pressure.value_text }}
+                <span class="case-vitals-hero__unit">{{ latest_vitals_snapshot.blood_pressure.unit }}</span>
+              </div>
             </div>
-            <div class="identity-vital-meter" aria-hidden="true">
-              <span class="identity-vital-meter-fill status-{{ metric.status }}{% if metric.value_display != 'N/A' %} has-value{% endif %}" style="--identity-vital-percent: {{ metric.percent }};"></span>
+            <div class="case-vitals-tier case-vitals-tier--{{ latest_vitals_snapshot.blood_pressure.status }}">
+              {{ latest_vitals_snapshot.blood_pressure.status_label }}
             </div>
           </div>
-        {% endfor %}
-      </div>
-    {% else %}
-      <div class="identity-vitals-empty">No vitals have been recorded for this patient yet.</div>
-    {% endif %}
 
-    <div class="identity-vitals-footer">
-      <a class="identity-vitals-link" href="{{ vitals_detail_url }}">
-        <svg class="case-detail-icon" aria-hidden="true"><use href="#case-detail-icon-vitals"></use></svg>
-        <span>Open Vitals Trends</span>
-      </a>
-      {% if not has_vitals and can_vitals_edit %}
-        <a class="btn btn-sm btn-outline-secondary" href="{% url 'patients:vitals_create' case.id %}">Add Vitals</a>
+          <div class="case-vitals-tile-grid">
+            {% for metric in latest_vitals_snapshot.secondary_metrics %}
+              <article class="case-vitals-tile case-vitals-tier case-vitals-tier--{{ metric.status }}">
+                <div class="case-vitals-tile__head">
+                  <span class="case-vitals-tile__icon" aria-hidden="true">{{ metric.icon }}</span>
+                  <span class="case-vitals-tile__label">{{ metric.label }}</span>
+                </div>
+                <div class="case-vitals-tile__value">
+                  {{ metric.value_text }}
+                  <span class="case-vitals-tile__unit">{{ metric.unit }}</span>
+                </div>
+              </article>
+            {% endfor %}
+          </div>
+
+          {% if can_vitals_edit and latest_vital_editor_payload %}
+            <div class="case-vitals-panel__footer case-vitals-panel__footer--center">
+              <button
+                type="button"
+                class="case-vitals-link-button"
+                data-vitals-editor-trigger="edit"
+                data-vitals-url="{{ latest_vital_editor_payload.url }}"
+                data-vitals-id="{{ latest_vital_editor_payload.id }}"
+                data-vitals-recorded-at="{{ latest_vital_editor_payload.recorded_at_input }}"
+                data-vitals-bp-systolic="{{ latest_vital_editor_payload.bp_systolic }}"
+                data-vitals-bp-diastolic="{{ latest_vital_editor_payload.bp_diastolic }}"
+                data-vitals-pr="{{ latest_vital_editor_payload.pr }}"
+                data-vitals-spo2="{{ latest_vital_editor_payload.spo2 }}"
+                data-vitals-weight-kg="{{ latest_vital_editor_payload.weight_kg }}"
+                data-vitals-hemoglobin="{{ latest_vital_editor_payload.hemoglobin }}"
+                aria-expanded="false"
+                aria-controls="case-vitals-editor"
+              >
+                Edit Latest
+              </button>
+            </div>
+          {% endif %}
+        {% else %}
+          <div class="case-vitals-empty-state">
+            <p class="case-vitals-empty mb-0">No vitals have been recorded for this patient yet.</p>
+          </div>
+        {% endif %}
+      </section>
+
+      <section
+        id="case-vitals-panel-trends"
+        class="case-vitals-panel"
+        data-vitals-panel="trends"
+        role="tabpanel"
+        aria-labelledby="case-vitals-tab-trends"
+        hidden
+      >
+        {% if vitals_trend_rows %}
+          <p class="case-vitals-panel__stamp case-vitals-panel__stamp--muted">Comparing latest vs previous reading</p>
+          <div class="case-vitals-trend-list">
+            {% for row in vitals_trend_rows %}
+              <article class="case-vitals-trend-row">
+                <div class="case-vitals-trend-row__current">
+                  <div class="case-vitals-trend-row__label">{{ row.label }}</div>
+                  <div class="case-vitals-trend-row__value case-vitals-trend-row__value--{{ row.status }}">
+                    {{ row.current_display }}
+                    <span class="case-vitals-trend-row__unit">{{ row.unit }}</span>
+                  </div>
+                </div>
+                <div class="case-vitals-trend-row__delta">
+                  <div class="case-vitals-trend-row__delta-value case-vitals-trend-row__delta-value--{{ row.delta_direction }}">
+                    {% if row.delta_direction == "up" %}
+                      &uarr;
+                    {% elif row.delta_direction == "down" %}
+                      &darr;
+                    {% elif row.delta_direction == "flat" %}
+                      &rarr;
+                    {% else %}
+                      --
+                    {% endif %}
+                    {% if row.delta_display != "--" %} {{ row.delta_display }}{% endif %}
+                  </div>
+                  <div class="case-vitals-trend-row__previous">prev: {{ row.previous_display }}</div>
+                </div>
+              </article>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p class="case-vitals-empty mb-0">No vitals recorded yet.</p>
+        {% endif %}
+      </section>
+
+      <section
+        id="case-vitals-panel-history"
+        class="case-vitals-panel"
+        data-vitals-panel="history"
+        role="tabpanel"
+        aria-labelledby="case-vitals-tab-history"
+        hidden
+      >
+        {% if vitals_history_preview %}
+          <div class="case-vitals-history-wrap">
+            <table class="case-vitals-history-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>BP</th>
+                  <th>PR</th>
+                  <th>SpO2</th>
+                  <th>Wt</th>
+                  <th>Hb</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in vitals_history_preview %}
+                  <tr>
+                    <td>
+                      <div class="case-vitals-history-table__date">{{ row.recorded_date_display }}</div>
+                      <div class="case-vitals-history-table__time">{{ row.recorded_time_display }}</div>
+                    </td>
+                    <td>
+                      <span class="case-vitals-history-table__badge case-vitals-tier case-vitals-tier--{{ row.blood_pressure_status }}">
+                        {{ row.blood_pressure_display }}
+                      </span>
+                    </td>
+                    <td>{{ row.pulse_rate_table_display }}</td>
+                    <td>{{ row.spo2_table_display }}</td>
+                    <td>{{ row.weight_table_display }}</td>
+                    <td>
+                      <span class="case-vitals-history-table__hb case-vitals-history-table__hb--{{ row.hemoglobin_status }}">
+                        {{ row.hemoglobin_table_display }}
+                      </span>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <p class="case-vitals-empty mb-0">No readings yet. The full history page will fill in as vitals are recorded.</p>
+        {% endif %}
+
+        <div class="case-vitals-panel__footer case-vitals-panel__footer--center">
+          <a class="case-vitals-link-button" href="{{ vitals_detail_url }}">View Full History</a>
+        </div>
+      </section>
+
+      {% if can_vitals_edit %}
+        <section class="case-vitals-editor case-vitals-editor--module" id="case-vitals-editor" data-vitals-editor data-vitals-editor-mode="" hidden>
+          <div class="case-vitals-editor__head">
+            <div>
+              <p class="case-detail-label mb-1" data-vitals-editor-label>Add Reading</p>
+              <h3 class="h6 mb-1" data-vitals-editor-title>Capture a vitals check-in</h3>
+              <p class="case-detail-muted mb-0" data-vitals-editor-subtitle>Blood pressure is saved as one paired reading.</p>
+            </div>
+          </div>
+
+          <form method="post" action="{{ vitals_create_url }}" class="case-vitals-form" data-vitals-editor-form data-case-ajax-form="true">
+            {% csrf_token %}
+            {% include 'patients/partials/vitals_form_fields.html' with form=vitals_editor_form show_hb_warning=False only %}
+            <div class="case-vitals-editor__footer">
+              <button class="btn case-vitals-editor__cancel" type="button" data-vitals-editor-close>Cancel</button>
+              <button class="btn btn-primary case-vitals-editor__submit" type="submit">Save Reading</button>
+            </div>
+          </form>
+        </section>
       {% endif %}
-    </div>
+    </section>
   </aside>
 
   <aside class="case-detail-rail-card case-detail-panel">

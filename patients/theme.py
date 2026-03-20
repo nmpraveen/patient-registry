@@ -78,8 +78,7 @@ THEME_DEFAULTS = {
         "na": {"bg": "#e2e3e5", "text": "#41464b"},
     },
     "vitals_chart": {
-        "bp_systolic": "#0d6efd",
-        "bp_diastolic": "#6610f2",
+        "blood_pressure": "#0d6efd",
         "pulse_rate": "#fd7e14",
         "spo2": "#198754",
         "weight": "#6f42c1",
@@ -126,8 +125,7 @@ PAIR_GROUPS = (
 )
 
 CHART_FIELDS = (
-    "bp_systolic",
-    "bp_diastolic",
+    "blood_pressure",
     "pulse_rate",
     "spo2",
     "weight",
@@ -209,8 +207,7 @@ THEME_FORM_SECTIONS = [
             {"label": "High Status", "fields": [{"name": "vitals_status__high__bg", "label": "Background"}, {"name": "vitals_status__high__text", "label": "Text"}]},
             {"label": "Neutral Status", "fields": [{"name": "vitals_status__neutral__bg", "label": "Background"}, {"name": "vitals_status__neutral__text", "label": "Text"}]},
             {"label": "N/A Status", "fields": [{"name": "vitals_status__na__bg", "label": "Background"}, {"name": "vitals_status__na__text", "label": "Text"}]},
-            {"label": "BP Systolic Chart", "fields": [{"name": "vitals_chart__bp_systolic", "label": "Color"}]},
-            {"label": "BP Diastolic Chart", "fields": [{"name": "vitals_chart__bp_diastolic", "label": "Color"}]},
+            {"label": "Blood Pressure Chart", "fields": [{"name": "vitals_chart__blood_pressure", "label": "Color"}]},
             {"label": "Pulse Rate Chart", "fields": [{"name": "vitals_chart__pulse_rate", "label": "Color"}]},
             {"label": "SpO2 Chart", "fields": [{"name": "vitals_chart__spo2", "label": "Color"}]},
             {"label": "Weight Chart", "fields": [{"name": "vitals_chart__weight", "label": "Color"}]},
@@ -297,8 +294,26 @@ def _merge_nested(base, override):
                 continue
 
 
+def _normalize_vitals_chart_tokens(resolved):
+    chart_tokens = resolved.setdefault("vitals_chart", {})
+    chart_tokens.setdefault("blood_pressure", THEME_DEFAULTS["vitals_chart"]["blood_pressure"])
+    chart_tokens.pop("bp_systolic", None)
+    chart_tokens.pop("bp_diastolic", None)
+
+
+def _normalize_theme_overrides(saved_tokens):
+    normalized = deepcopy(saved_tokens or {})
+    chart_tokens = normalized.get("vitals_chart")
+    if isinstance(chart_tokens, dict) and "blood_pressure" not in chart_tokens:
+        legacy_color = chart_tokens.get("bp_systolic") or chart_tokens.get("bp_diastolic")
+        if legacy_color:
+            chart_tokens["blood_pressure"] = legacy_color
+    return normalized
+
+
 def add_theme_derivatives(tokens):
     resolved = deepcopy(tokens)
+    _normalize_vitals_chart_tokens(resolved)
     resolved["shell"]["shadow_rgba"] = rgba_string(resolved["shell"]["shadow"], 0.12)
     resolved["shell"]["surface_hover_bg"] = mix_colors(
         resolved["shell"]["surface_bg"],
@@ -331,7 +346,7 @@ def add_theme_derivatives(tokens):
 
 def merge_theme_tokens(saved_tokens):
     merged = deepcopy(THEME_DEFAULTS)
-    _merge_nested(merged, saved_tokens or {})
+    _merge_nested(merged, _normalize_theme_overrides(saved_tokens))
     return add_theme_derivatives(merged)
 
 

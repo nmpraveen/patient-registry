@@ -1,60 +1,102 @@
 {% extends 'base.html' %}
+{% load static %}
 {% block title %}{% if is_edit %}Edit{% else %}Add{% endif %} Vitals | MEDTRACK{% endblock %}
+{% block extra_head %}
+  <link rel="stylesheet" href="{% static 'patients/case_detail.css' %}?v={{ app_version }}" />
+  <style>
+    .vitals-form-page {
+      display: grid;
+      gap: 1rem;
+    }
+
+    .vitals-form-page__hero {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 1rem;
+    }
+
+    .vitals-form-page__hero-copy {
+      max-width: 36rem;
+    }
+
+    .vitals-form-page__hero-kicker {
+      margin: 0 0 0.35rem;
+      color: #94a3b8;
+      font-size: 0.72rem;
+      font-weight: 800;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    .vitals-form-page__hero-title {
+      margin: 0 0 0.35rem;
+      color: #0f172a;
+      font-size: clamp(1.45rem, 1.22rem + 0.6vw, 1.9rem);
+      font-weight: 800;
+      letter-spacing: -0.03em;
+    }
+
+    .vitals-form-page__hero-meta {
+      margin: 0;
+      color: #64748b;
+      font-size: 0.94rem;
+      font-weight: 600;
+    }
+
+    .vitals-form-page__surface {
+      max-width: 56rem;
+    }
+
+    .vitals-form-page__surface .case-vitals-form {
+      display: grid;
+      gap: 1rem;
+    }
+
+    @media (max-width: 640px) {
+      .vitals-form-page__hero {
+        flex-direction: column;
+      }
+
+      .vitals-form-page__hero .btn {
+        width: 100%;
+      }
+    }
+  </style>
+{% endblock %}
 {% block content %}
-<div class="card"><div class="card-body">
-  <div class="d-flex justify-content-between align-items-start mb-3">
-    <div>
-      <h1 class="h5 mb-1">{% if is_edit %}Edit{% else %}Add{% endif %} Vitals</h1>
-      <p class="text-muted small mb-0">{{ case.full_name }} ({{ case.uhid }})</p>
+  <section class="vitals-form-page">
+    <div class="vitals-form-page__hero">
+      <div class="vitals-form-page__hero-copy">
+        <p class="vitals-form-page__hero-kicker">Vitals</p>
+        <h1 class="vitals-form-page__hero-title">{% if is_edit %}Edit Latest Reading{% else %}Add New Reading{% endif %}</h1>
+        <p class="vitals-form-page__hero-meta">{{ case.full_name }} ({{ case.uhid }})</p>
+      </div>
+      <a class="btn btn-outline-secondary" href="{% url 'patients:case_detail' case.id %}">Back to Case</a>
     </div>
-    <a class="btn btn-outline-secondary btn-sm" href="{% url 'patients:case_detail' case.id %}">Back to Case</a>
-  </div>
 
-  {% if saved_successfully %}
-    <div class="alert alert-success py-2">Vitals saved.</div>
-  {% endif %}
-
-  <form method="post" class="row g-3">{% csrf_token %}
-    {{ form.bp_systolic }}{{ form.bp_diastolic }}
-    <div class="col-12 col-md-6">
-      <label class="form-label">{{ form.recorded_at.label }}</label>
-      {{ form.recorded_at }}
-    </div>
-    <div class="col-6 col-md-3">
-      <label class="form-label">{{ form.bp_preset.label }}</label>
-      {{ form.bp_preset }}
-    </div>
-    <div class="col-6 col-md-4">
-      <label class="form-label">{{ form.pr.label }}</label>
-      {{ form.pr }}
-    </div>
-    <div class="col-6 col-md-4">
-      <label class="form-label">{{ form.spo2.label }}</label>
-      {{ form.spo2 }}
-    </div>
-    <div class="col-6 col-md-4">
-      <label class="form-label">{{ form.weight_kg.label }}</label>
-      {{ form.weight_kg }}
-    </div>
-    <div class="col-6 col-md-4">
-      <label class="form-label">{{ form.hemoglobin.label }}</label>
-      {{ form.hemoglobin }}
-      {% if show_hb_warning %}
-        <div class="form-text text-warning">{{ form.hb_warning_message }}</div>
+    <section class="case-task-surface vitals-form-page__surface">
+      {% if saved_successfully %}
+        <div class="alert alert-success py-2 mb-3">Vitals saved.</div>
       {% endif %}
-    </div>
 
-    {% for field in form %}
-      {% for error in field.errors %}
-        <div class="col-12 text-danger small">{{ field.label }}: {{ error }}</div>
-      {% endfor %}
-    {% endfor %}
-    {% if form.non_field_errors %}
-      <div class="col-12 text-danger small">{{ form.non_field_errors }}</div>
-    {% endif %}
-    <div class="col-12">
-      <button class="btn btn-primary">{% if is_edit %}Save Changes{% else %}Save Vitals{% endif %}</button>
-    </div>
-  </form>
-</div></div>
+      <div class="case-vitals-editor__head">
+        <div>
+          <p class="case-detail-label mb-1">{% if is_edit %}Edit reading{% else %}Add reading{% endif %}</p>
+          <h2 class="h6 mb-1">{% if is_edit %}Update the latest vitals record{% else %}Capture the next vitals check-in{% endif %}</h2>
+          <p class="case-detail-muted mb-0">Blood pressure is entered as one paired reading, while the original stored fields remain unchanged.</p>
+        </div>
+      </div>
+
+      <form method="post" class="case-vitals-form">
+        {% csrf_token %}
+        {% include 'patients/partials/vitals_form_fields.html' with form=form show_hb_warning=show_hb_warning only %}
+        <div class="case-vitals-editor__footer">
+          <a class="btn case-vitals-editor__cancel" href="{% url 'patients:case_detail' case.id %}">Cancel</a>
+          <button class="btn btn-primary case-vitals-editor__submit" type="submit">{% if is_edit %}Save Changes{% else %}Save Reading{% endif %}</button>
+        </div>
+      </form>
+    </section>
+  </section>
 {% endblock %}

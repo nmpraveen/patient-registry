@@ -1131,6 +1131,11 @@ def _build_case_detail_summary(case, *, user, tasks, call_logs, activity_logs, l
     latest_call_log = call_logs[0] if call_logs else None
     call_summary = CallLog.summarize_case(call_logs)
     progress_percent = round((task_counts["completed"] / task_counts["total"]) * 100) if task_counts["total"] else 0
+    latest_vitals_summary = _build_latest_vitals_summary(latest_vital)
+    latest_vitals_snapshot = _build_latest_vitals_snapshot(latest_vital, summary=latest_vitals_summary)
+    recent_vitals_preview = _build_recent_vitals_preview(case.vitals.order_by("-recorded_at", "-id")[:4])
+    vitals_trend_rows = _build_vitals_trend_rows(case.vitals.order_by("-recorded_at", "-id")[:2])
+    vitals_history_preview = _build_vitals_history_rows(case.vitals.order_by("-recorded_at", "-id")[:4])
 
     return {
         "today": today,
@@ -1169,7 +1174,11 @@ def _build_case_detail_summary(case, *, user, tasks, call_logs, activity_logs, l
             "latest_vitals_recorded_at_display": timezone.localtime(latest_vital.recorded_at).strftime("%d %b %Y %H:%M")
             if latest_vital
             else "",
-            "latest_vitals_summary": _build_latest_vitals_summary(latest_vital),
+            "latest_vitals_summary": latest_vitals_summary,
+            "latest_vitals_snapshot": latest_vitals_snapshot,
+            "recent_vitals_preview": recent_vitals_preview,
+            "vitals_trend_rows": vitals_trend_rows,
+            "vitals_history_preview": vitals_history_preview,
             "call_summary": {
                 "status": call_summary["status"],
                 "failed_attempt_count": call_summary["failed_attempt_count"],
@@ -1192,7 +1201,11 @@ def _build_case_detail_summary(case, *, user, tasks, call_logs, activity_logs, l
             timeline_filter=timeline_filter,
         ),
         "latest_vitals_recorded_at": timezone.localtime(latest_vital.recorded_at) if latest_vital else None,
-        "vitals_summary_metrics": _build_latest_vitals_summary(latest_vital),
+        "vitals_summary_metrics": latest_vitals_summary,
+        "latest_vitals_snapshot": latest_vitals_snapshot,
+        "vitals_recent_readings": recent_vitals_preview,
+        "vitals_trend_rows": vitals_trend_rows,
+        "vitals_history_preview": vitals_history_preview,
     }
 
 
@@ -1218,22 +1231,12 @@ def _build_case_detail_json_payload(case, *, user):
         "latest_call_log": summary["case_summary"]["latest_call_log"],
         "latest_vitals_recorded_at": summary["case_summary"]["latest_vitals_recorded_at"],
         "latest_vitals_summary": summary["case_summary"]["latest_vitals_summary"],
+        "latest_vitals_snapshot": summary["case_summary"]["latest_vitals_snapshot"],
+        "recent_vitals_preview": summary["case_summary"]["recent_vitals_preview"],
+        "vitals_trend_rows": summary["case_summary"]["vitals_trend_rows"],
+        "vitals_history_preview": summary["case_summary"]["vitals_history_preview"],
         "call_summary": summary["case_summary"]["call_summary"],
     }
-
-
-def _metric_status(value, *, low_lt=None, high_gt=None, high_gte=None, neutral=False):
-    if value is None:
-        return "na"
-    if neutral:
-        return "neutral"
-    if low_lt is not None and value < low_lt:
-        return "low"
-    if high_gte is not None and value >= high_gte:
-        return "high"
-    if high_gt is not None and value > high_gt:
-        return "high"
-    return "normal"
 
 
 def _metric_percent(value, minimum, maximum):
@@ -1245,111 +1248,509 @@ def _metric_percent(value, minimum, maximum):
     return max(0, min(100, round(raw, 2)))
 
 
+def _format_integer(value):
+    return str(int(value))
+
+
+def _format_decimal_one(value):
+    return f"{float(value):.1f}"
+
+
+def _signed_number_display(value, *, precision=0):
+    if value is None:
+        return "--"
+    numeric_value = float(value)
+    if precision == 0:
+        magnitude = str(int(round(abs(numeric_value))))
+    else:
+        magnitude = f"{abs(numeric_value):.{precision}f}"
+    if abs(numeric_value) < (0.05 if precision else 0.5):
+        return f"{0:.{precision}f}" if precision else "0"
+    prefix = "+" if numeric_value > 0 else "-"
+    return f"{prefix}{magnitude}"
+
+
+def _delta_direction(value):
+    if value is None:
+        return "na"
+    if value > 0:
+        return "up"
+    if value < 0:
+        return "down"
+    return "flat"
+
+
+def _vitals_metric_specs():
+    return [
+        {
+            "key": "pr",
+            "field_name": "pr",
+            "label": "Pulse Rate",
+            "short_label": "PR",
+            "icon": "💓",
+            "unit": "bpm",
+            "minimum": 40,
+            "maximum": 140,
+            "formatter": _format_integer,
+            "delta_precision": 0,
+        },
+        {
+            "key": "spo2",
+            "field_name": "spo2",
+            "label": "SpO2",
+            "short_label": "SpO2",
+            "icon": "🫁",
+            "unit": "%",
+            "minimum": 80,
+            "maximum": 100,
+            "formatter": _format_integer,
+            "delta_precision": 0,
+        },
+        {
+            "key": "weight",
+            "field_name": "weight_kg",
+            "label": "Weight",
+            "short_label": "Wt",
+            "icon": "⚖️",
+            "unit": "kg",
+            "minimum": 30,
+            "maximum": 120,
+            "formatter": _format_decimal_one,
+            "delta_precision": 1,
+        },
+        {
+            "key": "hemoglobin",
+            "field_name": "hemoglobin",
+            "label": "Hemoglobin",
+            "short_label": "Hb",
+            "icon": "🩸",
+            "unit": "g/dL",
+            "minimum": 4,
+            "maximum": 16,
+            "formatter": _format_decimal_one,
+            "delta_precision": 1,
+        },
+    ]
+
+
+def _vitals_metric_specs():
+    return [
+        {
+            "key": "pr",
+            "field_name": "pr",
+            "label": "Pulse Rate",
+            "short_label": "PR",
+            "icon": "\U0001F493",
+            "unit": "bpm",
+            "minimum": 40,
+            "maximum": 140,
+            "formatter": _format_integer,
+            "delta_precision": 0,
+        },
+        {
+            "key": "spo2",
+            "field_name": "spo2",
+            "label": "SpO2",
+            "short_label": "SpO2",
+            "icon": "\U0001FAC1",
+            "unit": "%",
+            "minimum": 80,
+            "maximum": 100,
+            "formatter": _format_integer,
+            "delta_precision": 0,
+        },
+        {
+            "key": "weight",
+            "field_name": "weight_kg",
+            "label": "Weight",
+            "short_label": "Wt",
+            "icon": "\u2696\ufe0f",
+            "unit": "kg",
+            "minimum": 30,
+            "maximum": 120,
+            "formatter": _format_decimal_one,
+            "delta_precision": 1,
+        },
+        {
+            "key": "hemoglobin",
+            "field_name": "hemoglobin",
+            "label": "Hemoglobin",
+            "short_label": "Hb",
+            "icon": "\U0001FA78",
+            "unit": "g/dL",
+            "minimum": 4,
+            "maximum": 16,
+            "formatter": _format_decimal_one,
+            "delta_precision": 1,
+        },
+    ]
+
+
+def _vitals_metric_status(metric_key, value):
+    if value is None:
+        return "na"
+    if metric_key == "weight":
+        return "neutral"
+
+    numeric_value = float(value)
+    if metric_key == "pr":
+        if numeric_value < 50 or numeric_value > 110:
+            return "red"
+        if numeric_value < 60 or numeric_value > 100:
+            return "orange"
+        return "green"
+    if metric_key == "spo2":
+        if numeric_value < 92:
+            return "red"
+        if numeric_value < 96:
+            return "orange"
+        return "green"
+    if metric_key == "hemoglobin":
+        if numeric_value < 10:
+            return "red"
+        if numeric_value < 11:
+            return "orange"
+        return "green"
+    return "na"
+
+
+def _vitals_metric_status_label(metric_key, status):
+    labels = {
+        "blood_pressure": {
+            "green": "Normal",
+            "orange": "Elevated",
+            "red": "High",
+            "na": "No pair",
+        },
+        "pr": {
+            "green": "Normal",
+            "orange": "Mild",
+            "red": "Extreme",
+            "na": "N/A",
+        },
+        "spo2": {
+            "green": "Normal",
+            "orange": "Mild",
+            "red": "Extreme",
+            "na": "N/A",
+        },
+        "hemoglobin": {
+            "green": "Normal",
+            "orange": "Mild anemia",
+            "red": "Moderate / severe",
+            "na": "N/A",
+        },
+        "weight": {
+            "neutral": "Tracked",
+            "na": "N/A",
+        },
+    }
+    return labels.get(metric_key, {}).get(status, "N/A")
+
+
+def _blood_pressure_status(systolic, diastolic):
+    if systolic is None and diastolic is None:
+        return "na"
+    if (systolic is not None and float(systolic) >= 140) or (diastolic is not None and float(diastolic) >= 90):
+        return "red"
+    if (systolic is not None and float(systolic) >= 120) or (diastolic is not None and float(diastolic) >= 80):
+        return "orange"
+    return "green"
+
+
+def _blood_pressure_percent(systolic, diastolic):
+    values = []
+    if systolic is not None:
+        values.append(_metric_percent(float(systolic), 70, 180))
+    if diastolic is not None:
+        values.append(_metric_percent(float(diastolic), 40, 120))
+    if not values:
+        return 0
+    return round(sum(values) / len(values), 2)
+
+
+def _blood_pressure_display(systolic, diastolic, *, include_unit=True, missing_display="N/A"):
+    if systolic is None and diastolic is None:
+        return missing_display
+    systolic_display = _format_integer(systolic) if systolic is not None else "-"
+    diastolic_display = _format_integer(diastolic) if diastolic is not None else "-"
+    reading = f"{systolic_display}/{diastolic_display}"
+    if not include_unit:
+        return reading
+    return f"{reading} mmHg"
+
+
+def _secondary_vitals_metric_definitions(vital):
+    return [{**metric, "value": getattr(vital, metric["field_name"])} for metric in _vitals_metric_specs()]
+
+
+def _secondary_vitals_metric_spec(key):
+    return next((metric for metric in _vitals_metric_specs() if metric["key"] == key), None)
+
+
+def _format_vitals_metric_value(metric, value, *, include_unit=True, missing_display="N/A"):
+    if value is None:
+        return missing_display
+    formatted_value = metric["formatter"](value)
+    if not include_unit:
+        return formatted_value
+    return f"{formatted_value} {metric['unit']}"
+
+
+def _numeric_delta_payload(current_value, previous_value, *, precision=0):
+    if current_value is None or previous_value is None:
+        return {"display": "--", "direction": "na"}
+    delta_value = float(current_value) - float(previous_value)
+    return {
+        "display": _signed_number_display(delta_value, precision=precision),
+        "direction": _delta_direction(delta_value),
+    }
+
+
+def _blood_pressure_delta_payload(current_vital, previous_vital):
+    if not current_vital or not previous_vital:
+        return {"display": "--", "direction": "na"}
+
+    pair_differences = []
+    pair_display = []
+    for current_value, previous_value in (
+        (current_vital.bp_systolic, previous_vital.bp_systolic),
+        (current_vital.bp_diastolic, previous_vital.bp_diastolic),
+    ):
+        if current_value is None or previous_value is None:
+            pair_display.append("--")
+            continue
+        delta_value = float(current_value) - float(previous_value)
+        pair_differences.append(delta_value)
+        pair_display.append(_signed_number_display(delta_value, precision=0))
+
+    if not pair_differences:
+        return {"display": "--", "direction": "na"}
+
+    return {
+        "display": "/".join(pair_display),
+        "direction": _delta_direction(sum(pair_differences) / len(pair_differences)),
+    }
+
+
+def _build_vitals_trend_rows(vitals_queryset):
+    vitals = list(vitals_queryset)
+    if not vitals:
+        return []
+
+    latest_vital = vitals[0]
+    previous_vital = vitals[1] if len(vitals) > 1 else None
+
+    rows = [
+        {
+            "key": "blood_pressure",
+            "label": "Blood Pressure",
+            "current_display": _blood_pressure_display(
+                latest_vital.bp_systolic,
+                latest_vital.bp_diastolic,
+                include_unit=False,
+            ),
+            "previous_display": _blood_pressure_display(
+                previous_vital.bp_systolic,
+                previous_vital.bp_diastolic,
+                include_unit=False,
+                missing_display="N/A",
+            )
+            if previous_vital
+            else "No previous",
+            "unit": "mmHg",
+            "status": _blood_pressure_status(latest_vital.bp_systolic, latest_vital.bp_diastolic),
+            **{
+                f"delta_{key}": value
+                for key, value in _blood_pressure_delta_payload(latest_vital, previous_vital).items()
+            },
+        }
+    ]
+
+    for metric in _vitals_metric_specs():
+        current_value = getattr(latest_vital, metric["field_name"])
+        previous_value = getattr(previous_vital, metric["field_name"]) if previous_vital else None
+        rows.append(
+            {
+                "key": metric["key"],
+                "label": metric["label"],
+                "current_display": _format_vitals_metric_value(metric, current_value, include_unit=False),
+                "previous_display": _format_vitals_metric_value(
+                    metric,
+                    previous_value,
+                    include_unit=False,
+                    missing_display="N/A",
+                )
+                if previous_vital
+                else "No previous",
+                "unit": metric["unit"],
+                "status": _vitals_metric_status(metric["key"], current_value),
+                **{
+                    f"delta_{key}": value
+                    for key, value in _numeric_delta_payload(
+                        current_value,
+                        previous_value,
+                        precision=metric["delta_precision"],
+                    ).items()
+                },
+            }
+        )
+
+    return rows
+
+
 def _build_latest_vitals_summary(latest_vital):
     if not latest_vital:
         return []
 
-    def format_integer(value):
-        return str(int(value))
-
-    def format_decimal_one(value):
-        return f"{float(value):.1f}"
-
-    metric_definitions = [
+    summary = [
         {
-            "key": "bp_systolic",
-            "label": "BP Systolic",
+            "key": "blood_pressure",
+            "label": "Blood Pressure",
+            "short_label": "BP",
             "unit": "mmHg",
-            "value": latest_vital.bp_systolic,
-            "minimum": 70,
-            "maximum": 180,
-            "low_lt": 90,
-            "high_gte": 130,
-            "formatter": format_integer,
-        },
-        {
-            "key": "bp_diastolic",
-            "label": "BP Diastolic",
+            "value": {
+                "systolic": latest_vital.bp_systolic,
+                "diastolic": latest_vital.bp_diastolic,
+            },
+            "value_display": _blood_pressure_display(latest_vital.bp_systolic, latest_vital.bp_diastolic),
+            "value_compact": _blood_pressure_display(
+                latest_vital.bp_systolic,
+                latest_vital.bp_diastolic,
+                include_unit=False,
+                missing_display="-",
+            ),
+            "value_text": _blood_pressure_display(
+                latest_vital.bp_systolic,
+                latest_vital.bp_diastolic,
+                include_unit=False,
+            ),
             "unit": "mmHg",
-            "value": latest_vital.bp_diastolic,
-            "minimum": 40,
-            "maximum": 120,
-            "low_lt": 60,
-            "high_gte": 80,
-            "formatter": format_integer,
-        },
-        {
-            "key": "pr",
-            "label": "Pulse Rate",
-            "unit": "bpm",
-            "value": latest_vital.pr,
-            "minimum": 40,
-            "maximum": 140,
-            "low_lt": 60,
-            "high_gt": 100,
-            "formatter": format_integer,
-        },
-        {
-            "key": "spo2",
-            "label": "SpO2",
-            "unit": "%",
-            "value": latest_vital.spo2,
-            "minimum": 80,
-            "maximum": 100,
-            "low_lt": 95,
-            "high_gt": 100,
-            "formatter": format_integer,
-        },
-        {
-            "key": "weight",
-            "label": "Weight",
-            "unit": "kg",
-            "value": latest_vital.weight_kg,
-            "minimum": 30,
-            "maximum": 120,
-            "neutral": True,
-            "formatter": format_decimal_one,
-        },
-        {
-            "key": "hemoglobin",
-            "label": "Hemoglobin",
-            "unit": "g/dL",
-            "value": latest_vital.hemoglobin,
-            "minimum": 4,
-            "maximum": 16,
-            "low_lt": 10,
-            "high_gt": 13,
-            "formatter": format_decimal_one,
-        },
+            "status": _blood_pressure_status(latest_vital.bp_systolic, latest_vital.bp_diastolic),
+            "status_label": _vitals_metric_status_label(
+                "blood_pressure",
+                _blood_pressure_status(latest_vital.bp_systolic, latest_vital.bp_diastolic),
+            ),
+            "percent": _blood_pressure_percent(latest_vital.bp_systolic, latest_vital.bp_diastolic),
+            "systolic": latest_vital.bp_systolic,
+            "diastolic": latest_vital.bp_diastolic,
+            "has_value": latest_vital.bp_systolic is not None or latest_vital.bp_diastolic is not None,
+        }
     ]
 
-    summary = []
-    for metric in metric_definitions:
+    for metric in _secondary_vitals_metric_definitions(latest_vital):
         value = metric["value"]
         numeric_value = float(value) if value is not None else None
-        status = _metric_status(
-            numeric_value,
-            low_lt=metric.get("low_lt"),
-            high_gt=metric.get("high_gt"),
-            high_gte=metric.get("high_gte"),
-            neutral=metric.get("neutral", False),
-        )
+        status = _vitals_metric_status(metric["key"], numeric_value)
         if value is None:
             value_display = "N/A"
+            value_compact = "-"
+            value_text = "N/A"
         else:
             formatted_value = metric["formatter"](value)
             value_display = f"{formatted_value} {metric['unit']}"
+            value_compact = value_display
+            value_text = formatted_value
         summary.append(
             {
                 "key": metric["key"],
                 "label": metric["label"],
+                "short_label": metric["short_label"],
+                "icon": metric["icon"],
                 "value": value,
                 "value_display": value_display,
+                "value_compact": value_compact,
+                "value_text": value_text,
+                "unit": metric["unit"],
                 "status": status,
+                "status_label": _vitals_metric_status_label(metric["key"], status),
                 "percent": _metric_percent(numeric_value, metric["minimum"], metric["maximum"]),
+                "has_value": value is not None,
             }
         )
     return summary
+
+
+def _build_latest_vitals_snapshot(latest_vital, *, summary=None):
+    if not latest_vital:
+        return None
+    recorded_at_local = timezone.localtime(latest_vital.recorded_at)
+    summary_metrics = summary or _build_latest_vitals_summary(latest_vital)
+    blood_pressure = next((metric for metric in summary_metrics if metric["key"] == "blood_pressure"), None)
+    secondary_metrics = [metric for metric in summary_metrics if metric["key"] != "blood_pressure"]
+    return {
+        "recorded_at": latest_vital.recorded_at.isoformat(),
+        "recorded_at_display": recorded_at_local.strftime("%d %b %Y %H:%M"),
+        "recorded_at_date_display": recorded_at_local.strftime("%d %b %Y"),
+        "recorded_at_time_display": recorded_at_local.strftime("%H:%M"),
+        "blood_pressure": blood_pressure,
+        "secondary_metrics": secondary_metrics,
+        "available_secondary_metrics": [metric for metric in secondary_metrics if metric["has_value"]],
+    }
+
+
+def _build_recent_vitals_preview(vitals_queryset):
+    previews = []
+    for vital in vitals_queryset:
+        snapshot = _build_latest_vitals_snapshot(vital)
+        previews.append(
+            {
+                "id": vital.id,
+                "recorded_at_display": snapshot["recorded_at_display"],
+                "blood_pressure": snapshot["blood_pressure"],
+                "secondary_metrics": snapshot["secondary_metrics"],
+                "available_secondary_metrics": snapshot["available_secondary_metrics"],
+                "edit_url": reverse("patients:vitals_edit", kwargs={"pk": vital.pk}),
+            }
+        )
+    return previews
+
+
+def _build_vitals_history_rows(vitals_queryset):
+    rows = []
+    for vital in vitals_queryset:
+        metrics = {metric["key"]: metric for metric in _build_latest_vitals_summary(vital)}
+        recorded_at_local = timezone.localtime(vital.recorded_at)
+        updated_at = timezone.localtime(vital.updated_at) if vital.updated_at else None
+        rows.append(
+            {
+                "id": vital.id,
+                "recorded_at_display": recorded_at_local.strftime("%d %b %Y %H:%M"),
+                "recorded_date_display": recorded_at_local.strftime("%d %b %Y"),
+                "recorded_time_display": recorded_at_local.strftime("%H:%M"),
+                "blood_pressure_display": metrics["blood_pressure"]["value_compact"],
+                "blood_pressure_status": metrics["blood_pressure"]["status"],
+                "pulse_rate_display": metrics["pr"]["value_compact"],
+                "spo2_display": metrics["spo2"]["value_compact"],
+                "weight_display": metrics["weight"]["value_compact"],
+                "hemoglobin_display": metrics["hemoglobin"]["value_compact"],
+                "pulse_rate_table_display": metrics["pr"]["value_text"] if metrics["pr"]["has_value"] else "-",
+                "spo2_table_display": f"{metrics['spo2']['value_text']}%" if metrics["spo2"]["has_value"] else "-",
+                "weight_table_display": metrics["weight"]["value_text"] if metrics["weight"]["has_value"] else "-",
+                "hemoglobin_table_display": metrics["hemoglobin"]["value_text"] if metrics["hemoglobin"]["has_value"] else "-",
+                "hemoglobin_status": metrics["hemoglobin"]["status"],
+                "updated_at_display": updated_at.strftime("%d %b %Y %H:%M") if updated_at else "-",
+                "updated_by_display": _display_user_name(vital.updated_by) or "system",
+                "edit_url": reverse("patients:vitals_edit", kwargs={"pk": vital.pk}),
+            }
+        )
+    return rows
+
+
+def _build_vitals_editor_payload(vital):
+    if not vital:
+        return None
+    return {
+        "id": vital.id,
+        "url": reverse("patients:vitals_edit", kwargs={"pk": vital.pk}),
+        "recorded_at_input": timezone.localtime(vital.recorded_at).strftime("%Y-%m-%dT%H:%M"),
+        "bp_systolic": "" if vital.bp_systolic is None else str(vital.bp_systolic),
+        "bp_diastolic": "" if vital.bp_diastolic is None else str(vital.bp_diastolic),
+        "pr": "" if vital.pr is None else str(vital.pr),
+        "spo2": "" if vital.spo2 is None else str(vital.spo2),
+        "weight_kg": "" if vital.weight_kg is None else str(vital.weight_kg),
+        "hemoglobin": "" if vital.hemoglobin is None else str(vital.hemoglobin),
+    }
 
 
 def _build_vitals_trend_payload(vitals_queryset):
@@ -1358,8 +1759,14 @@ def _build_vitals_trend_payload(vitals_queryset):
         chart_rows.append(
             {
                 "label": timezone.localtime(vital.recorded_at).strftime("%d-%m-%y %H:%M"),
-                "bp_systolic": vital.bp_systolic,
-                "bp_diastolic": vital.bp_diastolic,
+                "blood_pressure": {
+                    "systolic": vital.bp_systolic,
+                    "diastolic": vital.bp_diastolic,
+                    "range": [vital.bp_diastolic, vital.bp_systolic]
+                    if vital.bp_systolic is not None and vital.bp_diastolic is not None
+                    else None,
+                    "display": _blood_pressure_display(vital.bp_systolic, vital.bp_diastolic),
+                },
                 "pr": vital.pr,
                 "spo2": vital.spo2,
                 "weight": float(vital.weight_kg) if vital.weight_kg is not None else None,
@@ -1371,8 +1778,7 @@ def _build_vitals_trend_payload(vitals_queryset):
     return {
         "labels": [row["label"] for row in chart_rows],
         "datasets": {
-            "bp_systolic": [row["bp_systolic"] for row in chart_rows],
-            "bp_diastolic": [row["bp_diastolic"] for row in chart_rows],
+            "blood_pressure": [row["blood_pressure"] for row in chart_rows],
             "pr": [row["pr"] for row in chart_rows],
             "spo2": [row["spo2"] for row in chart_rows],
             "hemoglobin": [row["hemoglobin"] for row in chart_rows],
@@ -3234,11 +3640,14 @@ class CaseDetailView(LoginRequiredMixin, DetailView):
         call_logs = list(case.call_logs.select_related("staff_user", "task", "task__case__category").order_by("-created_at", "-id"))
         activity_logs = list(case.activity_logs.select_related("user", "task", "task__case__category").order_by("-created_at", "-id")[:200])
         latest_vital = case.vitals.order_by("-recorded_at", "-id").first()
+        recent_vitals = list(case.vitals.order_by("-recorded_at", "-id")[:4])
         today = timezone.localdate()
         task_sections = _build_actionable_task_sections(tasks, today, prominent_limit=5)
         total_tasks = len(tasks)
         completed_tasks = task_sections["completed_count"]
         timeline_filter = _normalized_timeline_filter(self.request.GET.get("timeline", "all"))
+        latest_vitals_summary = _build_latest_vitals_summary(latest_vital)
+        latest_vitals_snapshot = _build_latest_vitals_snapshot(latest_vital, summary=latest_vitals_summary)
 
         context["today"] = today
         context["tasks"] = tasks
@@ -3251,8 +3660,13 @@ class CaseDetailView(LoginRequiredMixin, DetailView):
         context["task_call_summary"] = task_call_summary
         context["has_vitals"] = latest_vital is not None
         context["latest_vitals_recorded_at"] = timezone.localtime(latest_vital.recorded_at) if latest_vital else None
-        context["vitals_summary_metrics"] = _build_latest_vitals_summary(latest_vital)
+        context["vitals_summary_metrics"] = latest_vitals_summary
+        context["latest_vitals_snapshot"] = latest_vitals_snapshot
+        context["vitals_recent_readings"] = _build_recent_vitals_preview(recent_vitals)
+        context["vitals_trend_rows"] = _build_vitals_trend_rows(recent_vitals[:2])
+        context["vitals_history_preview"] = _build_vitals_history_rows(recent_vitals)
         context["vitals_detail_url"] = reverse("patients:case_vitals", kwargs={"pk": case.pk})
+        context["vitals_create_url"] = reverse("patients:vitals_create", kwargs={"pk": case.pk})
         context["case_age_label"] = _case_age_label(case)
         context["case_initials"] = _case_initials(case)
         context["case_name_size_class"] = _case_name_size_class(case)
@@ -3282,6 +3696,9 @@ class CaseDetailView(LoginRequiredMixin, DetailView):
         context["can_task_edit"] = has_capability(self.request.user, "task_edit")
         context["can_note_add"] = has_capability(self.request.user, "note_add")
         context["can_vitals_edit"] = has_capability(self.request.user, "task_edit")
+        context["vitals_editor_form"] = VitalEntryForm()
+        context["latest_vital"] = latest_vital
+        context["latest_vital_editor_payload"] = _build_vitals_editor_payload(latest_vital)
         detail_summary = _build_case_detail_summary(
             case,
             user=self.request.user,
@@ -3322,8 +3739,12 @@ class CaseVitalsDetailView(LoginRequiredMixin, DetailView):
         context["vitals_trend_payload"] = _build_vitals_trend_payload(reversed(vitals))
         context["can_vitals_edit"] = has_capability(self.request.user, "task_edit")
         latest_vital = vitals[0] if vitals else None
-        context["latest_vitals_summary"] = _build_latest_vitals_summary(latest_vital)
+        latest_vitals_summary = _build_latest_vitals_summary(latest_vital)
+        context["latest_vitals_summary"] = latest_vitals_summary
+        context["latest_vitals_snapshot"] = _build_latest_vitals_snapshot(latest_vital, summary=latest_vitals_summary)
         context["latest_vitals_recorded_at"] = timezone.localtime(latest_vital.recorded_at) if latest_vital else None
+        context["vitals_history_rows"] = _build_vitals_history_rows(vitals)
+        context["vitals_create_url"] = reverse("patients:vitals_create", kwargs={"pk": case.pk})
         return context
 
     def dispatch(self, request, *args, **kwargs):
@@ -3635,14 +4056,31 @@ class AddCallLogView(LoginRequiredMixin, View):
         return redirect("patients:case_detail", pk=pk)
 
 
+def _vitals_success_message(base_message, form):
+    if not form.hb_warning:
+        return base_message
+    return f"{base_message} {form.hb_warning_message}"
+
+
+def _build_vitals_form_context(*, case, form, is_edit, vital=None, saved_successfully=False):
+    return {
+        "form": form,
+        "case": case,
+        "vital": vital,
+        "is_edit": is_edit,
+        "saved_successfully": saved_successfully,
+        "show_hb_warning": form.hb_warning,
+    }
+
+
 class VitalEntryCreateView(LoginRequiredMixin, View):
     template_name = "patients/vitals_form.html"
 
     def _check_access(self, request):
         if not can_access_case_data(request.user):
-            return HttpResponseForbidden("You do not have permission to access case data.")
+            return _forbidden_response(request, "You do not have permission to access case data.")
         if not has_capability(request.user, "task_edit"):
-            return HttpResponseForbidden("You do not have permission to add vitals.")
+            return _forbidden_response(request, "You do not have permission to add vitals.")
         return None
 
     def get(self, request, pk):
@@ -3651,16 +4089,7 @@ class VitalEntryCreateView(LoginRequiredMixin, View):
             return denied
         case = get_object_or_404(Case, pk=pk)
         form = VitalEntryForm()
-        return render(
-            request,
-            self.template_name,
-            {
-                "form": form,
-                "case": case,
-                "is_edit": False,
-                "show_hb_warning": form.hb_warning,
-            },
-        )
+        return render(request, self.template_name, _build_vitals_form_context(case=case, form=form, is_edit=False))
 
     def post(self, request, pk):
         denied = self._check_access(request)
@@ -3680,33 +4109,34 @@ class VitalEntryCreateView(LoginRequiredMixin, View):
                 event_type=ActivityEventType.SYSTEM,
                 note="Vitals entry recorded.",
             )
+            success_message = _vitals_success_message("Vitals recorded.", form)
+            if _request_wants_json(request):
+                payload = _build_case_detail_json_payload(case, user=request.user)
+                payload["message"] = success_message
+                payload["latest_vital_id"] = vital.id
+                return JsonResponse(payload)
             if form.hb_warning:
                 form = VitalEntryForm(instance=vital)
                 form.hb_warning = True
                 return render(
                     request,
                     self.template_name,
-                    {
-                        "form": form,
-                        "case": case,
-                        "is_edit": True,
-                        "vital": vital,
-                        "saved_successfully": True,
-                        "show_hb_warning": True,
-                    },
+                    _build_vitals_form_context(
+                        case=case,
+                        form=form,
+                        is_edit=True,
+                        vital=vital,
+                        saved_successfully=True,
+                    ),
                 )
-            messages.success(request, "Vitals recorded.")
+            messages.success(request, success_message)
             return redirect("patients:case_detail", pk=case.pk)
-        return render(
-            request,
-            self.template_name,
-            {
-                "form": form,
-                "case": case,
-                "is_edit": False,
-                "show_hb_warning": form.hb_warning,
-            },
-        )
+        if _request_wants_json(request):
+            return JsonResponse(
+                {"message": "Could not record vitals. Please check the inputs.", "errors": form.errors.get_json_data()},
+                status=400,
+            )
+        return render(request, self.template_name, _build_vitals_form_context(case=case, form=form, is_edit=False))
 
 
 class VitalEntryUpdateView(LoginRequiredMixin, View):
@@ -3714,9 +4144,9 @@ class VitalEntryUpdateView(LoginRequiredMixin, View):
 
     def _check_access(self, request):
         if not can_access_case_data(request.user):
-            return HttpResponseForbidden("You do not have permission to access case data.")
+            return _forbidden_response(request, "You do not have permission to access case data.")
         if not has_capability(request.user, "task_edit"):
-            return HttpResponseForbidden("You do not have permission to edit vitals.")
+            return _forbidden_response(request, "You do not have permission to edit vitals.")
         return None
 
     def get(self, request, pk):
@@ -3728,13 +4158,7 @@ class VitalEntryUpdateView(LoginRequiredMixin, View):
         return render(
             request,
             self.template_name,
-            {
-                "form": form,
-                "vital": vital,
-                "case": vital.case,
-                "is_edit": True,
-                "show_hb_warning": form.hb_warning,
-            },
+            _build_vitals_form_context(case=vital.case, form=form, is_edit=True, vital=vital),
         )
 
     def post(self, request, pk):
@@ -3755,33 +4179,37 @@ class VitalEntryUpdateView(LoginRequiredMixin, View):
                 event_type=ActivityEventType.SYSTEM,
                 note="Vitals entry updated.",
             )
+            success_message = _vitals_success_message("Vitals updated.", form)
+            if _request_wants_json(request):
+                payload = _build_case_detail_json_payload(updated_vital.case, user=request.user)
+                payload["message"] = success_message
+                payload["latest_vital_id"] = updated_vital.id
+                return JsonResponse(payload)
             if form.hb_warning:
                 form = VitalEntryForm(instance=updated_vital)
                 form.hb_warning = True
                 return render(
                     request,
                     self.template_name,
-                    {
-                        "form": form,
-                        "vital": updated_vital,
-                        "case": updated_vital.case,
-                        "is_edit": True,
-                        "saved_successfully": True,
-                        "show_hb_warning": True,
-                    },
+                    _build_vitals_form_context(
+                        case=updated_vital.case,
+                        form=form,
+                        is_edit=True,
+                        vital=updated_vital,
+                        saved_successfully=True,
+                    ),
                 )
-            messages.success(request, "Vitals updated.")
+            messages.success(request, success_message)
             return redirect("patients:case_detail", pk=updated_vital.case.pk)
+        if _request_wants_json(request):
+            return JsonResponse(
+                {"message": "Could not update vitals. Please check the inputs.", "errors": form.errors.get_json_data()},
+                status=400,
+            )
         return render(
             request,
             self.template_name,
-            {
-                "form": form,
-                "vital": vital,
-                "case": vital.case,
-                "is_edit": True,
-                "show_hb_warning": form.hb_warning,
-            },
+            _build_vitals_form_context(case=vital.case, form=form, is_edit=True, vital=vital),
         )
 
 class DeviceAwareLoginView(LoginView):

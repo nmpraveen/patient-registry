@@ -282,48 +282,34 @@ class TaskForm(StyledModelForm):
 
 class VitalEntryForm(StyledModelForm):
     hb_warning_message = "Hemoglobin is outside expected ANC range (4.0 to 13.0). The value was saved."
-    BP_PRESET_CHOICES = [
-        ("", "Choose BP"),
-        ("90/50", "90/50"),
-        ("90/60", "90/60"),
-        ("90/70", "90/70"),
-        ("100/60", "100/60"),
-        ("100/70", "100/70"),
-        ("100/80", "100/80"),
-        ("110/60", "110/60"),
-        ("110/70", "110/70"),
-        ("110/80", "110/80"),
-        ("120/60", "120/60"),
-        ("120/70", "120/70"),
-        ("120/80", "120/80"),
-        ("120/90", "120/90"),
-        ("130/70", "130/70"),
-        ("130/80", "130/80"),
-        ("130/90", "130/90"),
-        ("140/80", "140/80"),
-        ("140/90", "140/90"),
-        ("150/90", "150/90"),
-        ("160/100", "160/100"),
-    ]
-    bp_preset = forms.ChoiceField(required=False, choices=BP_PRESET_CHOICES, label="BP")
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.hb_warning = False
+        self.fields["recorded_at"].label = "Recorded at"
+        self.fields["bp_systolic"].label = "Systolic"
+        self.fields["bp_diastolic"].label = "Diastolic"
+        self.fields["pr"].label = "Pulse rate"
+        self.fields["weight_kg"].label = "Weight"
+        self.fields["weight_kg"].help_text = "Optional. Half-kilogram steps."
         self.fields["recorded_at"].input_formats = ["%Y-%m-%dT%H:%M"]
-        self.fields["bp_systolic"].widget = forms.HiddenInput()
-        self.fields["bp_diastolic"].widget = forms.HiddenInput()
-        self.fields["pr"].widget = forms.Select(choices=self._pr_choices())
-        self.fields["spo2"].widget = forms.Select(choices=self._spo2_choices())
-        self.fields["weight_kg"].widget = forms.Select(choices=self._weight_choices())
+        self.fields["recorded_at"].widget.attrs.update({"step": 60})
+        self.fields["bp_systolic"].widget = forms.NumberInput(
+            attrs={"class": "form-control", "min": 70, "max": 240, "placeholder": "120"}
+        )
+        self.fields["bp_diastolic"].widget = forms.NumberInput(
+            attrs={"class": "form-control", "min": 40, "max": 140, "placeholder": "80"}
+        )
+        self.fields["pr"].widget = forms.Select(attrs={"class": "form-select"}, choices=self._pr_choices())
+        self.fields["spo2"].widget = forms.Select(attrs={"class": "form-select"}, choices=self._spo2_choices())
+        self.fields["weight_kg"].widget = forms.Select(attrs={"class": "form-select"}, choices=self._weight_choices())
+        self.fields["hemoglobin"].widget.attrs.update({"placeholder": "10.8", "inputmode": "decimal"})
         if not self.is_bound:
             if self.instance and self.instance.pk and self.instance.recorded_at:
                 local_recorded_at = timezone.localtime(self.instance.recorded_at)
             else:
                 local_recorded_at = timezone.localtime(timezone.now())
             self.initial["recorded_at"] = local_recorded_at.strftime("%Y-%m-%dT%H:%M")
-            if self.instance and self.instance.bp_systolic and self.instance.bp_diastolic:
-                self.initial["bp_preset"] = f"{self.instance.bp_systolic}/{self.instance.bp_diastolic}"
             hemoglobin_value = getattr(self.instance, "hemoglobin", None)
             if hemoglobin_value is not None and (hemoglobin_value < Decimal("4.0") or hemoglobin_value > Decimal("13.0")):
                 self.hb_warning = True
@@ -347,11 +333,6 @@ class VitalEntryForm(StyledModelForm):
 
     def clean(self):
         cleaned_data = super().clean()
-        bp_preset = cleaned_data.get("bp_preset") or ""
-        if bp_preset:
-            systolic, diastolic = bp_preset.split("/", 1)
-            cleaned_data["bp_systolic"] = int(systolic)
-            cleaned_data["bp_diastolic"] = int(diastolic)
         bp_systolic = cleaned_data.get("bp_systolic")
         bp_diastolic = cleaned_data.get("bp_diastolic")
         pr = cleaned_data.get("pr")

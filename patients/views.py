@@ -3272,7 +3272,11 @@ class CaseDetailView(LoginRequiredMixin, DetailView):
         context["task_form"] = TaskForm()
         context["log_form"] = ActivityLogForm()
         call_log_form = CallLogForm()
-        call_log_form.fields["task"].queryset = case.tasks.order_by("due_date", "id")
+        call_log_form.fields["task"].queryset = case.tasks.exclude(
+            status__in=[TaskStatus.COMPLETED, TaskStatus.CANCELLED]
+        ).filter(
+            due_date__gte=today
+        ).order_by("due_date", "id")
         context["call_log_form"] = call_log_form
         context["can_task_create"] = has_capability(self.request.user, "task_create")
         context["can_task_edit"] = has_capability(self.request.user, "task_edit")

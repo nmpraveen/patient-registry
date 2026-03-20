@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.03.20.03.31
+- Tightened the case-detail Action Center follow-up styling so the idle task, call, and note cards separate more clearly from the workspace background while preserving the new compact mockup layout.
+- Limited the case-detail `Log Call` task selector to upcoming open tasks only, excluding overdue, completed, and cancelled tasks from the in-page call workflow.
+- Adjusted the mobile Action Center open-state scroll behavior so opening a form keeps the three action cards visible instead of jumping the viewport down to the form body.
+
 ## 2026.03.20.00.08
 - Rebuilt `/patients/cases/<id>/` into a modular case workspace with dedicated case-detail assets, a compact patient hero, category-aware surface tinting, stronger task focus, richer clinical sidebar cards, and purpose-built desktop/mobile layouts.
 - Added inline case-page action flows for quick task creation, note capture, call logging, task completion, rescheduling, and timeline/log jumps while preserving the existing Django routes, permission checks, and non-JavaScript fallbacks.

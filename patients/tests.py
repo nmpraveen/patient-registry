@@ -1833,7 +1833,7 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, ">-</td>", html=False)
 
-    def test_case_detail_shows_action_center_and_timeline_filters(self):
+    def test_case_detail_shows_collapsed_action_center_and_timeline_filters(self):
         self.client.force_login(self.user)
         case = Case.objects.create(
             uhid="UH-ACTION-01",
@@ -1887,16 +1887,130 @@ class MedtrackViewTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Action Center")
+        self.assertContains(response, "Add Task")
+        self.assertContains(response, "Log Call")
+        self.assertContains(response, "Add Note")
         self.assertContains(response, "Clinical Timeline")
         self.assertContains(response, 'data-testid="case-detail-shell"')
         self.assertContains(response, 'data-testid="case-detail-hero"')
         self.assertContains(response, 'data-testid="case-detail-workspace"')
         self.assertContains(response, 'data-testid="case-detail-sidebar"')
         self.assertContains(response, 'data-testid="case-detail-timeline"')
-        self.assertContains(response, 'data-testid="case-detail-mobile-quick-actions"')
+        self.assertNotContains(response, 'data-testid="case-detail-mobile-quick-actions"')
+        self.assertContains(response, 'data-case-composer-trigger="task"')
+        self.assertContains(response, 'data-case-composer-trigger="call"')
+        self.assertContains(response, 'data-case-composer-trigger="note"')
+        self.assertContains(response, 'data-case-active-pane=""')
+        self.assertContains(response, 'data-case-composer-close')
+        self.assertContains(response, 'name="status" value="SCHEDULED"', html=False)
+        self.assertContains(response, 'name="assigned_user" value=""', html=False)
+        self.assertContains(response, 'name="task_type" value="CUSTOM"', html=False)
+        self.assertContains(response, 'name="frequency_label" value=""', html=False)
+        self.assertContains(response, 'name="notes" value=""', html=False)
+        self.assertNotContains(response, 'data-case-active-pane="task"')
+        self.assertNotContains(response, 'data-case-active-pane="call"')
+        self.assertNotContains(response, 'data-case-active-pane="note"')
+        self.assertNotRegex(response.content.decode("utf-8"), r'data-case-composer-panel="(?:task|call|note)"[^>]*is-active')
         self.assertContains(response, "Nurse follow-up note")
         self.assertContains(response, "Confirm visit timing [Task: Timeline task]")
         self.assertNotContains(response, "Task created for timeline")
+
+    def test_case_detail_disables_restricted_action_cards_for_note_only_role(self):
+        ensure_default_role_settings()
+        caller_group, _ = Group.objects.get_or_create(name="Caller")
+        caller_user = get_user_model().objects.create_user(username="caller-disabled", password="strong-password-123")
+        caller_user.groups.add(caller_group)
+        case = Case.objects.create(
+            uhid="UH-CALLER-DISABLED",
+            first_name="Note",
+            last_name="Only",
+            phone_number="9876511122",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=10),
+            created_by=self.user,
+        )
+
+        self.client.force_login(caller_user)
+        response = self.client.get(reverse("patients:case_detail", kwargs={"pk": case.pk}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Action Center")
+        self.assertContains(response, 'data-case-composer-trigger="task"')
+        self.assertContains(response, 'data-case-composer-trigger="call"')
+        self.assertContains(response, 'data-case-composer-trigger="note"')
+        self.assertRegex(
+            response.content.decode("utf-8"),
+            r'data-case-composer-trigger="task"[^>]*(?:disabled|aria-disabled="true")',
+        )
+        self.assertNotContains(response, 'data-testid="case-detail-mobile-quick-actions"')
+
+    def test_case_detail_call_log_task_select_shows_only_open_and_upcoming_tasks(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-CALL-SELECT",
+            first_name="Call",
+            last_name="Select",
+            phone_number="9876511133",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=10),
+            created_by=self.user,
+        )
+        open_task = Task.objects.create(
+            case=case,
+            title="Open call task",
+            due_date=timezone.localdate() + timedelta(days=1),
+            status=TaskStatus.SCHEDULED,
+            created_by=self.user,
+        )
+        awaiting_task = Task.objects.create(
+            case=case,
+            title="Awaiting call task",
+            due_date=timezone.localdate() + timedelta(days=2),
+            status=TaskStatus.AWAITING_REPORTS,
+            created_by=self.user,
+        )
+        overdue_task = Task.objects.create(
+            case=case,
+            title="Overdue call task",
+            due_date=timezone.localdate() - timedelta(days=2),
+            status=TaskStatus.SCHEDULED,
+            created_by=self.user,
+        )
+        completed_task = Task.objects.create(
+            case=case,
+            title="Completed call task",
+            due_date=timezone.localdate() - timedelta(days=1),
+            status=TaskStatus.COMPLETED,
+            created_by=self.user,
+        )
+        cancelled_task = Task.objects.create(
+            case=case,
+            title="Cancelled call task",
+            due_date=timezone.localdate() + timedelta(days=3),
+            status=TaskStatus.CANCELLED,
+            created_by=self.user,
+        )
+
+        response = self.client.get(reverse("patients:case_detail", kwargs={"pk": case.pk}))
+
+        self.assertEqual(response.status_code, 200)
+        task_select_id = response.context["call_log_form"]["task"].id_for_label
+        select_match = re.search(
+            rf'<select[^>]*id="{re.escape(task_select_id)}"[^>]*>(.*?)</select>',
+            response.content.decode("utf-8"),
+            re.DOTALL,
+        )
+        self.assertIsNotNone(select_match)
+        select_html = select_match.group(1)
+        self.assertIn(open_task.title, select_html)
+        self.assertIn(awaiting_task.title, select_html)
+        self.assertNotIn(overdue_task.title, select_html)
+        self.assertNotIn(completed_task.title, select_html)
+        self.assertNotIn(cancelled_task.title, select_html)
 
     def test_case_detail_limits_prominent_tasks_to_five_open_tasks(self):
         self.client.force_login(self.user)

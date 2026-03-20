@@ -7,6 +7,7 @@
   const composer = shell.querySelector("[data-case-composer]");
   const composerButtons = Array.from(shell.querySelectorAll("[data-case-composer-trigger]"));
   const composerPanels = Array.from(shell.querySelectorAll("[data-case-composer-panel]"));
+  const composerCloseButtons = Array.from(shell.querySelectorAll("[data-case-composer-close]"));
   const taskFilters = Array.from(shell.querySelectorAll("[data-task-filter]"));
   const allTaskScope = shell.querySelector(".case-detail-all-tasks");
   const taskItems = allTaskScope ? Array.from(allTaskScope.querySelectorAll("[data-task-bucket]")) : [];
@@ -18,38 +19,22 @@
   const timelineBody = shell.querySelector("#clinical-timeline-body");
   const feedback = shell.querySelector("[data-case-feedback]");
   const ajaxForms = Array.from(shell.querySelectorAll("[data-case-ajax-form='true']"));
-  const storageKey = "medtrack.caseDetail.activeComposer";
-
-  const readStoredComposer = () => {
-    try {
-      return window.localStorage.getItem(storageKey) || "task";
-    } catch {
-      return "task";
-    }
-  };
-
-  const writeStoredComposer = (value) => {
-    try {
-      window.localStorage.setItem(storageKey, value);
-    } catch {
-      // Ignore storage failures and keep state session-local.
-    }
-  };
 
   const setComposer = (value) => {
-    const next = value || "task";
+    const next = value || "";
     if (composer) {
+      composer.hidden = !next;
       composer.dataset.caseActivePane = next;
     }
     composerButtons.forEach((button) => {
       const active = button.dataset.caseComposerTrigger === next;
       button.classList.toggle("is-active", active);
       button.setAttribute("aria-pressed", active ? "true" : "false");
+      button.setAttribute("aria-expanded", active ? "true" : "false");
     });
     composerPanels.forEach((panel) => {
       panel.classList.toggle("is-active", panel.dataset.caseComposerPanel === next);
     });
-    writeStoredComposer(next);
   };
 
   const filterTasks = () => {
@@ -129,10 +114,20 @@
 
   composerButtons.forEach((button) => {
     button.addEventListener("click", () => {
-      setComposer(button.dataset.caseComposerTrigger);
-      if (window.matchMedia("(max-width: 991.98px)").matches) {
-        scrollToSection("[data-case-composer]");
+      const nextPane = button.dataset.caseComposerTrigger;
+      const shouldCollapse = composer?.dataset.caseActivePane === nextPane;
+      setComposer(shouldCollapse ? "" : nextPane);
+      if (!shouldCollapse && window.matchMedia("(max-width: 991.98px)").matches) {
+        window.requestAnimationFrame(() => {
+          scrollToSection("#action-center");
+        });
       }
+    });
+  });
+
+  composerCloseButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      setComposer("");
     });
   });
 
@@ -218,6 +213,6 @@
     input.addEventListener("change", filterTasks);
   });
 
-  setComposer(readStoredComposer());
+  setComposer("");
   filterTasks();
 })();

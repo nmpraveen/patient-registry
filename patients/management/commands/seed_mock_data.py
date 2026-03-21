@@ -14,6 +14,7 @@ from patients.models import (
     CallOutcome,
     Case,
     CaseActivityLog,
+    CaseSubcategory,
     CaseStatus,
     DepartmentConfig,
     Gender,
@@ -127,6 +128,30 @@ class Command(BaseCommand):
             "notes": f"Demo follow-up case from {profile['place']} OPD with reachable caretaker contact.",
         }
 
+    @staticmethod
+    def _surgery_subcategory_for_index(index):
+        values = [
+            CaseSubcategory.GENERAL_SURGERY,
+            CaseSubcategory.ORTHOPEDICS,
+            CaseSubcategory.PLASTIC_SURGERY,
+            CaseSubcategory.PEDIATRIC_SURGERY,
+            CaseSubcategory.UROLOGY,
+            CaseSubcategory.ENT,
+            CaseSubcategory.OTHER_SPECIALTY,
+        ]
+        return values[(index - 1) % len(values)]
+
+    @staticmethod
+    def _medicine_subcategory_for_index(index):
+        values = [
+            CaseSubcategory.GENERAL_MEDICINE,
+            CaseSubcategory.PSYCHIATRY,
+            CaseSubcategory.CARDIOLOGY_ECHO,
+            CaseSubcategory.PEDIATRIC,
+            CaseSubcategory.MEDICAL_ONCOLOGY,
+        ]
+        return values[(index - 1) % len(values)]
+
     def build_anc_high_risk_case(self, anc, today, kwargs):
         scenario = "anc_high_risk"
         kwargs["metadata"]["seed_scenario"] = scenario
@@ -178,6 +203,7 @@ class Command(BaseCommand):
         kwargs.update(
             {
                 "category": surgery,
+                "subcategory": CaseSubcategory.GENERAL_SURGERY,
                 "status": CaseStatus.ACTIVE,
                 "surgical_pathway": SurgicalPathway.PLANNED_SURGERY,
                 "surgery_done": False,
@@ -193,6 +219,7 @@ class Command(BaseCommand):
         kwargs.update(
             {
                 "category": non_surgical,
+                "subcategory": CaseSubcategory.GENERAL_MEDICINE,
                 "status": CaseStatus.ACTIVE,
                 "review_frequency": ReviewFrequency.MONTHLY,
                 "review_date": today - timedelta(days=7),
@@ -245,6 +272,7 @@ class Command(BaseCommand):
             kwargs.update(
                 {
                     "category": surgery,
+                    "subcategory": self._surgery_subcategory_for_index(index),
                     "surgical_pathway": SurgicalPathway.PLANNED_SURGERY if bucket == 2 else SurgicalPathway.SURVEILLANCE,
                     "surgery_done": bucket == 2 and index % 8 == 0,
                     "surgery_date": today + timedelta(days=7 + index) if bucket == 2 else None,
@@ -255,6 +283,7 @@ class Command(BaseCommand):
         kwargs.update(
             {
                 "category": non_surgical,
+                "subcategory": self._medicine_subcategory_for_index(index),
                 "review_frequency": [ReviewFrequency.MONTHLY, ReviewFrequency.QUARTERLY, ReviewFrequency.HALF_YEARLY, ReviewFrequency.YEARLY][
                     (index - 1) % 4
                 ],

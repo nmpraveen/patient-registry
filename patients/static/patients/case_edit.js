@@ -3,6 +3,7 @@
   const IDENTITY_EVENT = "case-edit-identity-refresh";
   const PREVIEW_FIELDS = new Set([
     "category",
+    "subcategory",
     "status",
     "uhid",
     "first_name",
@@ -49,6 +50,7 @@
   const IDENTITY_FIELDS = new Set(["uhid", "phone_number", "alternate_phone_number"]);
   const HELP_STORAGE_KEY = "medtrack.caseEdit.helpVisible";
   const PRESERVED_FIELD_NAMES = new Set([
+    "subcategory",
     "rch_number",
     "rch_bypass",
     "lmp",

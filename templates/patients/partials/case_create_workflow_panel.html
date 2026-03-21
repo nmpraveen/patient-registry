@@ -64,6 +64,7 @@
         </div>
       {% elif case_create_state.show_surgery_fields %}
         <div class="row g-3">
+          {% include 'patients/partials/case_create_field.html' with field=form.subcategory col_class='col-12 col-lg-6' %}
           {% include 'patients/partials/case_create_field.html' with field=form.surgical_pathway col_class='col-12 col-lg-6' %}
           {% include 'patients/partials/case_create_field.html' with field=form.surgery_done col_class='col-12 col-lg-6' %}
           {% if form.surgical_pathway.value == 'PLANNED_SURGERY' %}
@@ -80,8 +81,9 @@
         </div>
       {% elif case_create_state.show_medicine_fields %}
         <div class="row g-3">
-          {% include 'patients/partials/case_create_field.html' with field=form.review_frequency col_class='col-12 col-lg-6' %}
-          {% include 'patients/partials/case_create_field.html' with field=form.review_date col_class='col-12 col-lg-6' %}
+          {% include 'patients/partials/case_create_field.html' with field=form.subcategory col_class='col-12 col-lg-4' %}
+          {% include 'patients/partials/case_create_field.html' with field=form.review_frequency col_class='col-12 col-lg-4' %}
+          {% include 'patients/partials/case_create_field.html' with field=form.review_date col_class='col-12 col-lg-4' %}
         </div>
       {% endif %}
     {% endif %}

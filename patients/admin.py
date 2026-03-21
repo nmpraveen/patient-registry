@@ -29,7 +29,7 @@ class TaskInline(admin.TabularInline):
 
 @admin.register(Case)
 class CaseAdmin(admin.ModelAdmin):
-    list_display = ("id", "uhid", "first_name", "last_name", "phone_number", "category", "status", "review_date", "updated_at")
+    list_display = ("id", "uhid", "first_name", "last_name", "phone_number", "category", "subcategory", "status", "review_date", "updated_at")
     search_fields = ("uhid", "first_name", "last_name", "patient_name", "phone_number")
     list_filter = ("status", "category", "surgical_pathway")
     inlines = [TaskInline]

@@ -92,6 +92,7 @@ from .models import (
     TaskStatus,
     ThemeSettings,
     UserAdminNote,
+    valid_case_subcategory_values_for_category_name,
     VitalEntry,
     build_default_tasks,
     cancel_open_rch_reminders,
@@ -717,6 +718,7 @@ def _recent_case_queryset(limit=None, *, include_tasks=True):
             "gender",
             "diagnosis",
             "notes",
+            "subcategory",
             "created_at",
             "category__id",
             "category__name",
@@ -812,6 +814,7 @@ def _serialize_recent_case(case, user, *, today=None, can_edit_recent=None, can_
         "is_new_today": created_local.date() == today,
         "can_edit": can_edit_recent,
         "category_name": category_name,
+        "subcategory_name": case.get_subcategory_display() if case.subcategory else "",
         "category_bg_color": category_theme["bg"],
         "category_text_color": category_theme["text"],
         "category_border_color": category_theme["border"],
@@ -850,6 +853,7 @@ def _serialize_recent_case_summary(case, user, *, today=None, can_edit_recent=No
         "is_new_today": created_local.date() == today,
         "can_edit": can_edit_recent,
         "category_name": case.category.name,
+        "subcategory_name": case.get_subcategory_display() if case.subcategory else "",
         "category_bg_color": category_theme["bg"],
         "category_text_color": category_theme["text"],
         "category_border_color": category_theme["border"],
@@ -1153,6 +1157,7 @@ def _build_case_detail_summary(case, *, user, tasks, call_logs, activity_logs, l
             "gender_label": case.get_gender_display() if case.gender else "-",
             "gender_code": _case_gender_code(case),
             "category_name": case.category.name,
+            "subcategory_name": case.get_subcategory_display() if case.subcategory else "",
             "status": case.status,
             "high_risk": case.high_risk,
             "phone_number": case.phone_number or "",
@@ -2481,6 +2486,7 @@ class CaseListView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
                 "diagnosis",
                 "phone_number",
                 "notes",
+                "subcategory",
                 "status",
                 "updated_at",
                 "category__id",
@@ -2715,6 +2721,7 @@ class UniversalCaseSearchView(LoginRequiredMixin, CaseDataAccessMixin, View):
                     "high_risk",
                     "referred_by",
                     "ncd_flags",
+                    "subcategory",
                     "updated_at",
                     "category__name",
                     "category__theme_bg_color",
@@ -2799,6 +2806,7 @@ class UniversalCaseSearchView(LoginRequiredMixin, CaseDataAccessMixin, View):
             category = case.category.name
             category_style = _normalized_category_style(category)
             category_theme = resolve_category_theme(theme_category_colors, case.category)
+            subcategory_name = case.get_subcategory_display() if case.subcategory else ""
             gender_style = _normalized_gender_style(case.gender)
             tags = [
                 {
@@ -2810,6 +2818,8 @@ class UniversalCaseSearchView(LoginRequiredMixin, CaseDataAccessMixin, View):
                     "border_color": category_theme["border"],
                 },
             ]
+            if subcategory_name:
+                tags.append({"kind": "subcategory", "label": subcategory_name})
             if case.gender:
                 tags.append({"kind": "gender", "label": case.get_gender_display(), "value": gender_style})
             if case.high_risk:
@@ -2828,6 +2838,7 @@ class UniversalCaseSearchView(LoginRequiredMixin, CaseDataAccessMixin, View):
                     "village": village,
                     "diagnosis": diagnosis,
                     "phone_number": case.phone_number,
+                    "subcategory_name": subcategory_name,
                     "tags": tags,
                     "detail_url": reverse("patients:case_detail", kwargs={"pk": case.pk}),
                 }
@@ -2952,6 +2963,7 @@ def _build_preview_case(form):
     preview_case.diagnosis = _normalize_optional_text(_bound_form_value(form, "diagnosis"))
     preview_case.referred_by = _normalize_optional_text(_bound_form_value(form, "referred_by"))
     preview_case.notes = _normalize_optional_text(_bound_form_value(form, "notes"))
+    preview_case.subcategory = _normalize_optional_text(_bound_form_value(form, "subcategory"))
     preview_case.rch_number = _normalize_optional_text(_bound_form_value(form, "rch_number"))
     preview_case.rch_bypass = bool(_bound_form_value(form, "rch_bypass")) if "rch_bypass" in (getattr(form, "cleaned_data", None) or {}) else _coerce_checkbox_value(_bound_form_value(form, "rch_bypass"))
     preview_case.lmp = _parse_optional_date_value(_bound_form_value(form, "lmp"))
@@ -2969,6 +2981,12 @@ def _build_preview_case(form):
     preview_case.living = _parse_optional_int_value(_bound_form_value(form, "living"))
     preview_case.ncd_flags = _bound_form_list(form, "ncd_flags")
     preview_case.anc_high_risk_reasons = _bound_form_list(form, "anc_high_risk_reasons")
+    valid_subcategories = valid_case_subcategory_values_for_category_name(category.name if category else "")
+    if valid_subcategories:
+        if preview_case.subcategory not in valid_subcategories:
+            preview_case.subcategory = ""
+    else:
+        preview_case.subcategory = ""
     if workflow_key_for_case(preview_case) == "anc":
         preview_case.gender = Gender.FEMALE
     return preview_case
@@ -3090,6 +3108,8 @@ def _build_case_form_state(form, *, include_task_preview):
             if not (preview_case.edd or preview_case.usg_edd):
                 missing_inputs.append("EDD or USG EDD")
         elif workflow_key == "surgery":
+            if not preview_case.subcategory:
+                missing_inputs.append("subcategory")
             if not preview_case.surgical_pathway:
                 missing_inputs.append("surgical pathway")
             elif preview_case.surgical_pathway == SurgicalPathway.PLANNED_SURGERY and not preview_case.surgery_date:
@@ -3097,6 +3117,8 @@ def _build_case_form_state(form, *, include_task_preview):
             elif preview_case.surgical_pathway == SurgicalPathway.SURVEILLANCE and not preview_case.review_date:
                 missing_inputs.append("review date")
         elif workflow_key == "medicine":
+            if not preview_case.subcategory:
+                missing_inputs.append("subcategory")
             if not preview_case.review_date:
                 missing_inputs.append("review date")
 
@@ -3117,6 +3139,8 @@ def _build_case_form_state(form, *, include_task_preview):
         if reminder_due_date:
             summary_facts.append({"label": "RCH reminder", "value": reminder_due_date.strftime("%d %b %Y")})
     elif workflow_key == "surgery":
+        if preview_case.subcategory:
+            summary_facts.append({"label": "Subcategory", "value": preview_case.get_subcategory_display()})
         if pathway_label:
             summary_facts.append({"label": "Pathway", "value": pathway_label})
         if preview_case.surgery_date:
@@ -3124,6 +3148,8 @@ def _build_case_form_state(form, *, include_task_preview):
         if preview_case.review_date:
             summary_facts.append({"label": "Review date", "value": preview_case.review_date.strftime("%d %b %Y")})
     else:
+        if preview_case.subcategory:
+            summary_facts.append({"label": "Subcategory", "value": preview_case.get_subcategory_display()})
         if preview_case.review_date:
             summary_facts.append({"label": "Review date", "value": preview_case.review_date.strftime("%d %b %Y")})
         if preview_case.review_frequency:
@@ -3278,6 +3304,13 @@ def _build_case_edit_change_items(form, case, preview_case):
         before=case.category.name if case.category_id else "",
         after=preview_case.category.name if getattr(preview_case, "category_id", None) else "",
         formatter=_format_case_edit_text,
+    )
+    _append_case_edit_change(
+        changes,
+        label="Subcategory",
+        before=case.subcategory,
+        after=preview_case.subcategory,
+        formatter=lambda value: Case(subcategory=value).get_subcategory_display() if value else "Not set",
     )
     _append_case_edit_change(
         changes,

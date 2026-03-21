@@ -12,6 +12,8 @@ from .models import (
     AncHighRiskReason,
     CallLog,
     Case,
+    case_subcategory_choices_for_category_name,
+    case_subcategory_group_for_category_name,
     CaseActivityLog,
     CaseStatus,
     DepartmentConfig,
@@ -24,6 +26,7 @@ from .models import (
     TaskStatus,
     ThemeSettings,
     UserAdminNote,
+    valid_case_subcategory_values_for_category_name,
     VitalEntry,
     ensure_default_departments,
     ensure_default_role_settings,
@@ -67,6 +70,62 @@ class StyledModelForm(forms.ModelForm):
             field.widget.attrs["class"] = f"{existing} {css_class}".strip()
 
 
+def _selected_category_from_form(form):
+    category = form.data.get("category") if form.is_bound else None
+    if not category:
+        category = form.initial.get("category")
+    if not category and getattr(form.instance, "category_id", None):
+        return form.instance.category
+    if isinstance(category, DepartmentConfig):
+        return category
+    if category in ("", None):
+        return None
+    try:
+        return DepartmentConfig.objects.only("id", "name").get(pk=category)
+    except (DepartmentConfig.DoesNotExist, TypeError, ValueError):
+        return None
+
+
+def _case_subcategory_help_text(*, subcategory_group, optional_copy, has_options):
+    if not has_options:
+        return ""
+    if optional_copy:
+        if subcategory_group == "surgery":
+            return "Optional for quick entry. Choose the surgical specialty if known."
+        if subcategory_group == "medicine":
+            return "Optional for quick entry. Choose the medical specialty if known."
+        return "Optional for quick entry. Choose a subcategory if known."
+    if subcategory_group == "surgery":
+        return "Choose the surgical specialty."
+    if subcategory_group == "medicine":
+        return "Choose the medical specialty."
+    return "Choose a subcategory."
+
+
+def _configure_case_subcategory_field(field, *, category, required, optional_copy=False):
+    category_name = category.name if category else ""
+    subcategory_group = case_subcategory_group_for_category_name(category_name)
+    subcategory_choices = list(case_subcategory_choices_for_category_name(category_name))
+    if subcategory_choices:
+        placeholder = "Optional subcategory" if optional_copy else "Select subcategory"
+    else:
+        placeholder = "Select category first"
+    field.label = "Subcategory"
+    field.required = required and bool(subcategory_choices)
+    field.choices = [("", placeholder)] + subcategory_choices
+    field.help_text = _case_subcategory_help_text(
+        subcategory_group=subcategory_group,
+        optional_copy=optional_copy,
+        has_options=bool(subcategory_choices),
+    )
+    field.widget.attrs["autocomplete"] = "off"
+    field.widget.attrs["data-subcategory-group"] = subcategory_group
+    if subcategory_choices:
+        field.widget.attrs.pop("disabled", None)
+    else:
+        field.widget.attrs["disabled"] = "disabled"
+
+
 class CaseForm(StyledModelForm):
     ncd_flags = forms.MultipleChoiceField(
         required=False,
@@ -88,6 +147,7 @@ class CaseForm(StyledModelForm):
         self.fields["category"].widget = forms.RadioSelect()
         self.fields["category"].empty_label = None
         self.fields["category"].widget.choices = self.fields["category"].choices
+        self._configure_subcategory_field()
         self.fields["uhid"].label = "UHID"
         self.fields["rch_number"].label = "RCH number"
         self.fields["rch_bypass"].label = "RCH bypass"
@@ -108,6 +168,17 @@ class CaseForm(StyledModelForm):
         for field_name in ["gravida", "para", "abortions", "living"]:
             self.fields[field_name].widget = forms.Select(choices=gpla_choices)
 
+    def _selected_category_for_subcategory(self):
+        return _selected_category_from_form(self)
+
+    def _configure_subcategory_field(self):
+        _configure_case_subcategory_field(
+            self.fields["subcategory"],
+            category=self._selected_category_for_subcategory(),
+            required=True,
+            optional_copy=False,
+        )
+
     def clean(self):
         cleaned_data = super().clean()
         dob = cleaned_data.get("date_of_birth")
@@ -125,6 +196,9 @@ class CaseForm(StyledModelForm):
 
         category = cleaned_data.get("category")
         category_name = category.name.upper() if category else ""
+        valid_subcategories = valid_case_subcategory_values_for_category_name(category_name)
+        if not valid_subcategories:
+            cleaned_data["subcategory"] = ""
         high_risk = cleaned_data.get("high_risk")
         anc_high_risk_reasons = cleaned_data.get("anc_high_risk_reasons", [])
 
@@ -186,6 +260,7 @@ class CaseForm(StyledModelForm):
             "phone_number",
             "alternate_phone_number",
             "category",
+            "subcategory",
             "status",
             "diagnosis",
             "ncd_flags",
@@ -229,6 +304,45 @@ class QuickEntryCaseForm(StyledModelForm):
         self.fields["diagnosis"].required = True
         self.fields["review_date"].required = True
         self.fields["review_date"].input_formats = DATE_INPUT_FORMATS
+        self._configure_subcategory_field()
+        self.subcategory_option_groups = self._build_subcategory_option_groups()
+
+    def _selected_category_for_subcategory(self):
+        return _selected_category_from_form(self)
+
+    def _configure_subcategory_field(self):
+        _configure_case_subcategory_field(
+            self.fields["subcategory"],
+            category=self._selected_category_for_subcategory(),
+            required=False,
+            optional_copy=True,
+        )
+
+    def _build_subcategory_option_groups(self):
+        groups = {}
+        for category in self.fields["category"].queryset.only("id", "name"):
+            group_name = case_subcategory_group_for_category_name(category.name)
+            choices = list(case_subcategory_choices_for_category_name(category.name))
+            if not choices:
+                continue
+            groups[str(category.pk)] = {
+                "help_text": _case_subcategory_help_text(
+                    subcategory_group=group_name,
+                    optional_copy=True,
+                    has_options=True,
+                ),
+                "options": [{"value": value, "label": label} for value, label in choices],
+            }
+        return groups
+
+    def clean(self):
+        cleaned_data = super().clean()
+        category = cleaned_data.get("category")
+        category_name = category.name.upper() if category else ""
+        valid_subcategories = valid_case_subcategory_values_for_category_name(category_name)
+        if cleaned_data.get("subcategory") not in valid_subcategories:
+            cleaned_data["subcategory"] = ""
+        return cleaned_data
 
     def _post_clean(self):
         self.instance._skip_workflow_validation = True
@@ -252,7 +366,7 @@ class QuickEntryCaseForm(StyledModelForm):
 
     class Meta:
         model = Case
-        fields = ["first_name", "age", "gender", "diagnosis", "category", "review_date"]
+        fields = ["first_name", "age", "gender", "category", "subcategory", "review_date", "diagnosis"]
         widgets = {
             "review_date": forms.DateInput(attrs=dict(CRAYONS_DATEPICKER_ATTRS)),
         }

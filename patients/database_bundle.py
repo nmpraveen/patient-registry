@@ -23,6 +23,7 @@ from .models import (
     Task,
     TaskStatus,
     VitalEntry,
+    default_case_subcategory_for_category_name,
 )
 
 
@@ -268,6 +269,7 @@ def _serialize_case(case):
         "phone_number": case.phone_number,
         "alternate_phone_number": case.alternate_phone_number,
         "category_name": case.category.name,
+        "subcategory": case.subcategory,
         "status": case.status,
         "is_archived": case.is_archived,
         "archived_at": _serialize_datetime(case.archived_at),
@@ -492,6 +494,11 @@ def _replace_patient_data(payload):
 def _import_payload(payload, categories_by_name, users_by_username):
     for case_data in payload.get("cases", []):
         category = categories_by_name[case_data["category_name"]]
+        metadata = case_data.get("metadata") or {}
+        is_quick_entry = metadata.get("entry_mode") == "quick_entry"
+        subcategory = case_data.get("subcategory", "")
+        if not subcategory and not is_quick_entry:
+            subcategory = default_case_subcategory_for_category_name(category.name)
         case = Case(
             uhid=case_data["uhid"],
             first_name=case_data.get("first_name", ""),
@@ -503,6 +510,7 @@ def _import_payload(payload, categories_by_name, users_by_username):
             phone_number=case_data.get("phone_number", ""),
             alternate_phone_number=case_data.get("alternate_phone_number", ""),
             category=category,
+            subcategory=subcategory,
             status=case_data.get("status", ""),
             is_archived=bool(case_data.get("is_archived", False)),
             archived_at=_parse_datetime(case_data.get("archived_at"), "archived_at"),
@@ -526,11 +534,16 @@ def _import_payload(payload, categories_by_name, users_by_username):
             para=_optional_int(case_data.get("para")),
             abortions=_optional_int(case_data.get("abortions")),
             living=_optional_int(case_data.get("living")),
-            metadata=case_data.get("metadata") or {},
+            metadata=metadata,
             notes=case_data.get("notes", ""),
             created_by=users_by_username.get(case_data.get("created_by_username")),
         )
-        case.full_clean(exclude=_blank_model_fields(case, "created_by", "archived_by"))
+        if is_quick_entry:
+            case._skip_workflow_validation = True
+        exclude_fields = _blank_model_fields(case, "created_by", "archived_by")
+        if is_quick_entry:
+            exclude_fields.extend(["last_name", "phone_number"])
+        case.full_clean(exclude=exclude_fields)
         case.save()
         _restore_timestamps(
             case,

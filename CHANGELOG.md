@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026.03.21.16.41
+- Changed Quick Entry subcategory rendering to stay hidden until the selected category actually exposes subcategory options, so non-configured categories no longer show a disabled control.
+- Made the Quick Entry subcategory option payload/help text option-driven rather than Surgery/Medicine-only, so future categories can surface the same field automatically as soon as subcategory choices are configured.
+- Added regression coverage for the hidden-by-default quick-entry state and the visible-on-category-rerender path while preserving optional save behavior for known quick-entry subcategories.
+
+## 2026.03.21.16.36
+- Added the optional Surgery/Medicine subcategory field to the Quick Entry form, including client-side category-sensitive dropdown population so staff can capture a known specialty without switching to the full form.
+- Kept Quick Entry subcategory optional on save while preserving the existing blank-subcategory path for minimal entries, and added regression coverage for both blank and explicitly selected quick-entry subcategories.
+
+## 2026.03.21.14.51
+- Added persisted Surgery and Medicine case subcategories, including category-specific validation, workflow form controls, preview/edit-summary support, migration backfill for existing records, and UI rendering on case detail, case list, and universal search.
+- Kept Quick Entry lightweight by allowing blank subcategories there, while preserving `Phone pending` fallback rendering and ensuring quick-entry Surgery/Medicine records still import/export safely.
+- Updated patient-data bundle import/export, mock seeding, admin list display, and regression coverage so subcategories round-trip correctly, legacy bundles default missing full-entry subcategories to the requested general values, and seeded demo data includes populated Surgery/Medicine subtypes.
+
 ## 2026.03.20.23.10
 - Fixed the compact vitals tile alignment on the case-detail page so the emoji, label, and value content now anchor left inside each stat tile instead of inheriting centered badge-style positioning from the shared vitals tier utility.
 

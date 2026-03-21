@@ -13,6 +13,7 @@ from unittest.mock import patch
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
+from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
 from django.core.management.base import CommandError
@@ -33,10 +34,12 @@ from .models import (
     CallOutcome,
     Case,
     CaseActivityLog,
+    CaseSubcategory,
     CaseStatus,
     DepartmentConfig,
     DeviceApprovalPolicy,
     DEVICE_APPROVAL_MAX_APPROVED,
+    default_case_subcategory_for_category_name,
     Gender,
     NonCommunicableDisease,
     PatientDataBackupSchedule,
@@ -240,6 +243,58 @@ class MedtrackModelTests(TestCase):
         )
         with self.assertRaises(Exception):
             case.full_clean()
+
+    def test_surgery_case_requires_subcategory_during_full_validation(self):
+        case = Case(
+            uhid="UH-SUBCAT-SURG-001",
+            first_name="Surgery",
+            last_name="Missing",
+            phone_number="9999999997",
+            category=self.surgery,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=7),
+            created_by=self.user,
+        )
+
+        with self.assertRaises(ValidationError) as exc:
+            case.full_clean()
+
+        self.assertIn("subcategory", exc.exception.message_dict)
+
+    def test_medicine_case_rejects_mismatched_subcategory_during_full_validation(self):
+        case = Case(
+            uhid="UH-SUBCAT-MED-001",
+            first_name="Medicine",
+            last_name="Mismatch",
+            phone_number="9999999996",
+            category=self.medicine,
+            subcategory=CaseSubcategory.GENERAL_SURGERY,
+            review_date=timezone.localdate() + timedelta(days=10),
+            created_by=self.user,
+        )
+
+        with self.assertRaises(ValidationError) as exc:
+            case.full_clean()
+
+        self.assertIn("subcategory", exc.exception.message_dict)
+
+    def test_non_surgery_categories_clear_subcategory_during_full_validation(self):
+        case = Case(
+            uhid="UH-SUBCAT-ANC-001",
+            first_name="Anc",
+            last_name="Cleared",
+            phone_number="9999999995",
+            category=self.anc,
+            subcategory=CaseSubcategory.GENERAL_SURGERY,
+            lmp=timezone.localdate() - timedelta(days=56),
+            edd=timezone.localdate() + timedelta(days=210),
+            rch_bypass=True,
+            created_by=self.user,
+        )
+
+        case.full_clean()
+
+        self.assertEqual(case.subcategory, "")
 
     def test_task_completion_sets_completed_at(self):
         case = Case.objects.create(
@@ -526,6 +581,7 @@ class MedtrackViewTests(TestCase):
             last_name=last_name,
             phone_number=f"8{self.case_sequence:09d}",
             category=self.surgery,
+            subcategory=CaseSubcategory.GENERAL_SURGERY,
             status=CaseStatus.ACTIVE,
             gender=gender,
             age=age,
@@ -572,12 +628,18 @@ class MedtrackViewTests(TestCase):
         elif category_name == "SURGERY":
             defaults.update(
                 {
+                    "subcategory": CaseSubcategory.GENERAL_SURGERY,
                     "surgical_pathway": SurgicalPathway.SURVEILLANCE,
                     "review_date": timezone.localdate() + timedelta(days=7),
                 }
             )
         else:
-            defaults.update({"review_date": timezone.localdate() + timedelta(days=7)})
+            defaults.update(
+                {
+                    "subcategory": default_case_subcategory_for_category_name(category.name),
+                    "review_date": timezone.localdate() + timedelta(days=7),
+                }
+            )
         defaults.update(overrides)
         return Case.objects.create(**defaults)
 
@@ -1246,6 +1308,39 @@ class MedtrackViewTests(TestCase):
 
         self.assertEqual(response.status_code, 403)
 
+    def test_quick_case_create_view_hides_subcategory_until_category_has_options(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("patients:case_quick_create"))
+        response_text = response.content.decode()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'name="subcategory"')
+        self.assertContains(response, "data-quick-entry-subcategory-wrapper")
+        self.assertContains(response, '"help_text": "Optional for quick entry. Choose the surgical specialty if known."')
+        self.assertRegex(response_text, r"data-quick-entry-subcategory-wrapper\s+hidden")
+        self.assertNotContains(response, "Only used for Surgery or Medicine.")
+
+    def test_quick_case_create_invalid_surgery_submission_keeps_subcategory_visible(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("patients:case_quick_create"),
+            {
+                "first_name": "Visible",
+                "age": "31",
+                "gender": Gender.FEMALE,
+                "category": self.surgery.id,
+                "review_date": "",
+                "diagnosis": "",
+            },
+        )
+        response_text = response.content.decode()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Optional for quick entry. Choose the surgical specialty if known.")
+        self.assertNotRegex(response_text, r"data-quick-entry-subcategory-wrapper\s+hidden")
+
     def test_case_create_view_is_forbidden_without_case_create_capability(self):
         self.login_as_role("Nurse", username="nurse_case_create")
 
@@ -1277,6 +1372,7 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(case.alternate_phone_number, "")
         self.assertEqual(case.status, CaseStatus.ACTIVE)
         self.assertEqual(case.review_date, review_date)
+        self.assertEqual(case.subcategory, "")
         self.assertEqual(case.metadata["entry_mode"], "quick_entry")
         self.assertTrue(case.metadata["details_pending"])
         self.assertTrue(case.tasks.filter(title=QUICK_ENTRY_DETAILS_TASK_TITLE, due_date=review_date).exists())
@@ -1284,6 +1380,27 @@ class MedtrackViewTests(TestCase):
         self.assertTrue(
             case.activity_logs.filter(note__icontains="Quick entry created with 1 starter task(s)").exists()
         )
+
+    def test_quick_case_create_accepts_optional_subcategory_when_provided(self):
+        review_date = timezone.localdate() + timedelta(days=8)
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("patients:case_quick_create"),
+            {
+                "first_name": "Optional",
+                "age": "39",
+                "gender": Gender.FEMALE,
+                "category": self.surgery.id,
+                "subcategory": CaseSubcategory.ORTHOPEDICS,
+                "review_date": review_date.isoformat(),
+                "diagnosis": "Quick entry with known specialty",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        case = Case.objects.get(metadata__entry_mode="quick_entry", first_name="Optional")
+        self.assertEqual(case.subcategory, CaseSubcategory.ORTHOPEDICS)
 
     def test_quick_case_create_allows_anc_without_full_anc_fields(self):
         self.client.force_login(self.user)
@@ -1381,6 +1498,7 @@ class MedtrackViewTests(TestCase):
                 "last_name": "Check",
                 "phone_number": "9876543200",
                 "category": self.surgery.id,
+                "subcategory": CaseSubcategory.GENERAL_SURGERY,
                 "status": CaseStatus.ACTIVE,
                 "age": "38",
                 "surgical_pathway": SurgicalPathway.PLANNED_SURGERY,
@@ -1616,6 +1734,27 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "app-pill high-risk")
         self.assertContains(response, "category-surgery")
+
+    def test_case_list_and_detail_show_subcategory_when_present(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-SUBCATEGORY-DETAIL",
+            first_name="Sub",
+            last_name="Category",
+            phone_number="9876504990",
+            category=self.surgery,
+            subcategory=CaseSubcategory.ORTHOPEDICS,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=6),
+            created_by=self.user,
+        )
+
+        list_response = self.client.get(reverse("patients:case_list"))
+        detail_response = self.client.get(reverse("patients:case_detail", kwargs={"pk": case.pk}))
+
+        self.assertContains(list_response, "Orthopedics")
+        self.assertContains(detail_response, "Orthopedics")
 
     def test_case_list_shows_category_pill_classes(self):
         self.client.force_login(self.user)
@@ -2630,11 +2769,11 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(case_list_response.status_code, 200)
         self.assertContains(case_list_response, "theme-category-chip")
         self.assertContains(case_list_response, "--theme-category-bg: #abcdef;")
-        self.assertContains(active_detail_response, "pill-status-active")
+        self.assertContains(active_detail_response, "case-detail-status-pill--active")
         self.assertContains(active_detail_response, "--theme-category-bg: #abcdef;")
-        self.assertContains(loss_detail_response, "pill-status-loss-to-follow-up")
+        self.assertContains(loss_detail_response, "case-detail-status-pill--loss-to-follow-up")
 
-    def test_case_detail_uses_dedicated_case_header_theme_variable(self):
+    def test_case_detail_includes_case_header_theme_variable_from_theme_settings(self):
         self.client.force_login(self.user)
         today = timezone.localdate()
         case = Case.objects.create(
@@ -2660,7 +2799,7 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "--theme-nav-bg: #123456;")
         self.assertContains(response, "--theme-case-header-bg: #654321;")
-        self.assertContains(response, "background: var(--theme-case-header-bg);")
+        self.assertContains(response, 'data-testid="case-detail-hero"')
 
     def test_dashboard_week_navigation_invalid_and_negative_offsets_clamp_to_this_week(self):
         self.client.force_login(self.user)
@@ -2911,6 +3050,7 @@ class MedtrackViewTests(TestCase):
                 "last_name": "",
                 "phone_number": "",
                 "category": self.surgery.id,
+                "subcategory": CaseSubcategory.GENERAL_SURGERY,
                 "status": CaseStatus.ACTIVE,
                 "surgical_pathway": SurgicalPathway.SURVEILLANCE,
             },
@@ -2932,6 +3072,7 @@ class MedtrackViewTests(TestCase):
                 "last_name": "Status",
                 "phone_number": "9876500459",
                 "category": self.surgery.id,
+                "subcategory": CaseSubcategory.GENERAL_SURGERY,
                 "age": "32",
                 "surgical_pathway": SurgicalPathway.SURVEILLANCE,
                 "review_date": (timezone.localdate() + timedelta(days=9)).isoformat(),
@@ -3072,6 +3213,7 @@ class MedtrackViewTests(TestCase):
                 "last_name": "Case",
                 "phone_number": "9876500451",
                 "category": self.surgery.id,
+                "subcategory": CaseSubcategory.GENERAL_SURGERY,
                 "status": CaseStatus.ACTIVE,
                 "age": "29",
                 "surgical_pathway": SurgicalPathway.SURVEILLANCE,
@@ -3094,6 +3236,7 @@ class MedtrackViewTests(TestCase):
                 "phone_number": "12345",
                 "alternate_phone_number": "abc",
                 "category": self.surgery.id,
+                "subcategory": CaseSubcategory.GENERAL_SURGERY,
                 "status": CaseStatus.ACTIVE,
                 "age": "41",
                 "surgical_pathway": SurgicalPathway.SURVEILLANCE,
@@ -4595,6 +4738,7 @@ class MedtrackViewTests(TestCase):
                 "place": "Chennai",
                 "phone_number": "9123456789",
                 "category": self.surgery.id,
+                "subcategory": CaseSubcategory.GENERAL_SURGERY,
                 "status": CaseStatus.ACTIVE,
                 "surgical_pathway": SurgicalPathway.SURVEILLANCE,
                 "review_date": (timezone.localdate() + timedelta(days=14)).isoformat(),
@@ -4619,6 +4763,7 @@ class MedtrackViewTests(TestCase):
                 "place": "  cHENNAI  ",
                 "phone_number": "9123456790",
                 "category": self.surgery.id,
+                "subcategory": CaseSubcategory.GENERAL_SURGERY,
                 "status": CaseStatus.ACTIVE,
                 "surgical_pathway": SurgicalPathway.SURVEILLANCE,
                 "review_date": (timezone.localdate() + timedelta(days=14)).isoformat(),
@@ -4644,6 +4789,7 @@ class MedtrackViewTests(TestCase):
                 "place": "Chennai",
                 "phone_number": "9123456788",
                 "category": self.surgery.id,
+                "subcategory": CaseSubcategory.GENERAL_SURGERY,
                 "status": CaseStatus.ACTIVE,
                 "surgical_pathway": SurgicalPathway.SURVEILLANCE,
                 "review_date": review_date.strftime("%d/%m/%Y"),
@@ -4663,6 +4809,7 @@ class MedtrackViewTests(TestCase):
                 "last_name": "Auto",
                 "phone_number": "9876500077",
                 "category": self.surgery.id,
+                "subcategory": CaseSubcategory.GENERAL_SURGERY,
                 "status": CaseStatus.ACTIVE,
                 "date_of_birth": dob.isoformat(),
                 "age": "",
@@ -4854,6 +5001,7 @@ class MedtrackViewTests(TestCase):
                 "last_name": "Manual",
                 "phone_number": "9876500078",
                 "category": self.surgery.id,
+                "subcategory": CaseSubcategory.GENERAL_SURGERY,
                 "status": CaseStatus.ACTIVE,
                 "surgical_pathway": SurgicalPathway.SURVEILLANCE,
                 "review_date": (timezone.localdate() + timedelta(days=10)).isoformat(),
@@ -5073,6 +5221,7 @@ class MedtrackViewTests(TestCase):
                 "place": "  nEW   dELHI  ",
                 "phone_number": case.phone_number,
                 "category": self.surgery.id,
+                "subcategory": CaseSubcategory.GENERAL_SURGERY,
                 "status": CaseStatus.ACTIVE,
                 "age": "26",
                 "surgical_pathway": SurgicalPathway.SURVEILLANCE,
@@ -5186,6 +5335,7 @@ class MedtrackViewTests(TestCase):
             last_name="Draft",
             phone_number="9876500894",
             category=self.surgery,
+            subcategory=CaseSubcategory.GENERAL_SURGERY,
             status=CaseStatus.ACTIVE,
             age=32,
             place="Nagpur",
@@ -5202,6 +5352,7 @@ class MedtrackViewTests(TestCase):
                 "last_name": case.last_name,
                 "phone_number": case.phone_number,
                 "category": self.surgery.id,
+                "subcategory": CaseSubcategory.GENERAL_SURGERY,
                 "status": case.status,
                 "age": str(case.age),
                 "place": case.place,
@@ -5213,6 +5364,44 @@ class MedtrackViewTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "No unsaved changes yet.")
+
+    def test_case_edit_preview_summary_lists_subcategory_change(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-EDIT-SUBCATEGORY",
+            first_name="Edited",
+            last_name="Subcategory",
+            phone_number="9876500893",
+            category=self.surgery,
+            subcategory=CaseSubcategory.GENERAL_SURGERY,
+            status=CaseStatus.ACTIVE,
+            age=30,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=8),
+            created_by=self.user,
+        )
+
+        response = self.client.post(
+            reverse("patients:case_edit_preview", kwargs={"pk": case.pk}),
+            {
+                "uhid": case.uhid,
+                "first_name": case.first_name,
+                "last_name": case.last_name,
+                "phone_number": case.phone_number,
+                "category": self.surgery.id,
+                "subcategory": CaseSubcategory.ORTHOPEDICS,
+                "status": case.status,
+                "age": str(case.age),
+                "surgical_pathway": case.surgical_pathway,
+                "review_date": case.review_date.isoformat(),
+            },
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Subcategory")
+        self.assertContains(response, "General Surgery")
+        self.assertContains(response, "Orthopedics")
 
     def test_case_edit_preview_summary_lists_changed_fields_and_risk_details(self):
         self.client.force_login(self.user)
@@ -6255,6 +6444,7 @@ class MedtrackViewTests(TestCase):
                 "last_name": "Pt",
                 "phone_number": "9876500000",
                 "category": self.surgery.id,
+                "subcategory": CaseSubcategory.GENERAL_SURGERY,
                 "status": CaseStatus.ACTIVE,
                 "age": "42",
                 "surgical_pathway": SurgicalPathway.PLANNED_SURGERY,
@@ -6492,6 +6682,7 @@ class MedtrackViewTests(TestCase):
             last_name="Sharma",
             phone_number="9012345678",
             category=self.surgery,
+            subcategory=CaseSubcategory.ORTHOPEDICS,
             status=CaseStatus.ACTIVE,
             surgical_pathway=SurgicalPathway.SURVEILLANCE,
             review_date=timezone.localdate() + timedelta(days=5),
@@ -6516,11 +6707,14 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(result["age"], 31)
         self.assertEqual(result["village"], "Pune")
         self.assertEqual(result["diagnosis"], "Gallbladder stones")
+        self.assertEqual(result["subcategory_name"], "Orthopedics")
         self.assertEqual(result["detail_url"], reverse("patients:case_detail", kwargs={"pk": case.pk}))
         category_tag = next(tag for tag in result["tags"] if tag["kind"] == "category")
+        subcategory_tag = next(tag for tag in result["tags"] if tag["kind"] == "subcategory")
         self.assertEqual(category_tag["bg_color"], "#abcdef")
         self.assertEqual(category_tag["text_color"], "#123456")
         self.assertEqual(category_tag["border_color"], mix_colors("#abcdef", "#123456", 0.20))
+        self.assertEqual(subcategory_tag["label"], "Orthopedics")
         self.assertTrue(any(tag["kind"] == "high_risk" for tag in result["tags"]))
         self.assertTrue(any(tag["kind"] == "referred" for tag in result["tags"]))
         self.assertTrue(any(tag["kind"] == "ncd" for tag in result["tags"]))
@@ -6740,6 +6934,67 @@ class PatientDataBundleTests(TestCase):
         self.assertEqual(manifest["patient_data_sha256"], hashlib.sha256(patient_data_bytes).hexdigest())
         self.assertEqual(payload["cases"][0]["uhid"], "UH-BUNDLE-001")
 
+    def test_patient_data_bundle_round_trips_subcategory_and_accepts_legacy_payloads_without_it(self):
+        Case.objects.create(
+            uhid="UH-BUNDLE-SUBCATEGORY",
+            first_name="Bundle",
+            last_name="Subcategory",
+            phone_number="9555555599",
+            category=self.surgery,
+            subcategory=CaseSubcategory.ORTHOPEDICS,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=7),
+            created_by=self.user,
+        )
+        Case.objects.create(
+            uhid="QE-BUNDLE-001",
+            first_name="Quick",
+            last_name="",
+            phone_number="",
+            alternate_phone_number="",
+            category=self.surgery,
+            subcategory="",
+            status=CaseStatus.ACTIVE,
+            review_date=timezone.localdate() + timedelta(days=5),
+            diagnosis="Quick entry pending details",
+            metadata={"entry_mode": "quick_entry", "details_pending": True},
+            created_by=self.user,
+        )
+
+        archive_bytes, _, _ = database_bundle.create_bundle_archive()
+        import_result = database_bundle.import_bundle_bytes(archive_bytes)
+        self.assertEqual(import_result["counts"]["cases"], 2)
+        restored_case = Case.objects.get(uhid="UH-BUNDLE-SUBCATEGORY")
+        self.assertEqual(restored_case.subcategory, CaseSubcategory.ORTHOPEDICS)
+        quick_entry_case = Case.objects.get(uhid="QE-BUNDLE-001")
+        self.assertEqual(quick_entry_case.subcategory, "")
+
+        with zipfile.ZipFile(io.BytesIO(archive_bytes), "r") as bundle_zip:
+            payload = json.loads(bundle_zip.read(database_bundle.PATIENT_DATA_FILENAME).decode("utf-8"))
+            manifest = json.loads(bundle_zip.read(database_bundle.MANIFEST_FILENAME).decode("utf-8"))
+
+        for case_payload in payload["cases"]:
+            if case_payload.get("uhid") == "UH-BUNDLE-SUBCATEGORY":
+                case_payload.pop("subcategory", None)
+        patient_data_bytes = json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False).encode("utf-8")
+        manifest["counts"] = database_bundle.compute_payload_counts(payload)
+        manifest["patient_data_sha256"] = hashlib.sha256(patient_data_bytes).hexdigest()
+
+        legacy_archive = io.BytesIO()
+        with zipfile.ZipFile(legacy_archive, "w", compression=zipfile.ZIP_DEFLATED) as bundle_zip:
+            bundle_zip.writestr(database_bundle.PATIENT_DATA_FILENAME, patient_data_bytes)
+            bundle_zip.writestr(
+                database_bundle.MANIFEST_FILENAME,
+                json.dumps(manifest, indent=2, sort_keys=True, ensure_ascii=False).encode("utf-8"),
+            )
+
+        database_bundle.import_bundle_bytes(legacy_archive.getvalue())
+        legacy_case = Case.objects.get(uhid="UH-BUNDLE-SUBCATEGORY")
+        self.assertEqual(legacy_case.subcategory, CaseSubcategory.GENERAL_SURGERY)
+        legacy_quick_entry_case = Case.objects.get(uhid="QE-BUNDLE-001")
+        self.assertEqual(legacy_quick_entry_case.subcategory, "")
+
     def test_backup_patient_data_command_prunes_old_backups(self):
         self.create_case(uhid="UH-BUNDLE-002", phone_number="9555555502")
 
@@ -6839,13 +7094,22 @@ class SeedMockDataCommandTests(TestCase):
         surgery_cases = seeded_cases.filter(category__name="Surgery")
         self.assertTrue(surgery_cases.filter(surgical_pathway=SurgicalPathway.PLANNED_SURGERY).exists())
         self.assertTrue(surgery_cases.filter(surgical_pathway=SurgicalPathway.SURVEILLANCE).exists())
+        typed_surgery_cases = [case for case in surgery_cases if case.metadata.get("entry_mode") != "quick_entry"]
+        self.assertTrue(typed_surgery_cases)
+        self.assertTrue(all(case.subcategory for case in typed_surgery_cases))
+        self.assertGreaterEqual(len({case.subcategory for case in typed_surgery_cases}), 2)
 
         non_surgical_cases = seeded_cases.filter(category__name="Medicine")
         self.assertGreaterEqual(non_surgical_cases.values("review_frequency").distinct().count(), 3)
+        typed_non_surgical_cases = [case for case in non_surgical_cases if case.metadata.get("entry_mode") != "quick_entry"]
+        self.assertTrue(typed_non_surgical_cases)
+        self.assertTrue(all(case.subcategory for case in typed_non_surgical_cases))
+        self.assertGreaterEqual(len({case.subcategory for case in typed_non_surgical_cases}), 2)
 
         quick_entry_case = seeded_cases.get(metadata__seed_scenario="quick_entry_pending_details")
         self.assertEqual(quick_entry_case.metadata.get("entry_mode"), "quick_entry")
         self.assertTrue(quick_entry_case.metadata.get("details_pending"))
+        self.assertEqual(quick_entry_case.subcategory, "")
         self.assertTrue(quick_entry_case.tasks.filter(title=QUICK_ENTRY_DETAILS_TASK_TITLE).exists())
 
         self.assertTrue(Task.objects.filter(case=anc_high_risk, status=TaskStatus.AWAITING_REPORTS).exists())

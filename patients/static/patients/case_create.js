@@ -3,6 +3,7 @@
   const IDENTITY_EVENT = "case-identity-refresh";
   const PREVIEW_FIELDS = new Set([
     "category",
+    "subcategory",
     "rch_number",
     "rch_bypass",
     "lmp",
@@ -25,6 +26,7 @@
     "para",
     "abortions",
     "living",
+    "subcategory",
     "surgical_pathway",
     "surgery_done",
     "surgery_date",

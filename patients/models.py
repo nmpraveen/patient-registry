@@ -59,6 +59,10 @@ def normalize_case_name(value):
     return normalized.title()
 
 
+def normalize_category_name(value):
+    return " ".join((value or "").replace("-", " ").split()).upper()
+
+
 def generate_quick_entry_uhid(today=None):
     quick_entry_day = today or timezone.localdate()
     prefix = f"QE-{quick_entry_day:%Y%m%d}-"
@@ -110,6 +114,68 @@ class ReviewFrequency(models.TextChoices):
     QUARTERLY = "QUARTERLY", "Every 3 months"
     HALF_YEARLY = "HALF_YEARLY", "Every 6 months"
     YEARLY = "YEARLY", "Yearly"
+
+
+class CaseSubcategory(models.TextChoices):
+    GENERAL_SURGERY = "GENERAL_SURGERY", "General Surgery"
+    ORTHOPEDICS = "ORTHOPEDICS", "Orthopedics"
+    PLASTIC_SURGERY = "PLASTIC_SURGERY", "Plastic Surgery"
+    PEDIATRIC_SURGERY = "PEDIATRIC_SURGERY", "Pediatric Surgery"
+    UROLOGY = "UROLOGY", "Urology"
+    ENT = "ENT", "ENT"
+    OTHER_SPECIALTY = "OTHER_SPECIALTY", "Other Specialty"
+    GENERAL_MEDICINE = "GENERAL_MEDICINE", "General Medicine"
+    PSYCHIATRY = "PSYCHIATRY", "Psychiatry"
+    CARDIOLOGY_ECHO = "CARDIOLOGY_ECHO", "Cardiology (ECHO)"
+    PEDIATRIC = "PEDIATRIC", "Pediatric"
+    MEDICAL_ONCOLOGY = "MEDICAL_ONCOLOGY", "Medical Oncology"
+
+
+SURGERY_CASE_SUBCATEGORY_CHOICES = [
+    (CaseSubcategory.GENERAL_SURGERY, CaseSubcategory.GENERAL_SURGERY.label),
+    (CaseSubcategory.ORTHOPEDICS, CaseSubcategory.ORTHOPEDICS.label),
+    (CaseSubcategory.PLASTIC_SURGERY, CaseSubcategory.PLASTIC_SURGERY.label),
+    (CaseSubcategory.PEDIATRIC_SURGERY, CaseSubcategory.PEDIATRIC_SURGERY.label),
+    (CaseSubcategory.UROLOGY, CaseSubcategory.UROLOGY.label),
+    (CaseSubcategory.ENT, CaseSubcategory.ENT.label),
+    (CaseSubcategory.OTHER_SPECIALTY, CaseSubcategory.OTHER_SPECIALTY.label),
+]
+MEDICINE_CASE_SUBCATEGORY_CHOICES = [
+    (CaseSubcategory.GENERAL_MEDICINE, CaseSubcategory.GENERAL_MEDICINE.label),
+    (CaseSubcategory.PSYCHIATRY, CaseSubcategory.PSYCHIATRY.label),
+    (CaseSubcategory.CARDIOLOGY_ECHO, CaseSubcategory.CARDIOLOGY_ECHO.label),
+    (CaseSubcategory.PEDIATRIC, CaseSubcategory.PEDIATRIC.label),
+    (CaseSubcategory.MEDICAL_ONCOLOGY, CaseSubcategory.MEDICAL_ONCOLOGY.label),
+]
+CASE_SUBCATEGORY_GROUP_CHOICES = {
+    "surgery": SURGERY_CASE_SUBCATEGORY_CHOICES,
+    "medicine": MEDICINE_CASE_SUBCATEGORY_CHOICES,
+}
+CASE_SUBCATEGORY_DEFAULTS = {
+    "surgery": CaseSubcategory.GENERAL_SURGERY,
+    "medicine": CaseSubcategory.GENERAL_MEDICINE,
+}
+
+
+def case_subcategory_group_for_category_name(name: str) -> str:
+    normalized_name = normalize_category_name(name)
+    if normalized_name == "SURGERY":
+        return "surgery"
+    if normalized_name in {"MEDICINE", "NON SURGICAL", "NONSURGICAL"}:
+        return "medicine"
+    return ""
+
+
+def case_subcategory_choices_for_category_name(name: str):
+    return CASE_SUBCATEGORY_GROUP_CHOICES.get(case_subcategory_group_for_category_name(name), [])
+
+
+def valid_case_subcategory_values_for_category_name(name: str):
+    return {value for value, _ in case_subcategory_choices_for_category_name(name)}
+
+
+def default_case_subcategory_for_category_name(name: str) -> str:
+    return CASE_SUBCATEGORY_DEFAULTS.get(case_subcategory_group_for_category_name(name), "")
 
 
 class Gender(models.TextChoices):
@@ -644,6 +710,7 @@ class Case(models.Model):
     phone_number = models.CharField(max_length=10, db_index=True)
     alternate_phone_number = models.CharField(max_length=10, blank=True)
     category = models.ForeignKey(DepartmentConfig, on_delete=models.PROTECT, related_name="cases")
+    subcategory = models.CharField(max_length=40, choices=CaseSubcategory.choices, blank=True, default="")
     status = models.CharField(max_length=32, choices=CaseStatus.choices, default=CaseStatus.ACTIVE)
     is_archived = models.BooleanField(default=False)
     archived_at = models.DateTimeField(blank=True, null=True)
@@ -735,13 +802,26 @@ class Case(models.Model):
             if reason in valid_anc_reason_values and reason not in self.anc_high_risk_reasons:
                 self.anc_high_risk_reasons.append(reason)
 
-        category_name = self.category.name.upper() if self.category_id else ""
+        category_name = normalize_category_name(self.category.name) if self.category_id else ""
+        valid_subcategories = valid_case_subcategory_values_for_category_name(category_name)
+        self.subcategory = " ".join((self.subcategory or "").split()).upper()
+        if valid_subcategories:
+            if self.subcategory and self.subcategory not in valid_subcategories:
+                if getattr(self, "_skip_workflow_validation", False):
+                    self.subcategory = ""
+                else:
+                    raise ValidationError({"subcategory": "Please choose a valid subcategory for this category."})
+        else:
+            self.subcategory = ""
+
         if getattr(self, "_skip_workflow_validation", False):
             if category_name != "ANC":
                 self.anc_high_risk_reasons = []
                 self.rch_number = ""
                 self.rch_bypass = False
             return
+        if valid_subcategories and not self.subcategory:
+            raise ValidationError({"subcategory": "Please choose a subcategory."})
         if category_name == "ANC" and (not self.lmp or (not self.edd and not self.usg_edd)):
             raise ValidationError("ANC cases require LMP and at least one EDD (LMP-based or USG-based).")
         if category_name == "ANC":
@@ -981,11 +1061,11 @@ def frequency_to_days(freq: str) -> int:
 
 
 def is_anc_case(case: Case) -> bool:
-    return bool(case and case.category_id and case.category.name.upper() == "ANC")
+    return bool(case and case.category_id and normalize_category_name(case.category.name) == "ANC")
 
 
 def workflow_key_for_category_name(name: str) -> str:
-    normalized_name = " ".join((name or "").replace("-", " ").split()).upper()
+    normalized_name = normalize_category_name(name)
     if normalized_name == "ANC":
         return "anc"
     if normalized_name == "SURGERY":

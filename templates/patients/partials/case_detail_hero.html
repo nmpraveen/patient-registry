@@ -11,7 +11,7 @@
       <div class="case-detail-identity">
         <div class="case-detail-title-row">
           <h1 class="case-detail-title{% if case_name_size_class %} {{ case_name_size_class }}{% endif %}">{{ case.full_name }}</h1>
-          <div class="case-detail-status-pill case-detail-status-pill--{{ case.status|slugify }}">
+          <div class="case-detail-status-pill case-detail-status-pill--{{ case.get_status_display|slugify }}">
             <span class="case-detail-status-pill__dot"></span>
             <span>{{ case.get_status_display }}</span>
           </div>
@@ -52,6 +52,9 @@
               <svg class="case-detail-icon" aria-hidden="true"><use href="#identity-icon-phone"></use></svg>
               <span>{{ case.phone_number }}</span>
             </a>
+          {% elif case.metadata.details_pending %}
+            <span class="case-detail-meta-sep" aria-hidden="true"></span>
+            <span class="case-detail-meta-item">Phone pending</span>
           {% endif %}
         </div>
       </div>

@@ -67,6 +67,18 @@
         {{ form.category }}
         {% for error in form.category.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
       </div>
+      <div
+        class="col-12 col-md-6"
+        data-quick-entry-subcategory-wrapper
+        {% if form.subcategory.field.choices|length == 1 %}hidden{% endif %}
+      >
+        <label class="form-label" for="{{ form.subcategory.id_for_label }}">{{ form.subcategory.label }}</label>
+        {{ form.subcategory }}
+        <div class="form-text" id="{{ form.subcategory.id_for_label }}_helptext" data-quick-entry-subcategory-help>
+          {{ form.subcategory.help_text }}
+        </div>
+        {% for error in form.subcategory.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+      </div>
       <div class="col-12 col-md-6">
         <label class="form-label" for="{{ form.review_date.id_for_label }}">{{ form.review_date.label }}</label>
         {{ form.review_date }}
@@ -90,8 +102,50 @@
   </div>
 </section>
 
+{{ form.subcategory_option_groups|json_script:"quick-entry-subcategory-options" }}
 <script>
   (() => {
+    const categoryField = document.getElementById("{{ form.category.id_for_label }}");
+    const subcategoryField = document.getElementById("{{ form.subcategory.id_for_label }}");
+    const subcategoryWrapper = document.querySelector("[data-quick-entry-subcategory-wrapper]");
+    const subcategoryHelp = document.querySelector("[data-quick-entry-subcategory-help]");
+    const subcategoryOptionsNode = document.getElementById("quick-entry-subcategory-options");
+    const subcategoryOptions = subcategoryOptionsNode ? JSON.parse(subcategoryOptionsNode.textContent) : {};
+    const updateSubcategoryField = () => {
+      if (!categoryField || !subcategoryField) return;
+      const selectedCategory = subcategoryOptions[categoryField.value] || { options: [], help_text: "" };
+      const existingValue = subcategoryField.value;
+      const hasOptions = selectedCategory.options.length > 0;
+      const placeholderLabel = hasOptions ? "Optional subcategory" : "Select category first";
+      subcategoryField.innerHTML = "";
+      const placeholderOption = document.createElement("option");
+      placeholderOption.value = "";
+      placeholderOption.textContent = placeholderLabel;
+      subcategoryField.appendChild(placeholderOption);
+      selectedCategory.options.forEach((option) => {
+        const optionNode = document.createElement("option");
+        optionNode.value = option.value;
+        optionNode.textContent = option.label;
+        subcategoryField.appendChild(optionNode);
+      });
+      subcategoryField.disabled = !hasOptions;
+      if (subcategoryWrapper) {
+        subcategoryWrapper.hidden = !hasOptions;
+      }
+      if (subcategoryHelp) {
+        subcategoryHelp.textContent = selectedCategory.help_text || "";
+      }
+      if (selectedCategory.options.some((option) => option.value === existingValue)) {
+        subcategoryField.value = existingValue;
+      } else {
+        subcategoryField.value = "";
+      }
+    };
+    updateSubcategoryField();
+    if (categoryField) {
+      categoryField.addEventListener("change", updateSubcategoryField);
+    }
+
     const erroredFields = [
       {% for field in form %}
         {% if field.errors %}

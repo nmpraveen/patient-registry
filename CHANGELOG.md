@@ -1,5 +1,40 @@
 # Changelog
 
+## 2026.03.21.20.49
+- Fixed the Awaiting Reports expanded-detail label contrast so the header and field labels now render with a dark readable color against the lighter tinted row surface.
+
+## 2026.03.21.20.45
+- Restyled the shared dashboard `Open case` action into a clearer bordered button with white fill and trailing external-link icon, and applied the same action treatment to Upcoming rows.
+- Removed the extra helper copy from Recently Added expanded rows so they now open directly into a `Notes` header row with right-aligned subcategory and `Open case` actions.
+- Reworked Overdue and Awaiting Reports expanded rows to use the same clean header structure, with a left title, right-aligned actions, and a more consistent detail body layout.
+
+## 2026.03.21.20.30
+- Kept expanded dashboard detail actions pinned to the top-right, including the shared subcategory plus `Open case` pill treatment and the inline Today diagnosis row action layout.
+- Removed the mobile stack-forcing behavior from the Today detail header line so the diagnosis row can wrap naturally while keeping the pills aligned to the right edge.
+- Anchored Upcoming row actions to the top-right of each row and preserved the compact summary separators for Recently Added, Overdue, and the new expandable Awaiting Reports rows.
+
+## 2026.03.21.20.09
+- Restyled dashboard patient rows across Today, Upcoming, Recently Added, Overdue, and Awaiting Reports to use a flatter category wash, a flush 5px left stripe, and a crisp category-colored border that reads as one continuous unit.
+- Converted compact row names and Upcoming row names into category-colored pills so the patient label becomes the primary visual anchor, matching the new structural row treatment from the design reference.
+- Kept the existing module behaviors intact while tightening the overall row presentation into a cleaner clinical card pattern with lighter shadows and more consistent category emphasis.
+
+## 2026.03.21.19.33
+- Increased the dashboard category tint again so the row shading reads more clearly across the dashboard while the left-edge accent stays subdued.
+- Added an explicit `Hide` action to the inline call reveal and kept outside-click plus `Escape` dismissal, so Today and Overdue call trays now have an obvious close path.
+- Kept the expanded subcategory pill pinned at the top-right, preserved Today's single-line `Diagnosis : ...` and `Tasks : ...` rows, and limited Upcoming row badges to real subcategory text only.
+- Updated the focused dashboard regression checks for the subcategory-only Upcoming badges and the new inline call tray close affordance.
+
+## 2026.03.21.19.26
+- Increased the dashboard row category tint substantially so Today, Recently Added, Overdue, Upcoming, and Awaiting rows now read more clearly by category without relying on the narrow edge accent.
+- Added outside-click and Escape-to-close behavior for the inline call reveal, while keeping the existing in-row phone number plus call action pattern for Today and Overdue.
+- Moved expanded subcategory pills into a clearer top-right badge treatment, tightened Today details into true single-line `Diagnosis : ...` and `Tasks : ...` rows, and limited Upcoming row badges to actual subcategory text only.
+
+## 2026.03.21.19.09
+- Refined dashboard row styling with softer full-row category tinting, subcategory pills in expanded details, and stronger visual consistency across Today, Recently Added, Overdue, Upcoming, and Awaiting Reports.
+- Updated Today and Overdue rows to use inline call reveal actions plus bottom-right `Open full case` links in expanded details, while moving the Today date into the module title.
+- Reformatted Recently Added compact summaries to `Name | F30 | Mon DD`, moved the recent-case full-case action into the detail footer, and changed Upcoming rows to use explicit `Open full case` actions instead of full-row navigation.
+- Expanded dashboard regression coverage for the new summary formatting, today detail/footer behavior, upcoming explicit actions, and the extra dashboard payload fields used by the updated UI.
+
 ## 2026.03.21.16.41
 - Changed Quick Entry subcategory rendering to stay hidden until the selected category actually exposes subcategory options, so non-configured categories no longer show a disabled control.
 - Made the Quick Entry subcategory option payload/help text option-driven rather than Surgery/Medicine-only, so future categories can surface the same field automatically as soon as subcategory choices are configured.

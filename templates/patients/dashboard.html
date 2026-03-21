@@ -86,6 +86,10 @@
     --dashboard-module-border: var(--theme-task-status-awaiting-reports-border);
   }
 
+  .dashboard-module--awaiting .dashboard-compact-detail-label {
+    color: color-mix(in srgb, var(--theme-shell-page-text) 78%, var(--theme-task-status-awaiting-reports-bg) 22%);
+  }
+
   .dashboard-module-header {
     display: flex;
     align-items: center;
@@ -709,10 +713,10 @@
   }
 
   .upcoming-schedule-row {
-    background: color-mix(in srgb, var(--theme-shell-surface-bg) 96%, var(--upcoming-category-bg) 4%);
-    border: 1px solid color-mix(in srgb, var(--theme-shell-surface-border) 86%, var(--upcoming-category-text) 14%);
-    border-radius: 0.9rem;
-    box-shadow: 0 0.35rem 0.85rem var(--theme-shell-shadow);
+    background: color-mix(in srgb, var(--theme-shell-surface-bg) 87%, var(--upcoming-category-bg) 13%);
+    border: 1px solid color-mix(in srgb, var(--upcoming-category-border, var(--upcoming-category-text)) 72%, white 28%);
+    border-radius: 0.95rem;
+    box-shadow: 0 0.22rem 0.6rem color-mix(in srgb, var(--theme-shell-shadow) 82%, transparent);
     color: inherit;
     display: grid;
     gap: 0.7rem;
@@ -720,22 +724,22 @@
     overflow: hidden;
     padding: 0.8rem 0.9rem 0.8rem 1rem;
     position: relative;
-    text-decoration: none;
     transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
   }
 
   .upcoming-schedule-row::before {
-    background: var(--upcoming-category-bg);
+    background: color-mix(in srgb, var(--upcoming-category-border, var(--upcoming-category-text)) 70%, var(--upcoming-category-text) 30%);
     content: "";
-    inset: 0 auto 0 0;
+    inset: -1px auto -1px -1px;
+    opacity: 1;
     position: absolute;
-    width: 0.3rem;
+    width: calc(5px + 1px);
   }
 
   .upcoming-schedule-row:hover,
-  .upcoming-schedule-row:focus-visible {
-    border-color: var(--theme-dashboard-upcoming-border);
-    box-shadow: 0 0.55rem 1rem var(--theme-shell-shadow);
+  .upcoming-schedule-row:focus-within {
+    border-color: color-mix(in srgb, var(--upcoming-category-border, var(--upcoming-category-text)) 80%, white 20%);
+    box-shadow: 0 0.42rem 0.9rem color-mix(in srgb, var(--theme-shell-shadow) 88%, transparent);
     transform: translateY(-1px);
   }
 
@@ -744,10 +748,29 @@
   }
 
   .upcoming-schedule-row-name {
+    color: var(--upcoming-category-text);
+    display: block;
     font-size: 0.95rem;
     font-weight: 700;
-    line-height: 1.25;
-    margin-bottom: 0.25rem;
+    line-height: 1.15;
+    margin: 0;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .upcoming-schedule-row-name-pill {
+    align-items: center;
+    background: color-mix(in srgb, var(--upcoming-category-bg) 72%, white 28%);
+    border: 1px solid color-mix(in srgb, var(--upcoming-category-border, var(--upcoming-category-text)) 72%, white 28%);
+    border-radius: 999px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
+    display: inline-flex;
+    margin-bottom: 0.4rem;
+    max-width: 100%;
+    min-width: 0;
+    padding: 0.38rem 1rem;
   }
 
   .upcoming-schedule-row-diagnosis {
@@ -763,10 +786,16 @@
   }
 
   .upcoming-schedule-row-meta {
-    align-items: flex-end;
+    align-self: start;
     display: grid;
     gap: 0.45rem;
     justify-items: end;
+  }
+
+  .upcoming-schedule-row-actions {
+    display: flex;
+    justify-content: flex-end;
+    width: 100%;
   }
 
   .upcoming-schedule-row-category {
@@ -779,11 +808,24 @@
     white-space: nowrap;
   }
 
-  .upcoming-schedule-row-open {
-    color: var(--theme-shell-muted-text);
-    font-size: 0.75rem;
+  .upcoming-schedule-open-link {
+    background: color-mix(in srgb, var(--theme-shell-surface-bg) 76%, var(--upcoming-category-bg) 24%);
+    border: 1px solid color-mix(in srgb, var(--upcoming-category-text) 20%, white);
+    border-radius: 999px;
+    color: var(--upcoming-category-text);
+    display: inline-flex;
+    font-size: 0.72rem;
     font-weight: 700;
-    text-transform: uppercase;
+    line-height: 1;
+    padding: 0.42rem 0.7rem;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+
+  .upcoming-schedule-open-link:hover,
+  .upcoming-schedule-open-link:focus-visible {
+    color: var(--upcoming-category-text);
+    text-decoration: none;
   }
 
   .upcoming-schedule-empty {
@@ -806,15 +848,10 @@
 
   .dashboard-compact-row,
   .dashboard-compact-link-row {
-    background:
-      linear-gradient(
-        180deg,
-        color-mix(in srgb, var(--theme-shell-surface-bg) 90%, var(--theme-category-bg) 10%) 0%,
-        color-mix(in srgb, var(--theme-shell-surface-bg) 96%, var(--theme-category-bg) 4%) 100%
-      );
-    border: 1px solid color-mix(in srgb, var(--theme-shell-surface-border) 68%, var(--theme-category-text) 32%);
-    border-radius: 1rem;
-    box-shadow: 0 0.35rem 0.85rem var(--theme-shell-shadow);
+    background: color-mix(in srgb, var(--theme-shell-surface-bg) 87%, var(--theme-category-bg) 13%);
+    border: 1px solid color-mix(in srgb, var(--theme-category-border) 72%, white 28%);
+    border-radius: 0.95rem;
+    box-shadow: 0 0.22rem 0.6rem color-mix(in srgb, var(--theme-shell-shadow) 82%, transparent);
     color: inherit;
     overflow: hidden;
     position: relative;
@@ -823,11 +860,12 @@
 
   .dashboard-compact-row::before,
   .dashboard-compact-link-row::before {
-    background: linear-gradient(180deg, var(--theme-category-bg) 0%, var(--theme-category-text) 100%);
+    background: color-mix(in srgb, var(--theme-category-border) 70%, var(--theme-category-text) 30%);
     content: "";
-    inset: 0 auto 0 0;
+    inset: -1px auto -1px -1px;
+    opacity: 1;
     position: absolute;
-    width: 0.32rem;
+    width: calc(5px + 1px);
   }
 
   .dashboard-compact-row:hover,
@@ -876,12 +914,34 @@
 
   .dashboard-compact-summary {
     align-items: center;
-    display: flex;
-    gap: 0.35rem;
+    display: grid;
+    gap: 0.7rem;
+    grid-template-columns: minmax(0, 1fr) auto;
     min-width: 0;
-    overflow: hidden;
-    white-space: nowrap;
     width: 100%;
+  }
+
+  .dashboard-compact-summary-meta {
+    align-items: center;
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    justify-content: flex-end;
+    min-width: 0;
+  }
+
+  .dashboard-compact-name-pill {
+    align-items: center;
+    background: color-mix(in srgb, var(--theme-category-bg) 72%, white 28%);
+    border: 1px solid color-mix(in srgb, var(--theme-category-border) 72%, white 28%);
+    border-radius: 999px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
+    display: inline-flex;
+    justify-self: start;
+    margin: 0;
+    max-width: 100%;
+    min-width: 0;
+    padding: 0.38rem 1rem;
   }
 
   .dashboard-compact-date {
@@ -901,13 +961,15 @@
   }
 
   .dashboard-compact-name {
-    flex: 1 1 auto;
+    color: var(--theme-category-text);
+    display: block;
     font-size: 0.95rem;
     font-weight: 700;
-    line-height: 1.25;
+    line-height: 1.15;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .dashboard-compact-inline {
@@ -924,6 +986,7 @@
   }
 
   .dashboard-compact-call {
+    appearance: none;
     align-items: center;
     align-self: stretch;
     background: color-mix(in srgb, #f5fff8 85%, var(--theme-category-bg) 15%);
@@ -941,6 +1004,7 @@
     padding: 0.48rem 0.8rem;
     text-decoration: none;
     white-space: nowrap;
+    cursor: pointer;
   }
 
   .dashboard-compact-call:hover,
@@ -953,6 +1017,82 @@
     cursor: default;
     opacity: 0.65;
     pointer-events: none;
+  }
+
+  .dashboard-compact-call-group {
+    align-items: center;
+    display: flex;
+    min-width: 0;
+    position: relative;
+    z-index: 3;
+  }
+
+  .dashboard-compact-call-reveal {
+    align-items: center;
+    background: color-mix(in srgb, #f5fff8 85%, var(--theme-category-bg) 15%);
+    border: 1px solid color-mix(in srgb, #8bc7a0 55%, var(--theme-category-border) 45%);
+    border-radius: 999px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+    display: inline-flex;
+    gap: 0.45rem;
+    margin: 0.55rem 0.7rem 0.55rem 0;
+    min-width: 0;
+    padding: 0.38rem 0.48rem 0.38rem 0.7rem;
+    position: relative;
+    z-index: 2;
+  }
+
+  .dashboard-compact-call-reveal[hidden] {
+    display: none;
+  }
+
+  .dashboard-compact-call-number {
+    color: #165f33;
+    font-size: 0.76rem;
+    font-weight: 700;
+    min-width: 0;
+    white-space: nowrap;
+  }
+
+  .dashboard-compact-call-link {
+    align-items: center;
+    background: #1e7a42;
+    border-radius: 999px;
+    color: white;
+    display: inline-flex;
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 1;
+    padding: 0.38rem 0.62rem;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+
+  .dashboard-compact-call-link:hover,
+  .dashboard-compact-call-link:focus-visible {
+    color: white;
+    text-decoration: none;
+  }
+
+  .dashboard-compact-call-dismiss {
+    align-items: center;
+    background: transparent;
+    border: 1px solid color-mix(in srgb, #1e7a42 22%, white);
+    border-radius: 999px;
+    color: #165f33;
+    display: inline-flex;
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 1;
+    padding: 0.38rem 0.62rem;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+
+  .dashboard-compact-call-dismiss:hover,
+  .dashboard-compact-call-dismiss:focus-visible {
+    color: #0f4f29;
+    text-decoration: none;
   }
 
   .dashboard-compact-details {
@@ -968,14 +1108,117 @@
     display: none;
   }
 
+  .dashboard-compact-details--with-subcategory {
+    padding-top: 0.82rem;
+  }
+
   .dashboard-compact-detail-grid {
     display: grid;
     gap: 0.7rem;
   }
 
+  .dashboard-compact-subcategory {
+    align-items: center;
+    background: color-mix(in srgb, var(--theme-shell-surface-bg) 62%, var(--theme-category-bg) 38%);
+    border: 1px solid color-mix(in srgb, var(--theme-category-border) 68%, white);
+    border-radius: 999px;
+    color: var(--theme-category-text);
+    display: inline-flex;
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 1;
+    max-width: 100%;
+    padding: 0.38rem 0.64rem;
+    white-space: nowrap;
+  }
+
   .dashboard-compact-detail-block {
     display: grid;
     gap: 0.18rem;
+  }
+
+  .dashboard-compact-detail-line {
+    align-items: start;
+    color: var(--theme-shell-muted-text);
+    column-gap: 0.45rem;
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    line-height: 1.5;
+  }
+
+  .dashboard-compact-detail-line .dashboard-compact-detail-label {
+    white-space: nowrap;
+  }
+
+  .dashboard-compact-detail-line .dashboard-compact-detail-copy,
+  .dashboard-compact-detail-line .dashboard-compact-task-line {
+    min-width: 0;
+  }
+
+  .dashboard-compact-detail-line--with-pills {
+    align-items: flex-start;
+    column-gap: 0.85rem;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+  }
+
+  .dashboard-compact-detail-line-main {
+    align-items: start;
+    column-gap: 0.45rem;
+    display: grid;
+    flex: 1 1 18rem;
+    grid-template-columns: max-content minmax(0, 1fr);
+    min-width: 0;
+  }
+
+  .dashboard-compact-detail-pills-row {
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  .dashboard-compact-detail-pills {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    justify-content: flex-end;
+    margin-left: auto;
+  }
+
+  .dashboard-compact-detail-pill-link,
+  .upcoming-schedule-open-link {
+    align-items: center;
+    background: linear-gradient(180deg, #ffffff 0%, #f6faff 100%);
+    border: 1px solid #3b82f6;
+    border-radius: 0.72rem;
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.95), 0 0 0 1px rgba(59, 130, 246, 0.08);
+    color: #1d4ed8;
+    display: inline-flex;
+    font-size: 0.72rem;
+    font-weight: 700;
+    gap: 0.35rem;
+    line-height: 1;
+    padding: 0.42rem 0.72rem;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+
+  .dashboard-compact-detail-pill-link::after,
+  .upcoming-schedule-open-link::after {
+    content: "↗";
+    font-size: 0.78rem;
+    line-height: 1;
+  }
+
+  .dashboard-compact-detail-pill-link:hover,
+  .dashboard-compact-detail-pill-link:focus-visible,
+  .upcoming-schedule-open-link:hover,
+  .upcoming-schedule-open-link:focus-visible {
+    background: linear-gradient(180deg, #ffffff 0%, #eef5ff 100%);
+    border-color: #2563eb;
+    color: #1e40af;
+    text-decoration: none;
   }
 
   .dashboard-compact-detail-label {
@@ -1037,15 +1280,23 @@
     font-size: 0.78rem;
   }
 
+  .dashboard-compact-flag {
+    align-items: center;
+    background: color-mix(in srgb, var(--theme-shell-surface-bg) 78%, var(--theme-category-bg) 22%);
+    border: 1px solid color-mix(in srgb, var(--theme-category-border) 56%, white);
+    border-radius: 999px;
+    display: inline-flex;
+    gap: 0.28rem;
+    padding: 0.32rem 0.55rem;
+  }
+
   .dashboard-compact-detail-header {
     align-items: flex-start;
     display: flex;
+    flex-wrap: wrap;
     gap: 0.75rem;
     justify-content: space-between;
-  }
-
-  .dashboard-compact-detail-header .btn {
-    white-space: nowrap;
+    width: 100%;
   }
 
   .dashboard-compact-feedback {
@@ -1163,6 +1414,10 @@
       justify-items: start;
     }
 
+    .upcoming-schedule-row-actions {
+      justify-content: flex-start;
+    }
+
     .dashboard-compact-row-top {
       gap: 0.4rem;
       grid-template-columns: minmax(0, 1fr) auto;
@@ -1174,11 +1429,21 @@
     }
 
     .dashboard-compact-summary {
-      gap: 0.25rem;
+      gap: 0.5rem;
+      grid-template-columns: 1fr;
+    }
+
+    .dashboard-compact-summary-meta {
+      justify-content: flex-start;
     }
 
     .dashboard-compact-date {
       font-size: 0.68rem;
+    }
+
+    .dashboard-compact-name-pill,
+    .upcoming-schedule-row-name-pill {
+      padding: 0.34rem 0.82rem;
     }
 
     .dashboard-compact-name {
@@ -1197,14 +1462,29 @@
       padding: 0.36rem 0.6rem;
     }
 
+    .dashboard-compact-call-reveal {
+      flex-wrap: wrap;
+      gap: 0.35rem;
+      margin: 0.48rem 0.45rem 0.48rem 0;
+      padding: 0.38rem 0.45rem 0.38rem 0.6rem;
+    }
+
     .dashboard-compact-details {
       padding: 0.72rem 0.85rem 0.82rem;
     }
 
-    .dashboard-compact-detail-header,
+    .dashboard-compact-details--with-subcategory {
+      padding-top: 0.72rem;
+    }
+
     .dashboard-compact-notes-actions {
       align-items: flex-start;
       flex-direction: column;
+    }
+
+    .dashboard-compact-detail-pills-row,
+    .dashboard-compact-detail-pills {
+      justify-content: flex-end;
     }
 
     .upcoming-schedule-legend {
@@ -1233,7 +1513,7 @@
   <div class="col-12 col-lg-6">
     <section class="dashboard-module dashboard-module--today" data-dashboard-module="today" data-compact-module data-compact-limit="10">
       <div class="dashboard-module-header">
-        <h2 class="h6">Today</h2>
+        <h2 class="h6">Today : {{ today_date_display }}</h2>
         {% if today_cards|length > 10 %}
           <button type="button" class="btn dashboard-module-expand" data-compact-expand>Expand</button>
         {% endif %}
@@ -1251,41 +1531,61 @@
                 aria-controls="today-card-detail-{{ forloop.counter }}"
               >
                 <div class="dashboard-compact-summary">
-                  <span class="dashboard-compact-date">{{ card.due_date_display }}</span>
-                  <span class="dashboard-compact-separator" aria-hidden="true">|</span>
-                  <span class="dashboard-compact-name" data-compact-name data-full-name="{{ card.patient_name }}" data-short-name="{{ card.short_name }}">{{ card.patient_name }}</span>
-                  <span class="dashboard-compact-separator" aria-hidden="true">|</span>
-                  <span class="dashboard-compact-inline dashboard-compact-status">
-                    {% if card.call_status == "CONFIRMED" %}<span title="Confirmed">&#128994;&#128222;</span>
-                    {% elif card.call_status == "NOT_REACHABLE" %}<span title="Not reachable">&#128308;&#128222; x{{ card.failed_attempt_count }}</span>
-                    {% elif card.call_status == "INVALID_CONTACT" %}<span title="Invalid contact">&#9888;&#65039;&#128222;</span>
-                    {% elif card.call_status == "LOST" %}<span title="Lost follow-up">&#10060;</span>
-                    {% elif card.call_status == "CALL_BACK_LATER" %}<span title="Call back later">&#128993;&#128222;</span>
-                    {% else %}<span title="Not contacted">&#128222;</span>{% endif %}
+                  <span class="dashboard-compact-name-pill">
+                    <span class="dashboard-compact-name" data-compact-name data-full-name="{{ card.patient_name }}" data-short-name="{{ card.short_name }}">{{ card.patient_name }}</span>
+                  </span>
+                  <span class="dashboard-compact-summary-meta">
+                    <span class="dashboard-compact-inline dashboard-compact-status">
+                      {% if card.call_status == "CONFIRMED" %}<span title="Confirmed">&#128994;&#128222;</span>
+                      {% elif card.call_status == "NOT_REACHABLE" %}<span title="Not reachable">&#128308;&#128222; x{{ card.failed_attempt_count }}</span>
+                      {% elif card.call_status == "INVALID_CONTACT" %}<span title="Invalid contact">&#9888;&#65039;&#128222;</span>
+                      {% elif card.call_status == "LOST" %}<span title="Lost follow-up">&#10060;</span>
+                      {% elif card.call_status == "CALL_BACK_LATER" %}<span title="Call back later">&#128993;&#128222;</span>
+                      {% else %}<span title="Not contacted">&#128222;</span>{% endif %}
+                    </span>
                   </span>
                 </div>
               </button>
               {% if card.phone_number %}
-                <a class="dashboard-compact-call" href="tel:{{ card.phone_number }}" data-compact-action>Call</a>
+                <div class="dashboard-compact-call-group" data-call-reveal-scope>
+                  <button
+                    type="button"
+                    class="dashboard-compact-call"
+                    data-call-reveal-trigger
+                    aria-expanded="false"
+                    aria-controls="today-card-call-{{ forloop.counter }}"
+                  >Call</button>
+                  <div id="today-card-call-{{ forloop.counter }}" class="dashboard-compact-call-reveal" data-call-reveal hidden>
+                    <span class="dashboard-compact-call-number">{{ card.phone_number }}</span>
+                    <a class="dashboard-compact-call-link" href="tel:{{ card.phone_number }}" data-compact-action>Call</a>
+                    <button type="button" class="dashboard-compact-call-dismiss" data-call-reveal-close>Hide</button>
+                  </div>
+                </div>
               {% else %}
                 <span class="dashboard-compact-call is-disabled">Call</span>
               {% endif %}
             </div>
-            <div id="today-card-detail-{{ forloop.counter }}" class="dashboard-compact-details" data-compact-details hidden>
+            <div id="today-card-detail-{{ forloop.counter }}" class="dashboard-compact-details{% if card.subcategory_name %} dashboard-compact-details--with-subcategory{% endif %}" data-compact-details hidden>
               <div class="dashboard-compact-detail-grid">
-                <div class="dashboard-compact-detail-block">
-                  <span class="dashboard-compact-detail-label">Diagnosis</span>
-                  <span class="dashboard-compact-detail-copy">{{ card.diagnosis }}</span>
+                <div class="dashboard-compact-detail-line dashboard-compact-detail-line--with-pills">
+                  <div class="dashboard-compact-detail-line-main">
+                    <span class="dashboard-compact-detail-label">Diagnosis :</span>
+                    <span class="dashboard-compact-detail-copy">{{ card.diagnosis|default:"-" }}</span>
+                  </div>
+                  <div class="dashboard-compact-detail-pills">
+                    {% if card.subcategory_name %}<span class="dashboard-compact-subcategory">{{ card.subcategory_name }}</span>{% endif %}
+                    <a class="dashboard-compact-detail-pill-link" href="{{ card.detail_url }}" data-compact-action>Open case</a>
+                  </div>
                 </div>
-                <div class="dashboard-compact-detail-block">
-                  <span class="dashboard-compact-detail-label">Tasks</span>
-                  <span class="dashboard-compact-task-line">{{ card.task_titles|join:' &bull; ' }}</span>
+                <div class="dashboard-compact-detail-line">
+                  <span class="dashboard-compact-detail-label">Tasks :</span>
+                  <span class="dashboard-compact-task-line">{{ card.task_titles|join:', ' }}</span>
                 </div>
                 {% if card.high_risk or card.referred_by or card.ncd_flags %}
                   <div class="dashboard-compact-flags">
-                    {% if card.high_risk %}<span>&#10071; High-risk</span>{% endif %}
-                    {% if card.referred_by %}<span>&#11088; Referred by {{ card.referred_by }}</span>{% endif %}
-                    {% if card.ncd_flags %}<span>&#127991;&#65039; {{ card.ncd_flags|join:', ' }}</span>{% endif %}
+                    {% if card.high_risk %}<span class="dashboard-compact-flag">&#10071; High-risk</span>{% endif %}
+                    {% if card.referred_by %}<span class="dashboard-compact-flag">&#11088; Referred by {{ card.referred_by }}</span>{% endif %}
+                    {% if card.ncd_flags %}<span class="dashboard-compact-flag">&#127991;&#65039; {{ card.ncd_flags|join:', ' }}</span>{% endif %}
                   </div>
                 {% endif %}
               </div>
@@ -1355,13 +1655,13 @@
                   {% endif %}
                 </div>
               </div>
-              {% if day.categories %}
+              {% if day.subcategories %}
                 <div class="upcoming-schedule-legend">
-                  {% for category in day.categories %}
+                  {% for subcategory in day.subcategories %}
                     <span
                       class="upcoming-schedule-legend-pill"
-                      style="background: {{ category.bg_color }}; color: {{ category.text_color }}; border: 1px solid color-mix(in srgb, {{ category.text_color }} 16%, white);"
-                    >{{ category.name }}</span>
+                      style="background: {{ subcategory.bg_color }}; color: {{ subcategory.text_color }}; border: 1px solid color-mix(in srgb, {{ subcategory.text_color }} 16%, white);"
+                    >{{ subcategory.label }}</span>
                   {% endfor %}
                 </div>
               {% else %}
@@ -1372,24 +1672,29 @@
             {% if day.rows %}
               <div class="upcoming-schedule-list">
                 {% for row in day.rows %}
-                  <a
+                  <div
                     class="upcoming-schedule-row"
-                    href="{% url 'patients:case_detail' row.case_id %}"
                     style="--upcoming-category-bg: {{ row.category_bg_color }}; --upcoming-category-text: {{ row.category_text_color }};"
                   >
                     <div class="upcoming-schedule-row-main">
-                      <div class="upcoming-schedule-row-name">{{ row.patient_name }}</div>
+                      <span class="upcoming-schedule-row-name-pill">
+                        <span class="upcoming-schedule-row-name">{{ row.patient_name }}</span>
+                      </span>
                       <div class="upcoming-schedule-row-diagnosis">{{ row.diagnosis }}</div>
                       <div class="upcoming-schedule-row-tasks">{{ row.task_titles|join:', ' }}</div>
                     </div>
                     <div class="upcoming-schedule-row-meta">
-                      <span
-                        class="upcoming-schedule-row-category"
-                        style="background: {{ row.category_bg_color }}; color: {{ row.category_text_color }}; border: 1px solid color-mix(in srgb, {{ row.category_text_color }} 16%, white);"
-                      >{{ row.category_name }}</span>
-                      <span class="upcoming-schedule-row-open">Open</span>
+                      <div class="dashboard-compact-detail-pills">
+                        {% if row.subcategory_name %}
+                          <span
+                            class="upcoming-schedule-row-category"
+                            style="background: {{ row.category_bg_color }}; color: {{ row.category_text_color }}; border: 1px solid color-mix(in srgb, {{ row.category_text_color }} 16%, white);"
+                          >{{ row.subcategory_name }}</span>
+                        {% endif %}
+                        <a class="upcoming-schedule-open-link" href="{{ row.detail_url }}">Open case</a>
+                      </div>
                     </div>
-                  </a>
+                  </div>
                 {% endfor %}
               </div>
             {% else %}
@@ -1430,17 +1735,18 @@
                   aria-controls="recent-case-detail-{{ case.id }}"
                 >
                   <div class="dashboard-compact-summary">
-                    <span class="dashboard-compact-name" data-compact-name data-full-name="{{ case.name }}" data-short-name="{{ case.short_name }}">{{ case.name }}</span>
-                    <span class="dashboard-compact-separator" aria-hidden="true">|</span>
-                    <span class="dashboard-compact-inline">{{ case.gender_label }}</span>
-                    <span class="dashboard-compact-separator" aria-hidden="true">|</span>
-                    <span class="dashboard-compact-inline">{{ case.age_label }}</span>
-                    <span class="dashboard-compact-separator" aria-hidden="true">|</span>
-                    <span class="dashboard-compact-inline">Added {{ case.created_at_display }}</span>
+                    <span class="dashboard-compact-name-pill">
+                      <span class="dashboard-compact-name" data-compact-name data-full-name="{{ case.name }}" data-short-name="{{ case.short_name }}">{{ case.name }}</span>
+                    </span>
+                    <span class="dashboard-compact-summary-meta">
+                      <span class="dashboard-compact-inline">{{ case.sex_age }}</span>
+                      <span class="dashboard-compact-separator" aria-hidden="true">|</span>
+                      <span class="dashboard-compact-inline">{{ case.created_at_short_display }}</span>
+                    </span>
                   </div>
                 </button>
               </div>
-              <div id="recent-case-detail-{{ case.id }}" class="dashboard-compact-details" data-recent-case-detail hidden></div>
+            <div id="recent-case-detail-{{ case.id }}" class="dashboard-compact-details{% if case.subcategory_name %} dashboard-compact-details--with-subcategory{% endif %}" data-recent-case-detail hidden></div>
             </article>
           {% empty %}
             <div class="recent-case-empty">No recent patients added.</div>
@@ -1470,23 +1776,46 @@
                 aria-controls="overdue-card-detail-{{ forloop.counter }}"
               >
                 <div class="dashboard-compact-summary">
-                  <span class="dashboard-compact-date">{{ card.due_date_display }}</span>
-                  <span class="dashboard-compact-separator" aria-hidden="true">|</span>
-                  <span class="dashboard-compact-name" data-compact-name data-full-name="{{ card.patient_name }}" data-short-name="{{ card.short_name }}">{{ card.patient_name }}</span>
-                  <span class="dashboard-compact-separator" aria-hidden="true">|</span>
-                  <span class="dashboard-compact-inline">{{ card.sex_age }}</span>
+                  <span class="dashboard-compact-name-pill">
+                    <span class="dashboard-compact-name" data-compact-name data-full-name="{{ card.patient_name }}" data-short-name="{{ card.short_name }}">{{ card.patient_name }}</span>
+                  </span>
+                  <span class="dashboard-compact-summary-meta">
+                    <span class="dashboard-compact-inline">{{ card.sex_age }}</span>
+                    <span class="dashboard-compact-separator" aria-hidden="true">|</span>
+                    <span class="dashboard-compact-inline">{{ card.due_date_display }}</span>
+                  </span>
                 </div>
               </button>
               {% if card.phone_number %}
-                <a class="dashboard-compact-call" href="tel:{{ card.phone_number }}" data-compact-action>Call</a>
+                <div class="dashboard-compact-call-group" data-call-reveal-scope>
+                  <button
+                    type="button"
+                    class="dashboard-compact-call"
+                    data-call-reveal-trigger
+                    aria-expanded="false"
+                    aria-controls="overdue-card-call-{{ forloop.counter }}"
+                  >Call</button>
+                  <div id="overdue-card-call-{{ forloop.counter }}" class="dashboard-compact-call-reveal" data-call-reveal hidden>
+                    <span class="dashboard-compact-call-number">{{ card.phone_number }}</span>
+                    <a class="dashboard-compact-call-link" href="tel:{{ card.phone_number }}" data-compact-action>Call</a>
+                    <button type="button" class="dashboard-compact-call-dismiss" data-call-reveal-close>Hide</button>
+                  </div>
+                </div>
               {% else %}
                 <span class="dashboard-compact-call is-disabled">Call</span>
               {% endif %}
             </div>
-            <div id="overdue-card-detail-{{ forloop.counter }}" class="dashboard-compact-details" data-compact-details hidden>
-              <div class="dashboard-compact-detail-block">
+            <div id="overdue-card-detail-{{ forloop.counter }}" class="dashboard-compact-details{% if card.subcategory_name %} dashboard-compact-details--with-subcategory{% endif %}" data-compact-details hidden>
+              <div class="dashboard-compact-detail-header">
                 <span class="dashboard-compact-detail-label">Overdue</span>
-                <span class="dashboard-compact-task-line">{{ card.task_titles|join:' &bull; ' }}</span>
+                <div class="dashboard-compact-detail-pills">
+                  {% if card.subcategory_name %}<span class="dashboard-compact-subcategory">{{ card.subcategory_name }}</span>{% endif %}
+                  <a class="dashboard-compact-detail-pill-link" href="{{ card.detail_url }}" data-compact-action>Open case</a>
+                </div>
+              </div>
+              <div class="dashboard-compact-detail-line">
+                <span class="dashboard-compact-detail-label">Reason :</span>
+                <span class="dashboard-compact-task-line">{{ card.task_titles|join:', ' }}</span>
               </div>
             </div>
           </article>
@@ -1507,19 +1836,51 @@
       <div class="dashboard-module-body dashboard-module-body--compact">
         <div class="dashboard-compact-list">
         {% for row in awaiting_rows %}
-          <a class="dashboard-compact-link-row" data-compact-row href="{% url 'patients:case_detail' row.case_id %}"{% if forloop.counter > 10 %} hidden{% endif %} style="{% category_theme_style row.category_name theme_category_colors %}">
+          <article class="dashboard-compact-row" data-compact-row{% if forloop.counter > 10 %} hidden{% endif %} style="{% category_theme_style row.category_name theme_category_colors %}">
             <div class="dashboard-compact-row-top">
-              <div class="dashboard-compact-link">
+              <button
+                type="button"
+                class="dashboard-compact-toggle"
+                data-compact-toggle
+                aria-expanded="false"
+                aria-controls="awaiting-row-detail-{{ forloop.counter }}"
+              >
                 <div class="dashboard-compact-summary">
-                  <span class="dashboard-compact-name" data-compact-name data-full-name="{{ row.patient_name }}" data-short-name="{{ row.short_name }}">{{ row.patient_name }}</span>
-                  <span class="dashboard-compact-separator" aria-hidden="true">|</span>
-                  <span class="dashboard-compact-inline">{{ row.sex_age }}</span>
-                  <span class="dashboard-compact-separator" aria-hidden="true">|</span>
-                  <span class="dashboard-compact-inline">{{ row.report_detail }}</span>
+                  <span class="dashboard-compact-name-pill">
+                    <span class="dashboard-compact-name" data-compact-name data-full-name="{{ row.patient_name }}" data-short-name="{{ row.short_name }}">{{ row.patient_name }}</span>
+                  </span>
+                  <span class="dashboard-compact-summary-meta">
+                    <span class="dashboard-compact-inline">{{ row.sex_age }}</span>
+                    <span class="dashboard-compact-separator" aria-hidden="true">|</span>
+                    <span class="dashboard-compact-inline">{{ row.report_detail }}</span>
+                  </span>
+                </div>
+              </button>
+            </div>
+            <div id="awaiting-row-detail-{{ forloop.counter }}" class="dashboard-compact-details{% if row.subcategory_name %} dashboard-compact-details--with-subcategory{% endif %}" data-compact-details hidden>
+              <div class="dashboard-compact-detail-header">
+                <span class="dashboard-compact-detail-label">Awaiting Report</span>
+                <div class="dashboard-compact-detail-pills">
+                  {% if row.subcategory_name %}<span class="dashboard-compact-subcategory">{{ row.subcategory_name }}</span>{% endif %}
+                  <a class="dashboard-compact-detail-pill-link" href="{{ row.detail_url }}" data-compact-action>Open case</a>
+                </div>
+              </div>
+              <div class="dashboard-compact-detail-grid">
+                <div class="dashboard-compact-detail-line">
+                  <span class="dashboard-compact-detail-label">Diagnosis :</span>
+                  <span class="dashboard-compact-detail-copy">{{ row.diagnosis|default:"-" }}</span>
+                </div>
+                <div class="dashboard-compact-detail-line">
+                  <span class="dashboard-compact-detail-label">Awaiting :</span>
+                  <span class="dashboard-compact-task-line">{{ row.report_detail }}</span>
+                </div>
+                <div class="dashboard-compact-detail-line">
+                  <span class="dashboard-compact-detail-label">Due :</span>
+                  <span class="dashboard-compact-detail-copy">{{ row.due_date_display }}</span>
                 </div>
               </div>
             </div>
-          </a>
+          </article>
         {% empty %}
           <div class="dashboard-module-empty">No awaiting-report tasks.</div>
         {% endfor %}
@@ -1813,10 +2174,95 @@
       });
     };
 
+    const initializeInlineCallReveals = () => {
+      if (document.body.dataset.callRevealBound === "true") {
+        return;
+      }
+      document.body.dataset.callRevealBound = "true";
+
+      const closeCallRevealScope = (scope) => {
+        if (!scope) {
+          return;
+        }
+
+        const trigger = scope.querySelector("[data-call-reveal-trigger]");
+        const reveal = scope.querySelector("[data-call-reveal]");
+        if (trigger) {
+          trigger.hidden = false;
+          trigger.setAttribute("aria-expanded", "false");
+        }
+        if (reveal) {
+          reveal.hidden = true;
+        }
+        scope.classList.remove("is-open");
+      };
+
+      const closeAllCallReveals = (exceptScope = null) => {
+        document.querySelectorAll("[data-call-reveal-scope]").forEach((scope) => {
+          if (scope !== exceptScope) {
+            closeCallRevealScope(scope);
+          }
+        });
+      };
+
+      document.addEventListener("click", (event) => {
+        const closeButton = event.target.closest("[data-call-reveal-close]");
+        if (closeButton) {
+          event.preventDefault();
+          event.stopPropagation();
+          closeCallRevealScope(closeButton.closest("[data-call-reveal-scope]"));
+          return;
+        }
+
+        const trigger = event.target.closest("[data-call-reveal-trigger]");
+        if (trigger) {
+          event.preventDefault();
+          event.stopPropagation();
+
+          const scope = trigger.closest("[data-call-reveal-scope]");
+          const targetId = trigger.getAttribute("aria-controls");
+          if (!scope || !targetId) {
+            return;
+          }
+
+          const reveal = document.getElementById(targetId);
+          if (!reveal) {
+            return;
+          }
+
+          const isOpen = !reveal.hidden;
+          closeAllCallReveals(scope);
+          if (isOpen) {
+            closeCallRevealScope(scope);
+            return;
+          }
+
+          trigger.hidden = true;
+          trigger.setAttribute("aria-expanded", "true");
+          reveal.hidden = false;
+          scope.classList.add("is-open");
+          return;
+        }
+
+        if (event.target.closest("[data-call-reveal-scope]")) {
+          return;
+        }
+
+        closeAllCallReveals();
+      });
+
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+          closeAllCallReveals();
+        }
+      });
+    };
+
     window.dashboardCompactUI = { applyCompactNameFallback };
 
     const initialize = () => {
       initializeCompactModules();
+      initializeInlineCallReveals();
       applyCompactNameFallback(document);
     };
 
@@ -1947,15 +2393,15 @@
 
         const renderRecentDetail = (entry, feedback = null) => `
           <div class="dashboard-compact-detail-header">
-            <div>
-              <div class="dashboard-compact-detail-label">Recent case</div>
-              <div class="dashboard-compact-muted">${
-                entry.can_edit
-                  ? "Update case notes and review tasks without leaving the dashboard."
-                  : "Review tasks and notes from this read-only dashboard snapshot."
-              }</div>
+            <span class="dashboard-compact-detail-label">Notes</span>
+            <div class="dashboard-compact-detail-pills">
+              ${
+                entry.subcategory_name
+                  ? `<span class="dashboard-compact-subcategory">${escapeHtml(entry.subcategory_name)}</span>`
+                  : ""
+              }
+              <a class="dashboard-compact-detail-pill-link" href="${escapeHtml(entry.detail_url)}" data-compact-action>Open case</a>
             </div>
-            <a class="btn btn-sm btn-outline-primary" href="${escapeHtml(entry.detail_url)}" data-compact-action>Open full case</a>
           </div>
           <div class="dashboard-compact-feedback alert alert-${feedback ? feedback.level : "success"}${feedback ? "" : " is-hidden"}">${
             feedback ? escapeHtml(feedback.message) : ""
@@ -1963,7 +2409,7 @@
           <form class="dashboard-compact-notes-form" data-recent-case-form data-case-id="${entry.id}">
             <input type="hidden" name="diagnosis" value="${escapeHtml(entry.diagnosis_input || "")}">
             <div>
-              <label class="form-label" for="recent-case-notes-${entry.id}">Notes</label>
+              <label class="visually-hidden" for="recent-case-notes-${entry.id}">Notes</label>
               <textarea class="form-control form-control-sm" id="recent-case-notes-${entry.id}" name="notes" rows="3"${
                 entry.can_edit ? "" : " readonly"
               }>${escapeHtml(entry.notes || "")}</textarea>
@@ -2042,15 +2488,17 @@
             return;
           }
           summaryEl.innerHTML = `
-            <span class="dashboard-compact-name" data-compact-name data-full-name="${escapeHtml(entry.name)}" data-short-name="${escapeHtml(entry.short_name || entry.first_name || entry.name)}">${escapeHtml(entry.name)}</span>
-            <span class="dashboard-compact-separator" aria-hidden="true">|</span>
-            <span class="dashboard-compact-inline">${escapeHtml(entry.gender_label)}</span>
-            <span class="dashboard-compact-separator" aria-hidden="true">|</span>
-            <span class="dashboard-compact-inline">${escapeHtml(entry.age_label)}</span>
-            <span class="dashboard-compact-separator" aria-hidden="true">|</span>
-            <span class="dashboard-compact-inline">Added ${escapeHtml(entry.created_at_display)}</span>
+            <span class="dashboard-compact-name-pill">
+              <span class="dashboard-compact-name" data-compact-name data-full-name="${escapeHtml(entry.name)}" data-short-name="${escapeHtml(entry.short_name || entry.first_name || entry.name)}">${escapeHtml(entry.name)}</span>
+            </span>
+            <span class="dashboard-compact-summary-meta">
+              <span class="dashboard-compact-inline">${escapeHtml(entry.sex_age)}</span>
+              <span class="dashboard-compact-separator" aria-hidden="true">|</span>
+              <span class="dashboard-compact-inline">${escapeHtml(entry.created_at_short_display || entry.created_at_display)}</span>
+            </span>
           `;
           detailEl.innerHTML = renderRecentDetail(entry, feedback);
+          detailEl.classList.toggle("dashboard-compact-details--with-subcategory", Boolean(entry.subcategory_name));
           row.style.setProperty("--theme-category-bg", entry.category_bg_color || "");
           row.style.setProperty("--theme-category-text", entry.category_text_color || "");
           row.style.setProperty("--theme-category-border", entry.category_border_color || "");

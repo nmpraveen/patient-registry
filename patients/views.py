@@ -811,6 +811,7 @@ def _serialize_recent_case(case, user, *, today=None, can_edit_recent=None, can_
         "notes": case.notes or "",
         "created_at": created_local.isoformat(),
         "created_at_display": created_local.strftime("%d %b %Y %H:%M"),
+        "created_at_short_display": _month_day_display(created_local),
         "is_new_today": created_local.date() == today,
         "can_edit": can_edit_recent,
         "category_name": category_name,
@@ -850,6 +851,7 @@ def _serialize_recent_case_summary(case, user, *, today=None, can_edit_recent=No
         "notes": case.notes or "",
         "created_at": created_local.isoformat(),
         "created_at_display": created_local.strftime("%d %b %Y %H:%M"),
+        "created_at_short_display": _month_day_display(created_local),
         "is_new_today": created_local.date() == today,
         "can_edit": can_edit_recent,
         "category_name": case.category.name,
@@ -1969,6 +1971,10 @@ def _case_sex_age_label(case):
     return f"{gender_code}{age_number}"
 
 
+def _month_day_display(value):
+    return f"{value.strftime('%b')} {value.day}"
+
+
 def _case_initials(case):
     parts = [part[0].upper() for part in case.full_name.split() if part]
     if len(parts) >= 2:
@@ -2121,6 +2127,7 @@ class DashboardView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
         "case__gender",
         "case__diagnosis",
         "case__phone_number",
+        "case__subcategory",
         "case__referred_by",
         "case__high_risk",
         "case__ncd_flags",
@@ -2152,7 +2159,7 @@ class DashboardView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
             cards.append(
                 {
                     "due_date": first_task.due_date,
-                    "due_date_display": first_task.due_date.strftime("%b %d"),
+                    "due_date_display": _month_day_display(first_task.due_date),
                     "case_id": case.id,
                     "patient_name": full_name,
                     "short_name": _build_short_name(full_name),
@@ -2161,6 +2168,7 @@ class DashboardView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
                     "referred_by": case.referred_by,
                     "high_risk": case.high_risk,
                     "ncd_flags": case.ncd_flags or [],
+                    "subcategory_name": case.get_subcategory_display() if case.subcategory else "",
                     "task_titles": unique_titles,
                     "task_summary": " \u2022 ".join(unique_titles),
                     "call_status": call_summary.get("status", CallCommunicationStatus.NONE),
@@ -2173,6 +2181,7 @@ class DashboardView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
                     "category_bg_color": category_theme["bg"],
                     "category_text_color": category_theme["text"],
                     "category_border_color": category_theme["border"],
+                    "detail_url": reverse("patients:case_detail", kwargs={"pk": case.pk}),
                 }
             )
         return cards
@@ -2193,11 +2202,15 @@ class DashboardView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
                     "gender_code": _case_gender_code(case),
                     "age_number": _case_age_number(case),
                     "sex_age": _case_sex_age_label(case),
+                    "due_date_display": _month_day_display(task.due_date),
+                    "diagnosis": case.diagnosis or case.category.name,
                     "report_detail": task.title,
+                    "subcategory_name": case.get_subcategory_display() if case.subcategory else "",
                     "category_name": case.category.name,
                     "category_bg_color": category_theme["bg"],
                     "category_text_color": category_theme["text"],
                     "category_border_color": category_theme["border"],
+                    "detail_url": reverse("patients:case_detail", kwargs={"pk": case.pk}),
                 }
             )
         return rows
@@ -2256,6 +2269,7 @@ class DashboardView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
         while schedule_date <= range_end:
             case_groups = grouped_tasks.get(schedule_date, OrderedDict())
             category_map = OrderedDict()
+            subcategory_map = OrderedDict()
             rows = []
 
             for grouped in case_groups.values():
@@ -2278,20 +2292,34 @@ class DashboardView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
                         "patient_name": case.full_name or case.patient_name,
                         "diagnosis": case.diagnosis or case.category.name,
                         "task_titles": unique_titles,
+                        "subcategory_name": case.get_subcategory_display() if case.subcategory else "",
                         "category_name": category_theme["name"],
                         "category_bg_color": category_theme["bg_color"],
                         "category_text_color": category_theme["text_color"],
+                        "detail_url": reverse("patients:case_detail", kwargs={"pk": case.pk}),
                     }
                 )
+                subcategory_name = case.get_subcategory_display() if case.subcategory else ""
+                if subcategory_name:
+                    subcategory_map.setdefault(
+                        subcategory_name,
+                        {
+                            "label": subcategory_name,
+                            "bg_color": category_theme["bg_color"],
+                            "text_color": category_theme["text_color"],
+                        },
+                    )
 
             rows.sort(key=lambda item: ((item["patient_name"] or "").lower(), item["case_id"]))
             categories = sorted(category_map.values(), key=lambda item: item["name"].lower())
+            subcategories = sorted(subcategory_map.values(), key=lambda item: item["label"].lower())
             schedule_days.append(
                 {
                     "date": schedule_date,
                     "date_key": schedule_date.isoformat(),
                     "count": len(rows),
                     "categories": categories,
+                    "subcategories": subcategories,
                     "rows": rows,
                     "is_selected": schedule_date == selected_date,
                 }
@@ -2395,6 +2423,7 @@ class DashboardView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
         context["next_week_offset"] = min(self.max_week_offset, week_offset + 1)
         context["selected_week_start"] = selected_week_start
         context["selected_week_end"] = selected_week_end
+        context["today_date_display"] = _month_day_display(today)
         context["show_recent_cases_panel"] = _can_view_recent_cases(self.request.user)
         context["can_edit_recent_cases"] = _can_edit_recent_cases(self.request.user)
         context["recent_cases"] = (

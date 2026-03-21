@@ -1130,6 +1130,10 @@ class MedtrackViewTests(TestCase):
         self.assertNotIn("recentCaseModal", section_html)
         self.assertNotIn("shown", section_html)
         self.assertIn(">Expand<", section_html)
+        self.assertIn(recent_cases[0]["sex_age"], section_html)
+        self.assertIn(recent_cases[0]["created_at_short_display"], section_html)
+        self.assertNotIn(f"Added {recent_cases[0]['created_at_display']}", section_html)
+        self.assertNotIn("Update case notes and review tasks without leaving the dashboard.", content)
 
     def test_dashboard_recent_cases_panel_shows_empty_state_for_doctor(self):
         self.client.force_login(self.user)
@@ -1235,9 +1239,11 @@ class MedtrackViewTests(TestCase):
                 "diagnosis_short",
                 "notes",
                 "created_at",
+                "created_at_short_display",
                 "is_new_today",
                 "can_edit",
                 "category_name",
+                "subcategory_name",
                 "category_bg_color",
                 "category_text_color",
                 "category_border_color",
@@ -2835,6 +2841,7 @@ class MedtrackViewTests(TestCase):
             last_name="Patient",
             phone_number="9876504001",
             category=self.surgery,
+            subcategory=CaseSubcategory.GENERAL_SURGERY,
             status=CaseStatus.ACTIVE,
             surgical_pathway=SurgicalPathway.SURVEILLANCE,
             review_date=today + timedelta(days=2),
@@ -2878,6 +2885,9 @@ class MedtrackViewTests(TestCase):
         self.assertContains(response, 'data-upcoming-schedule')
         self.assertContains(response, "Today review")
         self.assertNotContains(response, "Next week review")
+        self.assertContains(response, "Open case")
+        self.assertContains(response, schedule_case.get_subcategory_display())
+        self.assertNotContains(response, 'class="upcoming-schedule-row" href=')
         empty_label = f"No scheduled patients for {(current_week_start + timedelta(days=1)).strftime('%B')} {(current_week_start + timedelta(days=1)).day}."
         self.assertContains(response, empty_label)
 
@@ -2961,6 +2971,7 @@ class MedtrackViewTests(TestCase):
             last_name="Surgery",
             phone_number="9876504003",
             category=self.surgery,
+            subcategory=CaseSubcategory.ORTHOPEDICS,
             status=CaseStatus.ACTIVE,
             surgical_pathway=SurgicalPathway.SURVEILLANCE,
             review_date=target_date,
@@ -2978,10 +2989,13 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(response.context["week_offset"], 1)
         self.assertEqual(schedule_day["count"], 2)
         self.assertEqual([category["name"] for category in schedule_day["categories"]], ["ANC", "Surgery"])
+        self.assertEqual([subcategory["label"] for subcategory in schedule_day["subcategories"]], [surgery_case.get_subcategory_display()])
         grouped_row = next(row for row in schedule_day["rows"] if row["patient_name"] == "Grouped Surgery")
         self.assertEqual(grouped_row["task_titles"], ["Lab", "ECG"])
+        self.assertEqual(grouped_row["subcategory_name"], surgery_case.get_subcategory_display())
         self.assertContains(response, 'title="ANC"')
         self.assertContains(response, 'title="Surgery"')
+        self.assertContains(response, surgery_case.get_subcategory_display())
 
     def test_dashboard_upcoming_schedule_uses_category_theme_colors_for_dots_and_rows(self):
         self.client.force_login(self.user)
@@ -6310,11 +6324,14 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(today_cards[1]["patient_name"], "Grouped Patient")
         self.assertEqual(today_cards[1]["short_name"], "Grouped P.")
         self.assertEqual(today_cards[1]["task_titles"], ["Lab", "ECG"])
-        self.assertEqual(today_cards[1]["due_date_display"], timezone.localdate().strftime("%b %d"))
+        self.assertEqual(today_cards[1]["due_date_display"], f"{timezone.localdate().strftime('%b')} {timezone.localdate().day}")
         self.assertEqual(today_cards[1]["category_name"], "Surgery")
+        self.assertEqual(today_cards[1]["subcategory_name"], "")
+        self.assertEqual(today_cards[1]["detail_url"], reverse("patients:case_detail", kwargs={"pk": case.pk}))
         self.assertIn("category_bg_color", today_cards[1])
         self.assertIn("category_text_color", today_cards[1])
         self.assertEqual(today_cards[1]["sex_age"], "-")
+        self.assertEqual(response.context["today_date_display"], f"{timezone.localdate().strftime('%b')} {timezone.localdate().day}")
         self.assertEqual(response.context["anc_case_count"], 1)
         self.assertEqual(response.context["surgery_case_count"], 1)
         self.assertEqual(response.context["non_surgical_case_count"], 1)
@@ -6328,6 +6345,7 @@ class MedtrackViewTests(TestCase):
             last_name="Patient",
             phone_number="9876503333",
             category=self.surgery,
+            subcategory=CaseSubcategory.GENERAL_SURGERY,
             status=CaseStatus.ACTIVE,
             gender=Gender.MALE,
             age=42,
@@ -6350,7 +6368,94 @@ class MedtrackViewTests(TestCase):
         self.assertContains(response, "Upload report")
         self.assertContains(response, "M42")
         self.assertContains(response, 'data-dashboard-module="awaiting"')
-        self.assertContains(response, "dashboard-compact-link-row")
+        self.assertContains(response, "dashboard-compact-row")
+        self.assertContains(response, "data-compact-toggle")
+        self.assertContains(response, case.get_subcategory_display())
+        self.assertContains(response, "Awaiting Report")
+        self.assertContains(response, "Diagnosis :")
+        self.assertContains(response, "Due :")
+        self.assertContains(response, "Open case")
+
+    def test_dashboard_overdue_module_renders_header_reason_and_open_case_action(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-OVERDUE-DETAIL",
+            first_name="Overdue",
+            last_name="Detail",
+            phone_number="9876504445",
+            category=self.surgery,
+            subcategory=CaseSubcategory.GENERAL_SURGERY,
+            status=CaseStatus.ACTIVE,
+            gender=Gender.FEMALE,
+            age=33,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=4),
+            created_by=self.user,
+        )
+        Task.objects.create(
+            case=case,
+            title="Review ultrasound",
+            due_date=timezone.localdate() - timedelta(days=2),
+            created_by=self.user,
+        )
+
+        response = self.client.get(reverse("patients:dashboard"))
+
+        self.assertEqual(response.status_code, 200)
+        content = response.content.decode()
+        overdue_section_match = re.search(r'<section[^>]+data-dashboard-module="overdue"[^>]*>.*?</section>', content, re.S)
+        self.assertIsNotNone(overdue_section_match)
+        section_html = overdue_section_match.group(0)
+        self.assertIn(case.get_subcategory_display(), section_html)
+        self.assertIn("Reason :", section_html)
+        self.assertIn("Review ultrasound", section_html)
+        self.assertIn("Open case", section_html)
+
+    def test_dashboard_today_module_renders_header_date_footer_link_and_subcategory_pill(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-TODAY-DETAIL",
+            first_name="Today",
+            last_name="Detail",
+            phone_number="9876504444",
+            category=self.surgery,
+            subcategory=CaseSubcategory.GENERAL_SURGERY,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=4),
+            diagnosis="Thyroid nodule",
+            high_risk=True,
+            referred_by="PHC",
+            ncd_flags=["T2DM"],
+            created_by=self.user,
+        )
+        Task.objects.create(case=case, title="Review", due_date=timezone.localdate(), created_by=self.user)
+
+        response = self.client.get(reverse("patients:dashboard"))
+
+        self.assertEqual(response.status_code, 200)
+        content = response.content.decode()
+        today_section_match = re.search(r'<section[^>]+data-dashboard-module="today"[^>]*>.*?</section>', content, re.S)
+        self.assertIsNotNone(today_section_match)
+        section_html = today_section_match.group(0)
+        today_label = f"Today : {timezone.localdate().strftime('%b')} {timezone.localdate().day}"
+        self.assertIn(today_label, section_html)
+        self.assertEqual(section_html.count(f"{timezone.localdate().strftime('%b')} {timezone.localdate().day}"), 1)
+        self.assertIn(case.get_subcategory_display(), section_html)
+        self.assertIn("dashboard-compact-subcategory", section_html)
+        self.assertIn("dashboard-compact-details--with-subcategory", section_html)
+        self.assertIn("dashboard-compact-detail-line--with-pills", section_html)
+        self.assertIn("dashboard-compact-detail-pills", section_html)
+        self.assertIn("Diagnosis :", section_html)
+        self.assertIn("Tasks :", section_html)
+        self.assertIn("dashboard-compact-detail-line", section_html)
+        self.assertNotIn("dashboard-compact-detail-block", section_html)
+        self.assertIn("High-risk", section_html)
+        self.assertIn("Referred by PHC", section_html)
+        self.assertIn("T2DM", section_html)
+        self.assertIn("data-call-reveal-trigger", section_html)
+        self.assertIn("data-call-reveal-close", section_html)
+        self.assertIn("Open case", section_html)
 
     def test_dashboard_card_contains_referral_high_risk_and_ncd_flags(self):
         self.client.force_login(self.user)

@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026.03.22.14.12
+- Adjusted the stacked case-detail layout so mobile and other collapsed-width views now prioritize the working flow as hero, Action Center, tasks, timeline, vitals, and then clinical details, while preserving the desktop 40/30/30 module row.
+
 ## 2026.03.22.14.01
 - Reworked the case-detail page into the new hero-plus-module layout, with Action Center, Vitals, and Clinical Details grouped in a responsive top row while preserving the existing task workspace, timeline, routes, permissions, and inline editors.
 - Removed category tinting and leftover gradient treatment from lower case-detail surfaces so the hero remains category-aware while the surrounding modules use a cleaner neutral shell style aligned with the Vitals card.

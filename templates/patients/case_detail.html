@@ -16,6 +16,8 @@
       <div class="case-detail-module-slot case-detail-module-slot--action">
         {% include 'patients/partials/case_detail_workspace.html' %}
       </div>
+      {% include 'patients/partials/case_detail_tasks.html' %}
+      {% include 'patients/partials/case_detail_timeline.html' %}
       <div class="case-detail-module-companion" data-testid="case-detail-sidebar">
         <div class="case-detail-module-slot case-detail-module-slot--vitals">
           {% include 'patients/partials/case_detail_vitals.html' %}
@@ -25,9 +27,6 @@
         </div>
       </div>
     </div>
-
-    {% include 'patients/partials/case_detail_tasks.html' %}
-    {% include 'patients/partials/case_detail_timeline.html' %}
   </article>
 {% endblock %}
 {% block extra_scripts %}

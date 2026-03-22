@@ -107,12 +107,20 @@
 .case-detail-module-row {
   display: grid;
   grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-areas:
+    "action companion companion"
+    "tasks tasks tasks"
+    "timeline timeline timeline";
   gap: 1rem;
   align-items: stretch;
 }
 
+.case-detail-module-slot--action {
+  grid-area: action;
+}
+
 .case-detail-module-companion {
-  grid-column: 2 / span 2;
+  grid-area: companion;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1rem;
@@ -127,6 +135,14 @@
 .case-detail-module-slot > * {
   flex: 1 1 auto;
   min-width: 0;
+}
+
+.case-detail-tasks {
+  grid-area: tasks;
+}
+
+.case-detail-timeline {
+  grid-area: timeline;
 }
 
 .case-detail-module-slot .case-detail-workspace,
@@ -2344,11 +2360,19 @@
 
   .case-detail-module-row {
     grid-template-columns: 1fr;
+    grid-template-areas: none;
   }
 
+  .case-detail-module-slot--action,
   .case-detail-module-companion {
+    grid-area: auto;
     grid-column: auto;
     grid-template-columns: 1fr;
+  }
+
+  .case-detail-tasks,
+  .case-detail-timeline {
+    grid-area: auto;
   }
 
   .case-detail-grid {

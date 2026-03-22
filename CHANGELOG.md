@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.03.22.21.10
+- Restored the dedicated Quick Entry page so the navbar action no longer redirects into the full New Case temporary-patient flow.
+- Reinstated the legacy quick-entry save behavior on top of patient master records, creating a linked temporary patient, preserving quick-entry metadata, and adding the `Details need to be filled` reminder task plus starter tasks.
+- Restored focused regression coverage for the quick-entry page render, validation, subcategory behavior, ANC path, and linked temporary-patient save behavior.
+
 ## 2026.03.22.20.49
 - Refined the case-detail hero so the status pill now hugs the patient name, the redundant `View Patient` text link is removed, and the corner patient action remains the single patient-navigation entry point.
 - Reworked the case-detail hero action cluster into a compact centered 2x2 button block, removed the extra sibling-case strip, and normalized all four hero actions to the same unhighlighted visual treatment.

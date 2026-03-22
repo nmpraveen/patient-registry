@@ -1330,15 +1330,40 @@ class MedtrackViewTests(TestCase):
 
         self.assertEqual(response.status_code, 403)
 
-    def test_quick_case_create_redirects_to_new_case_temp_patient_flow(self):
+    def test_quick_case_create_view_hides_subcategory_until_category_has_options(self):
         self.client.force_login(self.user)
 
         response = self.client.get(reverse("patients:case_quick_create"))
+        response_text = response.content.decode()
 
-        self.assertRedirects(
-            response,
-            f"{reverse('patients:case_create')}?patient_mode=new&temporary=1",
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'name="subcategory"')
+        self.assertContains(response, 'name="prefix"')
+        self.assertContains(response, "data-quick-entry-subcategory-wrapper")
+        self.assertContains(response, '"help_text": "Optional for quick entry. Choose the surgical specialty if known."')
+        self.assertRegex(response_text, r"data-quick-entry-subcategory-wrapper\s+hidden")
+        self.assertNotContains(response, "Only used for Surgery or Medicine.")
+
+    def test_quick_case_create_invalid_surgery_submission_keeps_subcategory_visible(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("patients:case_quick_create"),
+            {
+                "prefix": CasePrefix.MS,
+                "first_name": "Visible",
+                "age": "31",
+                "gender": Gender.FEMALE,
+                "category": self.surgery.id,
+                "review_date": "",
+                "diagnosis": "",
+            },
         )
+        response_text = response.content.decode()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Optional for quick entry. Choose the surgical specialty if known.")
+        self.assertNotRegex(response_text, r"data-quick-entry-subcategory-wrapper\s+hidden")
 
     def test_case_create_view_is_forbidden_without_case_create_capability(self):
         self.login_as_role("Nurse", username="nurse_case_create")
@@ -1346,6 +1371,133 @@ class MedtrackViewTests(TestCase):
         response = self.client.get(reverse("patients:case_create"))
 
         self.assertEqual(response.status_code, 403)
+
+    def test_quick_case_create_saves_minimal_case_and_tasks(self):
+        review_date = timezone.localdate() + timedelta(days=7)
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("patients:case_quick_create"),
+            {
+                "prefix": CasePrefix.MRS,
+                "first_name": "Lalitha",
+                "age": "42",
+                "gender": Gender.FEMALE,
+                "diagnosis": "Thyroid swelling",
+                "category": self.surgery.id,
+                "review_date": review_date.isoformat(),
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        case = Case.objects.get(metadata__entry_mode="quick_entry", first_name="Lalitha")
+        self.assertRegex(case.uhid, r"^TMP-\d{8}-\d{3}$")
+        self.assertEqual(case.prefix, CasePrefix.MRS)
+        self.assertEqual(case.patient_name, "Mrs. Lalitha")
+        self.assertEqual(case.last_name, "")
+        self.assertEqual(case.phone_number, "")
+        self.assertEqual(case.alternate_phone_number, "")
+        self.assertEqual(case.status, CaseStatus.ACTIVE)
+        self.assertEqual(case.review_date, review_date)
+        self.assertEqual(case.subcategory, "")
+        self.assertEqual(case.metadata["entry_mode"], "quick_entry")
+        self.assertTrue(case.metadata["details_pending"])
+        self.assertIsNotNone(case.patient_id)
+        self.assertEqual(case.patient.uhid, case.uhid)
+        self.assertTrue(case.patient.is_temporary_id)
+        self.assertEqual(case.patient.first_name, "Lalitha")
+        self.assertEqual(case.patient.last_name, "")
+        self.assertEqual(case.patient.phone_number, "")
+        self.assertTrue(case.tasks.filter(title=QUICK_ENTRY_DETAILS_TASK_TITLE, due_date=review_date).exists())
+        self.assertTrue(case.tasks.filter(title="Surveillance Review").exists())
+        self.assertTrue(case.activity_logs.filter(note__icontains="Quick entry created with 1 starter task(s)").exists())
+
+    def test_quick_case_create_accepts_optional_subcategory_when_provided(self):
+        review_date = timezone.localdate() + timedelta(days=8)
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("patients:case_quick_create"),
+            {
+                "prefix": CasePrefix.MS,
+                "first_name": "Optional",
+                "age": "39",
+                "gender": Gender.FEMALE,
+                "category": self.surgery.id,
+                "subcategory": CaseSubcategory.ORTHOPEDICS,
+                "review_date": review_date.isoformat(),
+                "diagnosis": "Quick entry with known specialty",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        case = Case.objects.get(metadata__entry_mode="quick_entry", first_name="Optional")
+        self.assertEqual(case.subcategory, CaseSubcategory.ORTHOPEDICS)
+
+    def test_quick_case_create_allows_anc_without_full_anc_fields(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("patients:case_quick_create"),
+            {
+                "prefix": CasePrefix.MRS,
+                "first_name": "Revathi",
+                "age": "24",
+                "gender": Gender.FEMALE,
+                "diagnosis": "ANC follow-up pending full details",
+                "category": self.anc.id,
+                "review_date": (timezone.localdate() + timedelta(days=4)).isoformat(),
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        case = Case.objects.get(first_name="Revathi", metadata__entry_mode="quick_entry")
+        self.assertEqual(case.category, self.anc)
+        self.assertEqual(case.patient_id, case.patient.pk)
+        self.assertTrue(case.tasks.filter(title=QUICK_ENTRY_DETAILS_TASK_TITLE).exists())
+        self.assertGreater(case.tasks.count(), 1)
+        self.assertFalse(case.tasks.filter(title=RCH_REMINDER_TASK_TITLE).exists())
+
+    def test_quick_case_create_invalid_submission_shows_inline_errors(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("patients:case_quick_create"),
+            {
+                "prefix": "",
+                "first_name": "",
+                "age": "",
+                "gender": "",
+                "diagnosis": "",
+                "category": "",
+                "review_date": "",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "invalid-feedback")
+        self.assertContains(response, "This field is required.")
+        self.assertContains(response, 'name="prefix"')
+
+    def test_quick_case_create_requires_prefix(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("patients:case_quick_create"),
+            {
+                "prefix": "",
+                "first_name": "NoPrefix",
+                "age": "26",
+                "gender": Gender.FEMALE,
+                "diagnosis": "Prefix missing",
+                "category": self.surgery.id,
+                "review_date": (timezone.localdate() + timedelta(days=5)).isoformat(),
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "This field is required.")
+        self.assertFalse(Case.objects.filter(first_name="NoPrefix").exists())
 
     def test_case_create_with_temporary_patient_id_creates_patient_and_case(self):
         self.client.force_login(self.user)

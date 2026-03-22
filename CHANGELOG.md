@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.03.22.02.53
+- Fixed the case-detail hero metadata separators so patient profile pages render clean middle dots again instead of mojibake characters between UHID, sex, age, place, and phone.
+- Replaced the affected case-detail CSS bullet literals with stable Unicode escapes to prevent the same symbol corruption from reappearing during future stylesheet edits.
+
 ## 2026.03.22.02.24
 - Inverted the shared `Open case` external-link SVG to a white circle with dark linework, and added a subtle dark rim so the icon stays legible on the light action button background.
 

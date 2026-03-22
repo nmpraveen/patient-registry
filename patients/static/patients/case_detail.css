@@ -237,7 +237,7 @@
 }
 
 .case-detail-subtitle span + span::before {
-  content: "â€¢";
+  content: "\2022";
   margin-right: 0.8rem;
   opacity: 0.65;
 }
@@ -2569,7 +2569,7 @@
 }
 
 .case-detail-meta-sep::before {
-  content: "Â·";
+  content: "\00B7";
   color: var(--case-detail-faint-text);
   font-size: 1rem;
   line-height: 1;
@@ -2978,7 +2978,7 @@
 }
 
 .case-detail-meta-sep::before {
-  content: "Â·";
+  content: "\00B7";
 }
 
 .case-detail-phone-link {

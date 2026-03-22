@@ -9,11 +9,30 @@
           </div>
           <div class="small"><strong>Submitted value:</strong> {{ match.value }}</div>
           <div class="case-create-match-list">
-            {% for case in match.cases %}
-              <a class="case-create-match-link" href="{% url 'patients:case_detail' case.pk %}">
-                <span class="case-create-match-link__name">{{ case.full_name|default:case.patient_name }}</span>
-                <span class="case-create-match-link__meta">{{ case.uhid }} &middot; {{ case.category.name }} &middot; {{ case.get_status_display }}</span>
-              </a>
+            {% for patient in match.patients %}
+              <div class="case-create-match-link">
+                <a class="case-create-match-link__name" href="{{ patient.detail_url }}">{{ patient.name }}</a>
+                <span class="case-create-match-link__meta">
+                  {{ patient.uhid }}
+                  {% if patient.phone_number %} &middot; {{ patient.phone_number }}{% endif %}
+                  {% if patient.place %} &middot; {{ patient.place }}{% endif %}
+                </span>
+                <span class="case-create-match-link__meta">
+                  {{ patient.active_case_count }} active case{{ patient.active_case_count|pluralize }}
+                  &middot;
+                  {{ patient.case_count }} total
+                </span>
+                {% if patient.new_case_url %}
+                  <span class="case-create-match-link__meta"><a href="{{ patient.new_case_url }}">Create new case for this patient</a></span>
+                {% endif %}
+              </div>
+              {% if patient.cases %}
+                <div class="small ms-3">
+                  {% for case in patient.cases %}
+                    <a href="{{ case.detail_url }}">{{ case.category_name }} &middot; {{ case.status }}</a>{% if not forloop.last %}<span class="text-muted"> | </span>{% endif %}
+                  {% endfor %}
+                </div>
+              {% endif %}
             {% endfor %}
           </div>
         </div>
@@ -21,5 +40,5 @@
     {% endfor %}
   </div>
 {% else %}
-  <div class="case-create-identity-status">No exact UHID or 10-digit phone matches detected yet.</div>
+  <div class="case-create-identity-status">No exact patient UHID or 10-digit phone matches detected yet.</div>
 {% endif %}

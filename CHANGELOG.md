@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.03.22.19.36
+- Introduced patient master records keyed by UHID so one patient can hold multiple cases, with patient-aware search, patient pages, merge controls, migration support, and patient-aware import/export plus seed data.
+- Reworked the New Case flow into a patient-first intake with live existing-patient search, cleaner selected-patient summaries, patient-linked case detail context, and updated theme-aligned patient UI.
+- Fixed existing-patient case creation so hidden identity fields no longer block save, the Save Case path submits reliably again, and regression coverage now includes existing-patient creates with omitted hidden identity fields.
+
 ## 2026.03.22.16.17
 - Moved the Surgery and Medicine subcategory selector on the New Case page into Step 1 directly under the category choices, so staff can fill it immediately after selecting the case type.
 - Kept the HTMX preview refresh aligned with the new layout by rendering the relocated subcategory field through its own out-of-band partial, and removed the duplicate Step 3 subcategory control from the workflow panel.

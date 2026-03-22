@@ -20,6 +20,8 @@ from .models import (
     DepartmentConfig,
     DeviceApprovalPolicy,
     Gender,
+    generate_temporary_patient_uhid,
+    Patient,
     PatientDataBackupSchedule,
     NonCommunicableDisease,
     RoleSetting,
@@ -58,6 +60,7 @@ CRAYONS_DATEPICKER_ATTRS = {
 
 
 CASE_PREFIX_SELECT_CHOICES = [("", "Select prefix"), *list(CasePrefix.choices)]
+PATIENT_MODE_CHOICES = [("new", "New patient"), ("existing", "Existing patient")]
 
 
 class StyledModelForm(forms.ModelForm):
@@ -72,6 +75,72 @@ class StyledModelForm(forms.ModelForm):
                 css_class = "form-control"
             existing = field.widget.attrs.get("class", "")
             field.widget.attrs["class"] = f"{existing} {css_class}".strip()
+
+
+class PatientForm(StyledModelForm):
+    use_temporary_patient_id = forms.BooleanField(
+        required=False,
+        label="Use temporary ID for now",
+        help_text="Create a temporary local patient ID and merge it later when the real UHID is known.",
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["prefix"].required = True
+        self.fields["prefix"].label = "Prefix"
+        self.fields["prefix"].choices = CASE_PREFIX_SELECT_CHOICES
+        self.fields["uhid"].label = "UHID"
+        self.fields["date_of_birth"].input_formats = DATE_INPUT_FORMATS
+        if self.instance and self.instance.pk:
+            self.fields["use_temporary_patient_id"].initial = self.instance.is_temporary_id
+
+    def clean(self):
+        cleaned_data = super().clean()
+        dob = cleaned_data.get("date_of_birth")
+        entered_age = cleaned_data.get("age")
+        if dob:
+            today = timezone.localdate()
+            years = today.year - dob.year
+            has_had_birthday = (today.month, today.day) >= (dob.month, dob.day)
+            cleaned_data["age"] = years if has_had_birthday else years - 1
+        elif entered_age is None:
+            self.add_error("age", "Enter age when date of birth is not available.")
+
+        use_temporary_patient_id = cleaned_data.get("use_temporary_patient_id")
+        uhid = (cleaned_data.get("uhid") or "").strip()
+        if use_temporary_patient_id:
+            if self.instance.pk and self.instance.is_temporary_id and self.instance.uhid:
+                cleaned_data["uhid"] = self.instance.uhid
+            else:
+                cleaned_data["uhid"] = generate_temporary_patient_uhid()
+        elif not uhid:
+            self.add_error("uhid", "Enter UHID or use a temporary ID.")
+        return cleaned_data
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        instance.is_temporary_id = bool(self.cleaned_data.get("use_temporary_patient_id"))
+        if commit:
+            instance.save()
+        return instance
+
+    class Meta:
+        model = Patient
+        fields = [
+            "uhid",
+            "prefix",
+            "first_name",
+            "last_name",
+            "gender",
+            "date_of_birth",
+            "place",
+            "age",
+            "phone_number",
+            "alternate_phone_number",
+        ]
+        widgets = {
+            "date_of_birth": forms.DateInput(attrs=dict(CRAYONS_DATEPICKER_ATTRS)),
+        }
 
 
 def _selected_category_from_form(form):
@@ -131,6 +200,19 @@ def _configure_case_subcategory_field(field, *, category, required, optional_cop
 
 
 class CaseForm(StyledModelForm):
+    patient_mode = forms.ChoiceField(
+        choices=PATIENT_MODE_CHOICES,
+        widget=forms.RadioSelect(),
+        initial="new",
+        label="Patient source",
+        required=False,
+    )
+    selected_patient = forms.ModelChoiceField(
+        queryset=Patient.objects.none(),
+        required=False,
+        widget=forms.HiddenInput(),
+    )
+    use_temporary_uhid = forms.BooleanField(required=False, label="Use temporary patient ID")
     ncd_flags = forms.MultipleChoiceField(
         required=False,
         choices=NonCommunicableDisease.choices,
@@ -147,7 +229,14 @@ class CaseForm(StyledModelForm):
     def __init__(self, *args, **kwargs):
         ensure_default_departments()
         super().__init__(*args, **kwargs)
-        self.fields["prefix"].required = True
+        self._generated_temporary_uhid = ""
+        self.fields["selected_patient"].queryset = Patient.objects.filter(merged_into__isnull=True).order_by(
+            "patient_name", "uhid"
+        )
+        self.fields["prefix"].required = False
+        self.fields["first_name"].required = False
+        self.fields["last_name"].required = False
+        self.fields["phone_number"].required = False
         self.fields["prefix"].label = "Prefix"
         self.fields["prefix"].choices = CASE_PREFIX_SELECT_CHOICES
         self.fields["category"].queryset = self.fields["category"].queryset.order_by("name")
@@ -156,6 +245,8 @@ class CaseForm(StyledModelForm):
         self.fields["category"].widget.choices = self.fields["category"].choices
         self._configure_subcategory_field()
         self.fields["uhid"].label = "UHID"
+        self.fields["selected_patient"].label = "Selected patient"
+        self.fields["use_temporary_uhid"].help_text = "Use a local temporary patient ID when the real UHID is not known yet."
         self.fields["rch_number"].label = "RCH number"
         self.fields["rch_bypass"].label = "RCH bypass"
         self.fields["lmp"].label = "LMP"
@@ -163,13 +254,31 @@ class CaseForm(StyledModelForm):
         self.fields["usg_edd"].label = "USG EDD"
         for field_name in ["date_of_birth", "lmp", "edd", "usg_edd", "surgery_date", "review_date"]:
             self.fields[field_name].input_formats = DATE_INPUT_FORMATS
+        patient = getattr(self.instance, "patient", None) if self.instance and self.instance.pk else None
+        if patient:
+            self.initial.setdefault("selected_patient", patient.pk)
+            self.initial.setdefault("patient_mode", "existing")
+            self.initial.setdefault("uhid", patient.uhid)
+            self.initial.setdefault("prefix", patient.prefix)
+            self.initial.setdefault("first_name", patient.first_name)
+            self.initial.setdefault("last_name", patient.last_name)
+            self.initial.setdefault("gender", patient.gender)
+            self.initial.setdefault("date_of_birth", patient.date_of_birth)
+            self.initial.setdefault("place", patient.place)
+            self.initial.setdefault("age", patient.age)
+            self.initial.setdefault("phone_number", patient.phone_number)
+            self.initial.setdefault("alternate_phone_number", patient.alternate_phone_number)
+            self.initial.setdefault("use_temporary_uhid", patient.is_temporary_id)
         if self.instance and self.instance.pk:
             self.fields["ncd_flags"].initial = self.instance.ncd_flags
             self.fields["anc_high_risk_reasons"].initial = self.instance.anc_high_risk_reasons
+            self.fields["patient_mode"].widget = forms.HiddenInput()
+            self.fields["selected_patient"].widget = forms.HiddenInput()
         else:
             self.fields["status"].widget = forms.HiddenInput()
             self.fields["status"].required = False
             self.initial.setdefault("status", CaseStatus.ACTIVE)
+            self.initial.setdefault("patient_mode", "new")
 
         gpla_choices = [("", "-")] + [(i, i) for i in range(0, 11)]
         for field_name in ["gravida", "para", "abortions", "living"]:
@@ -186,8 +295,87 @@ class CaseForm(StyledModelForm):
             optional_copy=False,
         )
 
+    def _build_patient_candidate(self, cleaned_data):
+        patient = getattr(self.instance, "patient", None) if self.instance and self.instance.pk else None
+        if patient is None:
+            patient = Patient()
+        patient.uhid = (cleaned_data.get("uhid") or "").strip()
+        patient.prefix = cleaned_data.get("prefix") or ""
+        patient.first_name = cleaned_data.get("first_name") or ""
+        patient.last_name = cleaned_data.get("last_name") or ""
+        patient.gender = cleaned_data.get("gender") or ""
+        patient.date_of_birth = cleaned_data.get("date_of_birth")
+        patient.place = cleaned_data.get("place") or ""
+        patient.age = cleaned_data.get("age")
+        patient.phone_number = (cleaned_data.get("phone_number") or "").strip()
+        patient.alternate_phone_number = (cleaned_data.get("alternate_phone_number") or "").strip()
+        patient.is_temporary_id = bool(cleaned_data.get("use_temporary_uhid"))
+        if self.instance and self.instance.pk:
+            patient.created_by = getattr(self.instance.patient, "created_by", None)
+            patient.merged_into = getattr(self.instance.patient, "merged_into", None)
+        return patient
+
+    @staticmethod
+    def _sync_patient_candidate_from_cleaned_data(patient, cleaned_data):
+        patient.uhid = (cleaned_data.get("uhid") or "").strip()
+        patient.prefix = cleaned_data.get("prefix") or ""
+        patient.first_name = cleaned_data.get("first_name") or ""
+        patient.last_name = cleaned_data.get("last_name") or ""
+        patient.gender = cleaned_data.get("gender") or ""
+        patient.date_of_birth = cleaned_data.get("date_of_birth")
+        patient.place = cleaned_data.get("place") or ""
+        patient.age = cleaned_data.get("age")
+        patient.phone_number = (cleaned_data.get("phone_number") or "").strip()
+        patient.alternate_phone_number = (cleaned_data.get("alternate_phone_number") or "").strip()
+        patient.is_temporary_id = bool(cleaned_data.get("use_temporary_uhid"))
+
     def clean(self):
         cleaned_data = super().clean()
+        patient_mode = cleaned_data.get("patient_mode") or ("existing" if self.instance.pk else "new")
+        cleaned_data["patient_mode"] = patient_mode
+        selected_patient = cleaned_data.get("selected_patient")
+        if patient_mode == "existing" and not selected_patient and not self.instance.pk:
+            self.add_error("selected_patient", "Choose an existing patient before saving the case.")
+
+        if patient_mode == "existing" and selected_patient and not self.instance.pk:
+            cleaned_data["uhid"] = selected_patient.uhid
+            cleaned_data["prefix"] = selected_patient.prefix
+            cleaned_data["first_name"] = selected_patient.first_name
+            cleaned_data["last_name"] = selected_patient.last_name
+            cleaned_data["gender"] = selected_patient.gender
+            cleaned_data["date_of_birth"] = selected_patient.date_of_birth
+            cleaned_data["place"] = selected_patient.place
+            cleaned_data["age"] = selected_patient.age
+            cleaned_data["phone_number"] = selected_patient.phone_number
+            cleaned_data["alternate_phone_number"] = selected_patient.alternate_phone_number
+            cleaned_data["use_temporary_uhid"] = selected_patient.is_temporary_id
+            cleaned_data["patient_instance"] = selected_patient
+        else:
+            if cleaned_data.get("use_temporary_uhid"):
+                if not self._generated_temporary_uhid:
+                    self._generated_temporary_uhid = generate_temporary_patient_uhid()
+                cleaned_data["uhid"] = self._generated_temporary_uhid
+            elif not (cleaned_data.get("uhid") or "").strip():
+                self.add_error("uhid", "Enter UHID or enable a temporary patient ID.")
+
+            missing_patient_fields = []
+            if not cleaned_data.get("prefix"):
+                self.add_error("prefix", "This field is required.")
+            for field_name in ["first_name", "last_name", "phone_number"]:
+                if not (cleaned_data.get(field_name) or "").strip():
+                    self.add_error(field_name, "This field is required.")
+                    missing_patient_fields.append(field_name)
+
+            patient_candidate = self._build_patient_candidate(cleaned_data)
+            try:
+                patient_candidate.full_clean(exclude=["created_by", "merged_into", *missing_patient_fields])
+            except forms.ValidationError as exc:
+                for field_name, errors in exc.message_dict.items():
+                    target_field = field_name if field_name in self.fields else None
+                    for error in errors:
+                        self.add_error(target_field, error)
+            cleaned_data["patient_instance"] = patient_candidate
+
         dob = cleaned_data.get("date_of_birth")
         entered_age = cleaned_data.get("age")
         if dob:
@@ -238,6 +426,10 @@ class CaseForm(StyledModelForm):
 
         if category_name == "ANC" and not high_risk:
             cleaned_data["anc_high_risk_reasons"] = []
+
+        patient_candidate = cleaned_data.get("patient_instance")
+        if isinstance(patient_candidate, Patient) and (self.instance.pk or patient_mode != "existing"):
+            self._sync_patient_candidate_from_cleaned_data(patient_candidate, cleaned_data)
         return cleaned_data
 
     def clean_ncd_flags(self):
@@ -248,6 +440,17 @@ class CaseForm(StyledModelForm):
 
     def save(self, commit=True):
         instance = super().save(commit=False)
+        patient = self.cleaned_data.get("patient_instance") or getattr(self.instance, "patient", None)
+        if isinstance(patient, Patient):
+            if not patient.pk and not patient.created_by_id and getattr(self, "actor", None) is not None:
+                patient.created_by = self.actor
+            if not patient.pk:
+                patient.save()
+            elif self.instance.pk or self.cleaned_data.get("patient_mode") != "existing":
+                patient.save()
+        instance.patient = patient
+        if instance.patient_id:
+            instance.sync_identity_from_patient()
         instance.ncd_flags = self.cleaned_data.get("ncd_flags", [])
         instance.anc_high_risk_reasons = self.cleaned_data.get("anc_high_risk_reasons", [])
         if commit:
@@ -257,6 +460,9 @@ class CaseForm(StyledModelForm):
     class Meta:
         model = Case
         fields = [
+            "patient_mode",
+            "selected_patient",
+            "use_temporary_uhid",
             "uhid",
             "prefix",
             "first_name",
@@ -381,6 +587,22 @@ class QuickEntryCaseForm(StyledModelForm):
         widgets = {
             "review_date": forms.DateInput(attrs=dict(CRAYONS_DATEPICKER_ATTRS)),
         }
+
+
+class PatientMergeForm(forms.Form):
+    target_patient = forms.ModelChoiceField(
+        queryset=Patient.objects.none(),
+        required=True,
+        label="Merge into patient",
+    )
+
+    def __init__(self, *args, source_patient=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.source_patient = source_patient
+        queryset = Patient.objects.filter(merged_into__isnull=True).order_by("patient_name", "uhid")
+        if source_patient and source_patient.pk:
+            queryset = queryset.exclude(pk=source_patient.pk)
+        self.fields["target_patient"].queryset = queryset
 
 
 class TaskForm(StyledModelForm):
@@ -544,6 +766,7 @@ class RoleSettingForm(StyledModelForm):
             "can_task_create",
             "can_task_edit",
             "can_note_add",
+            "can_patient_merge",
             "can_manage_settings",
         ]
         widgets = {
@@ -552,6 +775,7 @@ class RoleSettingForm(StyledModelForm):
             "can_task_create": forms.CheckboxInput(),
             "can_task_edit": forms.CheckboxInput(),
             "can_note_add": forms.CheckboxInput(),
+            "can_patient_merge": forms.CheckboxInput(),
             "can_manage_settings": forms.CheckboxInput(),
         }
 

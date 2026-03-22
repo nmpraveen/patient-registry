@@ -1407,8 +1407,8 @@
             <div class="app-nav-content">
               <div class="global-search-wrap" id="global-search-container">
                 <div class="global-search-shell">
-                  <label class="visually-hidden" for="global-case-search-input">Search cases</label>
-                  <span class="visually-hidden">Search diagnosis / place / case notes / call notes</span>
+                  <label class="visually-hidden" for="global-case-search-input">Search patients or cases</label>
+                  <span class="visually-hidden">Search patient identity, diagnosis, place, and notes</span>
                   <div class="global-search-field" data-search-field>
                     <svg class="global-search-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" focusable="false">
                       <circle cx="11" cy="11" r="6.5" stroke="currentColor" stroke-width="2"></circle>
@@ -1419,9 +1419,9 @@
                       id="global-case-search-input"
                       type="search"
                       class="form-control form-control-sm global-search-input"
-                      placeholder="Search patients..."
+                      placeholder="Search patients or cases..."
                       autocomplete="off"
-                      aria-label="Search cases"
+                      aria-label="Search patients or cases"
                     />
                     <div class="global-search-filter-toggle-wrap">
                       <button
@@ -1485,6 +1485,7 @@
               </div>
               <div class="global-nav-actions">
                 <div class="global-nav-primary">
+                  <a class="btn btn-sm btn-outline-light" id="global-patient-list-link" href="{% url 'patients:patient_list' %}" data-patients-link-base="{% url 'patients:patient_list' %}">Patients</a>
                   <a class="btn btn-sm btn-outline-light" id="global-case-list-link" href="{% url 'patients:case_list' %}" data-cases-link-base="{% url 'patients:case_list' %}">Cases</a>
                   {% if user|has_capability:'case_create' %}
                     <a class="btn btn-sm app-nav-action--quick-entry" href="{% url 'patients:case_quick_create' %}">Quick Entry</a>
@@ -1562,6 +1563,7 @@
           const tagsContainer = container?.querySelector("[data-search-selected-tags]");
           const filterCount = container?.querySelector("[data-search-category-count]");
           const categoryButtons = container ? Array.from(container.querySelectorAll("[data-search-category-option]")) : [];
+          const patientsLink = document.getElementById("global-patient-list-link");
           const casesLink = document.getElementById("global-case-list-link");
           if (!input || !dropdown || !container) {
             return;
@@ -1571,7 +1573,7 @@
           let currentResults = [];
           let requestId = 0;
           let filterOpen = false;
-          const defaultPlaceholder = "Search patients...";
+          const defaultPlaceholder = "Search patients or cases...";
           const filteredPlaceholder = "Search within filters...";
           const allCategoryValues = categoryButtons.map((button) => button.dataset.searchCategoryOption);
 
@@ -1644,7 +1646,17 @@
             categoryGroups.forEach((group) => params.append("category_group", group));
           };
 
-          const buildResultsUrl = (query, categories) => {
+          const buildPatientResultsUrl = (query) => {
+            const params = new URLSearchParams();
+            if (query) {
+              params.set("q", query);
+            }
+            return params.toString()
+              ? `{% url 'patients:patient_list' %}?${params.toString()}`
+              : `{% url 'patients:patient_list' %}`;
+          };
+
+          const buildCaseResultsUrl = (query, categories) => {
             const params = new URLSearchParams();
             if (query) {
               params.set("q", query);
@@ -1655,7 +1667,14 @@
               : `{% url 'patients:case_list' %}`;
           };
 
-          const buildCasesUrl = (categories) => buildResultsUrl("", categories);
+          const buildCasesUrl = (categories) => buildCaseResultsUrl("", categories);
+
+          const syncPatientsLink = () => {
+            if (!patientsLink) {
+              return;
+            }
+            patientsLink.href = buildPatientResultsUrl(input.value.trim());
+          };
 
           const syncCasesLink = () => {
             if (!casesLink) {
@@ -1733,13 +1752,24 @@
             syncSearchFieldState();
           };
 
-          const appendResultsPageAction = (query, categories) => {
-            const action = document.createElement("button");
-            action.type = "button";
-            action.className = "global-search-item global-search-action";
-            action.dataset.resultsPage = buildResultsUrl(query, categories);
-            action.textContent = "View all results";
-            dropdown.appendChild(action);
+          const appendResultsPageActions = (query, categories) => {
+            const patientAction = document.createElement("button");
+            patientAction.type = "button";
+            patientAction.className = "global-search-item global-search-action";
+            patientAction.dataset.resultsPage = buildPatientResultsUrl(query);
+            patientAction.textContent = "View patients";
+            dropdown.appendChild(patientAction);
+
+            if (!categories.length) {
+              return;
+            }
+
+            const caseAction = document.createElement("button");
+            caseAction.type = "button";
+            caseAction.className = "global-search-item global-search-action";
+            caseAction.dataset.resultsPage = buildCaseResultsUrl(query, categories);
+            caseAction.textContent = "View cases";
+            dropdown.appendChild(caseAction);
           };
 
           const renderResults = (results, query, categories) => {
@@ -1749,9 +1779,9 @@
             if (!results.length) {
               const emptyState = document.createElement("div");
               emptyState.className = "global-search-empty";
-              emptyState.textContent = "No matching cases.";
+              emptyState.textContent = "No matching patients or cases.";
               dropdown.appendChild(emptyState);
-              appendResultsPageAction(query, categories);
+              appendResultsPageActions(query, categories);
               openResults();
               return;
             }
@@ -1805,7 +1835,7 @@
               row.appendChild(tags);
               dropdown.appendChild(row);
             });
-            appendResultsPageAction(query, categories);
+            appendResultsPageActions(query, categories);
             openResults();
           };
 
@@ -1816,16 +1846,6 @@
               return;
             }
             const categories = selectedCategories();
-            if (!categories.length) {
-              dropdown.replaceChildren();
-              const emptyState = document.createElement("div");
-              emptyState.className = "global-search-empty";
-              emptyState.textContent = "Select at least one category filter.";
-              dropdown.appendChild(emptyState);
-              openResults();
-              return;
-            }
-
             const params = new URLSearchParams({ q: query });
             categories.forEach((category) => params.append("category", category));
             const myRequest = ++requestId;
@@ -1841,7 +1861,14 @@
             if (myRequest !== requestId) {
               return;
             }
-            renderResults(payload.results || [], query, categories);
+            let results = payload.results || [];
+            if (!categories.length) {
+              results = results.filter((result) => (
+                Array.isArray(result?.tags)
+                && result.tags.some((tag) => tag?.kind === "record_type" && tag?.label === "Patient")
+              ));
+            }
+            renderResults(results, query, categories);
           };
 
           let timer = null;
@@ -1852,7 +1879,10 @@
             }, 180);
           };
 
-          input.addEventListener("input", debouncedSearch);
+          input.addEventListener("input", () => {
+            syncPatientsLink();
+            debouncedSearch();
+          });
 
           dropdown.addEventListener("click", (event) => {
             const resultsPageAction = event.target.closest("[data-results-page]");
@@ -1879,9 +1909,9 @@
                 window.location.assign(currentResults[activeIndex].detail_url);
                 return;
               }
-              if (query.length >= 2 && categories.length) {
+              if (query.length >= 2) {
                 event.preventDefault();
-                window.location.assign(buildResultsUrl(query, categories));
+                window.location.assign(buildPatientResultsUrl(query));
               }
               return;
             }
@@ -1942,6 +1972,7 @@
               setFilterButtonState(button, !isButtonSelected(button));
               renderFilterButtons();
               renderSelectedTags();
+              syncPatientsLink();
               syncCasesLink();
               updateFilterToggle();
               debouncedSearch();
@@ -1961,6 +1992,7 @@
             setFilterButtonState(source, false);
             renderFilterButtons();
             renderSelectedTags();
+            syncPatientsLink();
             syncCasesLink();
             updateFilterToggle();
             debouncedSearch();
@@ -1976,6 +2008,7 @@
 
           renderFilterButtons();
           renderSelectedTags();
+          syncPatientsLink();
           syncCasesLink();
           updateFilterToggle();
         })();

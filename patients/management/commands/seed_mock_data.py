@@ -19,6 +19,7 @@ from patients.models import (
     CaseStatus,
     DepartmentConfig,
     Gender,
+    Patient,
     QUICK_ENTRY_DETAILS_TASK_TITLE,
     ReviewFrequency,
     SurgicalPathway,
@@ -28,7 +29,7 @@ from patients.models import (
     build_default_tasks,
     create_quick_entry_details_task,
     ensure_default_departments,
-    generate_quick_entry_uhid,
+    generate_temporary_patient_uhid,
 )
 
 
@@ -97,18 +98,19 @@ class Command(BaseCommand):
         start_digit = str(6 + ((index - 1) % 4))
         return f"{start_digit}{(810000000 + index):09d}"
 
-    def _base_case_kwargs(self, profile, index, today, demo_user):
+    def _base_case_kwargs(self, profile, index, today, demo_user, patient):
         return {
-            "uhid": self._build_uhid(profile, index, today),
-            "prefix": profile["prefix"],
-            "first_name": profile["first_name"],
-            "last_name": profile["last_name"],
-            "gender": profile["gender"],
-            "date_of_birth": profile["date_of_birth"],
-            "age": max(today.year - profile["date_of_birth"].year, 18),
-            "place": profile["place"],
-            "phone_number": self._build_phone_number(index),
-            "alternate_phone_number": self._build_alternate_phone_number(index),
+            "patient": patient,
+            "uhid": patient.uhid,
+            "prefix": patient.prefix,
+            "first_name": patient.first_name,
+            "last_name": patient.last_name,
+            "gender": patient.gender,
+            "date_of_birth": patient.date_of_birth,
+            "age": patient.age,
+            "place": patient.place,
+            "phone_number": patient.phone_number,
+            "alternate_phone_number": patient.alternate_phone_number,
             "status": [CaseStatus.ACTIVE, CaseStatus.COMPLETED, CaseStatus.CANCELLED, CaseStatus.LOSS_TO_FOLLOW_UP][index % 4],
             "diagnosis": [
                 "Moderate anemia",
@@ -129,6 +131,67 @@ class Command(BaseCommand):
             },
             "notes": f"Demo follow-up case from {profile['place']} OPD with reachable caretaker contact.",
         }
+
+    def _build_patient_kwargs(self, profile, index, today, demo_user, *, temporary=False):
+        if temporary:
+            return {
+                "uhid": generate_temporary_patient_uhid(today),
+                "prefix": profile["prefix"],
+                "first_name": profile["first_name"],
+                "last_name": "",
+                "gender": profile["gender"],
+                "date_of_birth": None,
+                "place": "",
+                "age": max(today.year - profile["date_of_birth"].year, 18),
+                "phone_number": "",
+                "alternate_phone_number": "",
+                "created_by": demo_user,
+            }
+
+        return {
+            "uhid": self._build_uhid(profile, index, today),
+            "prefix": profile["prefix"],
+            "first_name": profile["first_name"],
+            "last_name": profile["last_name"],
+            "gender": profile["gender"],
+            "date_of_birth": profile["date_of_birth"],
+            "place": profile["place"],
+            "phone_number": self._build_phone_number(index),
+            "alternate_phone_number": self._build_alternate_phone_number(index),
+            "created_by": demo_user,
+        }
+
+    def _get_or_create_patient(self, patient_kwargs):
+        patient, created = Patient.objects.get_or_create(
+            uhid=patient_kwargs["uhid"],
+            defaults=patient_kwargs,
+        )
+        if created:
+            return patient
+
+        changed = False
+        for field_name, field_value in patient_kwargs.items():
+            if field_name == "uhid":
+                continue
+            if field_value in (None, ""):
+                continue
+            current_value = getattr(patient, field_name, None)
+            if current_value in (None, ""):
+                setattr(patient, field_name, field_value)
+                changed = True
+        if changed:
+            patient.save()
+        return patient
+
+    def _patient_for_scenario(self, profile, index, today, demo_user, scenario):
+        if scenario in {"anc_high_risk", "surgery_planned"}:
+            shared_profile = self.mock_profiles[0]
+            patient_kwargs = self._build_patient_kwargs(shared_profile, 1, today, demo_user)
+        elif scenario == "quick_entry_pending_details":
+            patient_kwargs = self._build_patient_kwargs(profile, index, today, demo_user, temporary=True)
+        else:
+            patient_kwargs = self._build_patient_kwargs(profile, index, today, demo_user)
+        return self._get_or_create_patient(patient_kwargs)
 
     @staticmethod
     def _surgery_subcategory_for_index(index):
@@ -237,7 +300,7 @@ class Command(BaseCommand):
         kwargs["metadata"]["details_pending"] = True
         kwargs.update(
             {
-                "uhid": generate_quick_entry_uhid(today),
+                "uhid": kwargs["patient"].uhid,
                 "category": surgery,
                 "status": CaseStatus.ACTIVE,
                 "last_name": "",
@@ -557,11 +620,15 @@ class Command(BaseCommand):
             CallLog.objects.all().delete()
             CaseActivityLog.objects.all().delete()
             Case.objects.all().delete()
+            Patient.objects.all().delete()
         elif reset:
             seeded_cases = Case.objects.filter(metadata__source="seed_mock_data")
+            seeded_patient_ids = {patient_id for patient_id in seeded_cases.values_list("patient_id", flat=True) if patient_id}
             CallLog.objects.filter(case__in=seeded_cases).delete()
             CaseActivityLog.objects.filter(case__in=seeded_cases).delete()
             seeded_cases.delete()
+            if seeded_patient_ids:
+                Patient.objects.filter(pk__in=seeded_patient_ids).filter(cases__isnull=True).delete()
 
         User = get_user_model()
         demo_user, _ = User.objects.get_or_create(username="demo_seed")
@@ -573,25 +640,26 @@ class Command(BaseCommand):
         rng = random.Random(20260226)
         created = 0
         named_builders = [
-            lambda anc, surgery, non_surgical, today, kwargs, _: self.build_anc_high_risk_case(anc, today, kwargs),
-            lambda anc, surgery, non_surgical, today, kwargs, _: self.build_quick_entry_case(surgery, today, kwargs),
-            lambda anc, surgery, non_surgical, today, kwargs, _: self.build_surgery_planned_case(surgery, today, kwargs),
-            lambda anc, surgery, non_surgical, today, kwargs, _: self.build_non_surgical_overdue_case(non_surgical, today, kwargs),
+            ("anc_high_risk", lambda anc, surgery, non_surgical, today, kwargs, _: self.build_anc_high_risk_case(anc, today, kwargs)),
+            ("quick_entry_pending_details", lambda anc, surgery, non_surgical, today, kwargs, _: self.build_quick_entry_case(surgery, today, kwargs)),
+            ("surgery_planned", lambda anc, surgery, non_surgical, today, kwargs, _: self.build_surgery_planned_case(surgery, today, kwargs)),
+            ("non_surgical_overdue", lambda anc, surgery, non_surgical, today, kwargs, _: self.build_non_surgical_overdue_case(non_surgical, today, kwargs)),
         ]
         if include_rch_scenarios:
-            named_builders.insert(1, lambda anc, surgery, non_surgical, today, kwargs, _: self.build_anc_rch_missing_case(anc, today, kwargs))
+            named_builders.insert(1, ("anc_rch_missing", lambda anc, surgery, non_surgical, today, kwargs, _: self.build_anc_rch_missing_case(anc, today, kwargs)))
 
         for i in range(1, count + 1):
             mock_profile = self.mock_profiles[(i - 1) % len(self.mock_profiles)]
-            uhid = self._build_uhid(mock_profile, i, today)
-            if Case.objects.filter(uhid=uhid).exists():
-                continue
-            kwargs = self._base_case_kwargs(mock_profile, i, today, demo_user)
-
             if i <= len(named_builders):
-                case, scenario = named_builders[i - 1](anc, surgery, non_surgical, today, kwargs, i)
+                scenario_name, builder = named_builders[i - 1]
             else:
-                case, scenario = self.build_default_case(anc, surgery, non_surgical, today, kwargs, i)
+                scenario_name, builder = "default_mixed", self.build_default_case
+
+            patient = self._patient_for_scenario(mock_profile, i, today, demo_user, scenario_name)
+            kwargs = self._base_case_kwargs(mock_profile, i, today, demo_user, patient)
+            kwargs["metadata"]["seed_case_key"] = f"{scenario_name}:{i}"
+
+            case, scenario = builder(anc, surgery, non_surgical, today, kwargs, i)
 
             details_task = None
             if (case.metadata or {}).get("entry_mode") == "quick_entry":

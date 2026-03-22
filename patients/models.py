@@ -41,6 +41,7 @@ RCH_REMINDER_INTERVAL_DAYS = 14
 RCH_REMINDER_FREQUENCY_LABEL = "RCH reminder"
 QUICK_ENTRY_DETAILS_TASK_TITLE = "Details need to be filled"
 QUICK_ENTRY_FREQUENCY_LABEL = "Quick entry"
+TEMP_PATIENT_ID_PREFIX = "TMP"
 STAFF_ROLE_NAME = "Staff"
 STAFF_PILOT_ROLE_NAME = "Staff Pilot"
 DEVICE_APPROVAL_MAX_APPROVED = 3
@@ -69,16 +70,25 @@ def normalize_category_name(value):
     return " ".join((value or "").replace("-", " ").split()).upper()
 
 
-def generate_quick_entry_uhid(today=None):
+def generate_temporary_patient_uhid(today=None):
     quick_entry_day = today or timezone.localdate()
-    prefix = f"QE-{quick_entry_day:%Y%m%d}-"
-    existing_uhids = set(Case.objects.filter(uhid__startswith=prefix).values_list("uhid", flat=True))
+    prefix = f"{TEMP_PATIENT_ID_PREFIX}-{quick_entry_day:%Y%m%d}-"
+    existing_uhids = set(Patient.objects.filter(uhid__startswith=prefix).values_list("uhid", flat=True))
     next_sequence = 1
     candidate = f"{prefix}{next_sequence:03d}"
     while candidate in existing_uhids:
         next_sequence += 1
         candidate = f"{prefix}{next_sequence:03d}"
     return candidate
+
+
+def generate_quick_entry_uhid(today=None):
+    return generate_temporary_patient_uhid(today=today)
+
+
+def is_temporary_patient_uhid(value):
+    normalized = str(value or "").strip().upper()
+    return normalized.startswith(f"{TEMP_PATIENT_ID_PREFIX}-")
 
 
 class CallOutcome(models.TextChoices):
@@ -247,6 +257,7 @@ class RoleSetting(models.Model):
     can_task_create = models.BooleanField(default=False)
     can_task_edit = models.BooleanField(default=False)
     can_note_add = models.BooleanField(default=False)
+    can_patient_merge = models.BooleanField(default=False)
     can_manage_settings = models.BooleanField(default=False)
 
     class Meta:
@@ -259,6 +270,7 @@ class RoleSetting(models.Model):
             "task_create": self.can_task_create,
             "task_edit": self.can_task_edit,
             "note_add": self.can_note_add,
+            "patient_merge": self.can_patient_merge,
             "manage_settings": self.can_manage_settings,
         }
 
@@ -269,6 +281,7 @@ class RoleSetting(models.Model):
             "can_task_create": self.can_task_create,
             "can_task_edit": self.can_task_edit,
             "can_note_add": self.can_note_add,
+            "can_patient_merge": self.can_patient_merge,
             "can_manage_settings": self.can_manage_settings,
         }
 
@@ -300,6 +313,110 @@ class UserAdminNote(models.Model):
 
     def __str__(self) -> str:
         return f"Admin note for {self.user}"
+
+
+class Patient(models.Model):
+    uhid = models.CharField(max_length=64, unique=True)
+    is_temporary_id = models.BooleanField(default=False)
+    merged_into = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="merged_patients",
+    )
+    prefix = models.CharField(max_length=3, choices=CasePrefix.choices, blank=True, default="")
+    first_name = models.CharField(max_length=100, default="")
+    last_name = models.CharField(max_length=100, default="")
+    patient_name = models.CharField(max_length=200, blank=True)
+    gender = models.CharField(max_length=20, choices=Gender.choices, blank=True)
+    date_of_birth = models.DateField(blank=True, null=True)
+    place = models.CharField(max_length=200, blank=True)
+    age = models.PositiveSmallIntegerField(blank=True, null=True)
+    phone_number = models.CharField(max_length=10, blank=True, db_index=True)
+    alternate_phone_number = models.CharField(max_length=10, blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_patients",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["patient_name", "uhid"]
+        indexes = [
+            models.Index(fields=["first_name", "last_name"]),
+            models.Index(fields=["patient_name"]),
+        ]
+
+    @property
+    def identity_name(self):
+        return " ".join(part for part in [self.first_name, self.last_name] if part)
+
+    @property
+    def full_name(self):
+        prefix_label = self.get_prefix_display() if self.prefix else ""
+        return " ".join(part for part in [prefix_label, self.identity_name] if part)
+
+    @property
+    def is_merged(self):
+        return self.merged_into_id is not None
+
+    def _normalize_identity_fields(self):
+        self.first_name = normalize_case_name(self.first_name)
+        self.last_name = normalize_case_name(self.last_name)
+        self.place = normalize_case_name(self.place)
+        self.patient_name = self.full_name
+
+    def clean(self):
+        self.uhid = " ".join((self.uhid or "").split()).upper()
+        phone_errors = {}
+        if self.phone_number and (not self.phone_number.isdigit() or len(self.phone_number) != 10):
+            phone_errors["phone_number"] = "Phone number must be exactly 10 digits."
+        if self.alternate_phone_number and (
+            not self.alternate_phone_number.isdigit() or len(self.alternate_phone_number) != 10
+        ):
+            phone_errors["alternate_phone_number"] = "Alternate phone number must be exactly 10 digits."
+        if phone_errors:
+            raise ValidationError(phone_errors)
+        if self.merged_into_id and self.merged_into_id == self.pk:
+            raise ValidationError({"merged_into": "A patient cannot be merged into itself."})
+
+    def sync_case_mirrors(self):
+        if not self.pk:
+            return
+        self.cases.update(
+            uhid=self.uhid,
+            prefix=self.prefix,
+            first_name=self.first_name,
+            last_name=self.last_name,
+            patient_name=self.patient_name,
+            gender=self.gender,
+            date_of_birth=self.date_of_birth,
+            place=self.place,
+            age=self.age,
+            phone_number=self.phone_number,
+            alternate_phone_number=self.alternate_phone_number,
+            updated_at=timezone.now(),
+        )
+
+    def save(self, *args, **kwargs):
+        self.uhid = " ".join((self.uhid or "").split()).upper()
+        self.is_temporary_id = is_temporary_patient_uhid(self.uhid)
+        if self.date_of_birth:
+            today = timezone.localdate()
+            years = today.year - self.date_of_birth.year
+            has_had_birthday = (today.month, today.day) >= (self.date_of_birth.month, self.date_of_birth.day)
+            self.age = years if has_had_birthday else years - 1
+        self._normalize_identity_fields()
+        super().save(*args, **kwargs)
+        self.sync_case_mirrors()
+
+    def __str__(self) -> str:
+        return f"{self.uhid} - {self.full_name or self.patient_name}"
 
 
 class PatientDataBackupScheduleMode(models.TextChoices):
@@ -652,6 +769,7 @@ DEFAULT_ROLE_SETTINGS = {
         "can_task_create": True,
         "can_task_edit": True,
         "can_note_add": True,
+        "can_patient_merge": True,
         "can_manage_settings": True,
     },
     "Doctor": {
@@ -705,7 +823,8 @@ def clone_role_setting(source_role_name=STAFF_ROLE_NAME, target_role_name=STAFF_
     return target
 
 class Case(models.Model):
-    uhid = models.CharField(max_length=64, unique=True)
+    patient = models.ForeignKey(Patient, on_delete=models.PROTECT, related_name="cases", null=True, blank=True)
+    uhid = models.CharField(max_length=64, blank=True, db_index=True)
     prefix = models.CharField(max_length=3, choices=CasePrefix.choices, blank=True, default="")
     first_name = models.CharField(max_length=100, default="")
     last_name = models.CharField(max_length=100, default="")
@@ -760,6 +879,7 @@ class Case(models.Model):
     class Meta:
         ordering = ["-updated_at"]
         indexes = [
+            models.Index(fields=["patient"]),
             models.Index(fields=["first_name", "last_name"]),
             models.Index(fields=["patient_name"]),
         ]
@@ -772,6 +892,83 @@ class Case(models.Model):
     def full_name(self):
         prefix_label = self.get_prefix_display() if self.prefix else ""
         return " ".join(part for part in [prefix_label, self.identity_name] if part)
+
+    def sync_identity_from_patient(self):
+        if not self.patient_id:
+            return
+        self.uhid = self.patient.uhid
+        self.prefix = self.patient.prefix
+        self.first_name = self.patient.first_name
+        self.last_name = self.patient.last_name
+        self.patient_name = self.patient.patient_name or self.patient.full_name
+        self.gender = self.patient.gender
+        self.date_of_birth = self.patient.date_of_birth
+        self.place = self.patient.place
+        self.age = self.patient.age
+        self.phone_number = self.patient.phone_number
+        self.alternate_phone_number = self.patient.alternate_phone_number
+
+    def ensure_patient_link(self):
+        if self.patient_id:
+            return self.patient
+
+        normalized_uhid = " ".join((self.uhid or "").split()).upper()
+        if not normalized_uhid:
+            normalized_uhid = generate_temporary_patient_uhid()
+            self.uhid = normalized_uhid
+
+        patient_defaults = {
+            "prefix": self.prefix or "",
+            "first_name": self.first_name or "",
+            "last_name": self.last_name or "",
+            "gender": self.gender or "",
+            "date_of_birth": self.date_of_birth,
+            "place": self.place or "",
+            "age": self.age,
+            "phone_number": self.phone_number or "",
+            "alternate_phone_number": self.alternate_phone_number or "",
+            "created_by": self.created_by,
+            "is_temporary_id": is_temporary_patient_uhid(normalized_uhid),
+        }
+        patient, created = Patient.objects.get_or_create(uhid=normalized_uhid, defaults=patient_defaults)
+        if not created:
+            changed = False
+            if self.created_by_id and not patient.created_by_id:
+                patient.created_by = self.created_by
+                changed = True
+            for field_name, field_value in patient_defaults.items():
+                if field_name in {"created_by", "is_temporary_id"}:
+                    continue
+                existing_value = getattr(patient, field_name)
+                if field_value not in (None, "") and existing_value in (None, ""):
+                    setattr(patient, field_name, field_value)
+                    changed = True
+            next_temporary_flag = is_temporary_patient_uhid(normalized_uhid)
+            if patient.is_temporary_id != next_temporary_flag:
+                patient.is_temporary_id = next_temporary_flag
+                changed = True
+            if changed:
+                patient.full_clean()
+                patient.save()
+        self.patient = patient
+        return patient
+
+    def sync_patient_from_case(self):
+        if not self.patient_id:
+            return None
+        patient = self.patient
+        patient.uhid = self.uhid
+        patient.prefix = self.prefix
+        patient.first_name = self.first_name
+        patient.last_name = self.last_name
+        patient.patient_name = self.patient_name
+        patient.gender = self.gender
+        patient.date_of_birth = self.date_of_birth
+        patient.place = self.place
+        patient.age = self.age
+        patient.phone_number = self.phone_number
+        patient.alternate_phone_number = self.alternate_phone_number
+        return patient
 
     def _normalize_identity_fields(self):
         self.first_name = normalize_case_name(self.first_name)
@@ -790,6 +987,10 @@ class Case(models.Model):
             self.archived_by = None
 
     def clean(self):
+        if self.patient_id:
+            if getattr(self.patient, "is_merged", False):
+                raise ValidationError({"patient": "Merged patients cannot receive new cases."})
+            self.sync_identity_from_patient()
         phone_errors = {}
         if self.phone_number and (not self.phone_number.isdigit() or len(self.phone_number) != 10):
             phone_errors["phone_number"] = "Phone number must be exactly 10 digits."
@@ -797,13 +998,6 @@ class Case(models.Model):
             phone_errors["alternate_phone_number"] = "Alternate phone number must be exactly 10 digits."
         if phone_errors:
             raise ValidationError(phone_errors)
-
-        if self.status == CaseStatus.ACTIVE:
-            duplicate_qs = Case.objects.filter(uhid=self.uhid, status=CaseStatus.ACTIVE)
-            if self.pk:
-                duplicate_qs = duplicate_qs.exclude(pk=self.pk)
-            if duplicate_qs.exists():
-                raise ValidationError({"uhid": "No duplicate active cases are allowed for the same UHID."})
 
         valid_anc_reason_values = {value for value, _ in AncHighRiskReason.choices}
         raw_reasons = self.anc_high_risk_reasons or []
@@ -871,19 +1065,41 @@ class Case(models.Model):
             raise ValidationError({"review_date": "Medicine cases require a review date."})
 
     def save(self, *args, **kwargs):
-        tracked_name_fields = {"prefix", "first_name", "last_name", "patient_name"}
+        tracked_name_fields = {"prefix", "first_name", "last_name", "patient_name", "place"}
+        patient_mirror_fields = {
+            "uhid",
+            "prefix",
+            "first_name",
+            "last_name",
+            "patient_name",
+            "gender",
+            "date_of_birth",
+            "place",
+            "age",
+            "phone_number",
+            "alternate_phone_number",
+        }
         update_fields = kwargs.get("update_fields")
         should_sync_names = update_fields is None
+        should_push_identity_to_patient = update_fields is None
 
         if update_fields is not None:
             update_fields = set(update_fields)
             should_sync_names = bool(tracked_name_fields & update_fields)
+            should_push_identity_to_patient = bool(patient_mirror_fields & update_fields)
+            if self.patient_id and should_push_identity_to_patient:
+                update_fields.update(patient_mirror_fields)
             if should_sync_names:
                 update_fields.update(tracked_name_fields)
-                kwargs["update_fields"] = tuple(sorted(update_fields))
+            kwargs["update_fields"] = tuple(sorted(update_fields))
 
+        self.ensure_patient_link()
         if should_sync_names:
             self._normalize_identity_fields()
+        if self.patient_id and should_push_identity_to_patient:
+            patient = self.sync_patient_from_case()
+            patient.save()
+            self.sync_identity_from_patient()
         super().save(*args, **kwargs)
 
     @property

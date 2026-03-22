@@ -19,6 +19,10 @@
 
         <div class="case-detail-meta-row">
           <span class="case-detail-uhid">UHID. {{ case.uhid }}</span>
+          {% if patient_detail_url %}
+            <span class="case-detail-meta-sep" aria-hidden="true"></span>
+            <a class="case-detail-meta-item" href="{{ patient_detail_url }}">View Patient</a>
+          {% endif %}
 
           {% if case.gender %}
             <span class="case-detail-meta-sep" aria-hidden="true"></span>
@@ -115,6 +119,29 @@
         <svg class="case-detail-icon" aria-hidden="true"><use href="#case-detail-icon-logs"></use></svg>
         <span>Logs</span>
       </a>
+      {% if patient_detail_url %}
+        <a class="btn btn-outline-secondary case-detail-action" href="{{ patient_detail_url }}">
+          <span>Patient</span>
+        </a>
+      {% endif %}
+      {% if new_case_for_patient_url %}
+        <a class="btn btn-outline-secondary case-detail-action" href="{{ new_case_for_patient_url }}">
+          <span>New Case</span>
+        </a>
+      {% endif %}
     </div>
+
+    {% if other_patient_cases %}
+      <div class="mt-3">
+        <div class="small text-muted mb-2">Other cases for this patient</div>
+        <div class="d-flex flex-wrap gap-2">
+          {% for sibling_case in other_patient_cases %}
+            <a class="btn btn-sm btn-outline-secondary" href="{% url 'patients:case_detail' sibling_case.pk %}">
+              {{ sibling_case.category.name }} · {{ sibling_case.get_status_display }}
+            </a>
+          {% endfor %}
+        </div>
+      </div>
+    {% endif %}
   </div>
 </section>

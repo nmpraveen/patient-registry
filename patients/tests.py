@@ -5,7 +5,7 @@ import hashlib
 import json
 import tempfile
 import zipfile
-from datetime import datetime, time as dt_time, timedelta
+from datetime import date, datetime, time as dt_time, timedelta
 from decimal import Decimal
 from pathlib import Path
 from unittest.mock import patch
@@ -46,6 +46,7 @@ from .models import (
     PatientDataBackupSchedule,
     PatientDataBackupStatus,
     PatientDataBackupTrigger,
+    Patient,
     QUICK_ENTRY_DETAILS_TASK_TITLE,
     RCH_REMINDER_INTERVAL_DAYS,
     RCH_REMINDER_TASK_TITLE,
@@ -1329,40 +1330,15 @@ class MedtrackViewTests(TestCase):
 
         self.assertEqual(response.status_code, 403)
 
-    def test_quick_case_create_view_hides_subcategory_until_category_has_options(self):
+    def test_quick_case_create_redirects_to_new_case_temp_patient_flow(self):
         self.client.force_login(self.user)
 
         response = self.client.get(reverse("patients:case_quick_create"))
-        response_text = response.content.decode()
 
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'name="subcategory"')
-        self.assertContains(response, 'name="prefix"')
-        self.assertContains(response, "data-quick-entry-subcategory-wrapper")
-        self.assertContains(response, '"help_text": "Optional for quick entry. Choose the surgical specialty if known."')
-        self.assertRegex(response_text, r"data-quick-entry-subcategory-wrapper\s+hidden")
-        self.assertNotContains(response, "Only used for Surgery or Medicine.")
-
-    def test_quick_case_create_invalid_surgery_submission_keeps_subcategory_visible(self):
-        self.client.force_login(self.user)
-
-        response = self.client.post(
-            reverse("patients:case_quick_create"),
-            {
-                "prefix": CasePrefix.MS,
-                "first_name": "Visible",
-                "age": "31",
-                "gender": Gender.FEMALE,
-                "category": self.surgery.id,
-                "review_date": "",
-                "diagnosis": "",
-            },
+        self.assertRedirects(
+            response,
+            f"{reverse('patients:case_create')}?patient_mode=new&temporary=1",
         )
-        response_text = response.content.decode()
-
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Optional for quick entry. Choose the surgical specialty if known.")
-        self.assertNotRegex(response_text, r"data-quick-entry-subcategory-wrapper\s+hidden")
 
     def test_case_create_view_is_forbidden_without_case_create_capability(self):
         self.login_as_role("Nurse", username="nurse_case_create")
@@ -1371,131 +1347,302 @@ class MedtrackViewTests(TestCase):
 
         self.assertEqual(response.status_code, 403)
 
-    def test_quick_case_create_saves_minimal_case_and_tasks(self):
-        review_date = timezone.localdate() + timedelta(days=7)
+    def test_case_create_with_temporary_patient_id_creates_patient_and_case(self):
         self.client.force_login(self.user)
 
         response = self.client.post(
-            reverse("patients:case_quick_create"),
+            reverse("patients:case_create"),
             {
+                "patient_mode": "new",
+                "use_temporary_uhid": "on",
                 "prefix": CasePrefix.MRS,
                 "first_name": "Lalitha",
+                "last_name": "Temp",
                 "age": "42",
                 "gender": Gender.FEMALE,
+                "phone_number": "9555555509",
                 "diagnosis": "Thyroid swelling",
                 "category": self.surgery.id,
-                "review_date": review_date.isoformat(),
+                "subcategory": CaseSubcategory.GENERAL_SURGERY,
+                "surgical_pathway": SurgicalPathway.SURVEILLANCE,
+                "review_date": (timezone.localdate() + timedelta(days=7)).isoformat(),
             },
         )
 
         self.assertEqual(response.status_code, 302)
-        case = Case.objects.get(metadata__entry_mode="quick_entry", first_name="Lalitha")
-        self.assertRegex(case.uhid, r"^QE-\d{8}-\d{3}$")
+        case = Case.objects.get(first_name="Lalitha", diagnosis="Thyroid swelling")
+        self.assertRegex(case.uhid, r"^TMP-\d{8}-\d{3}$")
         self.assertEqual(case.prefix, CasePrefix.MRS)
-        self.assertEqual(case.patient_name, "Mrs. Lalitha")
-        self.assertEqual(case.last_name, "")
-        self.assertEqual(case.phone_number, "")
-        self.assertEqual(case.alternate_phone_number, "")
+        self.assertEqual(case.patient_name, "Mrs. Lalitha Temp")
         self.assertEqual(case.status, CaseStatus.ACTIVE)
-        self.assertEqual(case.review_date, review_date)
-        self.assertEqual(case.subcategory, "")
-        self.assertEqual(case.metadata["entry_mode"], "quick_entry")
-        self.assertTrue(case.metadata["details_pending"])
-        self.assertTrue(case.tasks.filter(title=QUICK_ENTRY_DETAILS_TASK_TITLE, due_date=review_date).exists())
+        self.assertTrue(case.patient.is_temporary_id)
+        self.assertEqual(case.patient.uhid, case.uhid)
+        self.assertEqual(case.patient.first_name, "Lalitha")
         self.assertTrue(case.tasks.filter(title="Surveillance Review").exists())
-        self.assertTrue(
-            case.activity_logs.filter(note__icontains="Quick entry created with 1 starter task(s)").exists()
-        )
 
-    def test_quick_case_create_accepts_optional_subcategory_when_provided(self):
-        review_date = timezone.localdate() + timedelta(days=8)
+    def test_case_create_existing_patient_mode_creates_second_case_for_same_patient(self):
+        existing_case = Case.objects.create(
+            uhid="UH-MULTI-001",
+            prefix=CasePrefix.MR,
+            first_name="Shared",
+            last_name="Patient",
+            phone_number="9876500450",
+            age=29,
+            category=self.surgery,
+            subcategory=CaseSubcategory.GENERAL_SURGERY,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=10),
+            created_by=self.user,
+        )
         self.client.force_login(self.user)
 
         response = self.client.post(
-            reverse("patients:case_quick_create"),
+            reverse("patients:case_create"),
             {
-                "prefix": CasePrefix.MS,
-                "first_name": "Optional",
-                "age": "39",
-                "gender": Gender.FEMALE,
-                "category": self.surgery.id,
-                "subcategory": CaseSubcategory.ORTHOPEDICS,
-                "review_date": review_date.isoformat(),
-                "diagnosis": "Quick entry with known specialty",
+                "patient_mode": "existing",
+                "selected_patient": existing_case.patient_id,
+                "uhid": existing_case.patient.uhid,
+                "prefix": existing_case.patient.prefix,
+                "first_name": existing_case.patient.first_name,
+                "last_name": existing_case.patient.last_name,
+                "gender": existing_case.patient.gender,
+                "age": existing_case.patient.age or "29",
+                "phone_number": existing_case.patient.phone_number,
+                "alternate_phone_number": existing_case.patient.alternate_phone_number,
+                "place": existing_case.patient.place,
+                "category": self.medicine.id,
+                "subcategory": CaseSubcategory.GENERAL_MEDICINE,
+                "status": CaseStatus.ACTIVE,
+                "diagnosis": "Second issue",
+                "review_date": (timezone.localdate() + timedelta(days=11)).isoformat(),
             },
         )
 
         self.assertEqual(response.status_code, 302)
-        case = Case.objects.get(metadata__entry_mode="quick_entry", first_name="Optional")
-        self.assertEqual(case.subcategory, CaseSubcategory.ORTHOPEDICS)
+        existing_case.patient.refresh_from_db()
+        self.assertEqual(existing_case.patient.cases.count(), 2)
+        self.assertTrue(existing_case.patient.cases.filter(diagnosis="Second issue").exists())
 
-    def test_quick_case_create_allows_anc_without_full_anc_fields(self):
+    def test_case_create_existing_patient_mode_allows_hidden_identity_fields_to_be_omitted(self):
+        existing_case = Case.objects.create(
+            uhid="UH-MULTI-002",
+            prefix="",
+            first_name="Shared",
+            last_name="Patient",
+            phone_number="9876500451",
+            age=31,
+            category=self.surgery,
+            subcategory=CaseSubcategory.GENERAL_SURGERY,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=9),
+            created_by=self.user,
+        )
         self.client.force_login(self.user)
 
         response = self.client.post(
-            reverse("patients:case_quick_create"),
+            reverse("patients:case_create"),
             {
-                "prefix": CasePrefix.MRS,
-                "first_name": "Revathi",
-                "age": "24",
-                "gender": Gender.FEMALE,
-                "diagnosis": "ANC follow-up pending full details",
-                "category": self.anc.id,
-                "review_date": (timezone.localdate() + timedelta(days=4)).isoformat(),
+                "patient_mode": "existing",
+                "selected_patient": existing_case.patient_id,
+                "category": self.medicine.id,
+                "subcategory": CaseSubcategory.GENERAL_MEDICINE,
+                "status": CaseStatus.ACTIVE,
+                "diagnosis": "Hidden identity submit",
+                "review_date": (timezone.localdate() + timedelta(days=14)).isoformat(),
             },
         )
 
         self.assertEqual(response.status_code, 302)
-        case = Case.objects.get(first_name="Revathi", metadata__entry_mode="quick_entry")
-        self.assertEqual(case.category, self.anc)
-        self.assertTrue(case.tasks.filter(title=QUICK_ENTRY_DETAILS_TASK_TITLE).exists())
-        self.assertGreater(case.tasks.count(), 1)
-        self.assertFalse(case.tasks.filter(title=RCH_REMINDER_TASK_TITLE).exists())
+        created_case = Case.objects.get(diagnosis="Hidden identity submit")
+        self.assertEqual(created_case.patient_id, existing_case.patient_id)
+        self.assertEqual(created_case.first_name, existing_case.patient.first_name)
+        self.assertEqual(created_case.last_name, existing_case.patient.last_name)
+        self.assertEqual(created_case.phone_number, existing_case.patient.phone_number)
+        self.assertEqual(created_case.prefix, "")
 
-    def test_quick_case_create_invalid_submission_shows_inline_errors(self):
+    def test_patient_search_requires_three_characters_and_returns_identity_payload(self):
+        existing_case = Case.objects.create(
+            uhid="UH-SEARCH-001",
+            prefix=CasePrefix.MRS,
+            first_name="Shanthi",
+            last_name="Devi",
+            phone_number="9876501450",
+            alternate_phone_number="9876501451",
+            place="Salem",
+            gender=Gender.FEMALE,
+            date_of_birth=date(1991, 5, 14),
+            age=33,
+            category=self.surgery,
+            subcategory=CaseSubcategory.GENERAL_SURGERY,
+            status=CaseStatus.ACTIVE,
+            diagnosis="Thyroid swelling",
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=10),
+            created_by=self.user,
+        )
+        self.client.force_login(self.user)
+
+        short_response = self.client.get(reverse("patients:patient_search"), {"q": "Sh"})
+        self.assertEqual(short_response.status_code, 200)
+        self.assertEqual(short_response.json()["results"], [])
+
+        response = self.client.get(reverse("patients:patient_search"), {"q": "Sha"})
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()["results"]
+        self.assertEqual(len(payload), 1)
+        self.assertEqual(payload[0]["id"], existing_case.patient_id)
+        self.assertEqual(payload[0]["prefix"], CasePrefix.MRS)
+        self.assertEqual(payload[0]["first_name"], "Shanthi")
+        self.assertEqual(payload[0]["last_name"], "Devi")
+        self.assertEqual(payload[0]["gender"], Gender.FEMALE)
+        self.assertEqual(payload[0]["date_of_birth"], "1991-05-14")
+        self.assertEqual(payload[0]["phone_number"], "9876501450")
+        self.assertEqual(payload[0]["alternate_phone_number"], "9876501451")
+
+    def test_case_create_identity_check_reports_existing_patient_for_matching_uhid(self):
+        case = Case.objects.create(
+            uhid="UH-DUPLICATE",
+            prefix=CasePrefix.MR,
+            first_name="Existing",
+            last_name="Patient",
+            phone_number="9876500451",
+            category=self.surgery,
+            subcategory=CaseSubcategory.GENERAL_SURGERY,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=10),
+            created_by=self.user,
+        )
         self.client.force_login(self.user)
 
         response = self.client.post(
-            reverse("patients:case_quick_create"),
+            reverse("patients:case_create_identity_check"),
             {
-                "prefix": "",
-                "first_name": "",
-                "age": "",
-                "gender": "",
-                "diagnosis": "",
-                "category": "",
-                "review_date": "",
+                "patient_mode": "new",
+                "uhid": case.uhid,
+                "phone_number": case.phone_number,
             },
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "invalid-feedback")
-        self.assertContains(response, "This field is required.")
-        self.assertContains(response, 'name="prefix"')
+        self.assertContains(response, "Existing patient uses this UHID")
+        self.assertContains(response, "Create new case for this patient")
 
-    def test_quick_case_create_requires_prefix(self):
+    def test_patient_list_detail_and_edit_routes_render(self):
+        case = Case.objects.create(
+            uhid="UH-PATIENT-ROUTE-001",
+            prefix=CasePrefix.MS,
+            first_name="Route",
+            last_name="Patient",
+            age=31,
+            phone_number="9876500452",
+            category=self.surgery,
+            subcategory=CaseSubcategory.GENERAL_SURGERY,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=9),
+            created_by=self.user,
+        )
         self.client.force_login(self.user)
 
+        list_response = self.client.get(reverse("patients:patient_list"), {"q": "UH-PATIENT-ROUTE-001"})
+        detail_response = self.client.get(reverse("patients:patient_detail", kwargs={"pk": case.patient_id}))
+        edit_response = self.client.get(reverse("patients:patient_edit", kwargs={"pk": case.patient_id}))
+
+        self.assertEqual(list_response.status_code, 200)
+        self.assertContains(list_response, "UH-PATIENT-ROUTE-001")
+        self.assertEqual(detail_response.status_code, 200)
+        self.assertContains(detail_response, "Add New Case")
+        self.assertEqual(edit_response.status_code, 200)
+        self.assertContains(edit_response, "Edit Patient")
+
+    def test_patient_merge_reassigns_cases_and_marks_source_patient(self):
+        source_case = Case.objects.create(
+            uhid="UH-MERGE-SOURCE",
+            prefix=CasePrefix.MR,
+            first_name="Source",
+            last_name="Patient",
+            age=35,
+            phone_number="9876500453",
+            category=self.surgery,
+            subcategory=CaseSubcategory.GENERAL_SURGERY,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=8),
+            created_by=self.user,
+        )
+        target_case = Case.objects.create(
+            uhid="UH-MERGE-TARGET",
+            prefix=CasePrefix.MRS,
+            first_name="Target",
+            last_name="Patient",
+            age=36,
+            phone_number="9876500454",
+            category=self.medicine,
+            subcategory=CaseSubcategory.GENERAL_MEDICINE,
+            status=CaseStatus.ACTIVE,
+            review_date=timezone.localdate() + timedelta(days=12),
+            created_by=self.user,
+        )
+        source_patient_id = source_case.patient_id
+        self.login_as_admin()
+
         response = self.client.post(
-            reverse("patients:case_quick_create"),
-            {
-                "prefix": "",
-                "first_name": "NoPrefix",
-                "age": "26",
-                "gender": Gender.FEMALE,
-                "diagnosis": "Prefix missing",
-                "category": self.surgery.id,
-                "review_date": (timezone.localdate() + timedelta(days=5)).isoformat(),
-            },
+            reverse("patients:patient_merge", kwargs={"pk": source_case.patient_id}),
+            {"target_patient": target_case.patient_id},
         )
 
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "This field is required.")
-        self.assertFalse(Case.objects.filter(first_name="NoPrefix").exists())
+        self.assertEqual(response.status_code, 302)
+        source_case.refresh_from_db()
+        target_case.patient.refresh_from_db()
+        source_patient = Patient.objects.get(pk=source_patient_id)
+        self.assertEqual(source_case.patient_id, target_case.patient_id)
+        self.assertEqual(source_case.uhid, target_case.patient.uhid)
+        self.assertEqual(source_patient.merged_into_id, target_case.patient_id)
+        self.assertTrue(source_case.activity_logs.filter(note__icontains="Patient record merged").exists())
+
+    def test_patient_merge_is_forbidden_without_permission(self):
+        source_case = Case.objects.create(
+            uhid="UH-MERGE-FORBID-SOURCE",
+            first_name="Source",
+            last_name="Patient",
+            age=33,
+            phone_number="9876500455",
+            category=self.surgery,
+            subcategory=CaseSubcategory.GENERAL_SURGERY,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=8),
+            created_by=self.user,
+        )
+        target_case = Case.objects.create(
+            uhid="UH-MERGE-FORBID-TARGET",
+            first_name="Target",
+            last_name="Patient",
+            age=34,
+            phone_number="9876500456",
+            category=self.surgery,
+            subcategory=CaseSubcategory.GENERAL_SURGERY,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=9),
+            created_by=self.user,
+        )
+        self.login_as_role("Nurse", username="nurse_patient_merge")
+
+        response = self.client.post(
+            reverse("patients:patient_merge", kwargs={"pk": source_case.patient_id}),
+            {"target_patient": target_case.patient_id},
+        )
+
+        self.assertEqual(response.status_code, 403)
 
     def test_quick_entry_cases_show_phone_pending_fallback_in_detail_and_list(self):
         case = Case.objects.create(
-            uhid="QE-20260318-001",
+            uhid="TMP-20260318-001",
             first_name="Pending",
             last_name="",
             age=32,
@@ -3259,13 +3406,15 @@ class MedtrackViewTests(TestCase):
         self.assertContains(response, "data-gpla-counter")
         self.assertFalse(Case.objects.filter(uhid="UH-ANC-GPLA-ZERO-INVALID").exists())
 
-    def test_case_create_duplicate_active_uhid_returns_inline_error(self):
+    def test_case_create_duplicate_uhid_requires_existing_patient_selection(self):
         Case.objects.create(
             uhid="UH-DUPLICATE",
+            prefix=CasePrefix.MR,
             first_name="Existing",
-            last_name="Case",
+            last_name="Patient",
             phone_number="9876500450",
             category=self.surgery,
+            subcategory=CaseSubcategory.GENERAL_SURGERY,
             status=CaseStatus.ACTIVE,
             surgical_pathway=SurgicalPathway.SURVEILLANCE,
             review_date=timezone.localdate() + timedelta(days=10),
@@ -3291,7 +3440,7 @@ class MedtrackViewTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "No duplicate active cases are allowed for the same UHID.")
+        self.assertContains(response, "Patient with this Uhid already exists.")
 
     def test_case_create_invalid_phone_numbers_return_inline_error(self):
         self.client.force_login(self.user)
@@ -4146,7 +4295,7 @@ class MedtrackViewTests(TestCase):
         self.create_bundle_case(uhid="UH-DUP-001", phone_number="9000000105")
         duplicate_bundle = self.rewrite_bundle(
             self.build_patient_bundle_bytes(),
-            payload_mutator=lambda payload: payload["cases"].append(dict(payload["cases"][0])),
+            payload_mutator=lambda payload: payload["patients"].append(dict(payload["patients"][0])),
         )
 
         with tempfile.TemporaryDirectory() as temp_dir, patch(
@@ -4163,7 +4312,7 @@ class MedtrackViewTests(TestCase):
             )
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "duplicate UHIDs")
+        self.assertContains(response, "duplicate patient definitions")
 
     def test_database_management_import_allows_same_name_patients_with_different_uhids(self):
         self.login_as_admin()
@@ -4211,7 +4360,7 @@ class MedtrackViewTests(TestCase):
         )
         bundle_bytes = self.rewrite_bundle(
             self.build_patient_bundle_bytes(),
-            payload_mutator=lambda payload: payload["cases"][0].update(
+            payload_mutator=lambda payload: payload["patients"][0].update(
                 {
                     "prefix": CasePrefix.MRS,
                     "first_name": "  FIRST   NAME  ",
@@ -4236,7 +4385,13 @@ class MedtrackViewTests(TestCase):
             )
 
         self.assertEqual(response.status_code, 200)
+        patient = Patient.objects.get(uhid="UH-NORM-001")
         case = Case.objects.get(uhid="UH-NORM-001")
+        self.assertEqual(patient.prefix, CasePrefix.MRS)
+        self.assertEqual(patient.first_name, "First Name")
+        self.assertEqual(patient.last_name, "Last Name")
+        self.assertEqual(patient.place, "Chennai")
+        self.assertEqual(patient.patient_name, "Mrs. First Name Last Name")
         self.assertEqual(case.prefix, CasePrefix.MRS)
         self.assertEqual(case.first_name, "First Name")
         self.assertEqual(case.last_name, "Last Name")
@@ -5090,8 +5245,9 @@ class MedtrackViewTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Existing case uses this UHID")
-        self.assertContains(response, "Phone number matches an existing case")
+        self.assertContains(response, "Existing patient uses this UHID")
+        self.assertContains(response, "Phone number matches an existing patient")
+        self.assertContains(response, reverse("patients:patient_detail", kwargs={"pk": existing_case.patient.pk}))
         self.assertContains(response, reverse("patients:case_detail", kwargs={"pk": existing_case.pk}))
 
     def test_case_create_identity_check_shows_both_phone_warnings_when_one_number_has_many_matches(self):
@@ -5135,8 +5291,9 @@ class MedtrackViewTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Phone number matches an existing case")
-        self.assertContains(response, "Alternate phone number matches an existing case")
+        self.assertContains(response, "Phone number matches an existing patient")
+        self.assertContains(response, "Alternate phone number matches an existing patient")
+        self.assertContains(response, reverse("patients:patient_detail", kwargs={"pk": alternate_match.patient.pk}))
         self.assertContains(response, reverse("patients:case_detail", kwargs={"pk": alternate_match.pk}))
 
     def test_dashboard_recent_panel_uses_inline_detail_container_without_modal_markup(self):
@@ -5703,7 +5860,8 @@ class MedtrackViewTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertNotContains(response, "Existing case uses this UHID")
-        self.assertContains(response, "Phone number matches an existing case")
+        self.assertNotContains(response, "Existing patient uses this UHID")
+        self.assertContains(response, "Phone number matches an existing patient")
         self.assertContains(response, reverse("patients:case_detail", kwargs={"pk": other_case.pk}))
         self.assertNotContains(response, reverse("patients:case_detail", kwargs={"pk": case.pk}))
 
@@ -7101,7 +7259,7 @@ class MedtrackViewTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        ordered_ids = [item["id"] for item in response.json()["results"]]
+        ordered_ids = [item["id"] for item in response.json()["results"] if item.get("record_type") == "case"]
         self.assertEqual(ordered_ids[:4], [direct_case.id, case_notes_case.id, activity_case.id, call_case.id])
 
     def test_universal_case_search_applies_multiple_category_filters(self):
@@ -7150,7 +7308,7 @@ class MedtrackViewTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        result_ids = {item["id"] for item in response.json()["results"]}
+        result_ids = {item["id"] for item in response.json()["results"] if item.get("record_type") == "case"}
         self.assertIn(anc_case.id, result_ids)
         self.assertIn(surgical_case.id, result_ids)
         self.assertEqual(len(result_ids), 2)
@@ -7196,10 +7354,12 @@ class MedtrackViewTests(TestCase):
         response = self.client.get(reverse("patients:dashboard"))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "View all results")
+        self.assertContains(response, "View patients")
+        self.assertContains(response, "View cases")
+        self.assertContains(response, reverse("patients:patient_list"))
         self.assertContains(response, reverse("patients:case_list"))
         self.assertContains(response, "category_group")
-        self.assertContains(response, "diagnosis / place / case notes / call notes")
+        self.assertContains(response, "Search patient identity, diagnosis, place, and notes")
         self.assertContains(response, "data-search-category-toggle")
         self.assertContains(response, "data-search-category-menu")
         self.assertContains(response, "data-search-selected-tags")
@@ -7216,6 +7376,7 @@ class PatientDataBundleTests(TestCase):
         ensure_default_departments()
         self.user = get_user_model().objects.create_user(username="bundle-owner", password="strong-password-123")
         self.surgery = DepartmentConfig.objects.get(name="Surgery")
+        self.medicine = DepartmentConfig.objects.get(name="Medicine")
 
     def create_case(self, *, uhid, phone_number):
         return Case.objects.create(
@@ -7245,14 +7406,16 @@ class PatientDataBundleTests(TestCase):
             payload = json.loads(patient_data_bytes.decode("utf-8"))
         self.assertEqual(manifest["counts"], database_bundle.compute_payload_counts(payload))
         self.assertEqual(manifest["patient_data_sha256"], hashlib.sha256(patient_data_bytes).hexdigest())
-        self.assertEqual(payload["cases"][0]["uhid"], "UH-BUNDLE-001")
+        self.assertEqual(payload["patients"][0]["uhid"], "UH-BUNDLE-001")
+        self.assertEqual(payload["cases"][0]["patient_uhid"], "UH-BUNDLE-001")
+        self.assertEqual(manifest["counts"]["patients"], 1)
 
     def test_patient_data_bundle_round_trips_subcategory_and_accepts_legacy_payloads_without_it(self):
         Case.objects.create(
-            uhid="UH-BUNDLE-SUBCATEGORY",
+            uhid="UH-BUNDLE-SHARED",
             prefix=CasePrefix.MRS,
             first_name="Bundle",
-            last_name="Subcategory",
+            last_name="Shared",
             phone_number="9555555599",
             category=self.surgery,
             subcategory=CaseSubcategory.ORTHOPEDICS,
@@ -7262,14 +7425,25 @@ class PatientDataBundleTests(TestCase):
             created_by=self.user,
         )
         Case.objects.create(
-            uhid="QE-BUNDLE-001",
+            uhid="UH-BUNDLE-SHARED",
+            prefix=CasePrefix.MR,
+            first_name="Bundle",
+            last_name="Shared",
+            phone_number="9555555599",
+            category=self.medicine,
+            status=CaseStatus.ACTIVE,
+            review_frequency="MONTHLY",
+            review_date=timezone.localdate() + timedelta(days=11),
+            diagnosis="Shared patient follow-up",
+            created_by=self.user,
+        )
+        Case.objects.create(
+            uhid="TMP-20260318-001",
             prefix=CasePrefix.MS,
             first_name="Quick",
-            last_name="",
+            last_name="Temp",
             phone_number="",
-            alternate_phone_number="",
             category=self.surgery,
-            subcategory="",
             status=CaseStatus.ACTIVE,
             review_date=timezone.localdate() + timedelta(days=5),
             diagnosis="Quick entry pending details",
@@ -7279,24 +7453,32 @@ class PatientDataBundleTests(TestCase):
 
         archive_bytes, _, _ = database_bundle.create_bundle_archive()
         import_result = database_bundle.import_bundle_bytes(archive_bytes)
-        self.assertEqual(import_result["counts"]["cases"], 2)
-        restored_case = Case.objects.get(uhid="UH-BUNDLE-SUBCATEGORY")
-        self.assertEqual(restored_case.prefix, CasePrefix.MRS)
-        self.assertEqual(restored_case.subcategory, CaseSubcategory.ORTHOPEDICS)
-        quick_entry_case = Case.objects.get(uhid="QE-BUNDLE-001")
+        self.assertEqual(import_result["counts"]["patients"], 2)
+        self.assertEqual(import_result["counts"]["cases"], 3)
+        shared_cases = Case.objects.filter(uhid="UH-BUNDLE-SHARED")
+        self.assertEqual(shared_cases.count(), 2)
+        self.assertTrue(shared_cases.filter(subcategory=CaseSubcategory.ORTHOPEDICS).exists())
+        self.assertTrue(shared_cases.filter(category__name="Medicine").exists())
+        quick_entry_case = Case.objects.get(uhid="TMP-20260318-001")
         self.assertEqual(quick_entry_case.prefix, CasePrefix.MS)
-        self.assertEqual(quick_entry_case.subcategory, "")
+        self.assertTrue(quick_entry_case.patient.is_temporary_id)
 
         with zipfile.ZipFile(io.BytesIO(archive_bytes), "r") as bundle_zip:
             payload = json.loads(bundle_zip.read(database_bundle.PATIENT_DATA_FILENAME).decode("utf-8"))
             manifest = json.loads(bundle_zip.read(database_bundle.MANIFEST_FILENAME).decode("utf-8"))
 
+        payload.pop("patients", None)
         for case_payload in payload["cases"]:
-            if case_payload.get("uhid") == "UH-BUNDLE-SUBCATEGORY":
+            if case_payload.get("uhid") == "UH-BUNDLE-SHARED":
                 case_payload.pop("subcategory", None)
             case_payload.pop("prefix", None)
+            case_payload.pop("patient_uhid", None)
+            case_payload.pop("patient_name", None)
+            case_payload.pop("bundle_id", None)
         patient_data_bytes = json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False).encode("utf-8")
+        manifest["schema_version"] = 1
         manifest["counts"] = database_bundle.compute_payload_counts(payload)
+        manifest["counts"].pop("patients", None)
         manifest["patient_data_sha256"] = hashlib.sha256(patient_data_bytes).hexdigest()
 
         legacy_archive = io.BytesIO()
@@ -7308,12 +7490,14 @@ class PatientDataBundleTests(TestCase):
             )
 
         database_bundle.import_bundle_bytes(legacy_archive.getvalue())
-        legacy_case = Case.objects.get(uhid="UH-BUNDLE-SUBCATEGORY")
-        self.assertEqual(legacy_case.prefix, "")
-        self.assertEqual(legacy_case.subcategory, CaseSubcategory.GENERAL_SURGERY)
-        legacy_quick_entry_case = Case.objects.get(uhid="QE-BUNDLE-001")
+        legacy_shared_cases = Case.objects.filter(uhid="UH-BUNDLE-SHARED")
+        self.assertEqual(legacy_shared_cases.count(), 2)
+        self.assertTrue(legacy_shared_cases.filter(subcategory=CaseSubcategory.GENERAL_SURGERY).exists())
+        self.assertTrue(legacy_shared_cases.filter(category__name="Medicine").exists())
+        legacy_quick_entry_case = Case.objects.get(uhid="TMP-20260318-001")
         self.assertEqual(legacy_quick_entry_case.prefix, "")
-        self.assertEqual(legacy_quick_entry_case.subcategory, "")
+        self.assertTrue(legacy_quick_entry_case.patient.is_temporary_id)
+        self.assertEqual(Patient.objects.count(), 2)
 
     def test_backup_patient_data_command_prunes_old_backups(self):
         self.create_case(uhid="UH-BUNDLE-002", phone_number="9555555502")
@@ -7352,7 +7536,8 @@ class PatientDataBundleTests(TestCase):
 class SeedMockDataCommandTests(TestCase):
     def _seeded_vitals_snapshot(self):
         snapshot = {}
-        for case in Case.objects.filter(metadata__source="seed_mock_data").order_by("uhid"):
+        for case in Case.objects.filter(metadata__source="seed_mock_data").order_by("pk"):
+            key = case.metadata.get("seed_case_key") or f"{case.uhid}:{case.pk}"
             rows = []
             for vital in case.vitals.order_by("recorded_at", "id"):
                 rows.append(
@@ -7366,7 +7551,7 @@ class SeedMockDataCommandTests(TestCase):
                         str(vital.hemoglobin) if vital.hemoglobin is not None else None,
                     )
                 )
-            snapshot[case.uhid] = rows
+            snapshot[key] = rows
         return snapshot
 
     def test_seed_mock_data_creates_deterministic_scenarios_and_related_records(self):
@@ -7381,15 +7566,24 @@ class SeedMockDataCommandTests(TestCase):
 
         seeded_cases = Case.objects.filter(metadata__source="seed_mock_data").order_by("uhid")
         self.assertEqual(seeded_cases.count(), 30)
+        seeded_patients = Patient.objects.filter(cases__metadata__source="seed_mock_data").distinct()
+        self.assertTrue(seeded_patients.exists())
+        self.assertTrue(seeded_patients.filter(is_temporary_id=True).exists())
+        patient_case_counts = {}
 
         for case in seeded_cases:
+            patient_case_counts[case.patient_id] = patient_case_counts.get(case.patient_id, 0) + 1
+            self.assertIsNotNone(case.patient_id)
+            self.assertEqual(case.patient.uhid, case.uhid)
             self.assertTrue(case.prefix)
             self.assertTrue(case.gender)
             self.assertIsNotNone(case.age)
             self.assertTrue(case.diagnosis)
             self.assertTrue(case.metadata.get("seed_scenario"))
+            self.assertTrue(case.metadata.get("seed_case_key"))
             if case.metadata.get("entry_mode") == "quick_entry":
-                self.assertRegex(case.uhid, r"^QE-\d{8}-\d{3}$")
+                self.assertRegex(case.uhid, r"^TMP-\d{8}-\d{3}$")
+                self.assertTrue(case.patient.is_temporary_id)
                 self.assertEqual(case.phone_number, "")
                 self.assertEqual(case.alternate_phone_number, "")
                 self.assertEqual(case.place, "")
@@ -7401,6 +7595,8 @@ class SeedMockDataCommandTests(TestCase):
             self.assertIsNotNone(case.date_of_birth)
             self.assertTrue(case.place)
             self.assertTrue(case.referred_by)
+
+        self.assertTrue(any(count > 1 for count in patient_case_counts.values()))
 
         anc_high_risk = seeded_cases.get(metadata__seed_scenario="anc_high_risk")
         self.assertTrue(anc_high_risk.high_risk)
@@ -7433,6 +7629,7 @@ class SeedMockDataCommandTests(TestCase):
         self.assertTrue(quick_entry_case.metadata.get("details_pending"))
         self.assertEqual(quick_entry_case.subcategory, "")
         self.assertTrue(quick_entry_case.tasks.filter(title=QUICK_ENTRY_DETAILS_TASK_TITLE).exists())
+        self.assertTrue(quick_entry_case.patient.is_temporary_id)
 
         self.assertTrue(Task.objects.filter(case=anc_high_risk, status=TaskStatus.AWAITING_REPORTS).exists())
         self.assertTrue(Task.objects.filter(case=anc_high_risk, status=TaskStatus.COMPLETED).exists())
@@ -7447,6 +7644,7 @@ class SeedMockDataCommandTests(TestCase):
         call_command("seed_mock_data", "--profile", "smoke", "--reset")
 
         self.assertEqual(Case.objects.filter(metadata__source="seed_mock_data").count(), 12)
+        self.assertGreater(Patient.objects.filter(cases__metadata__source="seed_mock_data").distinct().count(), 0)
 
     def test_seed_mock_data_reset_keeps_non_seeded_cases(self):
         ensure_default_departments()
@@ -7475,6 +7673,7 @@ class SeedMockDataCommandTests(TestCase):
         self.assertTrue(seeded_ids)
         self.assertTrue(CallLog.objects.filter(case_id__in=seeded_ids).exists())
         self.assertTrue(CaseActivityLog.objects.filter(case_id__in=seeded_ids).exists())
+        self.assertTrue(Patient.objects.filter(cases__metadata__source="seed_mock_data").exists())
 
         call_command("seed_mock_data", "--count", "2", "--reset")
 
@@ -7483,6 +7682,8 @@ class SeedMockDataCommandTests(TestCase):
         self.assertTrue(CallLog.objects.filter(case=non_seeded_case).exists())
         self.assertTrue(CaseActivityLog.objects.filter(case=non_seeded_case).exists())
         self.assertEqual(Case.objects.filter(metadata__source="seed_mock_data").count(), 2)
+        self.assertTrue(Patient.objects.filter(cases__metadata__source="seed_mock_data").exists())
+        self.assertFalse(Patient.objects.filter(created_by__username="demo_seed", cases__isnull=True).exists())
 
     @patch("patients.management.commands.seed_mock_data.sys.stdin.isatty", return_value=False)
     def test_seed_mock_data_reset_all_requires_yes_flag_in_non_interactive_mode(self, _isatty_mock):
@@ -7552,6 +7753,7 @@ class SeedMockDataCommandTests(TestCase):
 
         self.assertFalse(Case.objects.filter(uhid="UH-RESET-ALL-003").exists())
         self.assertEqual(Case.objects.filter(metadata__source="seed_mock_data").count(), 2)
+        self.assertEqual(Patient.objects.filter(cases__metadata__source="seed_mock_data").distinct().count(), 2)
 
     def test_seed_mock_data_vitals_density_is_profile_based_for_all_seeded_cases(self):
         call_command("seed_mock_data", "--profile", "smoke", "--count", "4", "--include-vitals", "--reset")

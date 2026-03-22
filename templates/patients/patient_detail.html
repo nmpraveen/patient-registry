@@ -1,0 +1,84 @@
+{% extends 'base.html' %}
+{% block title %}Patient {{ patient.uhid }} | MEDTRACK{% endblock %}
+{% block content %}
+  <section class="card border-0 shadow-sm mb-3">
+    <div class="card-body">
+      <div class="d-flex flex-column flex-lg-row justify-content-between gap-3">
+        <div>
+          <p class="text-muted mb-1">Patient</p>
+          <h1 class="h4 mb-2">{{ patient.full_name|default:patient.patient_name }}</h1>
+          <div class="small text-muted d-flex flex-wrap gap-3">
+            <span>UHID {{ patient.uhid }}</span>
+            {% if patient.phone_number %}<span>{{ patient.phone_number }}</span>{% endif %}
+            {% if patient.place %}<span>{{ patient.place }}</span>{% endif %}
+            {% if patient.date_of_birth %}<span>DOB {{ patient.date_of_birth|date:"d M Y" }}</span>{% endif %}
+            {% if patient.is_temporary_id %}<span>Temporary ID</span>{% endif %}
+          </div>
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+          <a class="btn btn-primary" href="{{ new_case_url }}">Add New Case</a>
+          {% if can_edit_patient %}
+            <a class="btn btn-outline-secondary" href="{{ patient_edit_url }}">Edit Patient</a>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </section>
+
+  {% if can_patient_merge %}
+    <section class="card border-0 shadow-sm mb-3">
+      <div class="card-body">
+        <h2 class="h6 mb-2">Merge Temporary / Duplicate Patient</h2>
+        <form method="post" action="{% url 'patients:patient_merge' patient.pk %}" class="row g-2 align-items-end">
+          {% csrf_token %}
+          <div class="col-12 col-lg-6">
+            <label class="form-label" for="{{ merge_form.target_patient.id_for_label }}">{{ merge_form.target_patient.label }}</label>
+            {{ merge_form.target_patient }}
+          </div>
+          <div class="col-12 col-lg-auto">
+            <button class="btn btn-outline-danger" type="submit">Merge Patient</button>
+          </div>
+        </form>
+      </div>
+    </section>
+  {% endif %}
+
+  <section class="card border-0 shadow-sm">
+    <div class="card-body">
+      <h2 class="h5 mb-3">Cases</h2>
+      {% if patient_cases %}
+        <div class="table-responsive">
+          <table class="table align-middle">
+            <thead>
+              <tr>
+                <th>Category</th>
+                <th>Diagnosis</th>
+                <th>Status</th>
+                <th>Open Tasks</th>
+                <th>Updated</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for case in patient_cases %}
+                <tr>
+                  <td>{{ case.category.name }}</td>
+                  <td>{{ case.diagnosis|default:case.category.name }}</td>
+                  <td>{{ case.get_status_display }}</td>
+                  <td>{{ case.open_task_count }}</td>
+                  <td>{{ case.updated_at|date:"d M Y H:i" }}</td>
+                  <td class="text-end d-flex justify-content-end gap-2">
+                    <a class="btn btn-sm btn-outline-secondary" href="{{ case.detail_url }}">Open Case</a>
+                    <a class="btn btn-sm btn-outline-primary" href="{{ case.edit_url }}">Edit Case</a>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <div class="text-muted">This patient does not have any cases yet.</div>
+      {% endif %}
+    </div>
+  </section>
+{% endblock %}

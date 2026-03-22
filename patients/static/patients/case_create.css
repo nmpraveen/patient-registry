@@ -159,6 +159,368 @@
   margin: 0;
 }
 
+.case-create-source-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 0.85rem;
+}
+
+.case-create-source-card {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.75rem;
+  align-items: center;
+  min-height: 4rem;
+  border: 1px solid color-mix(in srgb, var(--theme-shell-surface-border) 78%, var(--theme-shell-page-text) 22%);
+  border-radius: 1.1rem;
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--theme-shell-surface-bg) 88%, var(--theme-shell-page-bg) 12%) 0%,
+      color-mix(in srgb, var(--theme-shell-page-bg) 70%, var(--theme-shell-surface-bg) 30%) 100%
+    );
+  padding: 1rem 1.05rem;
+  cursor: pointer;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease, background-color 0.18s ease;
+}
+
+.case-create-source-card input {
+  margin: 0.22rem 0 0;
+  accent-color: var(--theme-shell-link);
+}
+
+.case-create-source-card__body {
+  display: block;
+}
+
+.case-create-source-card__title {
+  font-size: 1rem;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.case-create-source-card:hover,
+.case-create-source-card:focus-within {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--theme-shell-link) 34%, var(--theme-shell-surface-border));
+  box-shadow: 0 16px 30px color-mix(in srgb, var(--theme-shell-shadow) 72%, transparent);
+}
+
+.case-create-source-card.is-selected,
+.case-create-source-card:has(input:checked) {
+  border-color: color-mix(in srgb, var(--theme-shell-link) 56%, var(--theme-shell-surface-border));
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--theme-alerts-info-bg) 26%, var(--theme-shell-surface-bg) 74%) 0%,
+      color-mix(in srgb, var(--theme-alerts-info-bg) 12%, var(--theme-shell-page-bg) 88%) 100%
+    );
+  box-shadow:
+    0 16px 30px color-mix(in srgb, var(--theme-shell-shadow) 72%, transparent),
+    0 0 0 0.18rem color-mix(in srgb, var(--theme-shell-link) 14%, var(--theme-shell-surface-bg));
+}
+
+.case-create-grid.is-invalid .case-create-source-card {
+  border-color: var(--theme-alerts-danger-border);
+  box-shadow: 0 0 0 0.18rem color-mix(in srgb, var(--theme-alerts-danger-border) 18%, var(--theme-shell-surface-bg));
+}
+
+.case-create-patient-browser {
+  display: grid;
+  gap: 1rem;
+  border: 1px solid color-mix(in srgb, var(--theme-shell-surface-border) 80%, var(--theme-shell-page-text) 20%);
+  border-radius: 1.15rem;
+  background:
+    radial-gradient(circle at top right, color-mix(in srgb, var(--theme-search-result-hover-bg) 18%, transparent) 0, transparent 42%),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--theme-shell-surface-bg) 82%, var(--theme-shell-page-bg) 18%) 0%,
+      color-mix(in srgb, var(--theme-shell-page-bg) 46%, var(--theme-shell-surface-bg) 54%) 100%
+    );
+  padding: 1.05rem;
+}
+
+.case-create-patient-browser__header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.case-create-patient-browser__title {
+  margin: 0 0 0.35rem;
+  font-size: 1.25rem;
+  line-height: 1.08;
+}
+
+.case-create-patient-browser__copy {
+  color: var(--theme-shell-muted-text);
+  max-width: 46rem;
+}
+
+.case-create-patient-search {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.case-create-patient-search__shell {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.7rem;
+  min-height: 3.4rem;
+  border: 1px solid var(--theme-search-dropdown-border);
+  border-radius: 1rem;
+  background: var(--theme-search-dropdown-bg);
+  color: var(--theme-search-dropdown-text);
+  padding: 0.35rem 0.4rem 0.35rem 0.85rem;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--theme-shell-surface-bg) 44%, transparent);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.case-create-patient-search__shell:focus-within {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--theme-shell-link) 46%, var(--theme-search-dropdown-border));
+  box-shadow: 0 0 0 0.22rem color-mix(in srgb, var(--theme-shell-link) 16%, var(--theme-shell-surface-bg));
+}
+
+.case-create-patient-search.is-invalid .case-create-patient-search__shell {
+  border-color: var(--theme-alerts-danger-border);
+  box-shadow: var(--theme-alerts-danger-focus-shadow);
+}
+
+.case-create-patient-search__icon {
+  width: 1.1rem;
+  height: 1.1rem;
+  color: var(--theme-shell-muted-text);
+}
+
+.case-create-patient-search__input {
+  min-height: 2.5rem;
+  border: 0 !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  color: inherit;
+  padding: 0;
+}
+
+.case-create-patient-search__input::placeholder {
+  color: color-mix(in srgb, var(--theme-search-dropdown-text) 44%, transparent);
+}
+
+.case-create-patient-search__clear {
+  padding: 0.35rem 0.6rem;
+  color: var(--theme-shell-link);
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.case-create-patient-search__status {
+  color: var(--theme-shell-muted-text);
+  font-size: 0.88rem;
+}
+
+.case-create-patient-results {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.case-create-patient-result,
+.case-create-selected-patient__card {
+  border: 1px solid var(--theme-search-dropdown-border);
+  border-radius: 1rem;
+  background: var(--theme-search-dropdown-bg);
+  color: var(--theme-search-dropdown-text);
+  box-shadow: 0 14px 28px color-mix(in srgb, var(--theme-shell-shadow) 66%, transparent);
+}
+
+.case-create-patient-result {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1rem;
+  padding: 1rem;
+  transition: border-color 0.15s ease, background-color 0.15s ease, transform 0.15s ease;
+}
+
+.case-create-patient-result:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--theme-shell-link) 36%, var(--theme-search-dropdown-border));
+  background: color-mix(in srgb, var(--theme-search-result-hover-bg) 12%, var(--theme-search-dropdown-bg));
+}
+
+.case-create-patient-result.is-selected {
+  border-color: color-mix(in srgb, var(--theme-shell-link) 54%, var(--theme-search-dropdown-border));
+  box-shadow:
+    0 14px 28px color-mix(in srgb, var(--theme-shell-shadow) 66%, transparent),
+    0 0 0 0.18rem color-mix(in srgb, var(--theme-shell-link) 12%, var(--theme-search-dropdown-bg));
+}
+
+.case-create-patient-result__main,
+.case-create-selected-patient__header,
+.case-create-selected-patient__cases,
+.case-create-selected-patient__case-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.case-create-patient-result__title-row,
+.case-create-selected-patient__header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.case-create-patient-result__title,
+.case-create-selected-patient__title {
+  font-size: 1rem;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.case-create-patient-result__headline,
+.case-create-selected-patient__meta,
+.case-create-selected-patient__eyebrow,
+.case-create-selected-patient__case-meta,
+.case-create-patient-result__meta,
+.case-create-patient-result__case-meta {
+  color: var(--theme-shell-muted-text);
+}
+
+.case-create-selected-patient__eyebrow {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.case-create-selected-patient__facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.case-create-selected-patient__facts div {
+  display: grid;
+  gap: 0.22rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid color-mix(in srgb, var(--theme-shell-surface-border) 82%, var(--theme-search-dropdown-border) 18%);
+  border-radius: 0.9rem;
+  background: color-mix(in srgb, var(--theme-shell-page-bg) 54%, var(--theme-search-dropdown-bg) 46%);
+}
+
+.case-create-selected-patient__facts dt,
+.case-create-selected-patient__facts dd {
+  margin: 0;
+}
+
+.case-create-selected-patient__facts dt {
+  color: var(--theme-shell-muted-text);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.case-create-selected-patient__facts dd {
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.case-create-patient-result__headline,
+.case-create-patient-result__meta {
+  font-size: 0.88rem;
+}
+
+.case-create-patient-result__counts,
+.case-create-selected-patient__chips,
+.case-create-patient-result__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.case-create-patient-result__cases,
+.case-create-selected-patient__case-list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.case-create-patient-result__case,
+.case-create-selected-patient__case {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.85rem;
+  align-items: center;
+  border: 1px solid color-mix(in srgb, var(--theme-shell-surface-border) 82%, var(--theme-search-dropdown-border) 18%);
+  border-radius: 0.9rem;
+  background: color-mix(in srgb, var(--theme-shell-page-bg) 54%, var(--theme-search-dropdown-bg) 46%);
+  padding: 0.75rem 0.85rem;
+}
+
+.case-create-patient-result__case-name,
+.case-create-selected-patient__case-name,
+.case-create-selected-patient__cases-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.case-create-patient-result__case-meta,
+.case-create-selected-patient__case-meta {
+  font-size: 0.84rem;
+}
+
+.case-create-patient-result__actions,
+.case-create-selected-patient__actions,
+.case-create-selected-patient__case-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.case-create-patient-result__actions {
+  align-self: start;
+}
+
+.case-create-patient-result__actions .btn,
+.case-create-selected-patient__actions .btn,
+.case-create-selected-patient__case-actions .btn {
+  min-height: 2.35rem;
+  border-radius: 0.8rem;
+  font-weight: 700;
+}
+
+.case-create-patient-results__footer {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.case-create-patient-entry-intro {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.9rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid color-mix(in srgb, var(--theme-shell-surface-border) 82%, var(--theme-search-dropdown-border) 18%);
+  border-radius: 1rem;
+  background: color-mix(in srgb, var(--theme-shell-page-bg) 62%, var(--theme-shell-surface-bg) 38%);
+}
+
+.case-create-patient-entry-intro__title {
+  font-size: 0.96rem;
+  font-weight: 800;
+}
+
+.case-create-patient-entry-intro__copy {
+  color: var(--theme-shell-muted-text);
+  font-size: 0.88rem;
+}
+
 .case-create-helper,
 .case-create-note,
 .case-create-summary-note,
@@ -764,6 +1126,20 @@
     justify-items: start;
     grid-template-columns: repeat(2, minmax(0, auto));
   }
+
+  .case-create-patient-result,
+  .case-create-patient-result__case,
+  .case-create-selected-patient__case,
+  .case-create-selected-patient__header,
+  .case-create-selected-patient__facts {
+    grid-template-columns: 1fr;
+  }
+
+  .case-create-patient-result__actions,
+  .case-create-selected-patient__actions,
+  .case-create-selected-patient__case-actions {
+    justify-content: flex-start;
+  }
 }
 
 @media (max-width: 575.98px) {
@@ -822,6 +1198,22 @@
 
   .case-create-choice-grid {
     grid-template-columns: 1fr;
+  }
+
+  .case-create-patient-browser {
+    padding: 0.9rem;
+  }
+
+  .case-create-patient-result__actions,
+  .case-create-selected-patient__actions,
+  .case-create-selected-patient__case-actions {
+    width: 100%;
+  }
+
+  .case-create-patient-result__actions .btn,
+  .case-create-selected-patient__actions .btn,
+  .case-create-selected-patient__case-actions .btn {
+    width: 100%;
   }
 
   .case-create-gpla-grid {

@@ -1,0 +1,43 @@
+{% extends 'base.html' %}
+{% block title %}Edit Patient | MEDTRACK{% endblock %}
+{% block content %}
+  <section class="card border-0 shadow-sm">
+    <div class="card-body">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+          <h1 class="h4 mb-1">Edit Patient</h1>
+          <p class="text-muted mb-0">Update the canonical patient identity record.</p>
+        </div>
+        <a class="btn btn-outline-secondary" href="{% url 'patients:patient_detail' patient.pk %}">Cancel</a>
+      </div>
+
+      <form method="post" class="row g-3">
+        {% csrf_token %}
+        {% if form.non_field_errors %}
+          <div class="col-12">
+            <div class="alert alert-danger mb-0">
+              {% for error in form.non_field_errors %}
+                <div>{{ error }}</div>
+              {% endfor %}
+            </div>
+          </div>
+        {% endif %}
+        {% for field in form %}
+          <div class="col-12 col-lg-6">
+            <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+            {{ field }}
+            {% if field.help_text %}
+              <div class="form-text">{{ field.help_text }}</div>
+            {% endif %}
+            {% for error in field.errors %}
+              <div class="invalid-feedback d-block">{{ error }}</div>
+            {% endfor %}
+          </div>
+        {% endfor %}
+        <div class="col-12">
+          <button class="btn btn-primary" type="submit">Save Patient</button>
+        </div>
+      </form>
+    </div>
+  </section>
+{% endblock %}

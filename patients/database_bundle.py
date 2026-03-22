@@ -18,16 +18,18 @@ from .models import (
     Case,
     CaseActivityLog,
     DepartmentConfig,
+    Patient,
     PatientDataBackupSchedule,
     PatientDataBackupTrigger,
     Task,
     TaskStatus,
     VitalEntry,
     default_case_subcategory_for_category_name,
+    is_temporary_patient_uhid,
 )
 
 
-BUNDLE_SCHEMA_VERSION = 1
+BUNDLE_SCHEMA_VERSION = 2
 PATIENT_DATA_FILENAME = "patient_data.json"
 MANIFEST_FILENAME = "manifest.json"
 BACKUP_FILENAME_PREFIX = "patient-data-bundle"
@@ -194,8 +196,9 @@ def load_bundle_archive(bundle_bytes):
 
 
 def build_patient_data_payload():
+    patients = Patient.objects.select_related("created_by", "merged_into").order_by("uhid")
     cases = (
-        Case.objects.select_related("category", "created_by", "archived_by")
+        Case.objects.select_related("patient", "category", "created_by", "archived_by")
         .prefetch_related(
             Prefetch(
                 "tasks",
@@ -214,17 +217,27 @@ def build_patient_data_payload():
                 queryset=CallLog.objects.select_related("staff_user", "task").order_by("created_at", "pk"),
             ),
         )
-        .order_by("uhid")
+        .order_by("patient__uhid", "created_at", "pk")
     )
 
     categories_by_name = {}
+    patient_payloads_by_uhid = {}
     serialized_cases = []
+    for patient in patients:
+        patient_payloads_by_uhid[patient.uhid] = _serialize_patient(patient)
     for case in cases:
         categories_by_name.setdefault(case.category.name, _serialize_category(case.category))
-        serialized_cases.append(_serialize_case(case))
+        patient_uhid = case.patient.uhid if case.patient_id else (case.uhid or "")
+        if patient_uhid and patient_uhid not in patient_payloads_by_uhid:
+            patient_payloads_by_uhid[patient_uhid] = _serialize_patient(
+                case,
+                is_temporary_id=bool((case.uhid or "").startswith("TMP-")),
+            )
+        serialized_cases.append(_serialize_case(case, patient_uhid=patient_uhid))
 
     return {
         "categories": [categories_by_name[name] for name in sorted(categories_by_name)],
+        "patients": [patient_payloads_by_uhid[uhid] for uhid in sorted(patient_payloads_by_uhid)],
         "cases": serialized_cases,
     }
 
@@ -232,6 +245,7 @@ def build_patient_data_payload():
 def compute_payload_counts(payload):
     counts = {
         "categories": len(payload.get("categories", [])),
+        "patients": len(payload.get("patients", [])),
         "cases": len(payload.get("cases", [])),
         "tasks": 0,
         "vitals": 0,
@@ -257,12 +271,40 @@ def _serialize_category(category):
     }
 
 
-def _serialize_case(case):
+def _serialize_patient(patient_like, *, merged_into_uhid=None, is_temporary_id=None):
+    if merged_into_uhid is None:
+        merged_into_uhid = getattr(getattr(patient_like, "merged_into", None), "uhid", None)
+    if is_temporary_id is None:
+        is_temporary_id = getattr(patient_like, "is_temporary_id", False)
     return {
+        "uhid": patient_like.uhid,
+        "is_temporary_id": bool(is_temporary_id),
+        "merged_into_uhid": merged_into_uhid,
+        "prefix": getattr(patient_like, "prefix", ""),
+        "first_name": getattr(patient_like, "first_name", ""),
+        "last_name": getattr(patient_like, "last_name", ""),
+        "patient_name": getattr(patient_like, "patient_name", ""),
+        "gender": getattr(patient_like, "gender", ""),
+        "date_of_birth": _serialize_date(getattr(patient_like, "date_of_birth", None)),
+        "place": getattr(patient_like, "place", ""),
+        "age": getattr(patient_like, "age", None),
+        "phone_number": getattr(patient_like, "phone_number", ""),
+        "alternate_phone_number": getattr(patient_like, "alternate_phone_number", ""),
+        "created_by_username": _username(getattr(patient_like, "created_by", None)),
+        "created_at": _serialize_datetime(getattr(patient_like, "created_at", None)),
+        "updated_at": _serialize_datetime(getattr(patient_like, "updated_at", None)),
+    }
+
+
+def _serialize_case(case, *, patient_uhid=None):
+    return {
+        "bundle_id": str(case.pk),
         "uhid": case.uhid,
+        "patient_uhid": patient_uhid or case.uhid,
         "prefix": case.prefix,
         "first_name": case.first_name,
         "last_name": case.last_name,
+        "patient_name": case.patient_name,
         "gender": case.gender,
         "date_of_birth": _serialize_date(case.date_of_birth),
         "place": case.place,
@@ -362,9 +404,10 @@ def _serialize_call_log(entry):
 def _validate_manifest_and_payload(manifest, payload, patient_data_bytes):
     if not isinstance(manifest, dict):
         raise BundleValidationError("Backup manifest must be a JSON object.")
-    if manifest.get("schema_version") != BUNDLE_SCHEMA_VERSION:
+    schema_version = manifest.get("schema_version")
+    if schema_version not in {1, BUNDLE_SCHEMA_VERSION}:
         raise BundleValidationError(
-            f"Backup schema version {manifest.get('schema_version')} is not supported."
+            f"Backup schema version {schema_version} is not supported."
         )
     checksum = manifest.get("patient_data_sha256")
     if not checksum or not isinstance(checksum, str):
@@ -375,9 +418,12 @@ def _validate_manifest_and_payload(manifest, payload, patient_data_bytes):
         raise BundleValidationError("Patient data must be a JSON object.")
 
     categories = payload.get("categories")
+    patients = payload.get("patients")
     cases = payload.get("cases")
     if not isinstance(categories, list):
         raise BundleValidationError("Patient data is missing a valid categories list.")
+    if patients is not None and not isinstance(patients, list):
+        raise BundleValidationError("Patient data is missing a valid patients list.")
     if not isinstance(cases, list):
         raise BundleValidationError("Patient data is missing a valid cases list.")
 
@@ -385,6 +431,11 @@ def _validate_manifest_and_payload(manifest, payload, patient_data_bytes):
     if not isinstance(expected_counts, dict):
         raise BundleValidationError("Backup manifest is missing record counts.")
     actual_counts = compute_payload_counts(payload)
+    if schema_version == 1 and patients is None:
+        actual_counts = dict(actual_counts)
+        actual_counts.pop("patients", None)
+        expected_counts = dict(expected_counts)
+        expected_counts.pop("patients", None)
     if expected_counts != actual_counts:
         raise BundleValidationError("Backup manifest counts do not match the patient data payload.")
 
@@ -402,16 +453,29 @@ def _validate_manifest_and_payload(manifest, payload, patient_data_bytes):
         .values_list("name", flat=True)
     )
 
-    seen_uhids = set()
+    patient_uhids = set()
+    for patient_data in patients or []:
+        if not isinstance(patient_data, dict):
+            raise BundleValidationError("Every exported patient must be a JSON object.")
+        uhid = patient_data.get("uhid")
+        if not uhid:
+            raise BundleValidationError("Every exported patient must include a UHID.")
+        if uhid in patient_uhids:
+            raise BundleValidationError(f"Backup contains duplicate patient definitions for {uhid}.")
+        patient_uhids.add(uhid)
+
+    seen_case_ids = set()
     for case_data in cases:
         if not isinstance(case_data, dict):
             raise BundleValidationError("Every exported case must be a JSON object.")
         uhid = case_data.get("uhid")
         if not uhid:
             raise BundleValidationError("Every exported case must include a UHID.")
-        if uhid in seen_uhids:
-            raise BundleValidationError(f"Backup contains duplicate UHIDs: {uhid}.")
-        seen_uhids.add(uhid)
+        bundle_id = case_data.get("bundle_id")
+        if bundle_id:
+            if bundle_id in seen_case_ids:
+                raise BundleValidationError(f"Backup contains duplicate case identifiers: {bundle_id}.")
+            seen_case_ids.add(bundle_id)
 
         category_name = case_data.get("category_name")
         if not category_name:
@@ -420,6 +484,15 @@ def _validate_manifest_and_payload(manifest, payload, patient_data_bytes):
             raise BundleValidationError(
                 f"Case {uhid} references category {category_name}, which is not bundled or available locally."
             )
+
+        patient_uhid = case_data.get("patient_uhid") or uhid
+        if schema_version >= BUNDLE_SCHEMA_VERSION:
+            if not patient_uhid:
+                raise BundleValidationError(f"Case {uhid} is missing a patient reference.")
+            if patient_uhid not in patient_uhids:
+                raise BundleValidationError(
+                    f"Case {uhid} references patient {patient_uhid}, which is not bundled or available locally."
+                )
 
         tasks = case_data.get("tasks", [])
         vitals = case_data.get("vitals", [])
@@ -459,6 +532,7 @@ def _validate_manifest_and_payload(manifest, payload, patient_data_bytes):
 
 
 def _replace_patient_data(payload):
+    payload = _normalize_payload_for_import(payload)
     usernames = sorted(_collect_usernames(payload))
     user_model = get_user_model()
     users_by_username = {
@@ -487,12 +561,57 @@ def _replace_patient_data(payload):
             categories_by_name[category_name] = category
 
         Case.objects.all().delete()
+        Patient.objects.all().delete()
         _import_payload(payload, categories_by_name, users_by_username)
 
     return compute_payload_counts(payload)
 
 
 def _import_payload(payload, categories_by_name, users_by_username):
+    patients_by_uhid = {}
+    for patient_data in payload.get("patients", []):
+        patient = Patient(
+            uhid=patient_data["uhid"],
+            is_temporary_id=bool(patient_data.get("is_temporary_id", False)),
+            prefix=patient_data.get("prefix", ""),
+            first_name=patient_data.get("first_name", ""),
+            last_name=patient_data.get("last_name", ""),
+            patient_name=patient_data.get("patient_name", ""),
+            gender=patient_data.get("gender", ""),
+            date_of_birth=_parse_date(patient_data.get("date_of_birth"), "patient date_of_birth"),
+            place=patient_data.get("place", ""),
+            age=_optional_int(patient_data.get("age")),
+            phone_number=patient_data.get("phone_number", ""),
+            alternate_phone_number=patient_data.get("alternate_phone_number", ""),
+            created_by=users_by_username.get(patient_data.get("created_by_username")),
+        )
+        patient.full_clean(exclude=_blank_model_fields(patient, "created_by", "merged_into"))
+        patient.save()
+        _restore_timestamps(
+            patient,
+            created_at=_parse_datetime(patient_data.get("created_at"), "patient created_at"),
+            updated_at=_parse_datetime(patient_data.get("updated_at"), "patient updated_at"),
+        )
+        patients_by_uhid[patient.uhid] = patient
+
+    for patient_data in payload.get("patients", []):
+        merged_into_uhid = patient_data.get("merged_into_uhid")
+        if not merged_into_uhid:
+            continue
+        patient = patients_by_uhid[patient_data["uhid"]]
+        merged_into = patients_by_uhid.get(merged_into_uhid)
+        if merged_into is None:
+            raise BundleValidationError(
+                f"Patient {patient.uhid} references merged patient {merged_into_uhid}, which is not bundled."
+            )
+        Patient.objects.filter(pk=patient.pk).update(merged_into=merged_into)
+        patient.merged_into = merged_into
+        _restore_timestamps(
+            patient,
+            created_at=_parse_datetime(patient_data.get("created_at"), "patient created_at"),
+            updated_at=_parse_datetime(patient_data.get("updated_at"), "patient updated_at"),
+        )
+
     for case_data in payload.get("cases", []):
         category = categories_by_name[case_data["category_name"]]
         metadata = case_data.get("metadata") or {}
@@ -500,11 +619,19 @@ def _import_payload(payload, categories_by_name, users_by_username):
         subcategory = case_data.get("subcategory", "")
         if not subcategory and not is_quick_entry:
             subcategory = default_case_subcategory_for_category_name(category.name)
+        patient_uhid = case_data.get("patient_uhid") or case_data.get("uhid")
+        patient = patients_by_uhid.get(patient_uhid)
+        if patient is None:
+            raise BundleValidationError(
+                f"Case {case_data.get('uhid')} references patient {patient_uhid}, which was not imported."
+            )
         case = Case(
+            patient=patient,
             uhid=case_data["uhid"],
             prefix=case_data.get("prefix", ""),
             first_name=case_data.get("first_name", ""),
             last_name=case_data.get("last_name", ""),
+            patient_name=case_data.get("patient_name", ""),
             gender=case_data.get("gender", ""),
             date_of_birth=_parse_date(case_data.get("date_of_birth"), "date_of_birth"),
             place=case_data.get("place", ""),
@@ -646,6 +773,10 @@ def _restore_timestamps(instance, *, created_at=None, updated_at=None):
 
 def _collect_usernames(payload):
     usernames = set()
+    for patient_data in payload.get("patients", []):
+        username = patient_data.get("created_by_username")
+        if username:
+            usernames.add(username)
     for case_data in payload.get("cases", []):
         for key in ("created_by_username", "archived_by_username"):
             username = case_data.get(key)
@@ -670,6 +801,50 @@ def _collect_usernames(payload):
             if username:
                 usernames.add(username)
     return usernames
+
+
+def _normalize_payload_for_import(payload):
+    payload = dict(payload)
+    cases = list(payload.get("cases", []))
+    if isinstance(payload.get("patients"), list):
+        payload["cases"] = cases
+        return payload
+
+    derived_patients = []
+    seen_uhids = set()
+    for case_data in cases:
+        if not isinstance(case_data, dict):
+            continue
+        patient_uhid = case_data.get("patient_uhid") or case_data.get("uhid")
+        if not patient_uhid or patient_uhid in seen_uhids:
+            continue
+        seen_uhids.add(patient_uhid)
+        derived_patients.append(
+            {
+                "uhid": patient_uhid,
+                "is_temporary_id": is_temporary_patient_uhid(patient_uhid),
+                "merged_into_uhid": None,
+                "prefix": case_data.get("prefix", ""),
+                "first_name": case_data.get("first_name", ""),
+                "last_name": case_data.get("last_name", ""),
+                "patient_name": case_data.get("patient_name", ""),
+                "gender": case_data.get("gender", ""),
+                "date_of_birth": case_data.get("date_of_birth"),
+                "place": case_data.get("place", ""),
+                "age": case_data.get("age"),
+                "phone_number": case_data.get("phone_number", ""),
+                "alternate_phone_number": case_data.get("alternate_phone_number", ""),
+                "created_by_username": case_data.get("created_by_username"),
+                "created_at": case_data.get("created_at"),
+                "updated_at": case_data.get("updated_at"),
+            }
+        )
+    for case_data in cases:
+        if isinstance(case_data, dict) and not case_data.get("patient_uhid"):
+            case_data["patient_uhid"] = case_data.get("uhid")
+    payload["patients"] = derived_patients
+    payload["cases"] = cases
+    return payload
 
 
 def _blank_model_fields(instance, *field_names):

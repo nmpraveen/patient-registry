@@ -368,7 +368,7 @@ class ThemeSystemTests(TestCase):
 
         self.assertEqual(merged["buttons"]["primary"]["border"], mix_colors("#112233", "#ffffff", 0.20))
         self.assertEqual(merged["buttons"]["primary"]["hover_bg"], mix_colors("#112233", "#ffffff", 0.10))
-        self.assertEqual(merged["buttons"]["success"]["bg"], "#198754")
+        self.assertEqual(merged["buttons"]["success"]["bg"], "#80cbc4")
         self.assertEqual(merged["vitals_chart"]["blood_pressure_fill"], rgba_string("#112233", 0.18))
 
     def test_merge_theme_tokens_maps_legacy_bp_chart_tokens_to_blood_pressure(self):
@@ -402,8 +402,8 @@ class ThemeSystemTests(TestCase):
         anc = DepartmentConfig.objects.get(name="ANC")
         custom = DepartmentConfig.objects.create(name="Custom Clinic")
 
-        self.assertEqual(anc.theme_bg_color, "#d1e7dd")
-        self.assertEqual(anc.theme_text_color, "#0f5132")
+        self.assertEqual(anc.theme_bg_color, "#ffe0b2")
+        self.assertEqual(anc.theme_text_color, "#bf360c")
         self.assertEqual(custom.theme_bg_color, "#e2e3e5")
         self.assertEqual(custom.theme_text_color, "#41464b")
 
@@ -1018,14 +1018,19 @@ class MedtrackViewTests(TestCase):
         self.client.force_login(self.user)
 
         response = self.client.get(reverse("patients:dashboard"))
+        case_list_response = self.client.get(reverse("patients:case_list"))
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "data-dashboard-summary-grid")
         self.assertContains(response, "data-dashboard-summary-item", count=6)
+        self.assertContains(response, "data-nav-stats-bar", count=1)
+        self.assertContains(response, "data-nav-stats-item", count=6)
         self.assertContains(response, "?status=ACTIVE&category_group=anc")
         self.assertContains(response, "?status=ACTIVE&category_group=surgery")
         self.assertContains(response, "?status=ACTIVE&category_group=non_surgical")
         self.assertContains(response, "View active Medicine cases")
+        self.assertNotContains(case_list_response, "data-nav-stats-bar")
+        self.assertNotContains(case_list_response, "data-nav-stats-item")
 
     def test_dashboard_query_count_stays_bounded(self):
         self.client.force_login(self.user)
@@ -1295,8 +1300,14 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, reverse("patients:case_create"))
         self.assertContains(response, reverse("patients:case_quick_create"))
-        self.assertContains(response, 'class="btn btn-sm btn-success"')
-        self.assertContains(response, 'class="btn btn-sm btn-warning"')
+        self.assertContains(response, 'class="btn btn-sm app-nav-action--new-case"')
+        self.assertContains(response, 'class="btn btn-sm app-nav-action--quick-entry"')
+        self.assertContains(response, f'href="{reverse("patients:settings")}"')
+        self.assertContains(response, 'aria-label="Settings"', count=1)
+        self.assertContains(response, f'action="{reverse("logout")}"')
+        self.assertContains(response, 'aria-label="Logout"', count=1)
+        self.assertNotContains(response, 'class="btn btn-sm btn-outline-light" href="{0}"'.format(reverse("patients:settings")))
+        self.assertNotContains(response, 'class="btn btn-sm btn-light w-100">Logout')
 
     def test_dashboard_nav_hides_case_create_actions_without_case_create_capability(self):
         self.login_as_role("Nurse", username="nurse_nav")
@@ -3342,13 +3353,46 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(settings_response.status_code, 200)
         self.assertContains(settings_response, reverse("patients:settings_theme"))
         self.assertEqual(theme_response.status_code, 200)
+        anc = DepartmentConfig.objects.get(name="ANC")
         self.assertContains(theme_response, "Theme Settings")
         self.assertContains(theme_response, "Success Button")
         self.assertContains(theme_response, "buttons__success__bg")
         self.assertContains(theme_response, "Blood Pressure Chart")
         self.assertContains(theme_response, "vitals_chart__blood_pressure")
+        self.assertContains(theme_response, "Female Tag")
+        self.assertContains(theme_response, "search__gender_female__bg")
+        self.assertContains(theme_response, "Male Tag")
+        self.assertContains(theme_response, "search__gender_male__bg")
+        self.assertContains(theme_response, "Other Tag")
+        self.assertContains(theme_response, "search__gender_other__bg")
+        self.assertContains(theme_response, "Categories")
+        self.assertContains(theme_response, anc.name)
+        self.assertContains(theme_response, f"theme-category-{anc.pk}-preview")
         self.assertContains(theme_response, "Vitals Module")
+        self.assertContains(theme_response, "NNH Preview")
+        self.assertContains(theme_response, "Quick Entry")
+        self.assertContains(theme_response, "New Case")
+        self.assertContains(theme_response, "Filter categories preview")
+        self.assertContains(theme_response, "global-search-filter-panel")
         self.assertNotContains(theme_response, "bp-systolic")
+
+    def test_admin_settings_subpages_show_theme_link(self):
+        self.login_as_admin()
+        theme_url = reverse("patients:settings_theme")
+        settings_pages = [
+            "patients:settings_case_management",
+            "patients:settings_categories",
+            "patients:settings_database",
+            "patients:settings_device_access",
+            "patients:settings_seed_mock_data",
+            "patients:settings_user_management",
+            "patients:changelog",
+        ]
+
+        for route_name in settings_pages:
+            response = self.client.get(reverse(route_name))
+            self.assertEqual(response.status_code, 200)
+            self.assertContains(response, theme_url)
 
     def test_admin_settings_page_shows_device_access_link_and_page_requires_manage_settings(self):
         pending_user = get_user_model().objects.create_user(username="pilot-target", password="strong-password-123")
@@ -4529,6 +4573,8 @@ class MedtrackViewTests(TestCase):
                 "shell__page_bg": "#faf0e6",
                 "dashboard__recent__bg": "#c7ddff",
                 "dashboard__recent__text": "#163ea8",
+                "search__gender_male__bg": "#ccddee",
+                "search__gender_other__text": "#334455",
             },
             category_overrides={"ANC": {"bg": "#abcdef", "text": "#123456"}},
         )
@@ -4543,22 +4589,34 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(theme_settings.tokens["shell"]["page_bg"], "#faf0e6")
         self.assertEqual(theme_settings.tokens["dashboard"]["recent"]["bg"], "#c7ddff")
         self.assertEqual(theme_settings.tokens["dashboard"]["recent"]["text"], "#163ea8")
+        self.assertEqual(theme_settings.tokens["search"]["gender_male"]["bg"], "#ccddee")
+        self.assertEqual(theme_settings.tokens["search"]["gender_other"]["text"], "#334455")
         self.assertEqual(anc.theme_bg_color, "#abcdef")
         self.assertEqual(anc.theme_text_color, "#123456")
         self.assertContains(response, "--theme-nav-bg: #123456;")
         self.assertContains(response, "--theme-case-header-bg: #654321;")
         self.assertContains(response, "--theme-dashboard-recent-bg: #c7ddff;")
+        self.assertContains(response, "--theme-search-gender-male-bg: #ccddee;")
+        self.assertContains(response, "--theme-search-gender-other-text: #334455;")
         self.assertContains(response, "Theme settings saved.")
 
     def test_theme_settings_restore_defaults_resets_saved_values(self):
         self.login_as_admin()
         anc = DepartmentConfig.objects.get(name="ANC")
+        surgery = DepartmentConfig.objects.get(name="Surgery")
+        medicine = DepartmentConfig.objects.get(name="Medicine")
         theme_settings = ThemeSettings.get_solo()
         theme_settings.tokens = {"nav": {"bg": "#123456"}}
         theme_settings.save()
         anc.theme_bg_color = "#abcdef"
         anc.theme_text_color = "#123456"
         anc.save()
+        surgery.theme_bg_color = "#112233"
+        surgery.theme_text_color = "#445566"
+        surgery.save()
+        medicine.theme_bg_color = "#778899"
+        medicine.theme_text_color = "#aabbcc"
+        medicine.save()
 
         response = self.client.post(
             reverse("patients:settings_theme"),
@@ -4569,10 +4627,16 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         theme_settings.refresh_from_db()
         anc.refresh_from_db()
-        self.assertEqual(theme_settings.tokens["nav"]["bg"], "#0d6efd")
-        self.assertEqual(theme_settings.tokens["dashboard"]["recent"]["bg"], "#b6d4fe")
-        self.assertEqual(anc.theme_bg_color, "#d1e7dd")
-        self.assertEqual(anc.theme_text_color, "#0f5132")
+        surgery.refresh_from_db()
+        medicine.refresh_from_db()
+        self.assertEqual(theme_settings.tokens["nav"]["bg"], "#fffdf8")
+        self.assertEqual(theme_settings.tokens["dashboard"]["recent"]["bg"], "#d1c4e9")
+        self.assertEqual(anc.theme_bg_color, "#ffe0b2")
+        self.assertEqual(anc.theme_text_color, "#bf360c")
+        self.assertEqual(surgery.theme_bg_color, "#b2dfdb")
+        self.assertEqual(surgery.theme_text_color, "#004d40")
+        self.assertEqual(medicine.theme_bg_color, "#c5cae9")
+        self.assertEqual(medicine.theme_text_color, "#1a237e")
         self.assertContains(response, "Theme restored to defaults.")
 
     def test_error_messages_render_as_danger_alerts(self):
@@ -6453,9 +6517,14 @@ class MedtrackViewTests(TestCase):
         self.assertIn("High-risk", section_html)
         self.assertIn("Referred by PHC", section_html)
         self.assertIn("T2DM", section_html)
+        self.assertIn("dashboard-compact-flag--danger", section_html)
+        self.assertIn("dashboard-compact-flag--info", section_html)
+        self.assertIn("dashboard-compact-flag--neutral", section_html)
+        self.assertIn("&#128222;", section_html)
         self.assertIn("data-call-reveal-trigger", section_html)
         self.assertIn("data-call-reveal-close", section_html)
         self.assertIn("Open case", section_html)
+        self.assertContains(response, "external-link-icon.svg")
 
     def test_dashboard_card_contains_referral_high_risk_and_ncd_flags(self):
         self.client.force_login(self.user)
@@ -6509,6 +6578,7 @@ class MedtrackViewTests(TestCase):
         card = response.context["today_cards"][0]
         self.assertEqual(card["call_status"], CallCommunicationStatus.CONFIRMED)
         self.assertEqual(card["failed_attempt_count"], 0)
+        self.assertContains(response, "&#128994;&#128222;")
 
     def test_add_call_log_creates_structured_log_and_activity(self):
         self.client.force_login(self.user)
@@ -7001,6 +7071,15 @@ class MedtrackViewTests(TestCase):
         self.assertContains(response, reverse("patients:case_list"))
         self.assertContains(response, "category_group")
         self.assertContains(response, "diagnosis / place / case notes / call notes")
+        self.assertContains(response, "data-search-category-toggle")
+        self.assertContains(response, "data-search-category-menu")
+        self.assertContains(response, "data-search-selected-tags")
+        self.assertContains(response, 'data-search-category-option="anc"')
+        self.assertContains(response, 'data-search-category-option="surgical"')
+        self.assertContains(response, 'data-search-category-option="non_surgical"')
+        self.assertContains(response, f'data-cases-link-base="{reverse("patients:case_list")}"')
+        self.assertNotContains(response, "Limit search and case list shortcuts to selected care pathways.")
+        self.assertNotContains(response, "Use the funnel to narrow universal search suggestions and the Cases shortcut without changing the dashboard itself.")
 
 
 class PatientDataBundleTests(TestCase):

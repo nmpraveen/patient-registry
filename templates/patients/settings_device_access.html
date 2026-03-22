@@ -6,7 +6,10 @@
     <h1 class="h4 mb-1">Device Access</h1>
     <p class="text-muted mb-0">Pilot device approval for selected users, with room to expand to role-based targeting later.</p>
   </div>
-  <a class="btn btn-outline-primary btn-sm" href="{% url 'patients:settings' %}">Back to Settings</a>
+  <div class="d-flex flex-wrap gap-2">
+    <a class="btn btn-outline-secondary btn-sm" href="{% url 'patients:settings' %}">Back to Settings</a>
+    <a class="btn btn-outline-primary btn-sm" href="{% url 'patients:settings_theme' %}">Open Theme Settings</a>
+  </div>
 </div>
 
 <div class="row g-3 mb-3">

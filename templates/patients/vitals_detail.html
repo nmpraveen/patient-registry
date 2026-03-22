@@ -23,7 +23,7 @@
 
     .vitals-page__hero-kicker {
       margin: 0 0 0.35rem;
-      color: #94a3b8;
+      color: var(--theme-shell-muted-text);
       font-size: 0.72rem;
       font-weight: 800;
       letter-spacing: 0.14em;
@@ -32,7 +32,7 @@
 
     .vitals-page__hero-title {
       margin: 0 0 0.35rem;
-      color: #0f172a;
+      color: var(--theme-shell-page-text);
       font-size: clamp(1.7rem, 1.42rem + 0.65vw, 2.15rem);
       font-weight: 800;
       letter-spacing: -0.035em;
@@ -40,7 +40,7 @@
 
     .vitals-page__hero-meta {
       margin: 0;
-      color: #64748b;
+      color: var(--theme-shell-muted-text);
       font-size: 0.95rem;
       font-weight: 600;
     }
@@ -75,13 +75,13 @@
     .vitals-page__summary-note {
       padding: 0.95rem 1rem;
       border-radius: 1rem;
-      border: 1px solid color-mix(in srgb, var(--app-border) 74%, white 26%);
-      background: color-mix(in srgb, var(--theme-shell-page-bg) 88%, white 12%);
+      border: 1px solid color-mix(in srgb, var(--app-border) 74%, var(--theme-shell-surface-bg) 26%);
+      background: color-mix(in srgb, var(--theme-shell-page-bg) 88%, var(--theme-shell-surface-bg) 12%);
     }
 
     .vitals-page__summary-note-label {
       margin-bottom: 0.25rem;
-      color: #94a3b8;
+      color: var(--theme-shell-muted-text);
       font-size: 0.72rem;
       font-weight: 800;
       letter-spacing: 0.1em;
@@ -89,14 +89,14 @@
     }
 
     .vitals-page__summary-note-value {
-      color: #0f172a;
+      color: var(--theme-shell-page-text);
       font-size: 1.02rem;
       font-weight: 700;
     }
 
     .vitals-page__summary-note-copy {
       margin-top: 0.35rem;
-      color: #64748b;
+      color: var(--theme-shell-muted-text);
       font-size: 0.85rem;
       line-height: 1.45;
     }
@@ -110,13 +110,13 @@
     .vitals-chart-card {
       padding: 1rem;
       border-radius: 1rem;
-      border: 1px solid color-mix(in srgb, var(--app-border) 74%, white 26%);
-      background: #fff;
+      border: 1px solid color-mix(in srgb, var(--app-border) 74%, var(--theme-shell-surface-bg) 26%);
+      background: var(--theme-shell-surface-bg);
     }
 
     .vitals-chart-card__label {
       margin: 0 0 0.15rem;
-      color: #94a3b8;
+      color: var(--theme-shell-muted-text);
       font-size: 0.7rem;
       font-weight: 800;
       letter-spacing: 0.1em;
@@ -125,7 +125,7 @@
 
     .vitals-chart-card__title {
       margin: 0 0 0.85rem;
-      color: #0f172a;
+      color: var(--theme-shell-page-text);
       font-size: 1rem;
       font-weight: 700;
     }

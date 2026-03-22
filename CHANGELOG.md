@@ -1,5 +1,37 @@
 # Changelog
 
+## 2026.03.22.02.24
+- Inverted the shared `Open case` external-link SVG to a white circle with dark linework, and added a subtle dark rim so the icon stays legible on the light action button background.
+
+## 2026.03.22.02.23
+- Replaced the shared dashboard `Open case` arrow with the provided external-link SVG so Today, Upcoming, Recently Added, and Overdue actions all use the same icon asset with tighter sizing.
+- Updated the dashboard regression to verify the shared `Open case` style references the shipped SVG asset instead of the old text-arrow rule.
+
+## 2026.03.22.02.13
+- Removed the extra helper sentences from the navbar category-filter dropdown and aligned the Theme Settings preview with the slimmer filter panel copy.
+- Restored the Today dashboard card call-history emoji markers so confirmed, unreachable, invalid, lost, callback, and untouched cases render with the familiar symbol shorthand again.
+- Fixed the shared dashboard `Open case` action glyph by replacing the broken arrow character with a stable CSS escape so the link renders cleanly everywhere the shared style is used.
+
+## 2026.03.22.01.55
+- Shifted the top navbar onto a mockup-style palette by updating the built-in nav defaults to a warm white surface with navy brand text and muted gray controls, while preserving existing user-customized themes through a guarded migration.
+- Re-mapped the navbar actions so `Quick Entry` now uses the green dashboard-today palette, `New Case` uses the dark case-header accent, and the funnel active state uses the danger palette for clearer filter emphasis.
+- Updated the Theme Settings preview and regression coverage so the redesigned navbar preview, dashboard-only nav stats row, and new top-bar hooks stay aligned with the live app.
+
+## 2026.03.21.21.53
+- Normalized the remaining shared, dashboard, case-create, and case-detail UI colors so those pages now derive their visible surfaces, borders, pills, and status treatments from theme variables instead of hardcoded literals or Bootstrap fallback colors.
+- Replaced dashboard call-status emoji and flag badges with theme-driven status pills/chips, keeping those colors under the existing alert, case-status, and shell theme controls.
+- Wired hidden framework fallbacks into the theme system by theming `btn-outline-warning` and `alert-secondary`, then expanded dashboard and theme regression checks to catch these routes and status styles.
+
+## 2026.03.21.21.30
+- Extended Theme Settings coverage so gender-tag colors are now editable alongside the existing search/dashboard/status/category palette controls, and fixed the theme preview script to include the missing `Recently Added` pair plus the new search-tag pairs.
+- Rewired the live UI away from several hardcoded colors by moving base gender chips, vitals pages, dashboard call/open-case pills, case-create GPLA controls, and the currently rendered case-detail hero/vitals/composer surfaces onto theme, status, and category variables or colors derived from them.
+- Added direct `Open Theme Settings` shortcuts across the remaining admin settings subpages and expanded regression coverage for the new Theme Settings fields and subpage links.
+
+## 2026.03.21.21.13
+- Replaced the built-in default theme palette so the shell, nav, case header, buttons, alerts, status pills, search accents, and vitals charts now follow the new warm neutral plus green, blue, red, purple, orange, teal, and indigo color family from the provided reference.
+- Updated the default ANC, Surgery, and Medicine category colors so fresh environments and Theme Settings `Restore Defaults` use the new orange, teal, and indigo palette by default.
+- Added a guarded category-color migration so existing canonical category rows pick up the new defaults only when they still match the previous built-in palette.
+
 ## 2026.03.21.20.49
 - Fixed the Awaiting Reports expanded-detail label contrast so the header and field labels now render with a dark readable color against the lighter tinted row surface.
 

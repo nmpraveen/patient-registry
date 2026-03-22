@@ -1,35 +1,35 @@
 {% extends 'base.html' %}
-{% load theme_tags %}
+{% load static theme_tags %}
 {% block title %}Dashboard | MEDTRACK{% endblock %}
 {% block nav_stats_bar %}
-<div class="nav-stats-bar" data-dashboard-summary-grid>
+<div class="nav-stats-bar" data-dashboard-summary-grid data-nav-stats-bar>
   <div class="container-fluid container-lg px-3 px-md-0 nav-stats-bar-inner">
-    <div class="nav-stats-item nav-stats-item--today" data-dashboard-summary-item>
+    <div class="nav-stats-item nav-stats-item--today" data-dashboard-summary-item data-nav-stats-item>
       <span class="nav-stats-accent"></span>
       <span class="nav-stats-label">Today</span>
       <span class="nav-stats-value">{{ today_tasks|length }}</span>
     </div>
-    <div class="nav-stats-item nav-stats-item--upcoming" data-dashboard-summary-item>
+    <div class="nav-stats-item nav-stats-item--upcoming" data-dashboard-summary-item data-nav-stats-item>
       <span class="nav-stats-accent"></span>
       <span class="nav-stats-label">Upcoming</span>
       <span class="nav-stats-value">{{ upcoming_tasks|length }}</span>
     </div>
-    <div class="nav-stats-item nav-stats-item--overdue" data-dashboard-summary-item>
+    <div class="nav-stats-item nav-stats-item--overdue" data-dashboard-summary-item data-nav-stats-item>
       <span class="nav-stats-accent"></span>
       <span class="nav-stats-label">Overdue</span>
       <span class="nav-stats-value">{{ overdue_tasks|length }}</span>
     </div>
-    <a class="nav-stats-item nav-stats-item--category" href="{% url 'patients:case_list' %}?status=ACTIVE&category_group=anc" aria-label="View active ANC cases" style="{% category_theme_style 'ANC' theme_category_colors %}" data-dashboard-summary-item>
+    <a class="nav-stats-item nav-stats-item--category" href="{% url 'patients:case_list' %}?status=ACTIVE&category_group=anc" aria-label="View active ANC cases" style="{% category_theme_style 'ANC' theme_category_colors %}" data-dashboard-summary-item data-nav-stats-item>
       <span class="nav-stats-accent"></span>
       <span class="nav-stats-label">ANC</span>
       <span class="nav-stats-value">{{ anc_case_count }}</span>
     </a>
-    <a class="nav-stats-item nav-stats-item--category" href="{% url 'patients:case_list' %}?status=ACTIVE&category_group=surgery" aria-label="View active Surgery cases" style="{% category_theme_style 'Surgery' theme_category_colors %}" data-dashboard-summary-item>
+    <a class="nav-stats-item nav-stats-item--category" href="{% url 'patients:case_list' %}?status=ACTIVE&category_group=surgery" aria-label="View active Surgery cases" style="{% category_theme_style 'Surgery' theme_category_colors %}" data-dashboard-summary-item data-nav-stats-item>
       <span class="nav-stats-accent"></span>
       <span class="nav-stats-label">Surgery</span>
       <span class="nav-stats-value">{{ surgery_case_count }}</span>
     </a>
-    <a class="nav-stats-item nav-stats-item--category" href="{% url 'patients:case_list' %}?status=ACTIVE&category_group=non_surgical" aria-label="View active Medicine cases" style="{% category_theme_style 'Medicine' theme_category_colors %}" data-dashboard-summary-item>
+    <a class="nav-stats-item nav-stats-item--category" href="{% url 'patients:case_list' %}?status=ACTIVE&category_group=non_surgical" aria-label="View active Medicine cases" style="{% category_theme_style 'Medicine' theme_category_colors %}" data-dashboard-summary-item data-nav-stats-item>
       <span class="nav-stats-accent"></span>
       <span class="nav-stats-label">Medicine</span>
       <span class="nav-stats-value">{{ non_surgical_case_count }}</span>
@@ -58,7 +58,7 @@
         color-mix(in srgb, var(--theme-shell-surface-bg) 76%, var(--dashboard-module-bg) 24%) 0%,
         color-mix(in srgb, var(--theme-shell-surface-bg) 90%, var(--dashboard-module-bg) 10%) 100%
       );
-    box-shadow: 0 12px 28px var(--theme-shell-shadow), inset 0 1px 0 rgba(255, 255, 255, 0.28);
+    box-shadow: 0 12px 28px var(--theme-shell-shadow), inset 0 1px 0 color-mix(in srgb, var(--theme-shell-surface-bg) 28%, transparent);
     padding: 1rem;
   }
 
@@ -481,7 +481,7 @@
         color-mix(in srgb, var(--theme-shell-surface-bg) 74%, var(--theme-dashboard-upcoming-bg) 26%) 0%,
         color-mix(in srgb, var(--theme-shell-surface-bg) 90%, var(--theme-dashboard-upcoming-bg) 10%) 100%
       );
-    box-shadow: 0 12px 28px var(--theme-shell-shadow), inset 0 1px 0 rgba(255, 255, 255, 0.28);
+    box-shadow: 0 12px 28px var(--theme-shell-shadow), inset 0 1px 0 color-mix(in srgb, var(--theme-shell-surface-bg) 28%, transparent);
     padding: 1rem;
   }
 
@@ -522,7 +522,7 @@
 
   .upcoming-schedule-range,
   .upcoming-schedule-control {
-    background: color-mix(in srgb, var(--theme-dashboard-upcoming-bg) 70%, white);
+    background: color-mix(in srgb, var(--theme-dashboard-upcoming-bg) 70%, var(--theme-shell-surface-bg));
     border: 1px solid var(--theme-dashboard-upcoming-border);
     border-radius: 999px;
     color: var(--theme-dashboard-upcoming-text);
@@ -618,7 +618,7 @@
 
   .upcoming-schedule-day.is-active .upcoming-schedule-day-month,
   .upcoming-schedule-day.is-active .upcoming-schedule-day-label {
-    color: color-mix(in srgb, var(--theme-dashboard-upcoming-text) 82%, white);
+    color: color-mix(in srgb, var(--theme-dashboard-upcoming-text) 82%, var(--theme-shell-surface-bg));
   }
 
   .upcoming-schedule-day-number {
@@ -702,7 +702,7 @@
   }
 
   .upcoming-schedule-open-pill {
-    background: color-mix(in srgb, var(--theme-shell-surface-border) 52%, white);
+    background: color-mix(in srgb, var(--theme-shell-surface-border) 52%, var(--theme-shell-surface-bg));
     border: 1px solid var(--theme-shell-surface-border);
     color: var(--theme-shell-muted-text);
   }
@@ -714,7 +714,7 @@
 
   .upcoming-schedule-row {
     background: color-mix(in srgb, var(--theme-shell-surface-bg) 87%, var(--upcoming-category-bg) 13%);
-    border: 1px solid color-mix(in srgb, var(--upcoming-category-border, var(--upcoming-category-text)) 72%, white 28%);
+    border: 1px solid color-mix(in srgb, var(--upcoming-category-border, var(--upcoming-category-text)) 72%, var(--theme-shell-surface-bg) 28%);
     border-radius: 0.95rem;
     box-shadow: 0 0.22rem 0.6rem color-mix(in srgb, var(--theme-shell-shadow) 82%, transparent);
     color: inherit;
@@ -738,7 +738,7 @@
 
   .upcoming-schedule-row:hover,
   .upcoming-schedule-row:focus-within {
-    border-color: color-mix(in srgb, var(--upcoming-category-border, var(--upcoming-category-text)) 80%, white 20%);
+    border-color: color-mix(in srgb, var(--upcoming-category-border, var(--upcoming-category-text)) 80%, var(--theme-shell-surface-bg) 20%);
     box-shadow: 0 0.42rem 0.9rem color-mix(in srgb, var(--theme-shell-shadow) 88%, transparent);
     transform: translateY(-1px);
   }
@@ -762,10 +762,10 @@
 
   .upcoming-schedule-row-name-pill {
     align-items: center;
-    background: color-mix(in srgb, var(--upcoming-category-bg) 72%, white 28%);
-    border: 1px solid color-mix(in srgb, var(--upcoming-category-border, var(--upcoming-category-text)) 72%, white 28%);
+    background: color-mix(in srgb, var(--upcoming-category-bg) 72%, var(--theme-shell-surface-bg) 28%);
+    border: 1px solid color-mix(in srgb, var(--upcoming-category-border, var(--upcoming-category-text)) 72%, var(--theme-shell-surface-bg) 28%);
     border-radius: 999px;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--theme-shell-surface-bg) 65%, transparent);
     display: inline-flex;
     margin-bottom: 0.4rem;
     max-width: 100%;
@@ -810,7 +810,7 @@
 
   .upcoming-schedule-open-link {
     background: color-mix(in srgb, var(--theme-shell-surface-bg) 76%, var(--upcoming-category-bg) 24%);
-    border: 1px solid color-mix(in srgb, var(--upcoming-category-text) 20%, white);
+    border: 1px solid color-mix(in srgb, var(--upcoming-category-text) 20%, var(--theme-shell-surface-bg));
     border-radius: 999px;
     color: var(--upcoming-category-text);
     display: inline-flex;
@@ -849,7 +849,7 @@
   .dashboard-compact-row,
   .dashboard-compact-link-row {
     background: color-mix(in srgb, var(--theme-shell-surface-bg) 87%, var(--theme-category-bg) 13%);
-    border: 1px solid color-mix(in srgb, var(--theme-category-border) 72%, white 28%);
+    border: 1px solid color-mix(in srgb, var(--theme-category-border) 72%, var(--theme-shell-surface-bg) 28%);
     border-radius: 0.95rem;
     box-shadow: 0 0.22rem 0.6rem color-mix(in srgb, var(--theme-shell-shadow) 82%, transparent);
     color: inherit;
@@ -908,7 +908,7 @@
 
   .dashboard-compact-toggle:focus-visible,
   .dashboard-compact-link:focus-visible {
-    outline: 2px solid color-mix(in srgb, var(--theme-category-text) 30%, white);
+    outline: 2px solid color-mix(in srgb, var(--theme-category-text) 30%, var(--theme-shell-surface-bg));
     outline-offset: -2px;
   }
 
@@ -932,10 +932,10 @@
 
   .dashboard-compact-name-pill {
     align-items: center;
-    background: color-mix(in srgb, var(--theme-category-bg) 72%, white 28%);
-    border: 1px solid color-mix(in srgb, var(--theme-category-border) 72%, white 28%);
+    background: color-mix(in srgb, var(--theme-category-bg) 72%, var(--theme-shell-surface-bg) 28%);
+    border: 1px solid color-mix(in srgb, var(--theme-category-border) 72%, var(--theme-shell-surface-bg) 28%);
     border-radius: 999px;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--theme-shell-surface-bg) 65%, transparent);
     display: inline-flex;
     justify-self: start;
     margin: 0;
@@ -989,11 +989,11 @@
     appearance: none;
     align-items: center;
     align-self: stretch;
-    background: color-mix(in srgb, #f5fff8 85%, var(--theme-category-bg) 15%);
-    border: 1px solid color-mix(in srgb, #8bc7a0 55%, var(--theme-category-border) 45%);
+    background: color-mix(in srgb, var(--theme-alerts-success-bg) 76%, var(--theme-category-bg) 24%);
+    border: 1px solid color-mix(in srgb, var(--theme-alerts-success-border) 58%, var(--theme-category-border) 42%);
     border-radius: 999px;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
-    color: #1e7a42;
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--theme-shell-surface-bg) 50%, transparent);
+    color: var(--theme-alerts-success-text);
     display: inline-flex;
     font-size: 0.78rem;
     font-weight: 700;
@@ -1009,7 +1009,7 @@
 
   .dashboard-compact-call:hover,
   .dashboard-compact-call:focus-visible {
-    color: #165f33;
+    color: color-mix(in srgb, var(--theme-alerts-success-text) 86%, var(--theme-shell-page-text));
     text-decoration: none;
   }
 
@@ -1029,10 +1029,10 @@
 
   .dashboard-compact-call-reveal {
     align-items: center;
-    background: color-mix(in srgb, #f5fff8 85%, var(--theme-category-bg) 15%);
-    border: 1px solid color-mix(in srgb, #8bc7a0 55%, var(--theme-category-border) 45%);
+    background: color-mix(in srgb, var(--theme-alerts-success-bg) 76%, var(--theme-category-bg) 24%);
+    border: 1px solid color-mix(in srgb, var(--theme-alerts-success-border) 58%, var(--theme-category-border) 42%);
     border-radius: 999px;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--theme-shell-surface-bg) 50%, transparent);
     display: inline-flex;
     gap: 0.45rem;
     margin: 0.55rem 0.7rem 0.55rem 0;
@@ -1047,7 +1047,7 @@
   }
 
   .dashboard-compact-call-number {
-    color: #165f33;
+    color: var(--theme-alerts-success-text);
     font-size: 0.76rem;
     font-weight: 700;
     min-width: 0;
@@ -1056,9 +1056,9 @@
 
   .dashboard-compact-call-link {
     align-items: center;
-    background: #1e7a42;
+    background: var(--theme-buttons-success-bg);
     border-radius: 999px;
-    color: white;
+    color: var(--theme-buttons-success-text);
     display: inline-flex;
     font-size: 0.72rem;
     font-weight: 700;
@@ -1070,16 +1070,16 @@
 
   .dashboard-compact-call-link:hover,
   .dashboard-compact-call-link:focus-visible {
-    color: white;
+    color: var(--theme-buttons-success-text);
     text-decoration: none;
   }
 
   .dashboard-compact-call-dismiss {
     align-items: center;
     background: transparent;
-    border: 1px solid color-mix(in srgb, #1e7a42 22%, white);
+    border: 1px solid color-mix(in srgb, var(--theme-alerts-success-border) 42%, var(--theme-shell-surface-bg) 58%);
     border-radius: 999px;
-    color: #165f33;
+    color: var(--theme-alerts-success-text);
     display: inline-flex;
     font-size: 0.72rem;
     font-weight: 700;
@@ -1091,12 +1091,12 @@
 
   .dashboard-compact-call-dismiss:hover,
   .dashboard-compact-call-dismiss:focus-visible {
-    color: #0f4f29;
+    color: color-mix(in srgb, var(--theme-alerts-success-text) 78%, var(--theme-shell-page-text));
     text-decoration: none;
   }
 
   .dashboard-compact-details {
-    border-top: 1px solid color-mix(in srgb, var(--theme-category-border) 40%, white);
+    border-top: 1px solid color-mix(in srgb, var(--theme-category-border) 40%, var(--theme-shell-surface-bg));
     display: grid;
     gap: 0.8rem;
     padding: 0.82rem 1rem 0.95rem;
@@ -1120,7 +1120,7 @@
   .dashboard-compact-subcategory {
     align-items: center;
     background: color-mix(in srgb, var(--theme-shell-surface-bg) 62%, var(--theme-category-bg) 38%);
-    border: 1px solid color-mix(in srgb, var(--theme-category-border) 68%, white);
+    border: 1px solid color-mix(in srgb, var(--theme-category-border) 68%, var(--theme-shell-surface-bg));
     border-radius: 999px;
     color: var(--theme-category-text);
     display: inline-flex;
@@ -1189,11 +1189,15 @@
   .dashboard-compact-detail-pill-link,
   .upcoming-schedule-open-link {
     align-items: center;
-    background: linear-gradient(180deg, #ffffff 0%, #f6faff 100%);
-    border: 1px solid #3b82f6;
+    background: linear-gradient(
+      180deg,
+      var(--theme-shell-surface-bg) 0%,
+      color-mix(in srgb, var(--theme-buttons-primary-bg) 10%, var(--theme-shell-surface-bg) 90%) 100%
+    );
+    border: 1px solid var(--theme-buttons-primary-border);
     border-radius: 0.72rem;
-    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.95), 0 0 0 1px rgba(59, 130, 246, 0.08);
-    color: #1d4ed8;
+    box-shadow: 0 1px 0 color-mix(in srgb, var(--theme-shell-surface-bg) 95%, transparent), 0 0 0 1px color-mix(in srgb, var(--theme-buttons-primary-bg) 8%, transparent);
+    color: var(--theme-buttons-primary-text);
     display: inline-flex;
     font-size: 0.72rem;
     font-weight: 700;
@@ -1206,18 +1210,25 @@
 
   .dashboard-compact-detail-pill-link::after,
   .upcoming-schedule-open-link::after {
-    content: "↗";
-    font-size: 0.78rem;
-    line-height: 1;
+    background: url("{% static 'patients/external-link-icon.svg' %}") center / contain no-repeat;
+    content: "";
+    display: inline-block;
+    flex: none;
+    height: 0.95rem;
+    width: 0.95rem;
   }
 
   .dashboard-compact-detail-pill-link:hover,
   .dashboard-compact-detail-pill-link:focus-visible,
   .upcoming-schedule-open-link:hover,
   .upcoming-schedule-open-link:focus-visible {
-    background: linear-gradient(180deg, #ffffff 0%, #eef5ff 100%);
-    border-color: #2563eb;
-    color: #1e40af;
+    background: linear-gradient(
+      180deg,
+      var(--theme-shell-surface-bg) 0%,
+      color-mix(in srgb, var(--theme-buttons-primary-bg) 16%, var(--theme-shell-surface-bg) 84%) 100%
+    );
+    border-color: var(--theme-buttons-primary-bg);
+    color: color-mix(in srgb, var(--theme-buttons-primary-text) 88%, var(--theme-shell-page-text));
     text-decoration: none;
   }
 
@@ -1244,7 +1255,7 @@
 
   .dashboard-compact-task {
     background: color-mix(in srgb, var(--theme-shell-surface-bg) 94%, var(--theme-category-bg) 6%);
-    border: 1px solid color-mix(in srgb, var(--theme-category-border) 52%, white);
+    border: 1px solid color-mix(in srgb, var(--theme-category-border) 52%, var(--theme-shell-surface-bg));
     border-radius: 0.8rem;
     padding: 0.7rem 0.8rem;
   }
@@ -1281,13 +1292,35 @@
   }
 
   .dashboard-compact-flag {
+    --dashboard-flag-bg: color-mix(in srgb, var(--theme-shell-surface-bg) 78%, var(--theme-category-bg) 22%);
+    --dashboard-flag-border: color-mix(in srgb, var(--theme-category-border) 56%, var(--theme-shell-surface-bg));
+    --dashboard-flag-text: var(--theme-shell-muted-text);
     align-items: center;
-    background: color-mix(in srgb, var(--theme-shell-surface-bg) 78%, var(--theme-category-bg) 22%);
-    border: 1px solid color-mix(in srgb, var(--theme-category-border) 56%, white);
+    background: var(--dashboard-flag-bg);
+    border: 1px solid var(--dashboard-flag-border);
     border-radius: 999px;
+    color: var(--dashboard-flag-text);
     display: inline-flex;
     gap: 0.28rem;
     padding: 0.32rem 0.55rem;
+  }
+
+  .dashboard-compact-flag--danger {
+    --dashboard-flag-bg: color-mix(in srgb, var(--theme-alerts-danger-bg) 78%, var(--theme-shell-surface-bg) 22%);
+    --dashboard-flag-border: var(--theme-alerts-danger-border);
+    --dashboard-flag-text: var(--theme-alerts-danger-text);
+  }
+
+  .dashboard-compact-flag--info {
+    --dashboard-flag-bg: color-mix(in srgb, var(--theme-alerts-info-bg) 78%, var(--theme-shell-surface-bg) 22%);
+    --dashboard-flag-border: var(--theme-alerts-info-border);
+    --dashboard-flag-text: var(--theme-alerts-info-text);
+  }
+
+  .dashboard-compact-flag--neutral {
+    --dashboard-flag-bg: color-mix(in srgb, var(--theme-vitals-status-na-bg) 78%, var(--theme-shell-surface-bg) 22%);
+    --dashboard-flag-border: var(--theme-vitals-status-na-border);
+    --dashboard-flag-text: var(--theme-vitals-status-na-text);
   }
 
   .dashboard-compact-detail-header {
@@ -1583,9 +1616,9 @@
                 </div>
                 {% if card.high_risk or card.referred_by or card.ncd_flags %}
                   <div class="dashboard-compact-flags">
-                    {% if card.high_risk %}<span class="dashboard-compact-flag">&#10071; High-risk</span>{% endif %}
-                    {% if card.referred_by %}<span class="dashboard-compact-flag">&#11088; Referred by {{ card.referred_by }}</span>{% endif %}
-                    {% if card.ncd_flags %}<span class="dashboard-compact-flag">&#127991;&#65039; {{ card.ncd_flags|join:', ' }}</span>{% endif %}
+                    {% if card.high_risk %}<span class="dashboard-compact-flag dashboard-compact-flag--danger">High-risk</span>{% endif %}
+                    {% if card.referred_by %}<span class="dashboard-compact-flag dashboard-compact-flag--info">Referred by {{ card.referred_by }}</span>{% endif %}
+                    {% if card.ncd_flags %}<span class="dashboard-compact-flag dashboard-compact-flag--neutral">NCD: {{ card.ncd_flags|join:', ' }}</span>{% endif %}
                   </div>
                 {% endif %}
               </div>
@@ -1660,7 +1693,7 @@
                   {% for subcategory in day.subcategories %}
                     <span
                       class="upcoming-schedule-legend-pill"
-                      style="background: {{ subcategory.bg_color }}; color: {{ subcategory.text_color }}; border: 1px solid color-mix(in srgb, {{ subcategory.text_color }} 16%, white);"
+                      style="background: {{ subcategory.bg_color }}; color: {{ subcategory.text_color }}; border: 1px solid color-mix(in srgb, {{ subcategory.text_color }} 16%, var(--theme-shell-surface-bg));"
                     >{{ subcategory.label }}</span>
                   {% endfor %}
                 </div>
@@ -1688,7 +1721,7 @@
                         {% if row.subcategory_name %}
                           <span
                             class="upcoming-schedule-row-category"
-                            style="background: {{ row.category_bg_color }}; color: {{ row.category_text_color }}; border: 1px solid color-mix(in srgb, {{ row.category_text_color }} 16%, white);"
+                            style="background: {{ row.category_bg_color }}; color: {{ row.category_text_color }}; border: 1px solid color-mix(in srgb, {{ row.category_text_color }} 16%, var(--theme-shell-surface-bg));"
                           >{{ row.subcategory_name }}</span>
                         {% endif %}
                         <a class="upcoming-schedule-open-link" href="{{ row.detail_url }}">Open case</a>

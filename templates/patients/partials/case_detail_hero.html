@@ -9,8 +9,8 @@
       </div>
 
       <div class="case-detail-identity">
-        <div class="case-detail-title-row">
-          <h1 class="case-detail-title{% if case_name_size_class %} {{ case_name_size_class }}{% endif %}">{{ case.full_name }}</h1>
+        <div class="case-detail-title-row" style="align-items:center;">
+          <h1 class="case-detail-title{% if case_name_size_class %} {{ case_name_size_class }}{% endif %}" style="flex:0 1 auto; min-width:0;">{{ case.full_name }}</h1>
           <div class="case-detail-status-pill case-detail-status-pill--{{ case.get_status_display|slugify }}">
             <span class="case-detail-status-pill__dot"></span>
             <span>{{ case.get_status_display }}</span>
@@ -19,10 +19,6 @@
 
         <div class="case-detail-meta-row">
           <span class="case-detail-uhid">UHID. {{ case.uhid }}</span>
-          {% if patient_detail_url %}
-            <span class="case-detail-meta-sep" aria-hidden="true"></span>
-            <a class="case-detail-meta-item" href="{{ patient_detail_url }}">View Patient</a>
-          {% endif %}
 
           {% if case.gender %}
             <span class="case-detail-meta-sep" aria-hidden="true"></span>
@@ -110,38 +106,29 @@
 
     <div class="case-detail-divider case-detail-divider--actions" aria-hidden="true"></div>
 
-    <div class="case-detail-hero__actions">
-      <a class="btn btn-primary case-detail-action" href="{% url 'patients:case_edit' case.id %}">
+    <div
+      class="case-detail-hero__actions"
+      {% if not patient_detail_url and not new_case_for_patient_url %}data-case-detail-actions-count="2"{% elif patient_detail_url and new_case_for_patient_url %}data-case-detail-actions-count="4"{% else %}data-case-detail-actions-count="3"{% endif %}
+      style="display:grid; grid-template-columns:repeat(2, minmax(6.5rem, 1fr)); gap:0.35rem; width:min(100%, 14.25rem); margin-left:auto; align-self:center;"
+    >
+      <a class="btn btn-outline-secondary case-detail-action" href="{% url 'patients:case_edit' case.id %}" style="width:100%; min-height:1.9rem; padding:0.22rem 0.45rem; justify-content:center; font-size:0.78rem; line-height:1.1; gap:0.3rem;">
         <svg class="case-detail-icon" aria-hidden="true"><use href="#case-detail-icon-edit"></use></svg>
         <span>Edit</span>
       </a>
-      <a class="btn btn-outline-secondary case-detail-action log-jump" href="{{ logs_url }}">
+      <a class="btn btn-outline-secondary case-detail-action log-jump" href="{{ logs_url }}" style="width:100%; min-height:1.9rem; padding:0.22rem 0.45rem; justify-content:center; font-size:0.78rem; line-height:1.1; gap:0.3rem;">
         <svg class="case-detail-icon" aria-hidden="true"><use href="#case-detail-icon-logs"></use></svg>
         <span>Logs</span>
       </a>
       {% if patient_detail_url %}
-        <a class="btn btn-outline-secondary case-detail-action" href="{{ patient_detail_url }}">
+        <a class="btn btn-outline-secondary case-detail-action" href="{{ patient_detail_url }}" style="width:100%; min-height:1.9rem; padding:0.22rem 0.45rem; justify-content:center; font-size:0.78rem; line-height:1.1; gap:0.3rem;">
           <span>Patient</span>
         </a>
       {% endif %}
       {% if new_case_for_patient_url %}
-        <a class="btn btn-outline-secondary case-detail-action" href="{{ new_case_for_patient_url }}">
+        <a class="btn btn-outline-secondary case-detail-action" href="{{ new_case_for_patient_url }}" style="width:100%; min-height:1.9rem; padding:0.22rem 0.45rem; justify-content:center; font-size:0.78rem; line-height:1.1; gap:0.3rem;">
           <span>New Case</span>
         </a>
       {% endif %}
     </div>
-
-    {% if other_patient_cases %}
-      <div class="mt-3">
-        <div class="small text-muted mb-2">Other cases for this patient</div>
-        <div class="d-flex flex-wrap gap-2">
-          {% for sibling_case in other_patient_cases %}
-            <a class="btn btn-sm btn-outline-secondary" href="{% url 'patients:case_detail' sibling_case.pk %}">
-              {{ sibling_case.category.name }} · {{ sibling_case.get_status_display }}
-            </a>
-          {% endfor %}
-        </div>
-      </div>
-    {% endif %}
   </div>
 </section>

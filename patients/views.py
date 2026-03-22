@@ -4301,15 +4301,6 @@ class CaseDetailView(LoginRequiredMixin, DetailView):
         context["latest_vital_editor_payload"] = _build_vitals_editor_payload(latest_vital)
         context["patient"] = patient
         context["patient_detail_url"] = reverse("patients:patient_detail", kwargs={"pk": patient.pk}) if patient else ""
-        context["other_patient_cases"] = (
-            [
-                sibling
-                for sibling in _visible_case_queryset(patient.cases.select_related("category").order_by("-updated_at", "-id"))
-                if sibling.pk != case.pk
-            ][:5]
-            if patient
-            else []
-        )
         detail_summary = _build_case_detail_summary(
             case,
             user=self.request.user,
@@ -4334,15 +4325,6 @@ class CaseDetailView(LoginRequiredMixin, DetailView):
         context["patient_detail_url"] = reverse("patients:patient_detail", kwargs={"pk": patient.pk}) if patient else ""
         context["new_case_for_patient_url"] = (
             f"{reverse('patients:case_create')}?patient_mode=existing&patient_id={patient.pk}" if patient else ""
-        )
-        context["other_patient_cases"] = (
-            list(
-                _visible_case_queryset(
-                    patient.cases.select_related("category").exclude(pk=case.pk).order_by("-updated_at", "-id")
-                )
-            )
-            if patient
-            else []
         )
         return context
 

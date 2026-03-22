@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.03.22.20.49
+- Refined the case-detail hero so the status pill now hugs the patient name, the redundant `View Patient` text link is removed, and the corner patient action remains the single patient-navigation entry point.
+- Reworked the case-detail hero action cluster into a compact centered 2x2 button block, removed the extra sibling-case strip, and normalized all four hero actions to the same unhighlighted visual treatment.
+
 ## 2026.03.22.19.36
 - Introduced patient master records keyed by UHID so one patient can hold multiple cases, with patient-aware search, patient pages, merge controls, migration support, and patient-aware import/export plus seed data.
 - Reworked the New Case flow into a patient-first intake with live existing-patient search, cleaner selected-patient summaries, patient-linked case detail context, and updated theme-aligned patient UI.

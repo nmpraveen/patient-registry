@@ -524,10 +524,12 @@
 }
 
 .case-detail-hero__actions {
-  display: flex;
-  justify-content: flex-end;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(8.75rem, 1fr));
+  justify-content: end;
   gap: 0.55rem;
-  flex-wrap: wrap;
+  width: min(100%, 19rem);
+  margin-left: auto;
 }
 
 .case-detail-hero__actions .case-detail-action {
@@ -536,6 +538,8 @@
   border-radius: 0.9rem;
   font-weight: 800;
   box-shadow: 0 14px 24px var(--case-detail-light-shadow);
+  width: 100%;
+  justify-content: center;
 }
 
 .case-detail-hero__actions .btn-primary {
@@ -2865,11 +2869,14 @@
 }
 
 .case-detail-hero__actions {
-  display: flex;
-  align-items: center;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(8.75rem, 1fr));
   gap: 0.5rem;
   margin-left: auto;
   flex: none;
+  align-self: flex-start;
+  justify-content: end;
+  min-width: min(100%, 19rem);
 }
 
 .case-detail-hero__actions .case-detail-action {
@@ -2879,6 +2886,16 @@
   font-size: 0.84rem;
   font-weight: 800;
   box-shadow: none;
+  width: 100%;
+  justify-content: center;
+}
+
+.case-detail-hero__actions[data-case-detail-actions-count="2"] {
+  min-width: min(100%, 19rem);
+}
+
+.case-detail-hero__actions[data-case-detail-actions-count="3"] .case-detail-action:last-child {
+  grid-column: 1 / -1;
 }
 
 .case-detail-hero__actions .btn-primary {
@@ -2918,6 +2935,7 @@
 
   .case-detail-hero__actions {
     margin-left: 0;
+    min-width: 0;
   }
 }
 
@@ -3270,11 +3288,12 @@
 }
 
 .case-detail-hero__actions {
-  display: flex;
-  align-items: center;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(8.75rem, 1fr));
   gap: 0.5rem;
   margin-left: auto;
-  flex: none;
+  justify-content: end;
+  min-width: min(100%, 19rem);
 }
 
 .case-detail-hero__actions .case-detail-action {
@@ -3284,6 +3303,8 @@
   font-size: 0.84rem;
   font-weight: 800;
   box-shadow: none;
+  width: 100%;
+  justify-content: center;
 }
 
 .case-detail-hero__actions .btn-outline-secondary {
@@ -3414,6 +3435,8 @@
   .case-detail-hero__actions {
     width: 100%;
     margin-left: 0;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    min-width: 0;
   }
 
   .case-detail-hero__actions .case-detail-action {

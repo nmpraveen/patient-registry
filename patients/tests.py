@@ -3617,7 +3617,8 @@ class MedtrackViewTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Phone number must be exactly 10 digits.")
-        self.assertContains(response, "Alternate phone number must be exactly 10 digits.")
+        self.assertNotContains(response, "Alternate phone number")
+        self.assertNotContains(response, 'name="alternate_phone_number"')
 
 
     def test_admin_settings_page_access_and_summary_links(self):

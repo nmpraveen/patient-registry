@@ -1,0 +1,22 @@
+<div
+  id="case-create-subcategory-shell"
+  class="col-12 col-lg-6 case-create-field{% if show_inline_errors and form.subcategory.errors %} is-invalid{% endif %}"
+  {% if oob_swap %}hx-swap-oob="{{ oob_swap }}"{% endif %}
+  {% if form.subcategory.field.choices|length <= 1 and not form.subcategory.errors %}hidden{% endif %}
+>
+  {% if form.subcategory.field.choices|length > 1 or form.subcategory.errors %}
+    <label class="form-label" for="{{ form.subcategory.id_for_label }}">
+      {{ form.subcategory.label }}
+      {% if form.subcategory.field.required %}<span class="text-danger">*</span>{% endif %}
+    </label>
+    {{ form.subcategory }}
+    {% if form.subcategory.help_text %}
+      <div class="form-text">{{ form.subcategory.help_text }}</div>
+    {% endif %}
+    {% if show_inline_errors and form.subcategory.errors %}
+      {% for error in form.subcategory.errors %}
+        <div class="invalid-feedback d-block">{{ error }}</div>
+      {% endfor %}
+    {% endif %}
+  {% endif %}
+</div>

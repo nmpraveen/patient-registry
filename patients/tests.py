@@ -4996,6 +4996,29 @@ class MedtrackViewTests(TestCase):
         self.assertFalse(Case.objects.filter(uhid="UH-PREVIEW").exists())
         self.assertFalse(Task.objects.exists())
 
+    def test_case_create_preview_moves_surgery_subcategory_into_step_one_oob_fragment(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("patients:case_create_preview"),
+            {
+                "category": self.surgery.id,
+            },
+            HTTP_HX_REQUEST="true",
+        )
+        response_text = response.content.decode()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'id="case-create-subcategory-shell"')
+        self.assertContains(response, 'id="case-create-subcategory-shell"', count=1)
+        self.assertContains(response, 'name="subcategory"', count=1)
+        self.assertContains(response, "Choose the surgical specialty.")
+        self.assertIn('id="case-create-subcategory-shell"', response_text)
+        self.assertLess(
+            response_text.index('id="case-create-subcategory-shell"'),
+            response_text.index('id="case-create-workflow-panel"'),
+        )
+
     def test_case_create_preview_supports_generic_category_without_review_date(self):
         custom_category = DepartmentConfig.objects.create(
             name="Custom Clinic",

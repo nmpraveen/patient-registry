@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.03.22.16.17
+- Moved the Surgery and Medicine subcategory selector on the New Case page into Step 1 directly under the category choices, so staff can fill it immediately after selecting the case type.
+- Kept the HTMX preview refresh aligned with the new layout by rendering the relocated subcategory field through its own out-of-band partial, and removed the duplicate Step 3 subcategory control from the workflow panel.
+- Added focused regression coverage for the New Case preview fragment so Surgery still renders one subcategory field in the Step 1 fragment ahead of the workflow panel.
+
 ## 2026.03.22.15.55
 - Added structured case prefix support with `Mr.`, `Ms.`, and `Mrs.` across the New Case, Quick Entry, and Edit flows.
 - Stored prefixes as their own case field, included them in displayed full names, and kept compact initials and short-name displays focused on the patient’s actual name.

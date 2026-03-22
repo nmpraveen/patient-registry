@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.03.22.15.55
+- Added structured case prefix support with `Mr.`, `Ms.`, and `Mrs.` across the New Case, Quick Entry, and Edit flows.
+- Stored prefixes as their own case field, included them in displayed full names, and kept compact initials and short-name displays focused on the patient’s actual name.
+- Extended seed/mock data, patient-data bundle import/export, and regression coverage so prefixes persist correctly while legacy blank-prefix cases are required to choose a prefix when edited.
+
 ## 2026.03.22.14.12
 - Adjusted the stacked case-detail layout so mobile and other collapsed-width views now prioritize the working flow as hero, Action Center, tasks, timeline, vitals, and then clinical details, while preserving the desktop 40/30/30 module row.
 

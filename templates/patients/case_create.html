@@ -121,9 +121,10 @@
           </div>
           <div class="case-create-card__body">
             <div class="row g-3">
-              {% include 'patients/partials/case_create_field.html' with field=form.uhid col_class='col-12 col-lg-4' label='UHID' %}
-              {% include 'patients/partials/case_create_field.html' with field=form.first_name col_class='col-12 col-lg-4' %}
-              {% include 'patients/partials/case_create_field.html' with field=form.last_name col_class='col-12 col-lg-4' %}
+              {% include 'patients/partials/case_create_field.html' with field=form.uhid col_class='col-12 col-lg-3' label='UHID' %}
+              {% include 'patients/partials/case_create_field.html' with field=form.prefix col_class='col-12 col-md-4 col-lg-3' %}
+              {% include 'patients/partials/case_create_field.html' with field=form.first_name col_class='col-12 col-md-4 col-lg-3' %}
+              {% include 'patients/partials/case_create_field.html' with field=form.last_name col_class='col-12 col-md-4 col-lg-3' %}
               {% include 'patients/partials/case_create_field.html' with field=form.gender col_class='col-12 col-md-4 case-create-gender-field' %}
               {% include 'patients/partials/case_create_field.html' with field=form.date_of_birth col_class='col-12 col-md-4' help_text='When DOB is entered, age is auto-calculated.' help_class='case-create-help-text' %}
               {% include 'patients/partials/case_create_field.html' with field=form.age col_class='col-12 col-md-4' help_text='Enter age manually only if DOB is unknown.' %}

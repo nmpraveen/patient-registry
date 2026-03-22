@@ -15,6 +15,7 @@ from .models import (
     case_subcategory_choices_for_category_name,
     case_subcategory_group_for_category_name,
     CaseActivityLog,
+    CasePrefix,
     CaseStatus,
     DepartmentConfig,
     DeviceApprovalPolicy,
@@ -54,6 +55,9 @@ CRAYONS_DATEPICKER_ATTRS = {
     "data-crayons-datepicker-placeholder": "dd/mm/yyyy",
     "data-crayons-datepicker-show-footer": "false",
 }
+
+
+CASE_PREFIX_SELECT_CHOICES = [("", "Select prefix"), *list(CasePrefix.choices)]
 
 
 class StyledModelForm(forms.ModelForm):
@@ -143,6 +147,9 @@ class CaseForm(StyledModelForm):
     def __init__(self, *args, **kwargs):
         ensure_default_departments()
         super().__init__(*args, **kwargs)
+        self.fields["prefix"].required = True
+        self.fields["prefix"].label = "Prefix"
+        self.fields["prefix"].choices = CASE_PREFIX_SELECT_CHOICES
         self.fields["category"].queryset = self.fields["category"].queryset.order_by("name")
         self.fields["category"].widget = forms.RadioSelect()
         self.fields["category"].empty_label = None
@@ -251,6 +258,7 @@ class CaseForm(StyledModelForm):
         model = Case
         fields = [
             "uhid",
+            "prefix",
             "first_name",
             "last_name",
             "gender",
@@ -298,6 +306,9 @@ class QuickEntryCaseForm(StyledModelForm):
     def __init__(self, *args, **kwargs):
         ensure_default_departments()
         super().__init__(*args, **kwargs)
+        self.fields["prefix"].required = True
+        self.fields["prefix"].label = "Prefix"
+        self.fields["prefix"].choices = CASE_PREFIX_SELECT_CHOICES
         self.fields["category"].queryset = self.fields["category"].queryset.order_by("name")
         self.fields["age"].required = True
         self.fields["gender"].required = True
@@ -366,7 +377,7 @@ class QuickEntryCaseForm(StyledModelForm):
 
     class Meta:
         model = Case
-        fields = ["first_name", "age", "gender", "category", "subcategory", "review_date", "diagnosis"]
+        fields = ["prefix", "first_name", "age", "gender", "category", "subcategory", "review_date", "diagnosis"]
         widgets = {
             "review_date": forms.DateInput(attrs=dict(CRAYONS_DATEPICKER_ATTRS)),
         }

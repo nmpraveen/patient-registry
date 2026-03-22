@@ -710,6 +710,7 @@ def _recent_case_queryset(limit=None, *, include_tasks=True):
         Case.objects.select_related("category")
         .only(
             "id",
+            "prefix",
             "first_name",
             "last_name",
             "patient_name",
@@ -770,8 +771,13 @@ def _serialize_recent_task(task, *, category_name, can_edit_tasks, today):
     }
 
 
-def _build_short_name(name):
-    parts = [part for part in (name or "").split() if part]
+def _case_identity_name(case):
+    return case.identity_name or case.full_name or case.patient_name
+
+
+def _build_short_name(case):
+    name = _case_identity_name(case)
+    parts = [part for part in name.split() if part]
     if len(parts) <= 1:
         return name or ""
     return f"{parts[0]} {parts[-1][0]}."
@@ -799,7 +805,7 @@ def _serialize_recent_case(case, user, *, today=None, can_edit_recent=None, can_
         "id": case.id,
         "name": full_name,
         "first_name": case.first_name or full_name,
-        "short_name": _build_short_name(full_name),
+        "short_name": _build_short_name(case),
         "age_label": _case_age_label(case),
         "age_number": _case_age_number(case),
         "gender_label": case.get_gender_display() if case.gender else "-",
@@ -839,7 +845,7 @@ def _serialize_recent_case_summary(case, user, *, today=None, can_edit_recent=No
         "id": case.id,
         "name": full_name,
         "first_name": case.first_name or full_name,
-        "short_name": _build_short_name(full_name),
+        "short_name": _build_short_name(case),
         "age_label": _case_age_label(case),
         "age_number": _case_age_number(case),
         "gender_label": case.get_gender_display() if case.gender else "-",
@@ -1976,10 +1982,11 @@ def _month_day_display(value):
 
 
 def _case_initials(case):
-    parts = [part[0].upper() for part in case.full_name.split() if part]
+    identity_name = _case_identity_name(case)
+    parts = [part[0].upper() for part in identity_name.split() if part]
     if len(parts) >= 2:
         return "".join(parts[:2])
-    compact_name = "".join(character for character in case.full_name if character.isalpha()).upper()
+    compact_name = "".join(character for character in identity_name if character.isalpha()).upper()
     if len(compact_name) >= 2:
         return compact_name[:2]
     if compact_name:
@@ -2119,6 +2126,7 @@ class DashboardView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
         "status",
         "case_id",
         "case__id",
+        "case__prefix",
         "case__first_name",
         "case__last_name",
         "case__patient_name",
@@ -2162,7 +2170,7 @@ class DashboardView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
                     "due_date_display": _month_day_display(first_task.due_date),
                     "case_id": case.id,
                     "patient_name": full_name,
-                    "short_name": _build_short_name(full_name),
+                    "short_name": _build_short_name(case),
                     "diagnosis": case.diagnosis or case.category.name,
                     "phone_number": case.phone_number,
                     "referred_by": case.referred_by,
@@ -2198,7 +2206,7 @@ class DashboardView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
                     "task_id": task.id,
                     "case_id": case.id,
                     "patient_name": full_name,
-                    "short_name": _build_short_name(full_name),
+                    "short_name": _build_short_name(case),
                     "gender_code": _case_gender_code(case),
                     "age_number": _case_age_number(case),
                     "sex_age": _case_sex_age_label(case),
@@ -2506,6 +2514,7 @@ class CaseListView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
             .only(
                 "id",
                 "uhid",
+                "prefix",
                 "first_name",
                 "last_name",
                 "patient_name",
@@ -2739,6 +2748,7 @@ class UniversalCaseSearchView(LoginRequiredMixin, CaseDataAccessMixin, View):
                 .only(
                     "id",
                     "uhid",
+                    "prefix",
                     "first_name",
                     "last_name",
                     "patient_name",
@@ -2980,6 +2990,7 @@ def _build_preview_case(form):
     if category:
         preview_case.category_id = category.pk
     preview_case.uhid = _normalize_optional_text(_bound_form_value(form, "uhid"))
+    preview_case.prefix = _normalize_optional_text(_bound_form_value(form, "prefix"))
     preview_case.first_name = _normalize_optional_text(_bound_form_value(form, "first_name"))
     preview_case.last_name = _normalize_optional_text(_bound_form_value(form, "last_name"))
     preview_case.gender = _normalize_optional_text(_bound_form_value(form, "gender"))
@@ -3044,7 +3055,7 @@ def _build_case_identity_matches(form, *, exclude_case_id=None):
             uhid_queryset = uhid_queryset.exclude(pk=exclude_case_id)
         uhid_matches = list(
             uhid_queryset.select_related("category")
-            .only("id", "uhid", "first_name", "last_name", "patient_name", "status", "category__name")
+            .only("id", "uhid", "prefix", "first_name", "last_name", "patient_name", "status", "category__name")
             .order_by("-updated_at")[:3]
         )
         if uhid_matches:
@@ -3076,6 +3087,7 @@ def _build_case_identity_matches(form, *, exclude_case_id=None):
             .only(
                 "id",
                 "uhid",
+                "prefix",
                 "first_name",
                 "last_name",
                 "patient_name",
@@ -3304,6 +3316,13 @@ def _build_case_edit_change_items(form, case, preview_case):
         label="UHID",
         before=case.uhid,
         after=preview_case.uhid,
+        formatter=_format_case_edit_text,
+    )
+    _append_case_edit_change(
+        changes,
+        label="Prefix",
+        before=case.get_prefix_display() if case.prefix else "",
+        after=preview_case.get_prefix_display() if preview_case.prefix else "",
         formatter=_format_case_edit_text,
     )
     _append_case_edit_change(

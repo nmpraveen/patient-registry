@@ -34,6 +34,7 @@ from .models import (
     CallOutcome,
     Case,
     CaseActivityLog,
+    CasePrefix,
     CaseSubcategory,
     CaseStatus,
     DepartmentConfig,
@@ -85,6 +86,7 @@ class MedtrackModelTests(TestCase):
     def test_case_save_normalizes_patient_names_and_place(self):
         case = Case.objects.create(
             uhid="UH-NAME-001",
+            prefix=CasePrefix.MRS,
             first_name="  FIRST   NAME  ",
             last_name="  lAST   NAME  ",
             place="  cHENNAI  ",
@@ -98,11 +100,12 @@ class MedtrackModelTests(TestCase):
         self.assertEqual(case.first_name, "First Name")
         self.assertEqual(case.last_name, "Last Name")
         self.assertEqual(case.place, "Chennai")
-        self.assertEqual(case.patient_name, "First Name Last Name")
+        self.assertEqual(case.patient_name, "Mrs. First Name Last Name")
 
     def test_case_save_with_update_fields_normalizes_names_place_and_keeps_patient_name_synced(self):
         case = Case.objects.create(
             uhid="UH-NAME-002",
+            prefix=CasePrefix.MS,
             first_name="Asha",
             last_name="Devi",
             place="Pune",
@@ -113,16 +116,17 @@ class MedtrackModelTests(TestCase):
             created_by=self.user,
         )
 
-        case.first_name = "  mR  "
-        case.last_name = "  LAST   NAME  "
+        case.prefix = CasePrefix.MRS
+        case.first_name = "  FIRST   NAME  "
         case.place = "  nEW   dELHI  "
-        case.save(update_fields=["first_name", "place"])
+        case.save(update_fields=["prefix", "first_name", "place"])
         case.refresh_from_db()
 
-        self.assertEqual(case.first_name, "Mr")
-        self.assertEqual(case.last_name, "Last Name")
+        self.assertEqual(case.prefix, CasePrefix.MRS)
+        self.assertEqual(case.first_name, "First Name")
+        self.assertEqual(case.last_name, "Devi")
         self.assertEqual(case.place, "New Delhi")
-        self.assertEqual(case.patient_name, "Mr Last Name")
+        self.assertEqual(case.patient_name, "Mrs. First Name Devi")
 
     def test_case_save_with_unrelated_update_fields_does_not_rewrite_names(self):
         case = Case.objects.create(
@@ -1333,6 +1337,7 @@ class MedtrackViewTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'name="subcategory"')
+        self.assertContains(response, 'name="prefix"')
         self.assertContains(response, "data-quick-entry-subcategory-wrapper")
         self.assertContains(response, '"help_text": "Optional for quick entry. Choose the surgical specialty if known."')
         self.assertRegex(response_text, r"data-quick-entry-subcategory-wrapper\s+hidden")
@@ -1344,6 +1349,7 @@ class MedtrackViewTests(TestCase):
         response = self.client.post(
             reverse("patients:case_quick_create"),
             {
+                "prefix": CasePrefix.MS,
                 "first_name": "Visible",
                 "age": "31",
                 "gender": Gender.FEMALE,
@@ -1372,6 +1378,7 @@ class MedtrackViewTests(TestCase):
         response = self.client.post(
             reverse("patients:case_quick_create"),
             {
+                "prefix": CasePrefix.MRS,
                 "first_name": "Lalitha",
                 "age": "42",
                 "gender": Gender.FEMALE,
@@ -1384,6 +1391,8 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(response.status_code, 302)
         case = Case.objects.get(metadata__entry_mode="quick_entry", first_name="Lalitha")
         self.assertRegex(case.uhid, r"^QE-\d{8}-\d{3}$")
+        self.assertEqual(case.prefix, CasePrefix.MRS)
+        self.assertEqual(case.patient_name, "Mrs. Lalitha")
         self.assertEqual(case.last_name, "")
         self.assertEqual(case.phone_number, "")
         self.assertEqual(case.alternate_phone_number, "")
@@ -1405,6 +1414,7 @@ class MedtrackViewTests(TestCase):
         response = self.client.post(
             reverse("patients:case_quick_create"),
             {
+                "prefix": CasePrefix.MS,
                 "first_name": "Optional",
                 "age": "39",
                 "gender": Gender.FEMALE,
@@ -1425,6 +1435,7 @@ class MedtrackViewTests(TestCase):
         response = self.client.post(
             reverse("patients:case_quick_create"),
             {
+                "prefix": CasePrefix.MRS,
                 "first_name": "Revathi",
                 "age": "24",
                 "gender": Gender.FEMALE,
@@ -1447,6 +1458,7 @@ class MedtrackViewTests(TestCase):
         response = self.client.post(
             reverse("patients:case_quick_create"),
             {
+                "prefix": "",
                 "first_name": "",
                 "age": "",
                 "gender": "",
@@ -1459,6 +1471,27 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "invalid-feedback")
         self.assertContains(response, "This field is required.")
+        self.assertContains(response, 'name="prefix"')
+
+    def test_quick_case_create_requires_prefix(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("patients:case_quick_create"),
+            {
+                "prefix": "",
+                "first_name": "NoPrefix",
+                "age": "26",
+                "gender": Gender.FEMALE,
+                "diagnosis": "Prefix missing",
+                "category": self.surgery.id,
+                "review_date": (timezone.localdate() + timedelta(days=5)).isoformat(),
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "This field is required.")
+        self.assertFalse(Case.objects.filter(first_name="NoPrefix").exists())
 
     def test_quick_entry_cases_show_phone_pending_fallback_in_detail_and_list(self):
         case = Case.objects.create(
@@ -1488,6 +1521,7 @@ class MedtrackViewTests(TestCase):
             reverse("patients:case_create"),
             {
                 "uhid": "UH222",
+                "prefix": CasePrefix.MS,
                 "first_name": "Grace",
                 "last_name": "Hopper",
                 "phone_number": "9876543210",
@@ -1511,6 +1545,7 @@ class MedtrackViewTests(TestCase):
             reverse("patients:case_create"),
             {
                 "uhid": "UH-CREATE-ACTIVITY",
+                "prefix": CasePrefix.MR,
                 "first_name": "Log",
                 "last_name": "Check",
                 "phone_number": "9876543200",
@@ -3058,6 +3093,7 @@ class MedtrackViewTests(TestCase):
         self.assertContains(response, reverse("patients:case_create_preview"))
         self.assertContains(response, reverse("patients:case_create_identity_check"))
         self.assertContains(response, 'id="case-create-shell-state" data-workflow-key="generic"')
+        self.assertContains(response, 'name="prefix"')
         self.assertContains(response, 'name="status"')
         self.assertContains(response, 'id="id_status"')
         self.assertNotContains(response, '<label for="id_status">')
@@ -3095,6 +3131,7 @@ class MedtrackViewTests(TestCase):
             reverse("patients:case_create"),
             {
                 "uhid": "UH-DEFAULT-STATUS",
+                "prefix": CasePrefix.MR,
                 "first_name": "Default",
                 "last_name": "Status",
                 "phone_number": "9876500459",
@@ -3117,6 +3154,7 @@ class MedtrackViewTests(TestCase):
             reverse("patients:case_create"),
             {
                 "uhid": "UH-ANC-FEMALE",
+                "prefix": CasePrefix.MRS,
                 "first_name": "Anc",
                 "last_name": "Default",
                 "phone_number": "9876500460",
@@ -3143,6 +3181,7 @@ class MedtrackViewTests(TestCase):
             reverse("patients:case_create"),
             {
                 "uhid": "UH-ANC-ZERO-GPLA",
+                "prefix": CasePrefix.MS,
                 "first_name": "Anc",
                 "last_name": "Zero",
                 "phone_number": "9876500461",
@@ -3172,6 +3211,7 @@ class MedtrackViewTests(TestCase):
             reverse("patients:case_create"),
             {
                 "uhid": "UH-ANC-GPLA-INVALID",
+                "prefix": CasePrefix.MS,
                 "first_name": "Anc",
                 "last_name": "Invalid",
                 "phone_number": "9876500462",
@@ -3198,6 +3238,7 @@ class MedtrackViewTests(TestCase):
             reverse("patients:case_create"),
             {
                 "uhid": "UH-ANC-GPLA-ZERO-INVALID",
+                "prefix": CasePrefix.MRS,
                 "first_name": "Anc",
                 "last_name": "ZeroInvalid",
                 "phone_number": "9876500463",
@@ -3236,6 +3277,7 @@ class MedtrackViewTests(TestCase):
             reverse("patients:case_create"),
             {
                 "uhid": "UH-DUPLICATE",
+                "prefix": CasePrefix.MR,
                 "first_name": "New",
                 "last_name": "Case",
                 "phone_number": "9876500451",
@@ -3258,6 +3300,7 @@ class MedtrackViewTests(TestCase):
             reverse("patients:case_create"),
             {
                 "uhid": "UH-PHONE-INVALID",
+                "prefix": CasePrefix.MR,
                 "first_name": "Phone",
                 "last_name": "Invalid",
                 "phone_number": "12345",
@@ -4161,6 +4204,7 @@ class MedtrackViewTests(TestCase):
         self.login_as_admin()
         self.create_bundle_case(
             uhid="UH-NORM-001",
+            prefix=CasePrefix.MS,
             first_name="Lakshmi",
             last_name="Devi",
             phone_number="9000000108",
@@ -4169,8 +4213,9 @@ class MedtrackViewTests(TestCase):
             self.build_patient_bundle_bytes(),
             payload_mutator=lambda payload: payload["cases"][0].update(
                 {
+                    "prefix": CasePrefix.MRS,
                     "first_name": "  FIRST   NAME  ",
-                    "last_name": "  mR  ",
+                    "last_name": "  lAST   NAME  ",
                     "place": "  cHENNAI  ",
                 }
             ),
@@ -4192,10 +4237,11 @@ class MedtrackViewTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         case = Case.objects.get(uhid="UH-NORM-001")
+        self.assertEqual(case.prefix, CasePrefix.MRS)
         self.assertEqual(case.first_name, "First Name")
-        self.assertEqual(case.last_name, "Mr")
+        self.assertEqual(case.last_name, "Last Name")
         self.assertEqual(case.place, "Chennai")
-        self.assertEqual(case.patient_name, "First Name Mr")
+        self.assertEqual(case.patient_name, "Mrs. First Name Last Name")
 
     def test_database_management_import_preserves_non_patient_settings_and_device_data(self):
         self.login_as_admin()
@@ -4811,6 +4857,7 @@ class MedtrackViewTests(TestCase):
             reverse("patients:case_create"),
             {
                 "uhid": "UH444",
+                "prefix": CasePrefix.MS,
                 "first_name": "Asha",
                 "last_name": "Devi",
                 "gender": "FEMALE",
@@ -4836,8 +4883,9 @@ class MedtrackViewTests(TestCase):
             reverse("patients:case_create"),
             {
                 "uhid": "UH444N",
+                "prefix": CasePrefix.MRS,
                 "first_name": "  FIRST   NAME  ",
-                "last_name": "  mR  ",
+                "last_name": "  lAST   NAME  ",
                 "gender": "FEMALE",
                 "date_of_birth": "1995-01-15",
                 "place": "  cHENNAI  ",
@@ -4852,16 +4900,18 @@ class MedtrackViewTests(TestCase):
 
         self.assertEqual(response.status_code, 302)
         case = Case.objects.get(uhid="UH444N")
+        self.assertEqual(case.prefix, CasePrefix.MRS)
         self.assertEqual(case.first_name, "First Name")
-        self.assertEqual(case.last_name, "Mr")
+        self.assertEqual(case.last_name, "Last Name")
         self.assertEqual(case.place, "Chennai")
-        self.assertEqual(case.patient_name, "First Name Mr")
+        self.assertEqual(case.patient_name, "Mrs. First Name Last Name")
 
     def test_case_form_accepts_india_style_date_input(self):
         review_date = timezone.localdate() + timedelta(days=10)
         form = CaseForm(
             data={
                 "uhid": "UH444A",
+                "prefix": CasePrefix.MS,
                 "first_name": "Asha",
                 "last_name": "Devi",
                 "gender": "FEMALE",
@@ -4885,6 +4935,7 @@ class MedtrackViewTests(TestCase):
         form = CaseForm(
             data={
                 "uhid": "UH-AGE1",
+                "prefix": CasePrefix.MR,
                 "first_name": "Age",
                 "last_name": "Auto",
                 "phone_number": "9876500077",
@@ -5077,6 +5128,7 @@ class MedtrackViewTests(TestCase):
         form = CaseForm(
             data={
                 "uhid": "UH-AGE2",
+                "prefix": CasePrefix.MR,
                 "first_name": "Age",
                 "last_name": "Manual",
                 "phone_number": "9876500078",
@@ -5095,6 +5147,7 @@ class MedtrackViewTests(TestCase):
         form = CaseForm(
             data={
                 "uhid": "UH-HR-ANC-1",
+                "prefix": CasePrefix.MRS,
                 "first_name": "High",
                 "last_name": "Risk",
                 "phone_number": "9876500091",
@@ -5115,6 +5168,7 @@ class MedtrackViewTests(TestCase):
         form = CaseForm(
             data={
                 "uhid": "UH-HR-ANC-2",
+                "prefix": CasePrefix.MRS,
                 "first_name": "Reasoned",
                 "last_name": "Risk",
                 "phone_number": "9876500092",
@@ -5136,6 +5190,7 @@ class MedtrackViewTests(TestCase):
         form = CaseForm(
             data={
                 "uhid": "UH-RCH-ANC-1",
+                "prefix": CasePrefix.MS,
                 "first_name": "Rch",
                 "last_name": "Required",
                 "phone_number": "9876500191",
@@ -5154,6 +5209,7 @@ class MedtrackViewTests(TestCase):
         form = CaseForm(
             data={
                 "uhid": "UH-RCH-ANC-2",
+                "prefix": CasePrefix.MS,
                 "first_name": "Rch",
                 "last_name": "Bypass",
                 "phone_number": "9876500192",
@@ -5174,6 +5230,7 @@ class MedtrackViewTests(TestCase):
         form = CaseForm(
             data={
                 "uhid": "UH-RCH-ANC-3",
+                "prefix": CasePrefix.MS,
                 "first_name": "Rch",
                 "last_name": "Invalid",
                 "phone_number": "9876500193",
@@ -5193,6 +5250,7 @@ class MedtrackViewTests(TestCase):
         form = CaseForm(
             data={
                 "uhid": "UH-RCH-ANC-4",
+                "prefix": CasePrefix.MS,
                 "first_name": "Rch",
                 "last_name": "Reset",
                 "phone_number": "9876500194",
@@ -5215,6 +5273,7 @@ class MedtrackViewTests(TestCase):
             reverse("patients:case_create"),
             {
                 "uhid": "UH-RCH-CREATE",
+                "prefix": CasePrefix.MR,
                 "first_name": "Reminder",
                 "last_name": "Create",
                 "phone_number": "9876500195",
@@ -5237,6 +5296,7 @@ class MedtrackViewTests(TestCase):
         self.client.force_login(self.user)
         case = Case.objects.create(
             uhid="UH-RCH-UPDATE",
+            prefix=CasePrefix.MR,
             first_name="Reminder",
             last_name="Cancel",
             phone_number="9876500196",
@@ -5259,6 +5319,7 @@ class MedtrackViewTests(TestCase):
             reverse("patients:case_edit", kwargs={"pk": case.pk}),
             {
                 "uhid": case.uhid,
+                "prefix": case.prefix,
                 "first_name": case.first_name,
                 "last_name": case.last_name,
                 "phone_number": case.phone_number,
@@ -5281,6 +5342,7 @@ class MedtrackViewTests(TestCase):
         self.client.force_login(self.user)
         case = Case.objects.create(
             uhid="UH-EDIT-NAME",
+            prefix=CasePrefix.MS,
             first_name="Asha",
             last_name="Devi",
             place="Pune",
@@ -5296,8 +5358,9 @@ class MedtrackViewTests(TestCase):
             reverse("patients:case_edit", kwargs={"pk": case.pk}),
             {
                 "uhid": case.uhid,
-                "first_name": "  LAST   NAME ",
-                "last_name": "  mR ",
+                "prefix": CasePrefix.MRS,
+                "first_name": "  FIRST   NAME ",
+                "last_name": "  lAST   NAME ",
                 "place": "  nEW   dELHI  ",
                 "phone_number": case.phone_number,
                 "category": self.surgery.id,
@@ -5311,10 +5374,46 @@ class MedtrackViewTests(TestCase):
 
         self.assertEqual(response.status_code, 302)
         case.refresh_from_db()
-        self.assertEqual(case.first_name, "Last Name")
-        self.assertEqual(case.last_name, "Mr")
+        self.assertEqual(case.prefix, CasePrefix.MRS)
+        self.assertEqual(case.first_name, "First Name")
+        self.assertEqual(case.last_name, "Last Name")
         self.assertEqual(case.place, "New Delhi")
-        self.assertEqual(case.patient_name, "Last Name Mr")
+        self.assertEqual(case.patient_name, "Mrs. First Name Last Name")
+
+    def test_case_update_requires_prefix_for_legacy_blank_prefix_case(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-EDIT-LEGACY-PREFIX",
+            first_name="Legacy",
+            last_name="Case",
+            phone_number="9876500891",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=7),
+            created_by=self.user,
+        )
+
+        response = self.client.post(
+            reverse("patients:case_edit", kwargs={"pk": case.pk}),
+            {
+                "uhid": case.uhid,
+                "prefix": "",
+                "first_name": case.first_name,
+                "last_name": case.last_name,
+                "phone_number": case.phone_number,
+                "category": self.surgery.id,
+                "subcategory": CaseSubcategory.GENERAL_SURGERY,
+                "status": CaseStatus.ACTIVE,
+                "age": "31",
+                "surgical_pathway": SurgicalPathway.SURVEILLANCE,
+                "review_date": case.review_date.isoformat(),
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "This field is required.")
+        self.assertContains(response, 'name="prefix"')
 
     def test_case_edit_page_uses_new_case_shell_with_status_and_summary_rail(self):
         self.client.force_login(self.user)
@@ -5342,6 +5441,7 @@ class MedtrackViewTests(TestCase):
         self.assertContains(response, "data-case-edit-submit-button")
         self.assertContains(response, "case-create-choice-grid")
         self.assertContains(response, 'type="radio" name="category"')
+        self.assertContains(response, 'name="prefix"')
         self.assertContains(response, 'name="status"')
 
     def test_case_edit_preview_requires_case_edit_capability(self):
@@ -5923,6 +6023,7 @@ class MedtrackViewTests(TestCase):
         today = timezone.localdate()
         case = Case.objects.create(
             uhid="UH-IDENTITY-HEADER",
+            prefix=CasePrefix.MRS,
             first_name="Radha",
             last_name="Patel",
             phone_number="9876500209",
@@ -5976,6 +6077,7 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context["case_initials"], "RP")
         self.assertEqual(response.context["case_name_size_class"], "")
+        self.assertContains(response, "Mrs. Radha Patel")
         self.assertEqual(response.context["completed_task_count"], 1)
         self.assertEqual(response.context["total_task_count"], 2)
         self.assertContains(response, "identity-avatar")
@@ -6327,6 +6429,7 @@ class MedtrackViewTests(TestCase):
         )
         case = Case.objects.create(
             uhid="UH777",
+            prefix=CasePrefix.MR,
             first_name="Grouped",
             last_name="Patient",
             phone_number="9876501111",
@@ -6387,7 +6490,7 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         today_cards = response.context["today_cards"]
         self.assertEqual(len(today_cards), 2)
-        self.assertEqual(today_cards[1]["patient_name"], "Grouped Patient")
+        self.assertEqual(today_cards[1]["patient_name"], "Mr. Grouped Patient")
         self.assertEqual(today_cards[1]["short_name"], "Grouped P.")
         self.assertEqual(today_cards[1]["task_titles"], ["Lab", "ECG"])
         self.assertEqual(today_cards[1]["due_date_display"], f"{timezone.localdate().strftime('%b')} {timezone.localdate().day}")
@@ -6617,6 +6720,7 @@ class MedtrackViewTests(TestCase):
             reverse("patients:case_create"),
             {
                 "uhid": "UH333",
+                "prefix": CasePrefix.MR,
                 "first_name": "Surgical",
                 "last_name": "Pt",
                 "phone_number": "9876500000",
@@ -7123,6 +7227,7 @@ class PatientDataBundleTests(TestCase):
     def test_patient_data_bundle_round_trips_subcategory_and_accepts_legacy_payloads_without_it(self):
         Case.objects.create(
             uhid="UH-BUNDLE-SUBCATEGORY",
+            prefix=CasePrefix.MRS,
             first_name="Bundle",
             last_name="Subcategory",
             phone_number="9555555599",
@@ -7135,6 +7240,7 @@ class PatientDataBundleTests(TestCase):
         )
         Case.objects.create(
             uhid="QE-BUNDLE-001",
+            prefix=CasePrefix.MS,
             first_name="Quick",
             last_name="",
             phone_number="",
@@ -7152,8 +7258,10 @@ class PatientDataBundleTests(TestCase):
         import_result = database_bundle.import_bundle_bytes(archive_bytes)
         self.assertEqual(import_result["counts"]["cases"], 2)
         restored_case = Case.objects.get(uhid="UH-BUNDLE-SUBCATEGORY")
+        self.assertEqual(restored_case.prefix, CasePrefix.MRS)
         self.assertEqual(restored_case.subcategory, CaseSubcategory.ORTHOPEDICS)
         quick_entry_case = Case.objects.get(uhid="QE-BUNDLE-001")
+        self.assertEqual(quick_entry_case.prefix, CasePrefix.MS)
         self.assertEqual(quick_entry_case.subcategory, "")
 
         with zipfile.ZipFile(io.BytesIO(archive_bytes), "r") as bundle_zip:
@@ -7163,6 +7271,7 @@ class PatientDataBundleTests(TestCase):
         for case_payload in payload["cases"]:
             if case_payload.get("uhid") == "UH-BUNDLE-SUBCATEGORY":
                 case_payload.pop("subcategory", None)
+            case_payload.pop("prefix", None)
         patient_data_bytes = json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False).encode("utf-8")
         manifest["counts"] = database_bundle.compute_payload_counts(payload)
         manifest["patient_data_sha256"] = hashlib.sha256(patient_data_bytes).hexdigest()
@@ -7177,8 +7286,10 @@ class PatientDataBundleTests(TestCase):
 
         database_bundle.import_bundle_bytes(legacy_archive.getvalue())
         legacy_case = Case.objects.get(uhid="UH-BUNDLE-SUBCATEGORY")
+        self.assertEqual(legacy_case.prefix, "")
         self.assertEqual(legacy_case.subcategory, CaseSubcategory.GENERAL_SURGERY)
         legacy_quick_entry_case = Case.objects.get(uhid="QE-BUNDLE-001")
+        self.assertEqual(legacy_quick_entry_case.prefix, "")
         self.assertEqual(legacy_quick_entry_case.subcategory, "")
 
     def test_backup_patient_data_command_prunes_old_backups(self):
@@ -7249,6 +7360,7 @@ class SeedMockDataCommandTests(TestCase):
         self.assertEqual(seeded_cases.count(), 30)
 
         for case in seeded_cases:
+            self.assertTrue(case.prefix)
             self.assertTrue(case.gender)
             self.assertIsNotNone(case.age)
             self.assertTrue(case.diagnosis)
@@ -7293,6 +7405,7 @@ class SeedMockDataCommandTests(TestCase):
         self.assertGreaterEqual(len({case.subcategory for case in typed_non_surgical_cases}), 2)
 
         quick_entry_case = seeded_cases.get(metadata__seed_scenario="quick_entry_pending_details")
+        self.assertTrue(quick_entry_case.prefix)
         self.assertEqual(quick_entry_case.metadata.get("entry_mode"), "quick_entry")
         self.assertTrue(quick_entry_case.metadata.get("details_pending"))
         self.assertEqual(quick_entry_case.subcategory, "")

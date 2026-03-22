@@ -260,6 +260,7 @@ def _serialize_category(category):
 def _serialize_case(case):
     return {
         "uhid": case.uhid,
+        "prefix": case.prefix,
         "first_name": case.first_name,
         "last_name": case.last_name,
         "gender": case.gender,
@@ -501,6 +502,7 @@ def _import_payload(payload, categories_by_name, users_by_username):
             subcategory = default_case_subcategory_for_category_name(category.name)
         case = Case(
             uhid=case_data["uhid"],
+            prefix=case_data.get("prefix", ""),
             first_name=case_data.get("first_name", ""),
             last_name=case_data.get("last_name", ""),
             gender=case_data.get("gender", ""),

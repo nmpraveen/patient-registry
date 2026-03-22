@@ -15,6 +15,12 @@ class CaseStatus(models.TextChoices):
     LOSS_TO_FOLLOW_UP = "LOSS_TO_FOLLOW_UP", "Loss to Follow-up"
 
 
+class CasePrefix(models.TextChoices):
+    MR = "MR", "Mr."
+    MS = "MS", "Ms."
+    MRS = "MRS", "Mrs."
+
+
 class TaskStatus(models.TextChoices):
     SCHEDULED = "SCHEDULED", "Scheduled"
     AWAITING_REPORTS = "AWAITING_REPORTS", "Awaiting Reports"
@@ -700,6 +706,7 @@ def clone_role_setting(source_role_name=STAFF_ROLE_NAME, target_role_name=STAFF_
 
 class Case(models.Model):
     uhid = models.CharField(max_length=64, unique=True)
+    prefix = models.CharField(max_length=3, choices=CasePrefix.choices, blank=True, default="")
     first_name = models.CharField(max_length=100, default="")
     last_name = models.CharField(max_length=100, default="")
     patient_name = models.CharField(max_length=200, blank=True)
@@ -758,8 +765,13 @@ class Case(models.Model):
         ]
 
     @property
+    def identity_name(self):
+        return " ".join(part for part in [self.first_name, self.last_name] if part)
+
+    @property
     def full_name(self):
-        return f"{self.first_name} {self.last_name}".strip()
+        prefix_label = self.get_prefix_display() if self.prefix else ""
+        return " ".join(part for part in [prefix_label, self.identity_name] if part)
 
     def _normalize_identity_fields(self):
         self.first_name = normalize_case_name(self.first_name)
@@ -859,7 +871,7 @@ class Case(models.Model):
             raise ValidationError({"review_date": "Medicine cases require a review date."})
 
     def save(self, *args, **kwargs):
-        tracked_name_fields = {"first_name", "last_name", "patient_name"}
+        tracked_name_fields = {"prefix", "first_name", "last_name", "patient_name"}
         update_fields = kwargs.get("update_fields")
         should_sync_names = update_fields is None
 

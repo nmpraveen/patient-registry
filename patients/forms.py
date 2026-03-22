@@ -20,6 +20,7 @@ from .models import (
     DepartmentConfig,
     DeviceApprovalPolicy,
     Gender,
+    generate_quick_entry_uhid,
     generate_temporary_patient_uhid,
     Patient,
     PatientDataBackupSchedule,
@@ -568,17 +569,33 @@ class QuickEntryCaseForm(StyledModelForm):
     def save(self, commit=True):
         instance = super().save(commit=False)
         instance._skip_workflow_validation = True
-        instance.last_name = ""
-        instance.phone_number = ""
-        instance.alternate_phone_number = ""
+        if not instance.created_by_id and getattr(self, "actor", None) is not None:
+            instance.created_by = self.actor
         instance.status = CaseStatus.ACTIVE
         instance.metadata = {
             **(instance.metadata or {}),
             "entry_mode": "quick_entry",
             "details_pending": True,
         }
+        patient = getattr(instance, "patient", None) or Patient()
+        patient.uhid = (instance.uhid or generate_quick_entry_uhid()).strip().upper()
+        patient.prefix = instance.prefix or ""
+        patient.first_name = instance.first_name or ""
+        patient.last_name = ""
+        patient.gender = instance.gender or ""
+        patient.age = instance.age
+        patient.phone_number = ""
+        patient.alternate_phone_number = ""
+        if not patient.pk and not patient.created_by_id and getattr(self, "actor", None) is not None:
+            patient.created_by = self.actor
         if commit:
+            patient.save()
+            instance.patient = patient
+            instance.sync_identity_from_patient()
             instance.save()
+        else:
+            instance.patient = patient
+            instance.sync_identity_from_patient()
         return instance
 
     class Meta:

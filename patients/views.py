@@ -4118,10 +4118,40 @@ class CaseCreateIdentityCheckView(LoginRequiredMixin, CaseCreateAccessMixin, Cas
 
 
 class QuickCaseCreateView(LoginRequiredMixin, CreateView):
+    model = Case
+    form_class = QuickEntryCaseForm
+    template_name = "patients/quick_case_form.html"
+
     def dispatch(self, request, *args, **kwargs):
         if not has_capability(request.user, "case_create"):
             return HttpResponseForbidden("You do not have permission to create cases.")
-        return redirect(f"{reverse('patients:case_create')}?patient_mode=new&temporary=1")
+        return super().dispatch(request, *args, **kwargs)
+
+    def form_valid(self, form):
+        with transaction.atomic():
+            form.actor = self.request.user
+            form.instance.created_by = self.request.user
+            form.instance.uhid = generate_quick_entry_uhid()
+            response = super().form_valid(form)
+            details_task = create_quick_entry_details_task(self.object, self.request.user, due_date=self.object.review_date)
+            created_tasks = build_default_tasks(self.object, self.request.user)
+            create_case_activity(
+                case=self.object,
+                user=self.request.user,
+                event_type=ActivityEventType.SYSTEM,
+                note=f"Quick entry created with {len(created_tasks)} starter task(s) and pending details reminder.",
+            )
+            create_case_activity(
+                case=self.object,
+                task=details_task,
+                user=self.request.user,
+                event_type=ActivityEventType.TASK,
+                note=f"{QUICK_ENTRY_DETAILS_TASK_TITLE} task scheduled for {details_task.due_date:%d-%m-%Y}.",
+            )
+        return response
+
+    def get_success_url(self):
+        return reverse("patients:case_detail", kwargs={"pk": self.object.pk})
 
 
 class PatientDataAccessMixin:

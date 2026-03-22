@@ -500,7 +500,7 @@ class CallLogForm(StyledModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["task"].required = True
-        self.fields["task"].empty_label = "Select associated task"
+        self.fields["task"].empty_label = "Select task"
         self.fields["task"].error_messages["required"] = "Please select the associated task."
 
     class Meta:

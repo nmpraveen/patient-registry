@@ -1,0 +1,82 @@
+{% load theme_tags %}
+<aside class="case-detail-rail-card case-detail-panel" data-testid="case-detail-summary-module">
+  <div class="case-detail-rail-card__header">
+    <p class="case-detail-label mb-0">Clinical Details</p>
+    <span class="case-detail-chip case-detail-chip--neutral">Overview</span>
+  </div>
+
+  <div class="case-detail-summary-chips">
+    <span class="case-detail-chip theme-category-chip {% if case.category.name|lower == 'anc' %}category-anc{% elif case.category.name|lower == 'surgery' %}category-surgery{% elif case.category.name|lower == 'medicine' or case.category.name|lower == 'non surgical' or case.category.name|lower == 'non-surgical' or case.category.name|lower == 'nonsurgical' %}category-non-surgical{% else %}category-other{% endif %}" style="{% category_theme_style case.category theme_category_colors %}">{{ case.category.name }}</span>
+    {% if case.subcategory %}
+      <span class="case-detail-chip case-detail-chip--neutral">{{ case.get_subcategory_display }}</span>
+    {% endif %}
+    {% if case.high_risk %}
+      <span class="case-detail-chip app-pill high-risk">High-risk</span>
+    {% endif %}
+    <span class="case-detail-chip case-detail-chip--neutral">{{ case.get_status_display }}</span>
+  </div>
+
+  <div class="case-detail-summary-list">
+    {% if case.diagnosis %}
+      <div class="case-detail-summary-list__wide">
+        <div class="case-detail-facts__label">Diagnosis</div>
+        <div class="case-detail-facts__value">{{ case.diagnosis }}</div>
+      </div>
+    {% endif %}
+
+    {% if case.gravida != None or case.para != None or case.abortions != None or case.living != None %}
+      <div class="case-detail-summary-list__wide">
+        <div class="case-detail-facts__label">Obstetric Summary</div>
+        <div class="case-detail-facts__value">G{{ case.gravida|default:0 }} P{{ case.para|default:0 }} A{{ case.abortions|default:0 }} L{{ case.living|default:0 }}</div>
+      </div>
+    {% endif %}
+
+    {% if case.review_date %}
+      <div>
+        <div class="case-detail-facts__label">Review date</div>
+        <div class="case-detail-facts__value">{{ case.review_date|date:'d M Y' }}</div>
+      </div>
+    {% endif %}
+
+    {% if case.surgery_date %}
+      <div>
+        <div class="case-detail-facts__label">Surgery date</div>
+        <div class="case-detail-facts__value">{{ case.surgery_date|date:'d M Y' }}</div>
+      </div>
+    {% endif %}
+
+    {% if case.referred_by %}
+      <div class="case-detail-summary-list__wide">
+        <div class="case-detail-facts__label">Referred by</div>
+        <div class="case-detail-summary-referral">
+          <svg class="case-detail-icon" aria-hidden="true"><use href="#identity-icon-referral"></use></svg>
+          <span class="case-detail-facts__value">{{ case.referred_by }}</span>
+        </div>
+      </div>
+    {% endif %}
+
+    {% if case.notes %}
+      <div class="case-detail-summary-list__wide">
+        <div class="case-detail-facts__label">Notes</div>
+        <div class="case-detail-facts__value case-detail-facts__value--soft">{{ case.notes|truncatechars:160 }}</div>
+      </div>
+    {% endif %}
+
+    {% if case.anc_high_risk_reason_labels %}
+      <div class="case-detail-summary-list__wide">
+        <p class="case-detail-facts__label case-detail-facts__label--stacked mb-2">High-risk Reasons</p>
+        <div class="case-detail-reason-list" aria-label="High-risk reasons">
+          {% for reason in case.anc_high_risk_reason_labels %}
+            <span class="case-detail-reason-pill">{{ reason }}</span>
+          {% endfor %}
+        </div>
+      </div>
+    {% endif %}
+
+    {% if not case.diagnosis and case.gravida == None and case.para == None and case.abortions == None and case.living == None and not case.anc_high_risk_reason_labels and not case.referred_by and not case.notes %}
+      <div class="case-detail-summary-list__wide">
+        <p class="case-detail-empty mb-0">Clinical details will appear here as the case record is updated.</p>
+      </div>
+    {% endif %}
+  </div>
+</aside>

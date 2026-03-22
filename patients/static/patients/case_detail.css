@@ -104,25 +104,43 @@
   background: radial-gradient(circle, var(--case-detail-bottom-glow) 0%, transparent 72%);
 }
 
-.case-detail-layout {
+.case-detail-module-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(18rem, 22rem);
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr);
   gap: 1rem;
-  align-items: start;
+  align-items: stretch;
 }
 
-.case-detail-main {
+.case-detail-module-companion {
+  grid-column: 2 / span 2;
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1rem;
   min-width: 0;
 }
 
-.case-detail-sidebar {
-  display: grid;
-  gap: 1rem;
-  align-content: start;
-  position: sticky;
-  top: 1rem;
+.case-detail-module-slot {
+  min-width: 0;
+  display: flex;
+}
+
+.case-detail-module-slot > * {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.case-detail-module-slot .case-detail-workspace,
+.case-detail-module-slot .case-detail-rail-card {
+  height: 100%;
+}
+
+.case-detail-module-slot .identity-vitals-panel {
+  display: flex;
+}
+
+.case-detail-module-slot .case-vitals-module {
+  flex: 1 1 auto;
+  min-height: 100%;
 }
 
 .case-detail-panel {
@@ -1727,31 +1745,41 @@
 }
 
 .case-detail-workspace {
-  padding: 1.35rem;
-  background: var(--theme-shell-surface-bg);
-  border: 1px solid color-mix(in srgb, var(--app-border) 84%, var(--theme-shell-surface-bg) 16%);
-  box-shadow: 0 1px 3px var(--case-detail-surface-shadow-soft), 0 14px 28px var(--case-detail-surface-shadow-soft);
+  padding: 0;
+  overflow: hidden;
   scroll-margin-top: 0.9rem;
 }
 
+.case-detail-workspace__shell {
+  display: grid;
+  grid-template-columns: minmax(5.9rem, 6.8rem) minmax(0, 1fr);
+  min-height: 100%;
+}
+
+.case-detail-workspace__stage {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: 1.25rem 1.35rem 0.9rem;
+}
+
 .case-detail-workspace__intro {
-  margin-bottom: 1rem;
-  max-width: 26rem;
+  max-width: 28rem;
 }
 
 .case-detail-workspace__intro .case-detail-label {
-  color: var(--case-detail-faint-text);
-  font-size: 0.69rem;
+  color: var(--theme-shell-page-text);
+  font-size: 0.72rem;
   font-weight: 800;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.12em;
 }
 
 .case-detail-workspace__intro .h5 {
-  color: var(--case-detail-strong-text);
-  font-size: clamp(1.05rem, 0.98rem + 0.28vw, 1.28rem);
-  font-weight: 800;
-  line-height: 1.15;
-  letter-spacing: -0.02em;
+  color: var(--theme-shell-muted-text);
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.25;
 }
 
 .case-detail-workspace__intro .case-detail-muted {
@@ -1768,65 +1796,81 @@
 }
 
 .case-detail-workspace__actions {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.65rem;
+  display: flex;
+  flex-direction: column;
   align-items: stretch;
+  gap: 0.85rem;
+  padding: 1.15rem 0.75rem;
+  background: color-mix(in srgb, var(--theme-shell-page-bg) 80%, var(--theme-shell-surface-bg) 20%);
+  border-right: 1px solid var(--theme-shell-surface-border);
 }
 
 .case-detail-launch {
-  --case-action-color: var(--theme-buttons-primary-text);
-  --case-action-bg: color-mix(in srgb, var(--theme-buttons-primary-bg) 14%, var(--theme-shell-surface-bg) 86%);
-  --case-action-border: var(--theme-buttons-primary-border);
+  --case-action-solid: var(--theme-buttons-primary-bg);
+  --case-action-surface: color-mix(in srgb, var(--theme-buttons-primary-bg) 12%, var(--theme-shell-surface-bg) 88%);
+  --case-action-border: color-mix(in srgb, var(--theme-buttons-primary-bg) 34%, var(--theme-shell-surface-border) 66%);
   --case-action-glow: var(--theme-buttons-primary-focus-shadow);
+  --case-action-ink: color-mix(in srgb, var(--theme-buttons-primary-bg) 76%, var(--theme-shell-page-text) 24%);
   position: relative;
   min-height: 7rem;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0.6rem;
-  padding: 1.05rem 0.65rem 0.95rem;
-  border: 2px solid color-mix(in srgb, var(--theme-shell-surface-border) 82%, var(--case-action-border) 18%);
-  border-radius: 1rem;
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--theme-shell-surface-bg) 92%, var(--case-action-bg) 8%) 0%,
-    color-mix(in srgb, var(--theme-shell-page-bg) 88%, var(--case-action-bg) 12%) 100%
-  );
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 0.55rem;
+  padding: 0.85rem 0.6rem 0.9rem;
+  border: 2px solid transparent;
+  border-radius: 1.5rem;
+  background: transparent;
   color: var(--theme-shell-muted-text);
-  font-weight: 800;
+  font-weight: 700;
   text-align: center;
-  box-shadow: 0 2px 4px color-mix(in srgb, var(--theme-shell-shadow-color) 4%, transparent);
-  transition: transform 160ms ease, border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease, color 160ms ease;
+  box-shadow: none;
+  transition: transform 160ms ease, border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease, color 160ms ease, opacity 160ms ease;
+}
+
+.case-detail-launch::before {
+  content: "";
+  position: absolute;
+  left: -1.1rem;
+  top: 50%;
+  width: 0.28rem;
+  height: 2.2rem;
+  border-radius: 999px;
+  background: transparent;
+  opacity: 0;
+  transform: translateY(-50%);
+  transition: opacity 160ms ease, background-color 160ms ease;
 }
 
 .case-detail-launch--task {
-  --case-action-color: var(--theme-buttons-primary-text);
-  --case-action-bg: color-mix(in srgb, var(--theme-buttons-primary-bg) 14%, var(--theme-shell-surface-bg) 86%);
-  --case-action-border: var(--theme-buttons-primary-border);
+  --case-action-solid: var(--theme-buttons-primary-bg);
+  --case-action-surface: color-mix(in srgb, var(--theme-buttons-primary-bg) 11%, var(--theme-shell-surface-bg) 89%);
+  --case-action-border: color-mix(in srgb, var(--theme-buttons-primary-bg) 40%, var(--theme-shell-surface-border) 60%);
   --case-action-glow: var(--theme-buttons-primary-focus-shadow);
+  --case-action-ink: color-mix(in srgb, var(--theme-buttons-primary-bg) 74%, var(--theme-shell-page-text) 26%);
 }
 
 .case-detail-launch--call {
-  --case-action-color: var(--theme-buttons-success-text);
-  --case-action-bg: color-mix(in srgb, var(--theme-buttons-success-bg) 16%, var(--theme-shell-surface-bg) 84%);
-  --case-action-border: var(--theme-buttons-success-border);
+  --case-action-solid: var(--theme-buttons-success-bg);
+  --case-action-surface: color-mix(in srgb, var(--theme-buttons-success-bg) 12%, var(--theme-shell-surface-bg) 88%);
+  --case-action-border: color-mix(in srgb, var(--theme-buttons-success-bg) 36%, var(--theme-shell-surface-border) 64%);
   --case-action-glow: var(--theme-buttons-success-focus-shadow);
+  --case-action-ink: color-mix(in srgb, var(--theme-buttons-success-bg) 76%, var(--theme-shell-page-text) 24%);
 }
 
 .case-detail-launch--note {
-  --case-action-color: var(--theme-buttons-warning-text);
-  --case-action-bg: color-mix(in srgb, var(--theme-buttons-warning-bg) 18%, var(--theme-shell-surface-bg) 82%);
-  --case-action-border: var(--theme-buttons-warning-border);
+  --case-action-solid: var(--theme-buttons-warning-bg);
+  --case-action-surface: color-mix(in srgb, var(--theme-buttons-warning-bg) 14%, var(--theme-shell-surface-bg) 86%);
+  --case-action-border: color-mix(in srgb, var(--theme-buttons-warning-bg) 38%, var(--theme-shell-surface-border) 62%);
   --case-action-glow: var(--theme-buttons-warning-focus-shadow);
+  --case-action-ink: color-mix(in srgb, var(--theme-buttons-warning-bg) 82%, var(--theme-shell-page-text) 18%);
 }
 
 .case-detail-launch:hover:not(:disabled),
 .case-detail-launch:focus-visible {
   transform: translateY(-1px);
-  border-color: color-mix(in srgb, var(--case-action-border) 80%, var(--theme-shell-surface-bg) 20%);
-  box-shadow: 0 10px 22px color-mix(in srgb, var(--theme-shell-shadow-color) 8%, transparent);
+  background: color-mix(in srgb, var(--theme-shell-surface-bg) 88%, var(--case-action-surface) 12%);
+  color: var(--theme-shell-page-text);
 }
 
 .case-detail-launch:focus-visible {
@@ -1834,50 +1878,59 @@
 }
 
 .case-detail-launch.is-active {
-  color: var(--case-action-color);
-  background: var(--case-action-bg);
-  border-color: var(--case-action-color);
-  box-shadow: 0 12px 24px var(--case-action-glow);
+  color: var(--case-action-ink);
+  background: var(--theme-shell-surface-bg);
+  border-color: var(--case-action-solid);
+  box-shadow: 0 18px 28px color-mix(in srgb, var(--case-action-solid) 12%, transparent);
   transform: translateY(-1px);
+}
+
+.case-detail-launch.is-active::before {
+  background: var(--case-action-solid);
+  opacity: 1;
 }
 
 .case-detail-launch:disabled {
   cursor: not-allowed;
-  opacity: 0.56;
-  border-style: dashed;
+  opacity: 0.46;
   box-shadow: none;
 }
 
 .case-detail-launch__icon {
-  width: 2.75rem;
-  height: 2.75rem;
+  width: 2.85rem;
+  height: 2.85rem;
   display: grid;
   place-items: center;
-  border-radius: 0.8rem;
-  background: color-mix(in srgb, var(--theme-shell-page-bg) 72%, var(--theme-shell-surface-border) 28%);
-  color: var(--theme-shell-muted-text);
+  border-radius: 0.95rem;
+  background: color-mix(in srgb, var(--theme-shell-page-bg) 72%, var(--theme-shell-muted-text) 28%);
+  color: var(--theme-shell-surface-bg);
   transition: background-color 160ms ease, color 160ms ease, box-shadow 160ms ease;
 }
 
-.case-detail-launch__icon .case-detail-icon,
-.case-composer__panel-icon .case-detail-icon {
-  width: 1.15rem;
-  height: 1.15rem;
+.case-detail-launch__icon .case-detail-icon {
+  width: 1.28rem;
+  height: 1.28rem;
 }
 
 .case-detail-launch.is-active .case-detail-launch__icon {
-  background: var(--case-action-color);
+  background: var(--case-action-solid);
   color: var(--theme-shell-surface-bg);
   box-shadow: 0 8px 18px var(--case-action-glow);
 }
 
 .case-detail-launch__label {
   font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0;
   line-height: 1.2;
+  text-transform: none;
 }
 
 .case-composer {
-  margin-top: 0.95rem;
+  margin: 0;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
 }
 
 .case-composer[hidden] {
@@ -1885,138 +1938,149 @@
 }
 
 .case-composer__panels {
+  flex: 1 1 auto;
+  min-height: 0;
   display: grid;
 }
 
 .case-composer__panel {
   display: none;
-  --case-action-color: var(--theme-buttons-primary-text);
-  --case-action-bg: color-mix(in srgb, var(--theme-buttons-primary-bg) 16%, var(--theme-shell-surface-bg) 84%);
-  --case-action-border: var(--theme-buttons-primary-border);
+  --case-action-solid: var(--theme-buttons-primary-bg);
+  --case-action-surface: color-mix(in srgb, var(--theme-buttons-primary-bg) 11%, var(--theme-shell-surface-bg) 89%);
+  --case-action-border: color-mix(in srgb, var(--theme-buttons-primary-bg) 34%, var(--theme-shell-surface-border) 66%);
   --case-action-glow: var(--theme-buttons-primary-focus-shadow);
+  --case-action-ink: color-mix(in srgb, var(--theme-buttons-primary-bg) 74%, var(--theme-shell-page-text) 26%);
   border: 1.5px solid var(--case-action-border);
-  border-radius: 1rem;
-  padding: 1.15rem;
-  background: var(--case-action-bg);
+  border-radius: 1.3rem;
+  padding: 1.15rem 1.1rem 1.05rem;
+  background: var(--case-action-surface);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--theme-shell-surface-bg) 55%, transparent);
   animation: case-composer-slide-down 180ms ease;
 }
 
 .case-composer__panel--task {
-  --case-action-color: var(--theme-buttons-primary-text);
-  --case-action-bg: color-mix(in srgb, var(--theme-buttons-primary-bg) 16%, var(--theme-shell-surface-bg) 84%);
-  --case-action-border: var(--theme-buttons-primary-border);
+  --case-action-solid: var(--theme-buttons-primary-bg);
+  --case-action-surface: color-mix(in srgb, var(--theme-buttons-primary-bg) 11%, var(--theme-shell-surface-bg) 89%);
+  --case-action-border: color-mix(in srgb, var(--theme-buttons-primary-bg) 34%, var(--theme-shell-surface-border) 66%);
   --case-action-glow: var(--theme-buttons-primary-focus-shadow);
+  --case-action-ink: color-mix(in srgb, var(--theme-buttons-primary-bg) 74%, var(--theme-shell-page-text) 26%);
 }
 
 .case-composer__panel--call {
-  --case-action-color: var(--theme-buttons-success-text);
-  --case-action-bg: color-mix(in srgb, var(--theme-buttons-success-bg) 16%, var(--theme-shell-surface-bg) 84%);
-  --case-action-border: var(--theme-buttons-success-border);
+  --case-action-solid: var(--theme-buttons-success-bg);
+  --case-action-surface: color-mix(in srgb, var(--theme-buttons-success-bg) 11%, var(--theme-shell-surface-bg) 89%);
+  --case-action-border: color-mix(in srgb, var(--theme-buttons-success-bg) 34%, var(--theme-shell-surface-border) 66%);
   --case-action-glow: var(--theme-buttons-success-focus-shadow);
+  --case-action-ink: color-mix(in srgb, var(--theme-buttons-success-bg) 76%, var(--theme-shell-page-text) 24%);
 }
 
 .case-composer__panel--note {
-  --case-action-color: var(--theme-buttons-warning-text);
-  --case-action-bg: color-mix(in srgb, var(--theme-buttons-warning-bg) 18%, var(--theme-shell-surface-bg) 82%);
-  --case-action-border: var(--theme-buttons-warning-border);
+  --case-action-solid: var(--theme-buttons-warning-bg);
+  --case-action-surface: color-mix(in srgb, var(--theme-buttons-warning-bg) 13%, var(--theme-shell-surface-bg) 87%);
+  --case-action-border: color-mix(in srgb, var(--theme-buttons-warning-bg) 38%, var(--theme-shell-surface-border) 62%);
   --case-action-glow: var(--theme-buttons-warning-focus-shadow);
+  --case-action-ink: color-mix(in srgb, var(--theme-buttons-warning-bg) 82%, var(--theme-shell-page-text) 18%);
 }
 
 .case-composer__panel.is-active {
-  display: block;
-}
-
-.case-composer__panel-head {
   display: flex;
-  align-items: flex-start;
-  gap: 0.85rem;
-  margin-bottom: 1rem;
+  flex-direction: column;
+  min-height: 100%;
 }
 
-.case-composer__panel-head .h6 {
+.case-composer__panel-title,
+.case-composer__empty .h6 {
   color: var(--theme-shell-page-text);
-  font-weight: 800;
-}
-
-.case-composer__panel-icon {
-  width: 2.6rem;
-  height: 2.6rem;
-  flex: none;
-  display: grid;
-  place-items: center;
-  border-radius: 0.85rem;
-  background: var(--case-action-color);
-  color: var(--theme-shell-surface-bg);
-  box-shadow: 0 10px 18px var(--case-action-glow);
+  font-weight: 700;
+  font-size: 1rem;
+  line-height: 1.25;
 }
 
 .case-composer__form {
   display: grid;
-  gap: 1rem;
+  flex: 1 1 auto;
+  min-height: 100%;
+  align-content: start;
+  gap: 0.9rem;
 }
 
 .case-composer__grid {
   display: grid;
-  gap: 0.8rem;
+  gap: 0.85rem;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.case-composer__grid--task {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .case-composer__field--wide {
   grid-column: 1 / -1;
 }
 
+.case-composer__field--date {
+  max-width: 15rem;
+}
+
 .case-composer__field .form-label {
   display: block;
-  margin-bottom: 0.4rem;
+  margin-bottom: 0.42rem;
   color: var(--theme-shell-muted-text);
-  font-size: 0.8rem;
+  font-size: 0.69rem;
   font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .case-composer__field :is(input:not([type="hidden"]), select, textarea) {
   width: 100%;
-  min-height: 2.9rem;
-  padding: 0.75rem 0.88rem;
-  border-radius: 0.75rem;
+  min-height: 3.1rem;
+  padding: 0.78rem 0.9rem;
+  border-radius: 0.9rem;
   border: 1.5px solid var(--theme-shell-surface-border);
   background: var(--theme-shell-surface-bg);
   color: var(--theme-shell-page-text);
-  box-shadow: none;
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--theme-shell-shadow-color) 3%, transparent);
 }
 
 .case-composer__field textarea {
-  min-height: 6rem;
+  min-height: 6.8rem;
   resize: vertical;
 }
 
 .case-composer__panel :is(input:not([type="hidden"]), select, textarea):focus {
   outline: none;
-  border-color: var(--case-action-color);
-  box-shadow: 0 0 0 0.18rem color-mix(in srgb, var(--case-action-color) 14%, transparent);
+  border-color: var(--case-action-solid);
+  box-shadow: 0 0 0 0.2rem color-mix(in srgb, var(--case-action-solid) 15%, transparent);
 }
 
 .case-composer__footer {
   display: flex;
   justify-content: flex-end;
-  gap: 0.65rem;
+  gap: 0.7rem;
   flex-wrap: wrap;
+  margin-top: auto;
+  padding-top: 0.2rem;
 }
 
 .case-composer__footer .btn,
 .case-composer__cancel,
 .case-composer__submit {
-  min-height: 44px;
+  min-height: 2.7rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 0.45rem;
-  border-radius: 0.75rem;
-  font-weight: 800;
+  border-radius: 0.9rem;
+  font-weight: 700;
+  font-size: 0.74rem;
+  line-height: 1.1;
 }
 
 .case-composer__cancel {
   min-width: 7rem;
-  padding-inline: 1rem;
+  padding-inline: 0.9rem;
   border: 1.5px solid var(--theme-shell-surface-border);
   background: var(--theme-shell-surface-bg);
   color: var(--theme-shell-muted-text);
@@ -2029,21 +2093,39 @@
 }
 
 .case-composer__submit {
-  min-width: 8.5rem;
-  padding-inline: 1.2rem;
+  min-width: 8.7rem;
+  padding-inline: 1rem;
   border: 0;
 }
 
 .case-composer__panel--task .case-composer__submit {
+  background: var(--theme-buttons-primary-bg);
+  color: var(--theme-buttons-primary-text);
+  border-color: var(--theme-buttons-primary-bg);
   box-shadow: 0 10px 20px var(--theme-buttons-primary-focus-shadow);
 }
 
 .case-composer__panel--call .case-composer__submit {
+  background: var(--theme-buttons-success-bg);
+  color: var(--theme-buttons-success-text);
+  border-color: var(--theme-buttons-success-bg);
   box-shadow: 0 10px 20px var(--theme-buttons-success-focus-shadow);
 }
 
 .case-composer__panel--note .case-composer__submit {
+  background: var(--theme-buttons-warning-bg);
+  color: var(--theme-buttons-warning-text);
+  border-color: var(--theme-buttons-warning-bg);
   box-shadow: 0 10px 20px var(--theme-buttons-warning-focus-shadow);
+}
+
+.case-composer__permission,
+.case-composer__empty {
+  border: 1px dashed var(--theme-shell-surface-border);
+  border-radius: 1.25rem;
+  padding: 1.1rem 1.15rem;
+  background: color-mix(in srgb, var(--theme-shell-page-bg) 82%, var(--theme-shell-surface-bg) 18%);
+  color: var(--theme-shell-muted-text);
 }
 
 @keyframes case-composer-slide-down {
@@ -2260,6 +2342,15 @@
     position: static;
   }
 
+  .case-detail-module-row {
+    grid-template-columns: 1fr;
+  }
+
+  .case-detail-module-companion {
+    grid-column: auto;
+    grid-template-columns: 1fr;
+  }
+
   .case-detail-grid {
     grid-template-columns: 1fr;
   }
@@ -2294,8 +2385,43 @@
     justify-content: flex-start;
   }
 
+  .case-detail-workspace__shell {
+    grid-template-columns: 1fr;
+  }
+
+  .case-detail-workspace__actions {
+    flex-direction: row;
+    gap: 0.8rem;
+    padding: 1rem;
+    border-right: 0;
+    border-bottom: 1px solid var(--theme-shell-surface-border);
+  }
+
+  .case-detail-launch {
+    flex: 1 1 0;
+    min-height: 6.8rem;
+    border-radius: 1.25rem;
+  }
+
+  .case-detail-launch::before {
+    left: 50%;
+    top: auto;
+    bottom: -0.32rem;
+    width: 2rem;
+    height: 0.28rem;
+    transform: translateX(-50%);
+  }
+
+  .case-detail-workspace__stage {
+    padding: 1.2rem 1.2rem 0.85rem;
+  }
+
   .case-composer__grid {
     grid-template-columns: 1fr;
+  }
+
+  .case-composer__field--date {
+    max-width: none;
   }
 
   .case-detail-hero__body,
@@ -2329,6 +2455,40 @@
 
   .case-detail-hero {
     padding: 0.9rem;
+  }
+
+  .case-detail-workspace__actions {
+    padding: 0.85rem;
+  }
+
+  .case-detail-launch {
+    min-height: auto;
+    padding: 0.85rem 0.55rem;
+  }
+
+  .case-detail-launch__icon {
+    width: 2.8rem;
+    height: 2.8rem;
+  }
+
+  .case-detail-workspace__stage {
+    padding: 1rem 1rem 0.75rem;
+  }
+
+  .case-composer__panel {
+    padding: 1.2rem 1rem 1rem;
+    border-radius: 1.25rem;
+  }
+
+  .case-composer__footer {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .case-composer__footer .btn,
+  .case-composer__cancel,
+  .case-composer__submit {
+    width: 100%;
   }
 
   .case-detail-avatar {
@@ -2807,51 +2967,49 @@
 .case-detail-shell::before {
   background: radial-gradient(
     circle,
-    color-mix(in srgb, var(--theme-category-bg) 26%, transparent) 0%,
-    color-mix(in srgb, var(--theme-category-bg) 12%, transparent) 36%,
-    transparent 72%
+    var(--case-detail-top-glow) 0%,
+    transparent 70%
   );
 }
 
 .case-detail-shell::after {
   background: radial-gradient(
     circle,
-    color-mix(in srgb, var(--theme-category-bg) 22%, transparent) 0%,
-    color-mix(in srgb, var(--theme-category-bg) 10%, transparent) 34%,
-    transparent 74%
+    var(--case-detail-bottom-glow) 0%,
+    transparent 72%
   );
 }
 
-.case-detail-panel {
-  border: 1px solid var(--case-detail-category-border-soft);
-  background:
-    radial-gradient(
-      circle at top left,
-      color-mix(in srgb, var(--theme-category-bg) 18%, transparent) 0%,
-      color-mix(in srgb, var(--theme-category-bg) 9%, transparent) 34%,
-      transparent 62%
-    ),
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--app-surface-bg) 96%, var(--theme-category-bg) 4%) 0%,
-      color-mix(in srgb, var(--theme-shell-page-bg) 91%, var(--theme-category-bg) 9%) 100%
-    );
-  box-shadow: 0 18px 40px var(--case-detail-surface-shadow-soft);
+.case-detail-module-row,
+.case-detail-tasks,
+.case-detail-timeline {
+  --theme-category-bg: var(--theme-shell-surface-hover-bg);
+  --theme-category-text: var(--app-accent);
+  --theme-category-border: var(--app-border);
+  --theme-category-hover-bg: var(--theme-shell-surface-hover-bg);
+  --case-detail-lower-card-bg: var(--theme-shell-surface-bg);
+  --case-detail-lower-card-border: var(--theme-shell-surface-border);
+  --case-detail-lower-card-shadow: 0 1px 3px color-mix(in srgb, var(--theme-shell-shadow-color) 4%, transparent);
+  --case-detail-lower-card-hover-bg: color-mix(in srgb, var(--theme-shell-page-bg) 84%, var(--theme-shell-surface-bg) 16%);
+}
+
+.case-detail-module-row .case-detail-panel,
+.case-detail-tasks,
+.case-detail-timeline {
+  border: 1px solid var(--case-detail-lower-card-border);
+  background: var(--case-detail-lower-card-bg);
+  box-shadow: var(--case-detail-lower-card-shadow);
   backdrop-filter: none;
 }
 
 .task-mobile-card {
-  border-color: color-mix(in srgb, var(--app-border) 80%, var(--theme-category-border) 20%);
-  background: linear-gradient(
-    180deg,
-      color-mix(in srgb, var(--app-surface-bg) 97%, var(--theme-category-bg) 3%) 0%,
-      color-mix(in srgb, var(--theme-shell-page-bg) 95%, var(--theme-category-bg) 5%) 100%
-  );
-  box-shadow: 0 10px 20px var(--case-detail-surface-shadow-soft);
+  border-color: var(--case-detail-lower-card-border);
+  background: var(--case-detail-lower-card-bg);
+  box-shadow: var(--case-detail-lower-card-shadow);
 }
 
 .case-task-table tbody tr:hover td {
-  background: color-mix(in srgb, var(--theme-category-bg) 10%, var(--theme-shell-surface-bg)) !important;
+  background: var(--case-detail-lower-card-hover-bg) !important;
 }
 
 .case-detail-hero {
@@ -3255,23 +3413,13 @@
 .case-task-surface {
   padding: 1.2rem;
   border-radius: 1.25rem;
-  border: 1px solid color-mix(in srgb, var(--app-border) 78%, var(--theme-category-border) 22%);
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--app-surface-bg) 97%, var(--theme-category-bg) 3%) 0%,
-      color-mix(in srgb, var(--theme-shell-page-bg) 94%, var(--theme-category-bg) 6%) 100%
-    );
-  box-shadow: 0 16px 28px var(--case-detail-surface-shadow-soft);
+  border: 1px solid var(--case-detail-lower-card-border);
+  background: var(--case-detail-lower-card-bg);
+  box-shadow: var(--case-detail-lower-card-shadow);
 }
 
 .case-task-surface--history {
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--app-surface-bg) 98%, var(--theme-category-bg) 2%) 0%,
-      color-mix(in srgb, var(--theme-shell-page-bg) 97%, var(--theme-category-bg) 3%) 100%
-    );
+  background: var(--case-detail-lower-card-bg);
 }
 
 .case-task-surface__head {
@@ -3384,7 +3532,7 @@
 
 .case-task-row:hover .case-task-cell,
 .case-task-history-row:hover td {
-  background: color-mix(in srgb, var(--app-surface-bg) 95%, var(--theme-category-bg) 5%);
+  background: var(--case-detail-lower-card-hover-bg);
 }
 
 .case-task-cell,
@@ -3534,14 +3682,9 @@
   margin-top: 1rem;
   padding: 1rem;
   border-radius: 1.05rem;
-  border: 1px solid color-mix(in srgb, var(--theme-category-border) 34%, var(--theme-shell-surface-bg) 66%);
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--theme-shell-surface-bg) 92%, var(--theme-category-bg) 8%) 0%,
-      color-mix(in srgb, var(--theme-shell-surface-bg) 97%, var(--theme-category-bg) 3%) 100%
-    );
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--theme-shell-surface-bg) 45%, transparent);
+  border: 1px solid var(--case-detail-lower-card-border);
+  background: var(--case-detail-lower-card-bg);
+  box-shadow: var(--case-detail-lower-card-shadow);
 }
 
 .case-task-editor-home {
@@ -3565,12 +3708,7 @@
 
 .case-task-editor[data-mode="note"] {
   border-color: color-mix(in srgb, var(--theme-task-status-awaiting-reports-border) 44%, var(--theme-shell-surface-bg) 56%);
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--theme-alerts-warning-bg) 88%, var(--theme-category-bg) 12%) 0%,
-      color-mix(in srgb, var(--theme-shell-surface-bg) 96%, var(--theme-category-bg) 4%) 100%
-    );
+  background: var(--case-detail-lower-card-bg);
 }
 
 .case-task-editor__head {
@@ -3717,10 +3855,10 @@
   gap: 0.82rem;
   padding: 0.95rem 1rem;
   border-radius: 1rem;
-  border: 1px solid color-mix(in srgb, var(--app-border) 78%, var(--theme-shell-surface-bg) 22%);
+  border: 1px solid var(--case-detail-lower-card-border);
   border-left: 4px solid var(--case-task-accent);
   background: var(--theme-shell-surface-bg);
-  box-shadow: 0 10px 20px var(--case-detail-surface-shadow-soft);
+  box-shadow: var(--case-detail-lower-card-shadow);
 }
 
 .case-task-card--locked {
@@ -4072,22 +4210,24 @@
 
 .case-detail-launch__icon {
   background: color-mix(in srgb, var(--theme-shell-page-bg) 72%, var(--theme-shell-surface-border) 28%);
-  color: var(--theme-shell-muted-text);
-}
-
-.case-detail-launch.is-active .case-detail-launch__icon,
-.case-composer__panel-icon {
   color: var(--theme-shell-surface-bg);
 }
 
-.case-composer__panel-head .h6,
+.case-detail-launch.is-active .case-detail-launch__icon {
+  color: var(--theme-shell-surface-bg);
+}
+
+.case-composer__panel-title,
 .case-composer__field :is(input:not([type="hidden"]), select, textarea),
 .case-composer__cancel:hover,
 .case-composer__cancel:focus {
   color: var(--theme-shell-page-text);
 }
 
-.case-composer__field .form-label,
+.case-composer__field .form-label {
+  color: var(--theme-shell-muted-text);
+}
+
 .case-composer__cancel {
   color: var(--theme-shell-muted-text);
 }

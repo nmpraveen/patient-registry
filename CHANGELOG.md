@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026.03.22.14.01
+- Reworked the case-detail page into the new hero-plus-module layout, with Action Center, Vitals, and Clinical Details grouped in a responsive top row while preserving the existing task workspace, timeline, routes, permissions, and inline editors.
+- Removed category tinting and leftover gradient treatment from lower case-detail surfaces so the hero remains category-aware while the surrounding modules use a cleaner neutral shell style aligned with the Vitals card.
+- Redesigned the Action Center into a left-rail Task/Call/Note workspace with inline panes, simplified forms, and typography/spacing aligned more closely with the Vitals module while keeping the existing AJAX workflows and interactions intact.
+- Finalized the Action Center polish with refined pane spacing, balanced controls, and updated call-form copy.
+
 ## 2026.03.22.02.53
 - Fixed the case-detail hero metadata separators so patient profile pages render clean middle dots again instead of mojibake characters between UHID, sex, age, place, and phone.
 - Replaced the affected case-detail CSS bullet literals with stable Unicode escapes to prevent the same symbol corruption from reappearing during future stylesheet edits.

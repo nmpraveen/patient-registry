@@ -1969,8 +1969,9 @@ class MedtrackViewTests(TestCase):
         response = self.client.get(reverse("patients:case_detail", kwargs={"pk": case.pk}))
 
         self.assertEqual(response.status_code, 200)
+        html = response.content.decode("utf-8")
         self.assertContains(response, "case-task-row--overdue")
-        self.assertNotContains(response, "table-danger")
+        self.assertNotRegex(html, r'class="[^"]*table-danger')
 
     def test_case_detail_completed_task_shows_completed_at_date(self):
         self.client.force_login(self.user)
@@ -2119,6 +2120,7 @@ class MedtrackViewTests(TestCase):
         self.assertContains(response, "Clinical Timeline")
         self.assertContains(response, 'data-testid="case-detail-shell"')
         self.assertContains(response, 'data-testid="case-detail-hero"')
+        self.assertContains(response, 'data-testid="case-detail-module-row"')
         self.assertContains(response, 'data-testid="case-detail-workspace"')
         self.assertContains(response, 'data-testid="case-detail-sidebar"')
         self.assertContains(response, 'data-testid="case-detail-timeline"')

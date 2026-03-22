@@ -82,8 +82,13 @@
     },
   };
 
+  const getAvailableComposerButtons = () => composerButtons.filter((button) => !button.disabled && button.getAttribute("aria-disabled") !== "true");
+
+  const getDefaultComposerPane = () => getAvailableComposerButtons()[0]?.dataset.caseComposerTrigger || "";
+
   const setComposer = (value) => {
-    const next = value || "";
+    const requested = value || "";
+    const next = composerPanels.some((panel) => panel.dataset.caseComposerPanel === requested) ? requested : "";
     if (composer) {
       composer.hidden = !next;
       composer.dataset.caseActivePane = next;
@@ -91,11 +96,15 @@
     composerButtons.forEach((button) => {
       const active = button.dataset.caseComposerTrigger === next;
       button.classList.toggle("is-active", active);
+      button.setAttribute("aria-selected", active ? "true" : "false");
+      button.setAttribute("tabindex", active ? "0" : "-1");
       button.setAttribute("aria-pressed", active ? "true" : "false");
       button.setAttribute("aria-expanded", active ? "true" : "false");
     });
     composerPanels.forEach((panel) => {
-      panel.classList.toggle("is-active", panel.dataset.caseComposerPanel === next);
+      const active = panel.dataset.caseComposerPanel === next;
+      panel.classList.toggle("is-active", active);
+      panel.hidden = !active;
     });
   };
 
@@ -466,20 +475,28 @@
 
   composerButtons.forEach((button) => {
     button.addEventListener("click", () => {
+      if (button.disabled || button.getAttribute("aria-disabled") === "true") {
+        return;
+      }
       const nextPane = button.dataset.caseComposerTrigger;
-      const shouldCollapse = composer?.dataset.caseActivePane === nextPane;
-      setComposer(shouldCollapse ? "" : nextPane);
-      if (!shouldCollapse && window.matchMedia("(max-width: 991.98px)").matches) {
+      if (composer?.dataset.caseActivePane !== nextPane) {
+        setComposer(nextPane);
+      }
+      if (window.matchMedia("(max-width: 991.98px)").matches) {
         window.requestAnimationFrame(() => {
           scrollToSection("#action-center");
         });
-      }
+      } 
     });
   });
 
   composerCloseButtons.forEach((button) => {
     button.addEventListener("click", () => {
-      setComposer("");
+      clearFeedback();
+      const form = button.closest("form");
+      form?.reset();
+      const currentPane = composer?.dataset.caseActivePane || getDefaultComposerPane();
+      setComposer(currentPane || getDefaultComposerPane());
     });
   });
 
@@ -613,7 +630,7 @@
     input.addEventListener("change", filterTasks);
   });
 
-  setComposer("");
+  setComposer(getDefaultComposerPane());
   setTaskEditor("");
   setVitalsTab(vitalsTabButtons[0]?.dataset.vitalsTab || "");
   setVitalsEditor("");

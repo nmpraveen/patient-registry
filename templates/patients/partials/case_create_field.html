@@ -1,9 +1,9 @@
 {% with widget_type=field.field.widget.input_type %}
-  <div class="{{ col_class|default:'col-12' }} case-create-field{% if show_inline_errors and field.errors %} is-invalid{% endif %}">
+  <div class="{{ col_class|default:'col-12' }} case-create-field{% if field_class %} {{ field_class }}{% endif %}{% if show_inline_errors and field.errors %} is-invalid{% endif %}">
     {% if widget_type == "checkbox" %}
-      <div class="form-check form-switch case-create-switch">
+      <div class="form-check form-switch case-create-switch{% if switch_class %} {{ switch_class }}{% endif %}">
         {{ field }}
-        <label class="form-check-label" for="{{ field.id_for_label }}">{{ label|default:field.label }}</label>
+        <label class="form-check-label{% if label_class %} {{ label_class }}{% endif %}" for="{{ field.id_for_label }}">{{ label|default:field.label }}</label>
       </div>
     {% else %}
       <label class="form-label" for="{{ field.id_for_label }}">

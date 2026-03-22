@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.03.22.21.50
+- Tightened the temporary UHID control on the New Case page so it renders as a compact toggle instead of an oversized switch card.
+- Reflowed the new-patient identity section into four explicit rows: UHID plus temp toggle, name fields, gender/DOB/age, and place plus phone.
+- Removed the alternate phone number field from the New Case page so the intake layout stays focused on the primary contact details.
+
 ## 2026.03.22.21.10
 - Restored the dedicated Quick Entry page so the navbar action no longer redirects into the full New Case temporary-patient flow.
 - Reinstated the legacy quick-entry save behavior on top of patient master records, creating a linked temporary patient, preserving quick-entry metadata, and adding the `Details need to be filled` reminder task plus starter tasks.

@@ -248,17 +248,16 @@
 
             <div data-new-patient-fields {% if form.patient_mode.value == "existing" %}hidden{% endif %}>
               <div class="row g-3" data-patient-identity-fields>
-                {% include 'patients/partials/case_create_field.html' with field=form.uhid col_class='col-12 col-lg-3' label='UHID' %}
-                {% include 'patients/partials/case_create_field.html' with field=form.use_temporary_uhid col_class='col-12 col-lg-3 case-create-field--control-offset' help_text='Use only when the real UHID is not available yet.' help_class='case-create-help-text' %}
-                {% include 'patients/partials/case_create_field.html' with field=form.prefix col_class='col-12 col-md-4 col-lg-3' %}
-                {% include 'patients/partials/case_create_field.html' with field=form.first_name col_class='col-12 col-md-4 col-lg-3' %}
-                {% include 'patients/partials/case_create_field.html' with field=form.last_name col_class='col-12 col-md-4 col-lg-3' %}
+                {% include 'patients/partials/case_create_field.html' with field=form.uhid col_class='col-12 col-md-6' label='UHID' %}
+                {% include 'patients/partials/case_create_field.html' with field=form.use_temporary_uhid col_class='col-12 col-md-6 case-create-field--control-offset' field_class='case-create-field--compact-toggle' switch_class='case-create-switch--compact' label='Use temp UHID' help_text='Use only when the real UHID is not available yet.' help_class='case-create-help-text' %}
+                {% include 'patients/partials/case_create_field.html' with field=form.prefix col_class='col-12 col-md-4' %}
+                {% include 'patients/partials/case_create_field.html' with field=form.first_name col_class='col-12 col-md-4' %}
+                {% include 'patients/partials/case_create_field.html' with field=form.last_name col_class='col-12 col-md-4' %}
                 {% include 'patients/partials/case_create_field.html' with field=form.gender col_class='col-12 col-md-4 case-create-gender-field' %}
                 {% include 'patients/partials/case_create_field.html' with field=form.date_of_birth col_class='col-12 col-md-4' help_text='When DOB is entered, age is auto-calculated.' help_class='case-create-help-text' %}
                 {% include 'patients/partials/case_create_field.html' with field=form.age col_class='col-12 col-md-4' help_text='Enter age manually only if DOB is unknown.' %}
-                {% include 'patients/partials/case_create_field.html' with field=form.place col_class='col-12 col-md-4' %}
-                {% include 'patients/partials/case_create_field.html' with field=form.phone_number col_class='col-12 col-md-4' %}
-                {% include 'patients/partials/case_create_field.html' with field=form.alternate_phone_number col_class='col-12 col-md-4' %}
+                {% include 'patients/partials/case_create_field.html' with field=form.place col_class='col-12 col-md-6' %}
+                {% include 'patients/partials/case_create_field.html' with field=form.phone_number col_class='col-12 col-md-6' %}
               </div>
             </div>
 

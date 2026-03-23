@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>V7: Overdue Module - Patient Row Redesign</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', -apple-system, sans-serif;
+      min-height: 100vh;
+      background: #f1f5f9;
+      color: #1e293b;
+      padding: 2rem 1.5rem;
+    }
+
+    .container { max-width: 620px; margin: 0 auto; }
+
+    .back-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: #64748b;
+      text-decoration: none;
+      margin-bottom: 1.5rem;
+    }
+    .back-link:hover { color: #334155; }
+
+    .comparison-label {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin: 2rem 0 1rem;
+    }
+    .comparison-label h2 {
+      font-size: 0.7rem;
+      font-weight: 800;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #94a3b8;
+      white-space: nowrap;
+    }
+    .comparison-label::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: #e2e8f0;
+    }
+
+    .module {
+      border-radius: 1rem;
+      padding: 1rem;
+    }
+
+    .module--overdue {
+      background:
+        radial-gradient(circle at top left, rgba(239,68,68,0.06) 0%, transparent 50%),
+        linear-gradient(180deg, #fff8f8 0%, #fef2f2 100%);
+      border: 1px solid #fecaca;
+    }
+
+    .module-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 0.85rem;
+    }
+
+    .module-header h3 {
+      font-size: 1rem;
+      font-weight: 700;
+      color: #1e293b;
+    }
+
+    .module-count {
+      font-size: 0.72rem;
+      font-weight: 700;
+      background: #fecaca;
+      color: #991b1b;
+      padding: 0.3rem 0.6rem;
+      border-radius: 999px;
+    }
+
+    .row-list {
+      display: grid;
+      gap: 0.6rem;
+    }
+
+    /* ──────────────────────────────────────────
+       CURRENT DESIGN
+    ────────────────────────────────────────── */
+    .current-row {
+      background: #fff;
+      border: 1px solid #fecaca;
+      border-radius: 0.9rem;
+      overflow: hidden;
+      position: relative;
+      display: grid;
+      grid-template-columns: minmax(0,1fr) auto;
+      align-items: center;
+    }
+    .current-row::before {
+      content: '';
+      position: absolute;
+      left: 0; top: 0; bottom: 0;
+      width: 4px;
+      background: #fca5a5;
+    }
+    .current-row-main {
+      padding: 0.75rem 0.5rem 0.75rem 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      min-width: 0;
+    }
+    .current-row-name {
+      font-size: 0.92rem;
+      font-weight: 700;
+      color: #991b1b;
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      border-radius: 999px;
+      padding: 0.35rem 0.8rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .current-row-status { font-size: 0.88rem; }
+    .current-row-call {
+      background: #dcfce7;
+      border: 1px solid #bbf7d0;
+      border-radius: 999px;
+      color: #166534;
+      font-size: 0.78rem;
+      font-weight: 700;
+      padding: 0.45rem 0.85rem;
+      margin: 0.5rem 0.7rem;
+      cursor: pointer;
+    }
+
+    /* ──────────────────────────────────────────
+       REDESIGN: OVERDUE ROW
+       Goal: urgency-forward design. How late is this?
+       Days overdue is the primary signal.
+    ────────────────────────────────────────── */
+    .overdue-row {
+      background: #fff;
+      border: 1px solid #fecaca;
+      border-radius: 0.95rem;
+      overflow: hidden;
+      position: relative;
+      transition: box-shadow 0.15s, border-color 0.15s, transform 0.15s;
+    }
+    .overdue-row:hover {
+      border-color: #f87171;
+      box-shadow: 0 6px 18px rgba(239,68,68,0.08);
+      transform: translateY(-1px);
+    }
+
+    .overdue-row-inner {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 0.7rem;
+      padding: 0.65rem 0.8rem 0.65rem 0.8rem;
+    }
+
+    /* Urgency badge: days overdue */
+    .overdue-urgency {
+      width: 3rem;
+      height: 3rem;
+      border-radius: 0.75rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      line-height: 1;
+    }
+    .overdue-urgency--mild {
+      background: #fef3c7;
+      border: 1px solid #fde68a;
+    }
+    .overdue-urgency--moderate {
+      background: #fed7aa;
+      border: 1px solid #fdba74;
+    }
+    .overdue-urgency--severe {
+      background: #fecaca;
+      border: 1px solid #fca5a5;
+    }
+    .overdue-urgency--critical {
+      background: #ef4444;
+      border: 1px solid #dc2626;
+    }
+    .overdue-urgency-number {
+      font-size: 1.1rem;
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      line-height: 1;
+    }
+    .overdue-urgency--mild .overdue-urgency-number { color: #92400e; }
+    .overdue-urgency--moderate .overdue-urgency-number { color: #9a3412; }
+    .overdue-urgency--severe .overdue-urgency-number { color: #991b1b; }
+    .overdue-urgency--critical .overdue-urgency-number { color: #fff; }
+    .overdue-urgency-label {
+      font-size: 0.55rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      margin-top: 0.1rem;
+    }
+    .overdue-urgency--mild .overdue-urgency-label { color: #a16207; }
+    .overdue-urgency--moderate .overdue-urgency-label { color: #c2410c; }
+    .overdue-urgency--severe .overdue-urgency-label { color: #b91c1c; }
+    .overdue-urgency--critical .overdue-urgency-label { color: rgba(255,255,255,0.85); }
+
+    .overdue-row-body { min-width: 0; }
+
+    .overdue-row-top {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      margin-bottom: 0.15rem;
+    }
+
+    .overdue-row-name {
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: #0f172a;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .overdue-row-age {
+      font-size: 0.74rem;
+      font-weight: 600;
+      color: #94a3b8;
+      flex-shrink: 0;
+    }
+
+    .overdue-row-category {
+      font-size: 0.64rem;
+      font-weight: 700;
+      padding: 0.18rem 0.45rem;
+      border-radius: 999px;
+      flex-shrink: 0;
+    }
+    .overdue-row-category--anc { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
+    .overdue-row-category--surgery { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+    .overdue-row-category--medicine { background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; }
+
+    .overdue-row-bottom {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      flex-wrap: wrap;
+    }
+
+    .overdue-row-date {
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: #dc2626;
+    }
+
+    .overdue-row-sep {
+      color: #e2e8f0;
+      font-size: 0.72rem;
+    }
+
+    .overdue-row-tasks-text {
+      font-size: 0.76rem;
+      color: #64748b;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .overdue-row-actions {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 0.35rem;
+    }
+
+    .overdue-call-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      border-radius: 0.6rem;
+      color: #166534;
+      font-size: 0.74rem;
+      font-weight: 700;
+      padding: 0.38rem 0.7rem;
+      cursor: pointer;
+      transition: all 0.12s;
+    }
+    .overdue-call-btn:hover {
+      background: #dcfce7;
+      border-color: #86efac;
+    }
+    .overdue-call-btn svg {
+      width: 12px;
+      height: 12px;
+    }
+
+    .overdue-row-flags {
+      display: flex;
+      gap: 0.25rem;
+    }
+    .overdue-flag {
+      font-size: 0.62rem;
+      font-weight: 700;
+      padding: 0.15rem 0.38rem;
+      border-radius: 999px;
+      background: #fef2f2;
+      color: #dc2626;
+      border: 1px solid #fecaca;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <a class="back-link" href="index.html">&larr; Back to overview</a>
+
+    <!-- ────────────────────────────────────
+         CURRENT DESIGN
+    ──────────────────────────────────── -->
+    <div class="comparison-label"><h2>Current Design</h2></div>
+
+    <div class="module module--overdue">
+      <div class="module-header">
+        <h3>Overdue</h3>
+      </div>
+      <div class="row-list">
+        <div class="current-row">
+          <div class="current-row-main">
+            <span class="current-row-name">Sathish Arumugam</span>
+            <span class="current-row-status">&#128222;</span>
+          </div>
+          <button class="current-row-call">Call</button>
+        </div>
+        <div class="current-row">
+          <div class="current-row-main">
+            <span class="current-row-name">Rani Krishnan</span>
+            <span class="current-row-status">&#128308;&#128222; x3</span>
+          </div>
+          <button class="current-row-call">Call</button>
+        </div>
+        <div class="current-row">
+          <div class="current-row-main">
+            <span class="current-row-name">Pradeep Subramanian</span>
+            <span class="current-row-status">&#128222;</span>
+          </div>
+          <button class="current-row-call">Call</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ────────────────────────────────────
+         REDESIGN
+    ──────────────────────────────────── -->
+    <div class="comparison-label"><h2>Redesigned Rows</h2></div>
+
+    <div class="module module--overdue">
+      <div class="module-header">
+        <h3>Overdue</h3>
+        <span class="module-count">3 patients</span>
+      </div>
+      <div class="row-list">
+
+        <!-- 168 days overdue (critical) -->
+        <article class="overdue-row">
+          <div class="overdue-row-inner">
+            <div class="overdue-urgency overdue-urgency--critical">
+              <span class="overdue-urgency-number">168</span>
+              <span class="overdue-urgency-label">days</span>
+            </div>
+            <div class="overdue-row-body">
+              <div class="overdue-row-top">
+                <span class="overdue-row-name">Sathish Arumugam</span>
+                <span class="overdue-row-age">M 41</span>
+                <span class="overdue-row-category overdue-row-category--medicine">Medicine</span>
+              </div>
+              <div class="overdue-row-bottom">
+                <span class="overdue-row-date">Due Oct 07</span>
+                <span class="overdue-row-sep">|</span>
+                <span class="overdue-row-tasks-text">BP Review, Lab follow-up</span>
+              </div>
+            </div>
+            <div class="overdue-row-actions">
+              <button class="overdue-call-btn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>
+                Call
+              </button>
+            </div>
+          </div>
+        </article>
+
+        <!-- 20 days overdue (severe) -->
+        <article class="overdue-row">
+          <div class="overdue-row-inner">
+            <div class="overdue-urgency overdue-urgency--severe">
+              <span class="overdue-urgency-number">20</span>
+              <span class="overdue-urgency-label">days</span>
+            </div>
+            <div class="overdue-row-body">
+              <div class="overdue-row-top">
+                <span class="overdue-row-name">Rani Krishnan</span>
+                <span class="overdue-row-age">F 29</span>
+                <span class="overdue-row-category overdue-row-category--anc">ANC</span>
+              </div>
+              <div class="overdue-row-bottom">
+                <span class="overdue-row-date">Due Mar 03</span>
+                <span class="overdue-row-sep">|</span>
+                <span class="overdue-row-tasks-text">ANC follow-up</span>
+              </div>
+            </div>
+            <div class="overdue-row-actions">
+              <span class="overdue-flag">High-risk</span>
+              <button class="overdue-call-btn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>
+                Call
+              </button>
+            </div>
+          </div>
+        </article>
+
+        <!-- 10 days overdue (moderate) -->
+        <article class="overdue-row">
+          <div class="overdue-row-inner">
+            <div class="overdue-urgency overdue-urgency--moderate">
+              <span class="overdue-urgency-number">10</span>
+              <span class="overdue-urgency-label">days</span>
+            </div>
+            <div class="overdue-row-body">
+              <div class="overdue-row-top">
+                <span class="overdue-row-name">Pradeep Subramanian</span>
+                <span class="overdue-row-age">M 35</span>
+                <span class="overdue-row-category overdue-row-category--surgery">Surgery</span>
+              </div>
+              <div class="overdue-row-bottom">
+                <span class="overdue-row-date">Due Mar 13</span>
+                <span class="overdue-row-sep">|</span>
+                <span class="overdue-row-tasks-text">Post-op wound review</span>
+              </div>
+            </div>
+            <div class="overdue-row-actions">
+              <button class="overdue-call-btn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>
+                Call
+              </button>
+            </div>
+          </div>
+        </article>
+
+        <!-- 3 days overdue (mild) -->
+        <article class="overdue-row">
+          <div class="overdue-row-inner">
+            <div class="overdue-urgency overdue-urgency--mild">
+              <span class="overdue-urgency-number">3</span>
+              <span class="overdue-urgency-label">days</span>
+            </div>
+            <div class="overdue-row-body">
+              <div class="overdue-row-top">
+                <span class="overdue-row-name">Anitha Murugan</span>
+                <span class="overdue-row-age">F 24</span>
+                <span class="overdue-row-category overdue-row-category--anc">ANC</span>
+              </div>
+              <div class="overdue-row-bottom">
+                <span class="overdue-row-date">Due Mar 20</span>
+                <span class="overdue-row-sep">|</span>
+                <span class="overdue-row-tasks-text">USG review</span>
+              </div>
+            </div>
+            <div class="overdue-row-actions">
+              <button class="overdue-call-btn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>
+                Call
+              </button>
+            </div>
+          </div>
+        </article>
+
+      </div>
+    </div>
+
+    <!-- ────────────────────────────────────
+         WHAT CHANGED
+    ──────────────────────────────────── -->
+    <div class="comparison-label"><h2>What Changed</h2></div>
+    <div style="background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:1.25rem; font-size:0.82rem; color:#475569; line-height:1.7;">
+      <ul style="padding-left:1.2rem; display:grid; gap:0.35rem;">
+        <li><strong>Days-overdue badge</strong> - the most critical info for overdue patients. 4-tier color scale: mild (1-7 days, yellow), moderate (8-14, orange), severe (15-30, red), critical (30+, solid red with white text)</li>
+        <li><strong>Due date + tasks inline</strong> - no need to expand to see what's overdue and when it was due</li>
+        <li><strong>Category pill</strong> - ANC/Surgery/Medicine shown on the collapsed row for quick triage</li>
+        <li><strong>Sex + age inline</strong> - visible without expanding</li>
+        <li><strong>High-risk flag</strong> - floated near the call button for immediate visibility on high-priority patients</li>
+        <li><strong>Sorted by urgency</strong> - most overdue patients first (visual hierarchy reinforced by badge color intensity)</li>
+      </ul>
+    </div>
+
+  </div>
+</body>
+</html>

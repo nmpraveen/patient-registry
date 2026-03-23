@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>V7: Recently Added - Patient Row Redesign</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', -apple-system, sans-serif;
+      min-height: 100vh;
+      background: #f1f5f9;
+      color: #1e293b;
+      padding: 2rem 1.5rem;
+    }
+
+    .container { max-width: 620px; margin: 0 auto; }
+
+    .back-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: #64748b;
+      text-decoration: none;
+      margin-bottom: 1.5rem;
+    }
+    .back-link:hover { color: #334155; }
+
+    .comparison-label {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin: 2rem 0 1rem;
+    }
+    .comparison-label h2 {
+      font-size: 0.7rem;
+      font-weight: 800;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #94a3b8;
+      white-space: nowrap;
+    }
+    .comparison-label::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: #e2e8f0;
+    }
+
+    .module {
+      border-radius: 1rem;
+      padding: 1rem;
+    }
+
+    .module--recent {
+      background:
+        radial-gradient(circle at top left, rgba(124,58,237,0.06) 0%, transparent 50%),
+        linear-gradient(180deg, #faf8ff 0%, #f5f0ff 100%);
+      border: 1px solid #e9d5ff;
+    }
+
+    .module-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 0.85rem;
+    }
+
+    .module-header h3 {
+      font-size: 1rem;
+      font-weight: 700;
+      color: #1e293b;
+    }
+
+    .row-list {
+      display: grid;
+      gap: 0.5rem;
+    }
+
+    /* ──────────────────────────────────────────
+       CURRENT DESIGN
+    ────────────────────────────────────────── */
+    .current-row {
+      background: #fff;
+      border: 1px solid #e9d5ff;
+      border-radius: 0.9rem;
+      overflow: hidden;
+      position: relative;
+      padding: 0.65rem 0.85rem 0.65rem 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      min-width: 0;
+    }
+    .current-row::before {
+      content: '';
+      position: absolute;
+      left: 0; top: 0; bottom: 0;
+      width: 4px;
+      background: #c4b5fd;
+    }
+    .current-row-name {
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: #0f172a;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      flex: 1;
+    }
+    .current-row-sep {
+      color: #cbd5e1;
+      flex-shrink: 0;
+    }
+    .current-row-meta {
+      font-size: 0.8rem;
+      color: #94a3b8;
+      flex-shrink: 0;
+    }
+
+    /* ──────────────────────────────────────────
+       REDESIGN: RECENTLY ADDED ROW
+       Goal: show recency visually. Surface
+       category + diagnosis on the collapsed row.
+       Timeline feel with relative dates.
+    ────────────────────────────────────────── */
+    .recent-row {
+      background: #fff;
+      border: 1px solid #ede9fe;
+      border-radius: 0.95rem;
+      overflow: hidden;
+      position: relative;
+      transition: box-shadow 0.15s, border-color 0.15s, transform 0.15s;
+    }
+    .recent-row:hover {
+      border-color: #c4b5fd;
+      box-shadow: 0 4px 14px rgba(124,58,237,0.06);
+      transform: translateY(-1px);
+    }
+
+    .recent-row-inner {
+      display: grid;
+      grid-template-columns: auto minmax(0,1fr) auto;
+      align-items: center;
+      gap: 0.65rem;
+      padding: 0.6rem 0.8rem 0.6rem 0.65rem;
+    }
+
+    /* Recency indicator: visual timeline marker */
+    .recent-row-time {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.15rem;
+      flex-shrink: 0;
+      width: 3.2rem;
+    }
+
+    .recent-row-time-badge {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 2.2rem;
+      height: 2.2rem;
+      border-radius: 0.6rem;
+      font-size: 0.82rem;
+      font-weight: 800;
+      line-height: 1;
+    }
+
+    .recent-row-time--today .recent-row-time-badge {
+      background: #f3e8ff;
+      color: #7c3aed;
+      border: 1px solid #ddd6fe;
+    }
+    .recent-row-time--week .recent-row-time-badge {
+      background: #faf5ff;
+      color: #a78bfa;
+      border: 1px solid #ede9fe;
+    }
+    .recent-row-time--older .recent-row-time-badge {
+      background: #f8fafc;
+      color: #94a3b8;
+      border: 1px solid #e2e8f0;
+    }
+
+    .recent-row-time-label {
+      font-size: 0.58rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      text-align: center;
+    }
+    .recent-row-time--today .recent-row-time-label { color: #7c3aed; }
+    .recent-row-time--week .recent-row-time-label { color: #a78bfa; }
+    .recent-row-time--older .recent-row-time-label { color: #94a3b8; }
+
+    .recent-row-body { min-width: 0; }
+
+    .recent-row-top {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      margin-bottom: 0.12rem;
+    }
+
+    .recent-row-name {
+      font-size: 0.88rem;
+      font-weight: 700;
+      color: #0f172a;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .recent-row-age {
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: #94a3b8;
+      flex-shrink: 0;
+    }
+
+    .recent-row-bottom {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .recent-row-diagnosis {
+      font-size: 0.76rem;
+      color: #64748b;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .recent-row-category {
+      font-size: 0.62rem;
+      font-weight: 700;
+      padding: 0.15rem 0.42rem;
+      border-radius: 999px;
+      flex-shrink: 0;
+      white-space: nowrap;
+    }
+    .recent-row-category--anc { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
+    .recent-row-category--surgery { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+    .recent-row-category--medicine { background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; }
+
+    .recent-row-date {
+      font-size: 0.68rem;
+      font-weight: 600;
+      color: #94a3b8;
+      white-space: nowrap;
+    }
+
+    /* Timeline connector line between rows */
+    .recent-timeline-row {
+      position: relative;
+      padding-left: 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <a class="back-link" href="index.html">&larr; Back to overview</a>
+
+    <!-- ────────────────────────────────────
+         CURRENT DESIGN
+    ──────────────────────────────────── -->
+    <div class="comparison-label"><h2>Current Design</h2></div>
+
+    <div class="module module--recent">
+      <div class="module-header">
+        <h3>Recently Added</h3>
+      </div>
+      <div class="row-list">
+        <div class="current-row">
+          <span class="current-row-name">Meena Sundaram</span>
+          <span class="current-row-sep">|</span>
+          <span class="current-row-meta">F 34</span>
+          <span class="current-row-sep">|</span>
+          <span class="current-row-meta">Mar 23</span>
+        </div>
+        <div class="current-row">
+          <span class="current-row-name">Arun Balaji</span>
+          <span class="current-row-sep">|</span>
+          <span class="current-row-meta">M 55</span>
+          <span class="current-row-sep">|</span>
+          <span class="current-row-meta">Mar 22</span>
+        </div>
+        <div class="current-row">
+          <span class="current-row-name">Deepika Venkatesh</span>
+          <span class="current-row-sep">|</span>
+          <span class="current-row-meta">F 28</span>
+          <span class="current-row-sep">|</span>
+          <span class="current-row-meta">Mar 19</span>
+        </div>
+        <div class="current-row">
+          <span class="current-row-name">Gopal Krishnamurthy</span>
+          <span class="current-row-sep">|</span>
+          <span class="current-row-meta">M 47</span>
+          <span class="current-row-sep">|</span>
+          <span class="current-row-meta">Mar 14</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ────────────────────────────────────
+         REDESIGN
+    ──────────────────────────────────── -->
+    <div class="comparison-label"><h2>Redesigned Rows</h2></div>
+
+    <div class="module module--recent">
+      <div class="module-header">
+        <h3>Recently Added</h3>
+      </div>
+      <div class="row-list">
+
+        <!-- Added today -->
+        <article class="recent-row">
+          <div class="recent-row-inner">
+            <div class="recent-row-time recent-row-time--today">
+              <div class="recent-row-time-badge">2h</div>
+              <span class="recent-row-time-label">ago</span>
+            </div>
+            <div class="recent-row-body">
+              <div class="recent-row-top">
+                <span class="recent-row-name">Meena Sundaram</span>
+                <span class="recent-row-age">F 34</span>
+                <span class="recent-row-category recent-row-category--anc">ANC</span>
+              </div>
+              <div class="recent-row-bottom">
+                <span class="recent-row-diagnosis">Pregnancy - 12 weeks, first visit</span>
+              </div>
+            </div>
+            <span class="recent-row-date">Today</span>
+          </div>
+        </article>
+
+        <!-- Added yesterday -->
+        <article class="recent-row">
+          <div class="recent-row-inner">
+            <div class="recent-row-time recent-row-time--today">
+              <div class="recent-row-time-badge">1d</div>
+              <span class="recent-row-time-label">ago</span>
+            </div>
+            <div class="recent-row-body">
+              <div class="recent-row-top">
+                <span class="recent-row-name">Arun Balaji</span>
+                <span class="recent-row-age">M 55</span>
+                <span class="recent-row-category recent-row-category--medicine">Medicine</span>
+              </div>
+              <div class="recent-row-bottom">
+                <span class="recent-row-diagnosis">Chronic kidney disease - Stage 3</span>
+              </div>
+            </div>
+            <span class="recent-row-date">Mar 22</span>
+          </div>
+        </article>
+
+        <!-- Added 4 days ago -->
+        <article class="recent-row">
+          <div class="recent-row-inner">
+            <div class="recent-row-time recent-row-time--week">
+              <div class="recent-row-time-badge">4d</div>
+              <span class="recent-row-time-label">ago</span>
+            </div>
+            <div class="recent-row-body">
+              <div class="recent-row-top">
+                <span class="recent-row-name">Deepika Venkatesh</span>
+                <span class="recent-row-age">F 28</span>
+                <span class="recent-row-category recent-row-category--anc">ANC</span>
+              </div>
+              <div class="recent-row-bottom">
+                <span class="recent-row-diagnosis">Pregnancy - 20 weeks</span>
+              </div>
+            </div>
+            <span class="recent-row-date">Mar 19</span>
+          </div>
+        </article>
+
+        <!-- Added 9 days ago -->
+        <article class="recent-row">
+          <div class="recent-row-inner">
+            <div class="recent-row-time recent-row-time--older">
+              <div class="recent-row-time-badge">9d</div>
+              <span class="recent-row-time-label">ago</span>
+            </div>
+            <div class="recent-row-body">
+              <div class="recent-row-top">
+                <span class="recent-row-name">Gopal Krishnamurthy</span>
+                <span class="recent-row-age">M 47</span>
+                <span class="recent-row-category recent-row-category--surgery">Surgery</span>
+              </div>
+              <div class="recent-row-bottom">
+                <span class="recent-row-diagnosis">Inguinal hernia - scheduled</span>
+              </div>
+            </div>
+            <span class="recent-row-date">Mar 14</span>
+          </div>
+        </article>
+
+      </div>
+    </div>
+
+    <!-- ────────────────────────────────────
+         WHAT CHANGED
+    ──────────────────────────────────── -->
+    <div class="comparison-label"><h2>What Changed</h2></div>
+    <div style="background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:1.25rem; font-size:0.82rem; color:#475569; line-height:1.7;">
+      <ul style="padding-left:1.2rem; display:grid; gap:0.35rem;">
+        <li><strong>Relative time badge</strong> - "2h ago", "1d ago", "4d ago" gives immediate sense of recency. Color fades from purple (recent) to grey (older)</li>
+        <li><strong>Diagnosis visible</strong> - current design only shows name, sex/age, and date. The redesign adds diagnosis so you can identify the patient without expanding</li>
+        <li><strong>Category pill inline</strong> - ANC/Surgery/Medicine shown at a glance</li>
+        <li><strong>Still compact</strong> - rows stay tight since this is a sidebar module. Two-line layout adds info without adding bulk</li>
+        <li><strong>Visual recency gradient</strong> - the time badge fades in intensity as entries get older, reinforcing the timeline feel</li>
+      </ul>
+    </div>
+
+  </div>
+</body>
+</html>

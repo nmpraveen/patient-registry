@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>V7: Upcoming Schedule - Patient Row Redesign</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', -apple-system, sans-serif;
+      min-height: 100vh;
+      background: #f1f5f9;
+      color: #1e293b;
+      padding: 2rem 1.5rem;
+    }
+
+    .container { max-width: 620px; margin: 0 auto; }
+
+    .back-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: #64748b;
+      text-decoration: none;
+      margin-bottom: 1.5rem;
+    }
+    .back-link:hover { color: #334155; }
+
+    .comparison-label {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin: 2rem 0 1rem;
+    }
+    .comparison-label h2 {
+      font-size: 0.7rem;
+      font-weight: 800;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #94a3b8;
+      white-space: nowrap;
+    }
+    .comparison-label::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: #e2e8f0;
+    }
+
+    .module {
+      border-radius: 1rem;
+      padding: 1rem;
+    }
+
+    .module--upcoming {
+      background:
+        radial-gradient(circle at top left, rgba(6,182,212,0.08) 0%, transparent 50%),
+        linear-gradient(180deg, #f8fafb 0%, #f0f7fa 100%);
+      border: 1px solid #cce8ef;
+    }
+
+    .module-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 0.85rem;
+    }
+
+    .module-header h3 {
+      font-size: 1rem;
+      font-weight: 700;
+      color: #1e293b;
+    }
+
+    .row-list {
+      display: grid;
+      gap: 0.6rem;
+    }
+
+    /* ──────────────────────────────────────────
+       CURRENT DESIGN
+    ────────────────────────────────────────── */
+    .current-row {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 0.9rem;
+      overflow: hidden;
+      position: relative;
+      padding: 0.75rem 0.85rem 0.75rem 1rem;
+      display: grid;
+      grid-template-columns: minmax(0,1fr) auto;
+      gap: 0.7rem;
+      align-items: start;
+    }
+    .current-row::before {
+      content: '';
+      position: absolute;
+      left: 0; top: 0; bottom: 0;
+      width: 5px;
+    }
+    .current-row--anc::before { background: #86efac; }
+    .current-row--surgery::before { background: #fde68a; }
+    .current-row-name {
+      font-size: 0.92rem;
+      font-weight: 700;
+      color: #0f172a;
+    }
+    .current-row-diagnosis {
+      font-size: 0.82rem;
+      color: #475569;
+      margin-top: 0.15rem;
+    }
+    .current-row-tasks {
+      font-size: 0.78rem;
+      color: #94a3b8;
+      margin-top: 0.15rem;
+    }
+    .current-row-pill {
+      font-size: 0.68rem;
+      font-weight: 700;
+      padding: 0.3rem 0.55rem;
+      border-radius: 999px;
+    }
+    .current-row-pill--anc { background: #dcfce7; color: #166534; }
+    .current-row-pill--surgery { background: #fef3c7; color: #92400e; }
+    .current-row-open {
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: #64748b;
+      text-decoration: none;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      padding: 0.32rem 0.55rem;
+      border-radius: 999px;
+      margin-top: 0.35rem;
+    }
+
+    /* ──────────────────────────────────────────
+       REDESIGN: UPCOMING SCHEDULE ROW
+       Goal: time-slot aware layout. Surface the
+       scheduled time, task count, and category.
+       Add a timeline feel.
+    ────────────────────────────────────────── */
+    .upcoming-row {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 0.95rem;
+      overflow: hidden;
+      position: relative;
+      transition: box-shadow 0.15s, border-color 0.15s, transform 0.15s;
+    }
+    .upcoming-row:hover {
+      border-color: #a5d8e6;
+      box-shadow: 0 6px 18px rgba(6,182,212,0.07);
+      transform: translateY(-1px);
+    }
+
+    .upcoming-row-inner {
+      display: grid;
+      grid-template-columns: auto minmax(0,1fr) auto;
+      align-items: center;
+      gap: 0.7rem;
+      padding: 0.65rem 0.8rem 0.65rem 0.65rem;
+    }
+
+    /* Category stripe + avatar combo */
+    .upcoming-row-leading {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      flex-shrink: 0;
+    }
+
+    .upcoming-row-stripe {
+      width: 4px;
+      align-self: stretch;
+      border-radius: 4px;
+      flex-shrink: 0;
+    }
+    .upcoming-row-stripe--anc { background: linear-gradient(180deg, #4ade80, #22c55e); }
+    .upcoming-row-stripe--surgery { background: linear-gradient(180deg, #fbbf24, #f59e0b); }
+    .upcoming-row-stripe--medicine { background: linear-gradient(180deg, #94a3b8, #64748b); }
+
+    .upcoming-avatar {
+      width: 2.4rem;
+      height: 2.4rem;
+      border-radius: 0.65rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.72rem;
+      font-weight: 800;
+      margin-left: 0.55rem;
+      flex-shrink: 0;
+    }
+    .upcoming-avatar--anc { background: #dcfce7; color: #166534; }
+    .upcoming-avatar--surgery { background: #fef3c7; color: #92400e; }
+    .upcoming-avatar--medicine { background: #f1f5f9; color: #475569; }
+
+    .upcoming-row-body { min-width: 0; }
+
+    .upcoming-row-top {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      margin-bottom: 0.15rem;
+    }
+
+    .upcoming-row-name {
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: #0f172a;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .upcoming-row-age {
+      font-size: 0.74rem;
+      font-weight: 600;
+      color: #94a3b8;
+      flex-shrink: 0;
+    }
+
+    .upcoming-row-bottom {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      flex-wrap: wrap;
+    }
+
+    .upcoming-row-diagnosis {
+      font-size: 0.78rem;
+      color: #64748b;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 14rem;
+    }
+
+    .upcoming-row-dot {
+      width: 3px;
+      height: 3px;
+      border-radius: 50%;
+      background: #cbd5e1;
+      flex-shrink: 0;
+    }
+
+    .upcoming-row-task-list {
+      display: flex;
+      gap: 0.3rem;
+      flex-wrap: wrap;
+    }
+
+    .upcoming-row-task-chip {
+      font-size: 0.68rem;
+      font-weight: 600;
+      padding: 0.15rem 0.45rem;
+      border-radius: 0.4rem;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      color: #475569;
+      white-space: nowrap;
+    }
+
+    .upcoming-row-meta {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 0.3rem;
+    }
+
+    .upcoming-row-category {
+      font-size: 0.64rem;
+      font-weight: 700;
+      padding: 0.22rem 0.5rem;
+      border-radius: 999px;
+      white-space: nowrap;
+    }
+    .upcoming-row-category--anc { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
+    .upcoming-row-category--surgery { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+    .upcoming-row-category--medicine { background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; }
+
+    .upcoming-row-open {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      font-size: 0.68rem;
+      font-weight: 700;
+      color: #0891b2;
+      text-decoration: none;
+      padding: 0.25rem 0.5rem;
+      border-radius: 0.45rem;
+      background: #ecfeff;
+      border: 1px solid #a5f3fc;
+      white-space: nowrap;
+    }
+
+    /* Day header for grouping */
+    .upcoming-day-header {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      padding: 0.2rem 0;
+    }
+    .upcoming-day-date {
+      font-size: 0.74rem;
+      font-weight: 800;
+      color: #0891b2;
+      white-space: nowrap;
+    }
+    .upcoming-day-count {
+      font-size: 0.68rem;
+      font-weight: 600;
+      color: #94a3b8;
+    }
+    .upcoming-day-line {
+      flex: 1;
+      height: 1px;
+      background: #e2e8f0;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <a class="back-link" href="index.html">&larr; Back to overview</a>
+
+    <!-- ────────────────────────────────────
+         CURRENT DESIGN
+    ──────────────────────────────────── -->
+    <div class="comparison-label"><h2>Current Design</h2></div>
+
+    <div class="module module--upcoming">
+      <div class="module-header">
+        <h3>Monday, March 24</h3>
+      </div>
+      <div class="row-list">
+        <div class="current-row current-row--anc">
+          <div>
+            <div class="current-row-name">Aishwarya Kumar</div>
+            <div class="current-row-diagnosis">Pregnancy - 34 weeks, ANC follow-up</div>
+            <div class="current-row-tasks">ANC Review, USG</div>
+          </div>
+          <div style="display:grid; gap:0.3rem; justify-items:end;">
+            <span class="current-row-pill current-row-pill--anc">ANC</span>
+            <a href="#" class="current-row-open">Open case</a>
+          </div>
+        </div>
+        <div class="current-row current-row--surgery">
+          <div>
+            <div class="current-row-name">Rajesh Patel</div>
+            <div class="current-row-diagnosis">Appendectomy - post-op day 3</div>
+            <div class="current-row-tasks">Wound check, Suture removal</div>
+          </div>
+          <div style="display:grid; gap:0.3rem; justify-items:end;">
+            <span class="current-row-pill current-row-pill--surgery">Surgery</span>
+            <a href="#" class="current-row-open">Open case</a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ────────────────────────────────────
+         REDESIGN
+    ──────────────────────────────────── -->
+    <div class="comparison-label"><h2>Redesigned Rows</h2></div>
+
+    <div class="module module--upcoming">
+      <div class="module-header">
+        <h3>Monday, March 24</h3>
+      </div>
+
+      <div class="upcoming-day-header">
+        <span class="upcoming-day-date">3 patients scheduled</span>
+        <span class="upcoming-day-line"></span>
+      </div>
+
+      <div class="row-list" style="margin-top: 0.5rem;">
+
+        <!-- ANC patient -->
+        <article class="upcoming-row">
+          <div class="upcoming-row-inner">
+            <div class="upcoming-row-leading">
+              <div class="upcoming-row-stripe upcoming-row-stripe--anc"></div>
+              <div class="upcoming-avatar upcoming-avatar--anc">AK</div>
+            </div>
+            <div class="upcoming-row-body">
+              <div class="upcoming-row-top">
+                <span class="upcoming-row-name">Aishwarya Kumar</span>
+                <span class="upcoming-row-age">F 26</span>
+              </div>
+              <div class="upcoming-row-bottom">
+                <span class="upcoming-row-diagnosis">Pregnancy - 34 weeks</span>
+                <span class="upcoming-row-dot"></span>
+                <div class="upcoming-row-task-list">
+                  <span class="upcoming-row-task-chip">ANC Review</span>
+                  <span class="upcoming-row-task-chip">USG</span>
+                </div>
+              </div>
+            </div>
+            <div class="upcoming-row-meta">
+              <span class="upcoming-row-category upcoming-row-category--anc">ANC</span>
+              <a href="#" class="upcoming-row-open">Open &rarr;</a>
+            </div>
+          </div>
+        </article>
+
+        <!-- Surgery patient -->
+        <article class="upcoming-row">
+          <div class="upcoming-row-inner">
+            <div class="upcoming-row-leading">
+              <div class="upcoming-row-stripe upcoming-row-stripe--surgery"></div>
+              <div class="upcoming-avatar upcoming-avatar--surgery">RP</div>
+            </div>
+            <div class="upcoming-row-body">
+              <div class="upcoming-row-top">
+                <span class="upcoming-row-name">Rajesh Patel</span>
+                <span class="upcoming-row-age">M 52</span>
+              </div>
+              <div class="upcoming-row-bottom">
+                <span class="upcoming-row-diagnosis">Appendectomy - post-op day 3</span>
+                <span class="upcoming-row-dot"></span>
+                <div class="upcoming-row-task-list">
+                  <span class="upcoming-row-task-chip">Wound check</span>
+                  <span class="upcoming-row-task-chip">Suture removal</span>
+                </div>
+              </div>
+            </div>
+            <div class="upcoming-row-meta">
+              <span class="upcoming-row-category upcoming-row-category--surgery">Surgery</span>
+              <a href="#" class="upcoming-row-open">Open &rarr;</a>
+            </div>
+          </div>
+        </article>
+
+        <!-- Medicine patient -->
+        <article class="upcoming-row">
+          <div class="upcoming-row-inner">
+            <div class="upcoming-row-leading">
+              <div class="upcoming-row-stripe upcoming-row-stripe--medicine"></div>
+              <div class="upcoming-avatar upcoming-avatar--medicine">VN</div>
+            </div>
+            <div class="upcoming-row-body">
+              <div class="upcoming-row-top">
+                <span class="upcoming-row-name">Vijay Narayanan</span>
+                <span class="upcoming-row-age">M 63</span>
+              </div>
+              <div class="upcoming-row-bottom">
+                <span class="upcoming-row-diagnosis">Diabetes Type 2 - quarterly review</span>
+                <span class="upcoming-row-dot"></span>
+                <div class="upcoming-row-task-list">
+                  <span class="upcoming-row-task-chip">HbA1c review</span>
+                </div>
+              </div>
+            </div>
+            <div class="upcoming-row-meta">
+              <span class="upcoming-row-category upcoming-row-category--medicine">Medicine</span>
+              <a href="#" class="upcoming-row-open">Open &rarr;</a>
+            </div>
+          </div>
+        </article>
+
+      </div>
+    </div>
+
+    <!-- ────────────────────────────────────
+         WHAT CHANGED
+    ──────────────────────────────────── -->
+    <div class="comparison-label"><h2>What Changed</h2></div>
+    <div style="background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:1.25rem; font-size:0.82rem; color:#475569; line-height:1.7;">
+      <ul style="padding-left:1.2rem; display:grid; gap:0.35rem;">
+        <li><strong>Initials avatar</strong> - color-coded by category, gives a human anchor to each row</li>
+        <li><strong>Task chips</strong> - individual tasks shown as small chips instead of a comma-separated string, more scannable</li>
+        <li><strong>Category stripe + avatar combo</strong> - left stripe now pairs with the avatar color for stronger category association</li>
+        <li><strong>Sex + age inline</strong> - immediately visible next to the name</li>
+        <li><strong>Day header</strong> - patient count shown as a section header above the list, giving context before you scan</li>
+        <li><strong>Compact "Open" link</strong> - smaller, teal-tinted button that doesn't compete with the row content</li>
+      </ul>
+    </div>
+
+  </div>
+</body>
+</html>

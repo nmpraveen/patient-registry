@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>V7: Awaiting Reports - Patient Row Redesign</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', -apple-system, sans-serif;
+      min-height: 100vh;
+      background: #f1f5f9;
+      color: #1e293b;
+      padding: 2rem 1.5rem;
+    }
+
+    .container { max-width: 620px; margin: 0 auto; }
+
+    .back-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: #64748b;
+      text-decoration: none;
+      margin-bottom: 1.5rem;
+    }
+    .back-link:hover { color: #334155; }
+
+    .comparison-label {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin: 2rem 0 1rem;
+    }
+    .comparison-label h2 {
+      font-size: 0.7rem;
+      font-weight: 800;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #94a3b8;
+      white-space: nowrap;
+    }
+    .comparison-label::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: #e2e8f0;
+    }
+
+    .module {
+      border-radius: 1rem;
+      padding: 1rem;
+    }
+
+    .module--awaiting {
+      background:
+        radial-gradient(circle at top left, rgba(217,119,6,0.06) 0%, transparent 50%),
+        linear-gradient(180deg, #fffbf5 0%, #fef7ed 100%);
+      border: 1px solid #fed7aa;
+    }
+
+    .module-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 0.85rem;
+    }
+
+    .module-header h3 {
+      font-size: 1rem;
+      font-weight: 700;
+      color: #1e293b;
+    }
+
+    .module-count {
+      font-size: 0.72rem;
+      font-weight: 700;
+      background: #fed7aa;
+      color: #9a3412;
+      padding: 0.3rem 0.6rem;
+      border-radius: 999px;
+    }
+
+    .row-list {
+      display: grid;
+      gap: 0.6rem;
+    }
+
+    /* ──────────────────────────────────────────
+       CURRENT DESIGN
+    ────────────────────────────────────────── */
+    .current-row {
+      background: #fff;
+      border: 1px solid #fed7aa;
+      border-radius: 0.9rem;
+      overflow: hidden;
+      position: relative;
+      padding: 0.75rem 0.85rem 0.75rem 1rem;
+      display: grid;
+      grid-template-columns: minmax(0,1fr) auto;
+      gap: 0.7rem;
+      align-items: start;
+    }
+    .current-row::before {
+      content: '';
+      position: absolute;
+      left: 0; top: 0; bottom: 0;
+      width: 4px;
+      background: #fdba74;
+    }
+    .current-row-name {
+      font-size: 0.92rem;
+      font-weight: 700;
+      color: #0f172a;
+      margin-bottom: 0.15rem;
+    }
+    .current-row-meta {
+      font-size: 0.8rem;
+      color: #94a3b8;
+    }
+    .current-row-report {
+      font-size: 0.82rem;
+      color: #475569;
+      margin-top: 0.15rem;
+    }
+    .current-row-date {
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: #d97706;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .current-row-category {
+      font-size: 0.68rem;
+      font-weight: 700;
+      padding: 0.3rem 0.55rem;
+      border-radius: 999px;
+      background: #fef3c7;
+      color: #92400e;
+      margin-top: 0.35rem;
+    }
+
+    /* ──────────────────────────────────────────
+       REDESIGN: AWAITING REPORTS ROW
+       Goal: emphasize what report is pending and
+       who it's for. The report type is the primary
+       action item, not the patient demographics.
+    ────────────────────────────────────────── */
+    .awaiting-row {
+      background: #fff;
+      border: 1px solid #fed7aa;
+      border-radius: 0.95rem;
+      overflow: hidden;
+      position: relative;
+      transition: box-shadow 0.15s, border-color 0.15s, transform 0.15s;
+    }
+    .awaiting-row:hover {
+      border-color: #fdba74;
+      box-shadow: 0 4px 14px rgba(217,119,6,0.06);
+      transform: translateY(-1px);
+    }
+
+    .awaiting-row-inner {
+      display: grid;
+      grid-template-columns: auto minmax(0,1fr) auto;
+      align-items: center;
+      gap: 0.7rem;
+      padding: 0.65rem 0.8rem 0.65rem 0.8rem;
+    }
+
+    /* Report type icon */
+    .awaiting-icon {
+      width: 2.4rem;
+      height: 2.4rem;
+      border-radius: 0.65rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      background: #fff7ed;
+      border: 1px solid #fed7aa;
+    }
+    .awaiting-icon svg {
+      width: 16px;
+      height: 16px;
+      color: #d97706;
+    }
+
+    .awaiting-row-body { min-width: 0; }
+
+    .awaiting-row-top {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      margin-bottom: 0.12rem;
+    }
+
+    .awaiting-row-name {
+      font-size: 0.88rem;
+      font-weight: 700;
+      color: #0f172a;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .awaiting-row-age {
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: #94a3b8;
+      flex-shrink: 0;
+    }
+
+    .awaiting-row-bottom {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      flex-wrap: wrap;
+    }
+
+    .awaiting-row-report {
+      font-size: 0.76rem;
+      font-weight: 600;
+      color: #d97706;
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+    }
+
+    .awaiting-row-report::before {
+      content: '';
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: #f59e0b;
+      flex-shrink: 0;
+    }
+
+    .awaiting-row-dot {
+      width: 3px;
+      height: 3px;
+      border-radius: 50%;
+      background: #cbd5e1;
+      flex-shrink: 0;
+    }
+
+    .awaiting-row-diagnosis {
+      font-size: 0.74rem;
+      color: #94a3b8;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .awaiting-row-meta {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 0.3rem;
+    }
+
+    .awaiting-row-date {
+      font-size: 0.68rem;
+      font-weight: 700;
+      color: #d97706;
+      letter-spacing: 0.05em;
+      white-space: nowrap;
+    }
+
+    .awaiting-row-category {
+      font-size: 0.62rem;
+      font-weight: 700;
+      padding: 0.15rem 0.42rem;
+      border-radius: 999px;
+      white-space: nowrap;
+    }
+    .awaiting-row-category--anc { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
+    .awaiting-row-category--surgery { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+    .awaiting-row-category--medicine { background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; }
+
+    .awaiting-row-open {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      font-size: 0.66rem;
+      font-weight: 700;
+      color: #d97706;
+      text-decoration: none;
+      padding: 0.22rem 0.45rem;
+      border-radius: 0.4rem;
+      background: #fff7ed;
+      border: 1px solid #fed7aa;
+      white-space: nowrap;
+    }
+
+    /* Report type tags */
+    .awaiting-report-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.2rem;
+      font-size: 0.68rem;
+      font-weight: 700;
+      padding: 0.2rem 0.5rem;
+      border-radius: 0.45rem;
+      white-space: nowrap;
+    }
+    .awaiting-report-tag--lab {
+      background: #fef3c7;
+      color: #92400e;
+      border: 1px solid #fde68a;
+    }
+    .awaiting-report-tag--imaging {
+      background: #ede9fe;
+      color: #6d28d9;
+      border: 1px solid #ddd6fe;
+    }
+    .awaiting-report-tag--pathology {
+      background: #fce7f3;
+      color: #be185d;
+      border: 1px solid #fbcfe8;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <a class="back-link" href="index.html">&larr; Back to overview</a>
+
+    <!-- ────────────────────────────────────
+         CURRENT DESIGN
+    ──────────────────────────────────── -->
+    <div class="comparison-label"><h2>Current Design</h2></div>
+
+    <div class="module module--awaiting">
+      <div class="module-header">
+        <h3>Awaiting Reports</h3>
+      </div>
+      <div class="row-list">
+        <div class="current-row">
+          <div>
+            <div class="current-row-name">Kavitha Shankar</div>
+            <div class="current-row-meta">F 38</div>
+            <div class="current-row-report">Awaiting USG report</div>
+          </div>
+          <div style="display:grid; gap:0.3rem; justify-items:end;">
+            <span class="current-row-date">Mar 20</span>
+            <span class="current-row-category">ANC</span>
+          </div>
+        </div>
+        <div class="current-row">
+          <div>
+            <div class="current-row-name">Venkat Iyer</div>
+            <div class="current-row-meta">M 62</div>
+            <div class="current-row-report">Awaiting blood work results</div>
+          </div>
+          <div style="display:grid; gap:0.3rem; justify-items:end;">
+            <span class="current-row-date">Mar 18</span>
+            <span class="current-row-category">Medicine</span>
+          </div>
+        </div>
+        <div class="current-row">
+          <div>
+            <div class="current-row-name">Selvi Murugesan</div>
+            <div class="current-row-meta">F 45</div>
+            <div class="current-row-report">Awaiting biopsy report</div>
+          </div>
+          <div style="display:grid; gap:0.3rem; justify-items:end;">
+            <span class="current-row-date">Mar 15</span>
+            <span class="current-row-category">Surgery</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ────────────────────────────────────
+         REDESIGN
+    ──────────────────────────────────── -->
+    <div class="comparison-label"><h2>Redesigned Rows</h2></div>
+
+    <div class="module module--awaiting">
+      <div class="module-header">
+        <h3>Awaiting Reports</h3>
+        <span class="module-count">3 pending</span>
+      </div>
+      <div class="row-list">
+
+        <!-- USG report - Imaging -->
+        <article class="awaiting-row">
+          <div class="awaiting-row-inner">
+            <div class="awaiting-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+            </div>
+            <div class="awaiting-row-body">
+              <div class="awaiting-row-top">
+                <span class="awaiting-row-name">Kavitha Shankar</span>
+                <span class="awaiting-row-age">F 38</span>
+              </div>
+              <div class="awaiting-row-bottom">
+                <span class="awaiting-report-tag awaiting-report-tag--imaging">USG Report</span>
+                <span class="awaiting-row-dot"></span>
+                <span class="awaiting-row-diagnosis">Pregnancy - 30 weeks</span>
+              </div>
+            </div>
+            <div class="awaiting-row-meta">
+              <span class="awaiting-row-date">3 days</span>
+              <span class="awaiting-row-category awaiting-row-category--anc">ANC</span>
+              <a href="#" class="awaiting-row-open">Open &rarr;</a>
+            </div>
+          </div>
+        </article>
+
+        <!-- Blood work - Lab -->
+        <article class="awaiting-row">
+          <div class="awaiting-row-inner">
+            <div class="awaiting-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+            </div>
+            <div class="awaiting-row-body">
+              <div class="awaiting-row-top">
+                <span class="awaiting-row-name">Venkat Iyer</span>
+                <span class="awaiting-row-age">M 62</span>
+              </div>
+              <div class="awaiting-row-bottom">
+                <span class="awaiting-report-tag awaiting-report-tag--lab">Blood Work</span>
+                <span class="awaiting-row-dot"></span>
+                <span class="awaiting-row-diagnosis">CKD Stage 3 - quarterly labs</span>
+              </div>
+            </div>
+            <div class="awaiting-row-meta">
+              <span class="awaiting-row-date">5 days</span>
+              <span class="awaiting-row-category awaiting-row-category--medicine">Medicine</span>
+              <a href="#" class="awaiting-row-open">Open &rarr;</a>
+            </div>
+          </div>
+        </article>
+
+        <!-- Biopsy - Pathology -->
+        <article class="awaiting-row">
+          <div class="awaiting-row-inner">
+            <div class="awaiting-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+            </div>
+            <div class="awaiting-row-body">
+              <div class="awaiting-row-top">
+                <span class="awaiting-row-name">Selvi Murugesan</span>
+                <span class="awaiting-row-age">F 45</span>
+              </div>
+              <div class="awaiting-row-bottom">
+                <span class="awaiting-report-tag awaiting-report-tag--pathology">Biopsy Report</span>
+                <span class="awaiting-row-dot"></span>
+                <span class="awaiting-row-diagnosis">Breast lump - excision biopsy</span>
+              </div>
+            </div>
+            <div class="awaiting-row-meta">
+              <span class="awaiting-row-date">8 days</span>
+              <span class="awaiting-row-category awaiting-row-category--surgery">Surgery</span>
+              <a href="#" class="awaiting-row-open">Open &rarr;</a>
+            </div>
+          </div>
+        </article>
+
+      </div>
+    </div>
+
+    <!-- ────────────────────────────────────
+         WHAT CHANGED
+    ──────────────────────────────────── -->
+    <div class="comparison-label"><h2>What Changed</h2></div>
+    <div style="background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:1.25rem; font-size:0.82rem; color:#475569; line-height:1.7;">
+      <ul style="padding-left:1.2rem; display:grid; gap:0.35rem;">
+        <li><strong>Report type tags</strong> - color-coded by report type (Lab = amber, Imaging = purple, Pathology = pink). Makes it scannable at a glance to see what kind of reports are pending</li>
+        <li><strong>Document icon</strong> - visual anchor that says "this is about a report" without reading any text</li>
+        <li><strong>Days waiting</strong> - "3 days", "5 days", "8 days" replaces raw dates, giving an immediate sense of how long the report has been pending</li>
+        <li><strong>Diagnosis inline</strong> - shown next to the report tag for clinical context without expanding</li>
+        <li><strong>Compact "Open" link</strong> - amber-tinted to match the module theme</li>
+        <li><strong>"3 pending" count badge</strong> - header shows total, giving immediate context</li>
+      </ul>
+    </div>
+
+  </div>
+</body>
+</html>

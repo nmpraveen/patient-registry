@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>V7: Today Module - Patient Row Redesign</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', -apple-system, sans-serif;
+      min-height: 100vh;
+      background: #f1f5f9;
+      color: #1e293b;
+      padding: 2rem 1.5rem;
+    }
+
+    .container { max-width: 620px; margin: 0 auto; }
+
+    .back-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: #64748b;
+      text-decoration: none;
+      margin-bottom: 1.5rem;
+    }
+    .back-link:hover { color: #334155; }
+
+    .comparison-label {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin: 2rem 0 1rem;
+    }
+    .comparison-label h2 {
+      font-size: 0.7rem;
+      font-weight: 800;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #94a3b8;
+      white-space: nowrap;
+    }
+    .comparison-label::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: #e2e8f0;
+    }
+
+    /* ──────────────────────────────────────────
+       MODULE SHELL
+    ────────────────────────────────────────── */
+    .module {
+      border-radius: 1rem;
+      padding: 1rem;
+    }
+
+    .module--today {
+      background:
+        radial-gradient(circle at top left, rgba(59,130,246,0.10) 0%, transparent 50%),
+        linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+      border: 1px solid #dbeafe;
+    }
+
+    .module-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 0.85rem;
+    }
+
+    .module-header h3 {
+      font-size: 1rem;
+      font-weight: 700;
+      color: #1e293b;
+    }
+
+    .module-count {
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: #3b82f6;
+      background: #dbeafe;
+      padding: 0.3rem 0.6rem;
+      border-radius: 999px;
+    }
+
+    .row-list {
+      display: grid;
+      gap: 0.6rem;
+    }
+
+    /* ──────────────────────────────────────────
+       CURRENT DESIGN (for comparison)
+    ────────────────────────────────────────── */
+    .current-row {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 0.9rem;
+      overflow: hidden;
+      position: relative;
+      display: grid;
+      grid-template-columns: minmax(0,1fr) auto;
+      align-items: center;
+      transition: box-shadow 0.15s, transform 0.15s;
+    }
+    .current-row::before {
+      content: '';
+      position: absolute;
+      left: 0; top: 0; bottom: 0;
+      width: 4px;
+      background: #93c5fd;
+    }
+    .current-row:hover {
+      box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+      transform: translateY(-1px);
+    }
+    .current-row-main {
+      padding: 0.75rem 0.5rem 0.75rem 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      min-width: 0;
+    }
+    .current-row-name {
+      font-size: 0.92rem;
+      font-weight: 700;
+      color: #1d4ed8;
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      border-radius: 999px;
+      padding: 0.35rem 0.8rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .current-row-status {
+      font-size: 0.88rem;
+    }
+    .current-row-call {
+      background: #dcfce7;
+      border: 1px solid #bbf7d0;
+      border-radius: 999px;
+      color: #166534;
+      font-size: 0.78rem;
+      font-weight: 700;
+      padding: 0.45rem 0.85rem;
+      margin: 0.5rem 0.7rem;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    /* ──────────────────────────────────────────
+       REDESIGN: TODAY ROW
+       Goal: surface diagnosis + task count + call
+       status without needing to expand
+    ────────────────────────────────────────── */
+    .today-row {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 0.95rem;
+      overflow: hidden;
+      position: relative;
+      transition: box-shadow 0.15s, border-color 0.15s, transform 0.15s;
+    }
+    .today-row::before {
+      content: '';
+      position: absolute;
+      left: 0; top: 0; bottom: 0;
+      width: 4px;
+      border-radius: 0.95rem 0 0 0.95rem;
+    }
+    .today-row:hover {
+      border-color: #bfdbfe;
+      box-shadow: 0 6px 18px rgba(59,130,246,0.08);
+      transform: translateY(-1px);
+    }
+
+    .today-row--anc::before { background: linear-gradient(180deg, #4ade80, #22c55e); }
+    .today-row--surgery::before { background: linear-gradient(180deg, #fbbf24, #f59e0b); }
+    .today-row--medicine::before { background: linear-gradient(180deg, #94a3b8, #64748b); }
+
+    .today-row-inner {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.7rem 0.8rem 0.7rem 1.1rem;
+    }
+
+    /* Avatar with initials */
+    .today-avatar {
+      width: 2.4rem;
+      height: 2.4rem;
+      border-radius: 0.7rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.72rem;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+      flex-shrink: 0;
+    }
+    .today-avatar--anc { background: #dcfce7; color: #166534; }
+    .today-avatar--surgery { background: #fef3c7; color: #92400e; }
+    .today-avatar--medicine { background: #f1f5f9; color: #475569; }
+
+    .today-row-body {
+      min-width: 0;
+    }
+
+    .today-row-top {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 0.2rem;
+    }
+
+    .today-row-name {
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: #0f172a;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .today-row-age {
+      font-size: 0.74rem;
+      font-weight: 600;
+      color: #94a3b8;
+      flex-shrink: 0;
+    }
+
+    .today-row-bottom {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      flex-wrap: wrap;
+    }
+
+    .today-row-diagnosis {
+      font-size: 0.78rem;
+      color: #64748b;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 16rem;
+    }
+
+    .today-row-dot {
+      width: 3px;
+      height: 3px;
+      border-radius: 50%;
+      background: #cbd5e1;
+      flex-shrink: 0;
+    }
+
+    .today-row-tasks {
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: #3b82f6;
+      background: #eff6ff;
+      border-radius: 999px;
+      padding: 0.18rem 0.5rem;
+      white-space: nowrap;
+    }
+
+    .today-row-flags {
+      display: flex;
+      gap: 0.3rem;
+    }
+
+    .today-row-flag {
+      font-size: 0.64rem;
+      font-weight: 700;
+      padding: 0.15rem 0.42rem;
+      border-radius: 999px;
+      white-space: nowrap;
+    }
+    .today-row-flag--high-risk {
+      background: #fef2f2;
+      color: #dc2626;
+      border: 1px solid #fecaca;
+    }
+    .today-row-flag--referred {
+      background: #eff6ff;
+      color: #2563eb;
+      border: 1px solid #bfdbfe;
+    }
+
+    .today-row-actions {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 0.35rem;
+    }
+
+    /* Call status badge */
+    .today-call-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      font-size: 0.68rem;
+      font-weight: 700;
+      padding: 0.25rem 0.55rem;
+      border-radius: 999px;
+      white-space: nowrap;
+    }
+    .today-call-status--confirmed {
+      background: #dcfce7;
+      color: #166534;
+    }
+    .today-call-status--not-reached {
+      background: #fef2f2;
+      color: #dc2626;
+    }
+    .today-call-status--pending {
+      background: #f8fafc;
+      color: #94a3b8;
+      border: 1px solid #e2e8f0;
+    }
+    .today-call-status--callback {
+      background: #fefce8;
+      color: #a16207;
+    }
+    .today-call-status .status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+      opacity: 0.65;
+    }
+
+    /* Call button */
+    .today-call-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      border-radius: 0.6rem;
+      color: #166534;
+      font-size: 0.74rem;
+      font-weight: 700;
+      padding: 0.38rem 0.7rem;
+      cursor: pointer;
+      transition: all 0.12s;
+    }
+    .today-call-btn:hover {
+      background: #dcfce7;
+      border-color: #86efac;
+      box-shadow: 0 2px 8px rgba(22,101,52,0.08);
+    }
+    .today-call-btn svg {
+      width: 12px;
+      height: 12px;
+    }
+
+    .today-call-btn--disabled {
+      opacity: 0.45;
+      cursor: default;
+      pointer-events: none;
+    }
+
+    /* ──────────────────────────────────────────
+       EXPANDED DETAILS
+    ────────────────────────────────────────── */
+    .today-row-details {
+      border-top: 1px solid #f1f5f9;
+      padding: 0.65rem 0.8rem 0.75rem 1.1rem;
+      display: grid;
+      gap: 0.5rem;
+    }
+
+    .today-detail-tasks {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+    }
+
+    .today-detail-task {
+      font-size: 0.76rem;
+      font-weight: 600;
+      padding: 0.28rem 0.6rem;
+      border-radius: 0.55rem;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      color: #475569;
+    }
+
+    .today-detail-meta {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+
+    .today-detail-label {
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #94a3b8;
+    }
+
+    .today-detail-value {
+      font-size: 0.82rem;
+      color: #475569;
+    }
+
+    .today-detail-open {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: #3b82f6;
+      text-decoration: none;
+      padding: 0.3rem 0.6rem;
+      border-radius: 0.5rem;
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      margin-left: auto;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <a class="back-link" href="index.html">&larr; Back to overview</a>
+
+    <!-- ────────────────────────────────────
+         CURRENT DESIGN
+    ──────────────────────────────────── -->
+    <div class="comparison-label"><h2>Current Design</h2></div>
+
+    <div class="module module--today">
+      <div class="module-header">
+        <h3>Today : Mar 23</h3>
+      </div>
+      <div class="row-list">
+        <div class="current-row">
+          <div class="current-row-main">
+            <span class="current-row-name">Priya Sharma</span>
+            <span class="current-row-status" title="Not contacted">&#128222;</span>
+          </div>
+          <button class="current-row-call">Call</button>
+        </div>
+        <div class="current-row">
+          <div class="current-row-main">
+            <span class="current-row-name">Mohammed Ilyas</span>
+            <span class="current-row-status" title="Not reachable">&#128308;&#128222; x2</span>
+          </div>
+          <button class="current-row-call">Call</button>
+        </div>
+        <div class="current-row">
+          <div class="current-row-main">
+            <span class="current-row-name">Lakshmi Devi</span>
+            <span class="current-row-status" title="Confirmed">&#128994;&#128222;</span>
+          </div>
+          <button class="current-row-call">Call</button>
+        </div>
+        <div class="current-row">
+          <div class="current-row-main">
+            <span class="current-row-name">Karthik Raman</span>
+            <span class="current-row-status" title="Call back later">&#128993;&#128222;</span>
+          </div>
+          <button class="current-row-call">Call</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ────────────────────────────────────
+         REDESIGN
+    ──────────────────────────────────── -->
+    <div class="comparison-label"><h2>Redesigned Rows</h2></div>
+
+    <div class="module module--today">
+      <div class="module-header">
+        <h3>Today : Mar 23</h3>
+        <span class="module-count">4 patients</span>
+      </div>
+      <div class="row-list">
+
+        <!-- Row 1: ANC, not contacted -->
+        <article class="today-row today-row--anc">
+          <div class="today-row-inner">
+            <div class="today-avatar today-avatar--anc">PS</div>
+            <div class="today-row-body">
+              <div class="today-row-top">
+                <span class="today-row-name">Priya Sharma</span>
+                <span class="today-row-age">F 28</span>
+              </div>
+              <div class="today-row-bottom">
+                <span class="today-row-diagnosis">Pregnancy - 32 weeks</span>
+                <span class="today-row-dot"></span>
+                <span class="today-row-tasks">2 tasks</span>
+                <span class="today-row-flag today-row-flag--high-risk">High-risk</span>
+              </div>
+            </div>
+            <div class="today-row-actions">
+              <span class="today-call-status today-call-status--pending">
+                <span class="status-dot"></span>
+                Not contacted
+              </span>
+              <button class="today-call-btn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>
+                Call
+              </button>
+            </div>
+          </div>
+        </article>
+
+        <!-- Row 2: Surgery, not reachable -->
+        <article class="today-row today-row--surgery">
+          <div class="today-row-inner">
+            <div class="today-avatar today-avatar--surgery">MI</div>
+            <div class="today-row-body">
+              <div class="today-row-top">
+                <span class="today-row-name">Mohammed Ilyas</span>
+                <span class="today-row-age">M 45</span>
+              </div>
+              <div class="today-row-bottom">
+                <span class="today-row-diagnosis">Hernia repair - post-op day 5</span>
+                <span class="today-row-dot"></span>
+                <span class="today-row-tasks">1 task</span>
+              </div>
+            </div>
+            <div class="today-row-actions">
+              <span class="today-call-status today-call-status--not-reached">
+                <span class="status-dot"></span>
+                Not reached x2
+              </span>
+              <button class="today-call-btn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>
+                Call
+              </button>
+            </div>
+          </div>
+        </article>
+
+        <!-- Row 3: ANC, confirmed -->
+        <article class="today-row today-row--anc">
+          <div class="today-row-inner">
+            <div class="today-avatar today-avatar--anc">LD</div>
+            <div class="today-row-body">
+              <div class="today-row-top">
+                <span class="today-row-name">Lakshmi Devi</span>
+                <span class="today-row-age">F 32</span>
+              </div>
+              <div class="today-row-bottom">
+                <span class="today-row-diagnosis">Pregnancy - 28 weeks</span>
+                <span class="today-row-dot"></span>
+                <span class="today-row-tasks">1 task</span>
+              </div>
+            </div>
+            <div class="today-row-actions">
+              <span class="today-call-status today-call-status--confirmed">
+                <span class="status-dot"></span>
+                Confirmed
+              </span>
+              <button class="today-call-btn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>
+                Call
+              </button>
+            </div>
+          </div>
+        </article>
+
+        <!-- Row 4: Medicine, callback -->
+        <article class="today-row today-row--medicine">
+          <div class="today-row-inner">
+            <div class="today-avatar today-avatar--medicine">KR</div>
+            <div class="today-row-body">
+              <div class="today-row-top">
+                <span class="today-row-name">Karthik Raman</span>
+                <span class="today-row-age">M 37</span>
+              </div>
+              <div class="today-row-bottom">
+                <span class="today-row-diagnosis">Hypertension - follow-up</span>
+                <span class="today-row-dot"></span>
+                <span class="today-row-tasks">1 task</span>
+                <span class="today-row-flag today-row-flag--referred">Referred</span>
+              </div>
+            </div>
+            <div class="today-row-actions">
+              <span class="today-call-status today-call-status--callback">
+                <span class="status-dot"></span>
+                Call back later
+              </span>
+              <button class="today-call-btn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>
+                Call
+              </button>
+            </div>
+          </div>
+          <!-- Example expanded state -->
+          <div class="today-row-details">
+            <div class="today-detail-tasks">
+              <span class="today-detail-task">BP Review</span>
+            </div>
+            <div class="today-detail-meta">
+              <span class="today-detail-label">Category</span>
+              <span class="today-detail-value">Medicine - NCD</span>
+              <span class="today-detail-label" style="margin-left:0.5rem">NCD</span>
+              <span class="today-detail-value">Hypertension</span>
+              <a href="#" class="today-detail-open">Open case &rarr;</a>
+            </div>
+          </div>
+        </article>
+
+      </div>
+    </div>
+
+    <!-- ────────────────────────────────────
+         WHAT CHANGED
+    ──────────────────────────────────── -->
+    <div class="comparison-label"><h2>What Changed</h2></div>
+    <div style="background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:1.25rem; font-size:0.82rem; color:#475569; line-height:1.7;">
+      <ul style="padding-left:1.2rem; display:grid; gap:0.35rem;">
+        <li><strong>Initials avatar</strong> - gives each patient a visual anchor; color-coded by category (ANC green, Surgery amber, Medicine slate)</li>
+        <li><strong>Sex + age inline</strong> - no longer hidden behind an expand; shown as muted text next to name</li>
+        <li><strong>Diagnosis visible</strong> - the most important clinical context now shows on the collapsed row</li>
+        <li><strong>Task count pill</strong> - "2 tasks" gives a quick sense of workload without listing everything</li>
+        <li><strong>Call status badge</strong> - replaces emoji indicators with readable labels: "Confirmed", "Not reached x2", "Call back later"</li>
+        <li><strong>High-risk / Referred flags</strong> - visible immediately on the row instead of buried in expanded details</li>
+        <li><strong>Category color bar</strong> - gradient left border instead of flat color, gives subtle depth</li>
+        <li><strong>Expanded details</strong> - tasks shown as individual chips; metadata uses label/value pairs with an "Open case" link</li>
+      </ul>
+    </div>
+
+  </div>
+</body>
+</html>

@@ -3423,7 +3423,10 @@ class MedtrackViewTests(TestCase):
         self.assertContains(response, "Open case")
         self.assertContains(response, schedule_case.get_subcategory_display())
         self.assertNotContains(response, 'class="upcoming-schedule-row" href=')
-        empty_label = f"No scheduled patients for {(current_week_start + timedelta(days=1)).strftime('%B')} {(current_week_start + timedelta(days=1)).day}."
+        empty_day_index = 0 if today_index != 0 else 1
+        empty_day = current_week_start + timedelta(days=empty_day_index)
+        self.assertEqual(schedule_days[empty_day_index]["count"], 0)
+        empty_label = f"No scheduled patients for {empty_day.strftime('%B')} {empty_day.day}."
         self.assertContains(response, empty_label)
 
     def test_dashboard_upcoming_schedule_shows_next_week_only_with_previous_control(self):
@@ -4034,6 +4037,8 @@ class MedtrackViewTests(TestCase):
         self.assertIsNone(created_case.para)
         self.assertIsNone(created_case.abortions)
         self.assertIsNone(created_case.living)
+        self.assertEqual(created_case.ftnd, 0)
+        self.assertEqual(created_case.lscs, 0)
 
     def test_case_create_persists_explicit_zero_gpla_values_for_anc(self):
         self.client.force_login(self.user)
@@ -4064,6 +4069,39 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(created_case.para, 0)
         self.assertEqual(created_case.abortions, 0)
         self.assertEqual(created_case.living, 0)
+        self.assertEqual(created_case.ftnd, 0)
+        self.assertEqual(created_case.lscs, 0)
+
+    def test_case_create_persists_delivery_mode_counts_for_anc(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("patients:case_create"),
+            {
+                "uhid": "UH-ANC-DELIVERY-MODE",
+                "prefix": CasePrefix.MRS,
+                "first_name": "Anc",
+                "last_name": "Delivery",
+                "phone_number": "9876500464",
+                "category": self.anc.id,
+                "age": "30",
+                "lmp": (timezone.localdate() - timedelta(days=63)).isoformat(),
+                "edd": (timezone.localdate() + timedelta(days=217)).isoformat(),
+                "rch_bypass": "on",
+                "gravida": "3",
+                "para": "2",
+                "abortions": "0",
+                "living": "2",
+                "ftnd": "1",
+                "lscs": "1",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        created_case = Case.objects.get(uhid="UH-ANC-DELIVERY-MODE")
+        self.assertEqual(created_case.para, 2)
+        self.assertEqual(created_case.ftnd, 1)
+        self.assertEqual(created_case.lscs, 1)
 
     def test_case_create_invalid_anc_gpla_submission_shows_inline_error(self):
         self.client.force_login(self.user)
@@ -4085,6 +4123,8 @@ class MedtrackViewTests(TestCase):
                 "para": "2",
                 "abortions": "0",
                 "living": "0",
+                "ftnd": "1",
+                "lscs": "1",
             },
         )
 
@@ -4119,6 +4159,36 @@ class MedtrackViewTests(TestCase):
         self.assertContains(response, "P + A cannot exceed G.")
         self.assertContains(response, "data-gpla-counter")
         self.assertFalse(Case.objects.filter(uhid="UH-ANC-GPLA-ZERO-INVALID").exists())
+
+    def test_case_create_invalid_anc_delivery_count_submission_shows_inline_error(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("patients:case_create"),
+            {
+                "uhid": "UH-ANC-DELIVERY-INVALID",
+                "prefix": CasePrefix.MRS,
+                "first_name": "Anc",
+                "last_name": "DeliveryInvalid",
+                "phone_number": "9876500465",
+                "category": self.anc.id,
+                "age": "27",
+                "lmp": (timezone.localdate() - timedelta(days=63)).isoformat(),
+                "edd": (timezone.localdate() + timedelta(days=217)).isoformat(),
+                "rch_bypass": "on",
+                "gravida": "3",
+                "para": "2",
+                "abortions": "0",
+                "living": "2",
+                "ftnd": "1",
+                "lscs": "0",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "FTND and LSCS together must equal Para.")
+        self.assertContains(response, "Vaginal delivery (FTND)")
+        self.assertFalse(Case.objects.filter(uhid="UH-ANC-DELIVERY-INVALID").exists())
 
     def test_case_create_duplicate_uhid_requires_existing_patient_selection(self):
         Case.objects.create(
@@ -5926,6 +5996,10 @@ class MedtrackViewTests(TestCase):
         self.assertContains(response, "Primi")
         self.assertContains(response, 'id="case-create-gpla-summary"')
         self.assertContains(response, "G0 P0 A0 L0")
+        self.assertContains(response, "Mode of previous deliveries")
+        self.assertContains(response, "Vaginal delivery (FTND)")
+        self.assertContains(response, "C-section (LSCS)")
+        self.assertContains(response, "Must equal Para (0)")
         self.assertNotContains(response, '<select name="gravida"')
 
     def test_case_create_identity_check_requires_case_create_capability(self):
@@ -6080,6 +6154,33 @@ class MedtrackViewTests(TestCase):
 
         self.assertTrue(form.is_valid(), form.errors)
         self.assertEqual(form.cleaned_data["anc_high_risk_reasons"], [AncHighRiskReason.ANEMIA, AncHighRiskReason.PIH])
+
+    def test_case_form_resets_delivery_counts_when_primi_values_are_selected(self):
+        form = CaseForm(
+            data={
+                "uhid": "UH-PRIMI-DELIVERY-RESET",
+                "prefix": CasePrefix.MRS,
+                "first_name": "Primi",
+                "last_name": "Reset",
+                "phone_number": "9876500093",
+                "category": self.anc.id,
+                "status": CaseStatus.ACTIVE,
+                "age": "22",
+                "lmp": (timezone.localdate() - timedelta(days=56)).isoformat(),
+                "edd": (timezone.localdate() + timedelta(days=210)).isoformat(),
+                "rch_number": "123456780",
+                "gravida": "1",
+                "para": "0",
+                "abortions": "0",
+                "living": "0",
+                "ftnd": "1",
+                "lscs": "1",
+            }
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertEqual(form.cleaned_data["ftnd"], 0)
+        self.assertEqual(form.cleaned_data["lscs"], 0)
 
     def test_case_form_requires_rch_number_or_bypass_for_anc(self):
         form = CaseForm(
@@ -6495,6 +6596,8 @@ class MedtrackViewTests(TestCase):
             para=1,
             abortions=0,
             living=1,
+            ftnd=1,
+            lscs=0,
             ncd_flags=[NonCommunicableDisease.T2DM],
             anc_high_risk_reasons=[AncHighRiskReason.ANEMIA],
             notes="Initial summary note",
@@ -6518,6 +6621,8 @@ class MedtrackViewTests(TestCase):
                 "para": "2",
                 "abortions": "1",
                 "living": "2",
+                "ftnd": "1",
+                "lscs": "1",
                 "ncd_flags": [NonCommunicableDisease.T2DM, NonCommunicableDisease.SHTN],
                 "anc_high_risk_reasons": [AncHighRiskReason.PREVIOUS_LSCS],
                 "notes": "Updated note for summary panel",
@@ -6529,8 +6634,8 @@ class MedtrackViewTests(TestCase):
         self.assertContains(response, "Changed Fields")
         self.assertContains(response, 'class="case-edit-change-after"')
         self.assertContains(response, "GPAL")
-        self.assertContains(response, "G2 P1 A0 L1")
-        self.assertContains(response, "G4 P2 A1 L2")
+        self.assertContains(response, "G2 P1 A0 L1 | FTND 1 LSCS 0")
+        self.assertContains(response, "G4 P2 A1 L2 | FTND 1 LSCS 1")
         self.assertContains(response, "NCD flags")
         self.assertContains(response, "Added")
         self.assertContains(response, "SHTN")
@@ -8090,21 +8195,44 @@ class PatientDataBundleTests(TestCase):
     def setUp(self):
         ensure_default_departments()
         self.user = get_user_model().objects.create_user(username="bundle-owner", password="strong-password-123")
+        self.anc = DepartmentConfig.objects.get(name="ANC")
         self.surgery = DepartmentConfig.objects.get(name="Surgery")
         self.medicine = DepartmentConfig.objects.get(name="Medicine")
 
-    def create_case(self, *, uhid, phone_number):
-        return Case.objects.create(
-            uhid=uhid,
-            first_name="Bundle",
-            last_name="Owner",
-            phone_number=phone_number,
-            category=self.surgery,
-            status=CaseStatus.ACTIVE,
-            surgical_pathway=SurgicalPathway.SURVEILLANCE,
-            review_date=timezone.localdate() + timedelta(days=7),
-            created_by=self.user,
-        )
+    def create_case(self, *, uhid, phone_number, category=None, **overrides):
+        category = category or self.surgery
+        defaults = {
+            "uhid": uhid,
+            "first_name": "Bundle",
+            "last_name": "Owner",
+            "phone_number": phone_number,
+            "category": category,
+            "status": CaseStatus.ACTIVE,
+            "created_by": self.user,
+        }
+        if category == self.anc:
+            defaults.update(
+                {
+                    "lmp": timezone.localdate() - timedelta(days=70),
+                    "edd": timezone.localdate() + timedelta(days=200),
+                }
+            )
+        elif category == self.surgery:
+            defaults.update(
+                {
+                    "surgical_pathway": SurgicalPathway.SURVEILLANCE,
+                    "review_date": timezone.localdate() + timedelta(days=7),
+                }
+            )
+        else:
+            defaults.update(
+                {
+                    "review_frequency": ReviewFrequency.MONTHLY,
+                    "review_date": timezone.localdate() + timedelta(days=7),
+                }
+            )
+        defaults.update(overrides)
+        return Case.objects.create(**defaults)
 
     def test_patient_data_bundle_manifest_records_sha_and_counts(self):
         case = self.create_case(uhid="UH-BUNDLE-001", phone_number="9555555501")
@@ -8214,6 +8342,28 @@ class PatientDataBundleTests(TestCase):
         self.assertTrue(legacy_quick_entry_case.patient.is_temporary_id)
         self.assertEqual(Patient.objects.count(), 2)
 
+    def test_patient_data_bundle_round_trips_delivery_mode_counts(self):
+        source_case = self.create_case(
+            uhid="UH-BUNDLE-ANC-DELIVERY",
+            category=self.anc,
+            phone_number="9555555510",
+            gravida=3,
+            para=2,
+            abortions=0,
+            living=2,
+            ftnd=1,
+            lscs=1,
+            rch_bypass=True,
+        )
+
+        archive_bytes, _, _ = database_bundle.create_bundle_archive()
+        database_bundle.import_bundle_bytes(archive_bytes)
+
+        imported_case = Case.objects.get(uhid=source_case.uhid)
+        self.assertEqual(imported_case.ftnd, 1)
+        self.assertEqual(imported_case.lscs, 1)
+        self.assertEqual(imported_case.delivery_mode_total, imported_case.para)
+
     def test_backup_patient_data_command_prunes_old_backups(self):
         self.create_case(uhid="UH-BUNDLE-002", phone_number="9555555502")
 
@@ -8310,6 +8460,8 @@ class SeedMockDataCommandTests(TestCase):
             self.assertIsNotNone(case.date_of_birth)
             self.assertTrue(case.place)
             self.assertTrue(case.referred_by)
+            if case.category.name.upper() == "ANC" and case.para and not case.is_primi:
+                self.assertEqual(case.delivery_mode_total, case.para)
 
         self.assertTrue(any(count > 1 for count in patient_case_counts.values()))
 

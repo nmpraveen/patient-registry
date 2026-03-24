@@ -12,6 +12,7 @@ CAPABILITY_FIELD_MAP = {
     "task_create": "can_task_create",
     "task_edit": "can_task_edit",
     "note_add": "can_note_add",
+    "patient_merge": "can_patient_merge",
     "manage_settings": "can_manage_settings",
 }
 
@@ -64,9 +65,14 @@ def has_capability(user, capability):
         user._template_capability_cache = capability_cache
     if capability in capability_cache:
         return capability_cache[capability]
-    allowed = RoleSetting.objects.filter(
-        role_name__in=user.groups.values_list("name", flat=True),
-        **{capability_field: True},
-    ).exists()
+    role_settings = getattr(user, "_template_role_settings", None)
+    if role_settings is None:
+        role_settings = list(
+            RoleSetting.objects.filter(
+                role_name__in=user.groups.values_list("name", flat=True),
+            ).only("role_name", *CAPABILITY_FIELD_MAP.values())
+        )
+        user._template_role_settings = role_settings
+    allowed = any(getattr(role_setting, capability_field) for role_setting in role_settings)
     capability_cache[capability] = allowed
     return allowed

@@ -869,6 +869,8 @@ class Case(models.Model):
     para = models.PositiveSmallIntegerField(blank=True, null=True)
     abortions = models.PositiveSmallIntegerField(blank=True, null=True)
     living = models.PositiveSmallIntegerField(blank=True, null=True)
+    ftnd = models.PositiveSmallIntegerField(default=0, blank=True)
+    lscs = models.PositiveSmallIntegerField(default=0, blank=True)
 
     metadata = models.JSONField(default=dict, blank=True)
     notes = models.TextField(blank=True)
@@ -1025,6 +1027,8 @@ class Case(models.Model):
                 self.anc_high_risk_reasons = []
                 self.rch_number = ""
                 self.rch_bypass = False
+                self.ftnd = 0
+                self.lscs = 0
             return
         if valid_subcategories and not self.subcategory:
             raise ValidationError({"subcategory": "Please choose a subcategory."})
@@ -1046,6 +1050,25 @@ class Case(models.Model):
                     raise ValidationError({"abortions": "Abortions (A) cannot exceed Gravida (G)."})
                 if p + a > g:
                     raise ValidationError({"abortions": "The sum of Para and Abortions cannot exceed Gravida."})
+            ftnd = self.ftnd or 0
+            lscs = self.lscs or 0
+            if not p or self.is_primi:
+                self.ftnd = 0
+                self.lscs = 0
+                ftnd = 0
+                lscs = 0
+            elif ftnd + lscs > p:
+                self.ftnd = 0
+                self.lscs = 0
+                ftnd = 0
+                lscs = 0
+            if p and not self.is_primi and ftnd + lscs != p:
+                raise ValidationError(
+                    {
+                        "ftnd": "FTND and LSCS together must equal Para.",
+                        "lscs": "FTND and LSCS together must equal Para.",
+                    }
+                )
             if self.high_risk and not self.anc_high_risk_reasons:
                 raise ValidationError({"anc_high_risk_reasons": "Select at least one ANC high-risk reason."})
             if not self.high_risk:
@@ -1054,6 +1077,8 @@ class Case(models.Model):
             self.anc_high_risk_reasons = []
             self.rch_number = ""
             self.rch_bypass = False
+            self.ftnd = 0
+            self.lscs = 0
         if category_name == "SURGERY":
             if not self.surgical_pathway:
                 raise ValidationError({"surgical_pathway": "Please choose surveillance or planned surgery."})
@@ -1121,6 +1146,32 @@ class Case(models.Model):
     def anc_high_risk_reason_labels(self):
         choice_map = dict(AncHighRiskReason.choices)
         return [choice_map[value] for value in (self.anc_high_risk_reasons or []) if value in choice_map]
+
+    @property
+    def is_primi(self):
+        return (self.gravida, self.para, self.abortions, self.living) == (1, 0, 0, 0)
+
+    @property
+    def show_delivery_mode_history(self):
+        return (self.para or 0) > 0 and not self.is_primi
+
+    @property
+    def delivery_mode_total(self):
+        return (self.ftnd or 0) + (self.lscs or 0)
+
+    @property
+    def obstetric_summary(self):
+        if all(value is None for value in (self.gravida, self.para, self.abortions, self.living)):
+            return ""
+        summary = (
+            f"G{self.gravida or 0} "
+            f"P{self.para or 0} "
+            f"A{self.abortions or 0} "
+            f"L{self.living or 0}"
+        )
+        if self.show_delivery_mode_history:
+            summary += f" | FTND {self.ftnd or 0} LSCS {self.lscs or 0}"
+        return summary
 
     def __str__(self) -> str:
         return f"{self.uhid} - {self.full_name}"

@@ -28,6 +28,8 @@
     "para",
     "abortions",
     "living",
+    "ftnd",
+    "lscs",
     "subcategory",
     "surgical_pathway",
     "surgery_done",
@@ -38,6 +40,7 @@
     "anc_high_risk_reasons",
   ]);
   const GPLA_FIELDS = ["gravida", "para", "abortions", "living"];
+  const DELIVERY_FIELDS = ["ftnd", "lscs"];
   const PRIMI_VALUES = [1, 0, 0, 0];
   const draftValues = new Map();
   const patientSearchState = {
@@ -320,6 +323,22 @@
     return GPLA_FIELDS.map((name) => document.getElementById(`id_${name}`)).filter((input) => input instanceof HTMLInputElement);
   }
 
+  function deliveryInputs() {
+    return DELIVERY_FIELDS.map((name) => document.getElementById(`id_${name}`)).filter((input) => input instanceof HTMLInputElement);
+  }
+
+  function deliverySection() {
+    return document.getElementById("case-create-delivery-section");
+  }
+
+  function deliveryHint() {
+    return document.getElementById("case-create-delivery-hint");
+  }
+
+  function deliveryValidation() {
+    return document.getElementById("case-create-delivery-validation");
+  }
+
   function hasExplicitGplaValue(input) {
     return String(input?.value || "").trim() !== "";
   }
@@ -340,6 +359,79 @@
     toggle.setAttribute("aria-pressed", isActive ? "true" : "false");
   }
 
+  function deliveryModeTotal() {
+    return deliveryInputs().reduce((total, input) => total + parseGplaValue(input.value), 0);
+  }
+
+  function deliveryFieldMax(input) {
+    const baseMax = Number.parseInt(input?.dataset.gplaMax || "10", 10);
+    if (!(input instanceof HTMLInputElement) || !DELIVERY_FIELDS.includes(input.name)) {
+      return baseMax;
+    }
+    const para = parseGplaValue(document.getElementById("id_para")?.value || "0");
+    const otherFieldName = input.name === "ftnd" ? "lscs" : "ftnd";
+    const otherValue = parseGplaValue(document.getElementById(`id_${otherFieldName}`)?.value || "0");
+    return Math.min(baseMax, Math.max(para - otherValue, 0));
+  }
+
+  function setDeliveryValidationState(state, message = "") {
+    const validation = deliveryValidation();
+    if (!(validation instanceof HTMLElement)) return;
+    validation.classList.remove("d-none", "is-warning", "is-success", "is-error");
+    if (!state || !message) {
+      validation.textContent = "";
+      validation.classList.add("d-none");
+      return;
+    }
+    validation.textContent = message;
+    validation.classList.add(state === "success" ? "is-success" : state === "error" ? "is-error" : "is-warning");
+  }
+
+  function applyDeliveryValues(values) {
+    deliveryInputs().forEach((input, index) => {
+      const nextValue = clampGplaValue(values[index] ?? 0);
+      input.value = String(nextValue);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+  }
+
+  function syncDeliveryModeState() {
+    const para = parseGplaValue(document.getElementById("id_para")?.value || "0");
+    const showDeliveryMode = para > 0 && !isPrimiSelection();
+    const section = deliverySection();
+    const hint = deliveryHint();
+    const currentTotal = deliveryModeTotal();
+
+    if (hint) {
+      hint.textContent = `Must equal Para (${para})`;
+    }
+    if (section) {
+      section.classList.toggle("d-none", !showDeliveryMode);
+    }
+
+    if (!showDeliveryMode) {
+      if (currentTotal > 0) {
+        applyDeliveryValues([0, 0]);
+        return true;
+      }
+      setDeliveryValidationState();
+      return false;
+    }
+
+    if (currentTotal > para) {
+      applyDeliveryValues([0, 0]);
+      return true;
+    }
+
+    if (currentTotal === para) {
+      setDeliveryValidationState("success", "Delivery count matches Para");
+    } else {
+      setDeliveryValidationState("warning", `FTND + LSCS = ${currentTotal}, need ${para} total`);
+    }
+    return false;
+  }
+
   function syncGplaCounter(counter) {
     const input = counter?.querySelector("[data-gpla-input]");
     const valueEl = counter?.querySelector("[data-gpla-value]");
@@ -349,6 +441,7 @@
 
     const minValue = Number.parseInt(input.dataset.gplaMin || "0", 10);
     const maxValue = Number.parseInt(input.dataset.gplaMax || "10", 10);
+    const stepMaxValue = deliveryFieldMax(input);
     const hasExplicitValue = String(input.value || "").trim() !== "";
     const value = clampGplaValue(parseGplaValue(input.value), minValue, maxValue);
 
@@ -361,7 +454,7 @@
       decrementButton.disabled = value <= minValue;
     }
     if (incrementButton instanceof HTMLButtonElement) {
-      incrementButton.disabled = value >= maxValue;
+      incrementButton.disabled = value >= stepMaxValue;
     }
   }
 
@@ -370,13 +463,23 @@
     if (!summary) return;
 
     const values = gplaInputs().map((input) => parseGplaValue(input.value));
-    summary.textContent = `G${values[0]} P${values[1]} A${values[2]} L${values[3]}`;
+    let summaryText = `G${values[0]} P${values[1]} A${values[2]} L${values[3]}`;
+    const para = values[1];
+    if (para > 0 && !isPrimiSelection()) {
+      const [ftnd, lscs] = deliveryInputs().map((input) => parseGplaValue(input.value));
+      summaryText += ` | FTND ${ftnd} LSCS ${lscs}`;
+    }
+    summary.textContent = summaryText;
   }
 
   function syncGplaCounters() {
     gplaCounterElements().forEach((counter) => syncGplaCounter(counter));
-    updateGplaSummary();
     syncGplaPrimiToggle();
+    if (syncDeliveryModeState()) {
+      return;
+    }
+    gplaCounterElements().forEach((counter) => syncGplaCounter(counter));
+    updateGplaSummary();
   }
 
   function applyGplaValues(values) {
@@ -428,6 +531,21 @@
     const warning = document.getElementById("case-create-gpla-warning");
     if (!warning) return;
     warning.classList.toggle("d-none", !(living > para));
+  }
+
+  function validateDeliveryModeBeforeSubmit() {
+    const para = parseGplaValue(document.getElementById("id_para")?.value || "0");
+    if (!para || isPrimiSelection()) {
+      return null;
+    }
+    const total = deliveryModeTotal();
+    if (total === para) {
+      return null;
+    }
+    return {
+      input: document.getElementById("id_ftnd") || document.getElementById("id_lscs"),
+      message: "FTND + LSCS must equal Para before saving.",
+    };
   }
 
   function clearClientErrors() {
@@ -1013,6 +1131,14 @@
       return false;
     }
 
+    const deliveryValidationResult = validateDeliveryModeBeforeSubmit();
+    if (deliveryValidationResult?.input) {
+      attachClientError(deliveryValidationResult.input, deliveryValidationResult.message);
+      deliveryValidationResult.input.scrollIntoView({ behavior: "smooth", block: "center" });
+      focusField(deliveryValidationResult.input);
+      return false;
+    }
+
     return true;
   }
 
@@ -1056,7 +1182,7 @@
       if (target.name === "category") {
         syncGenderBehavior();
       }
-      if (GPLA_FIELDS.includes(target.name)) {
+      if (GPLA_FIELDS.includes(target.name) || DELIVERY_FIELDS.includes(target.name)) {
         syncGplaCounters();
       }
       if (target.name === "para" || target.name === "living") {
@@ -1097,7 +1223,7 @@
       if (!(counter instanceof HTMLElement) || !(input instanceof HTMLInputElement)) return;
 
       const minValue = Number.parseInt(input.dataset.gplaMin || "0", 10);
-      const maxValue = Number.parseInt(input.dataset.gplaMax || "10", 10);
+      const maxValue = deliveryFieldMax(input);
       const delta = stepButton.dataset.gplaStep === "increment" ? 1 : -1;
       const nextValue = clampGplaValue(parseGplaValue(input.value) + delta, minValue, maxValue);
 

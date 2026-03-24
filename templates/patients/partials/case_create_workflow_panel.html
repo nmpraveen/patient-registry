@@ -54,6 +54,16 @@
                   {% include 'patients/partials/case_create_gpla_counter.html' with field=form.abortions label='Abortions' summary_code='A' %}
                   {% include 'patients/partials/case_create_gpla_counter.html' with field=form.living label='Living' summary_code='L' %}
                 </div>
+                <section id="case-create-delivery-section" class="case-create-gpla-delivery d-none" aria-live="polite">
+                  <div class="case-create-gpla-delivery__header">
+                    <h4 class="case-create-gpla-delivery__title mb-0">Mode of previous deliveries</h4>
+                    <div id="case-create-delivery-hint" class="case-create-gpla-delivery__hint">Must equal Para (0)</div>
+                  </div>
+                  <div class="case-create-gpla-grid case-create-gpla-grid--delivery">
+                    {% include 'patients/partials/case_create_gpla_counter.html' with field=form.ftnd label='Vaginal delivery (FTND)' summary_code='' %}
+                    {% include 'patients/partials/case_create_gpla_counter.html' with field=form.lscs label='C-section (LSCS)' summary_code='' %}
+                  </div>
+                </section>
                 <div id="case-create-gpla-summary" class="case-create-gpla-summary" aria-live="polite">G0 P0 A0 L0</div>
               </div>
             </div>

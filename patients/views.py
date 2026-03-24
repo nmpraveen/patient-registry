@@ -992,6 +992,8 @@ def _recent_case_queryset(limit=None, *, include_tasks=True):
             "created_at",
             "category__id",
             "category__name",
+            "category__theme_bg_color",
+            "category__theme_text_color",
         )
         .order_by("-created_at", "-id")
     )
@@ -3800,6 +3802,8 @@ def _build_preview_case(form):
     preview_case.para = _parse_optional_int_value(_bound_form_value(form, "para"))
     preview_case.abortions = _parse_optional_int_value(_bound_form_value(form, "abortions"))
     preview_case.living = _parse_optional_int_value(_bound_form_value(form, "living"))
+    preview_case.ftnd = _parse_optional_int_value(_bound_form_value(form, "ftnd"))
+    preview_case.lscs = _parse_optional_int_value(_bound_form_value(form, "lscs"))
     preview_case.ncd_flags = _bound_form_list(form, "ncd_flags")
     preview_case.anc_high_risk_reasons = _bound_form_list(form, "anc_high_risk_reasons")
     valid_subcategories = valid_case_subcategory_values_for_category_name(category.name if category else "")
@@ -4037,8 +4041,15 @@ def _format_case_edit_choice_list(values, choice_map, *, empty_label="None"):
 def _format_case_edit_gpla(values):
     if all(value is None for value in values):
         return "Not set"
-    rendered = [str(value) if value is not None else "-" for value in values]
-    return f"G{rendered[0]} P{rendered[1]} A{rendered[2]} L{rendered[3]}"
+    draft_case = Case(
+        gravida=values[0],
+        para=values[1],
+        abortions=values[2],
+        living=values[3],
+        ftnd=values[4] or 0,
+        lscs=values[5] or 0,
+    )
+    return draft_case.obstetric_summary or "Not set"
 
 
 def _append_case_edit_change(changes, *, label, before, after, formatter, compare_before=None, compare_after=None):
@@ -4289,8 +4300,8 @@ def _build_case_edit_change_items(form, case, preview_case):
     _append_case_edit_change(
         changes,
         label="GPAL",
-        before=(case.gravida, case.para, case.abortions, case.living),
-        after=(preview_case.gravida, preview_case.para, preview_case.abortions, preview_case.living),
+        before=(case.gravida, case.para, case.abortions, case.living, case.ftnd, case.lscs),
+        after=(preview_case.gravida, preview_case.para, preview_case.abortions, preview_case.living, preview_case.ftnd, preview_case.lscs),
         formatter=_format_case_edit_gpla,
     )
     _append_case_edit_list_change(

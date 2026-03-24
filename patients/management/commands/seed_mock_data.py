@@ -232,6 +232,8 @@ class Command(BaseCommand):
                 "para": 1,
                 "abortions": 1,
                 "living": 1,
+                "ftnd": 0,
+                "lscs": 1,
                 "anc_high_risk_reasons": [AncHighRiskReason.ANEMIA, AncHighRiskReason.PIH],
                 "rch_number": f"{730000000000 + int(kwargs['uhid'][-4:]):012d}",
                 "rch_bypass": False,
@@ -255,6 +257,8 @@ class Command(BaseCommand):
                 "para": 1,
                 "abortions": 0,
                 "living": 1,
+                "ftnd": 1,
+                "lscs": 0,
                 "rch_number": "",
                 "rch_bypass": True,
                 "diagnosis": "ANC follow-up awaiting RCH registration",
@@ -329,6 +333,8 @@ class Command(BaseCommand):
                     "para": 1,
                     "abortions": index % 2,
                     "living": 1,
+                    "ftnd": 1 if index % 2 else 0,
+                    "lscs": 0 if index % 2 else 1,
                     "rch_number": f"{720000000000 + index:012d}",
                 }
             )

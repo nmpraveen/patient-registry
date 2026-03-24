@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026.03.24.15.10
+- Added ANC delivery-mode tracking with new FTND and LSCS counters under GPAL, including live Para-matching rules, summary updates, save validation, and migration-backed persistence.
+- Wired FTND and LSCS through case create/edit flows, patient-data bundle export/import, deterministic mock seeding, and regression coverage for ANC create/edit behavior.
+- Tightened the GPAL UI to match the surrounding form more closely with smaller typography, compact counters, a narrower stepper layout, and removal of the inline FTND/LSCS warning banner.
+- Fixed the previous baseline test failures by caching template capability checks, loading recent-case category theme fields eagerly, and stabilizing the dashboard upcoming-schedule empty-day assertion.
+
 ## 2026.03.24.13.27
 - Replaced the Case List search-page assignee dropdown with a subcategory filter so staff can narrow Surgery and Medicine cases by specialty directly from the list view.
 - Updated the case-list filtering/querystring flow and focused regression coverage so selected subcategories persist correctly alongside the existing search, status, category, and due-date filters.

@@ -282,7 +282,7 @@ class CaseForm(StyledModelForm):
             self.initial.setdefault("patient_mode", "new")
 
         gpla_choices = [("", "-")] + [(i, i) for i in range(0, 11)]
-        for field_name in ["gravida", "para", "abortions", "living"]:
+        for field_name in ["gravida", "para", "abortions", "living", "ftnd", "lscs"]:
             self.fields[field_name].widget = forms.Select(choices=gpla_choices)
 
     def _selected_category_for_subcategory(self):
@@ -404,11 +404,28 @@ class CaseForm(StyledModelForm):
             cleaned_data.get("abortions"),
             cleaned_data.get("living"),
         )
+        ftnd = cleaned_data.get("ftnd") or 0
+        lscs = cleaned_data.get("lscs") or 0
+        is_primi_selection = (g, p, a, l) == (1, 0, 0, 0)
         if category_name == "ANC" and None not in (g, p, a, l):
             if p > g:
                 self.add_error("para", "P cannot exceed G.")
             if p + a > g:
                 self.add_error("abortions", "P + A cannot exceed G.")
+        if category_name == "ANC":
+            if not p or is_primi_selection:
+                cleaned_data["ftnd"] = 0
+                cleaned_data["lscs"] = 0
+                ftnd = 0
+                lscs = 0
+            elif ftnd + lscs > p:
+                cleaned_data["ftnd"] = 0
+                cleaned_data["lscs"] = 0
+                ftnd = 0
+                lscs = 0
+            if p and not is_primi_selection and ftnd + lscs != p:
+                self.add_error("ftnd", "FTND and LSCS together must equal Para.")
+                self.add_error("lscs", "FTND and LSCS together must equal Para.")
         if category_name == "ANC":
             cleaned_data["gender"] = cleaned_data.get("gender") or Gender.FEMALE
             rch_number = (cleaned_data.get("rch_number") or "").strip()
@@ -424,6 +441,8 @@ class CaseForm(StyledModelForm):
             cleaned_data["anc_high_risk_reasons"] = []
             cleaned_data["rch_number"] = ""
             cleaned_data["rch_bypass"] = False
+            cleaned_data["ftnd"] = 0
+            cleaned_data["lscs"] = 0
 
         if category_name == "ANC" and not high_risk:
             cleaned_data["anc_high_risk_reasons"] = []
@@ -496,6 +515,8 @@ class CaseForm(StyledModelForm):
             "para",
             "abortions",
             "living",
+            "ftnd",
+            "lscs",
             "notes",
         ]
         widgets = {

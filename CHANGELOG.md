@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.03.24.21.26
+- Restored the shared Surgery and Medicine subcategory selector on the Edit Case page so legacy cases with blank subcategories can be completed without leaving the edit workflow.
+- Updated the edit-page HTMX preview response to swap the same subcategory fragment as the create flow, keeping category changes and legacy-case edits in sync.
+- Added focused regression coverage for the edit page and edit preview fragment so the subcategory control stays present for legacy surgery cases and category switches.
+
 ## 2026.03.24.15.10
 - Added ANC delivery-mode tracking with new FTND and LSCS counters under GPAL, including live Para-matching rules, summary updates, save validation, and migration-backed persistence.
 - Wired FTND and LSCS through case create/edit flows, patient-data bundle export/import, deterministic mock seeding, and regression coverage for ANC create/edit behavior.

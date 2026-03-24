@@ -1,4 +1,5 @@
 <div id="case-edit-shell-state" data-workflow-key="{{ case_create_state.workflow_key }}" hidden hx-swap-oob="outerHTML"></div>
+{% include 'patients/partials/case_create_subcategory_field.html' with oob_swap='outerHTML' %}
 {% include 'patients/partials/case_create_workflow_panel.html' with oob_swap='outerHTML' %}
 {% include 'patients/partials/case_create_risk_panel.html' with oob_swap='outerHTML' %}
 {% include 'patients/partials/case_edit_summary_panel.html' with oob_swap='outerHTML' %}

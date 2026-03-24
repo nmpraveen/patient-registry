@@ -6440,6 +6440,72 @@ class MedtrackViewTests(TestCase):
         self.assertContains(response, 'name="prefix"')
         self.assertContains(response, 'name="status"')
 
+    def test_case_edit_page_shows_subcategory_control_for_legacy_surgery_case_without_one(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-EDIT-LEGACY-SUBCATEGORY",
+            first_name="Legacy",
+            last_name="Surgery",
+            phone_number="9876500886",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            age=37,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=9),
+            created_by=self.user,
+        )
+
+        response = self.client.get(reverse("patients:case_edit", kwargs={"pk": case.pk}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'id="case-create-subcategory-shell"')
+        self.assertContains(response, 'name="subcategory"', count=1)
+        self.assertContains(response, "Choose the surgical specialty.")
+
+    def test_case_edit_preview_moves_surgery_subcategory_into_step_one_oob_fragment(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-EDIT-PREVIEW-SUBCATEGORY",
+            first_name="Edited",
+            last_name="Switcher",
+            phone_number="9876500887",
+            category=self.anc,
+            status=CaseStatus.ACTIVE,
+            age=28,
+            lmp=timezone.localdate() - timedelta(days=56),
+            edd=timezone.localdate() + timedelta(days=210),
+            rch_bypass=True,
+            created_by=self.user,
+        )
+
+        response = self.client.post(
+            reverse("patients:case_edit_preview", kwargs={"pk": case.pk}),
+            {
+                "uhid": case.uhid,
+                "first_name": case.first_name,
+                "last_name": case.last_name,
+                "phone_number": case.phone_number,
+                "category": self.surgery.id,
+                "status": CaseStatus.ACTIVE,
+                "age": str(case.age),
+                "surgical_pathway": SurgicalPathway.SURVEILLANCE,
+                "review_date": (timezone.localdate() + timedelta(days=7)).isoformat(),
+            },
+            HTTP_HX_REQUEST="true",
+        )
+        response_text = response.content.decode()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'id="case-create-subcategory-shell"')
+        self.assertContains(response, 'id="case-create-subcategory-shell"', count=1)
+        self.assertContains(response, 'name="subcategory"', count=1)
+        self.assertContains(response, "Choose the surgical specialty.")
+        self.assertIn('id="case-create-subcategory-shell"', response_text)
+        self.assertLess(
+            response_text.index('id="case-create-subcategory-shell"'),
+            response_text.index('id="case-create-workflow-panel"'),
+        )
+
     def test_case_edit_preview_requires_case_edit_capability(self):
         self.login_as_role("Nurse", username="nurse_edit_preview")
         case = Case.objects.create(

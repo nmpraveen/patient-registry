@@ -1487,6 +1487,9 @@
                 <div class="global-nav-primary">
                   <a class="btn btn-sm btn-outline-light" id="global-patient-list-link" href="{% url 'patients:patient_list' %}" data-patients-link-base="{% url 'patients:patient_list' %}">Patients</a>
                   <a class="btn btn-sm btn-outline-light" id="global-case-list-link" href="{% url 'patients:case_list' %}" data-cases-link-base="{% url 'patients:case_list' %}">Cases</a>
+                  {% if user|has_capability:'note_add' %}
+                    <a class="btn btn-sm btn-outline-light" id="global-calls-link" href="{% url 'patients:calls_upcoming' %}">Calls</a>
+                  {% endif %}
                   {% if user|has_capability:'case_create' %}
                     <a class="btn btn-sm app-nav-action--quick-entry" href="{% url 'patients:case_quick_create' %}">Quick Entry</a>
                     <a class="btn btn-sm app-nav-action--new-case" href="{% url 'patients:case_create' %}">New Case</a>

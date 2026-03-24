@@ -1314,6 +1314,34 @@ class MedtrackViewTests(TestCase):
         self.assertNotContains(response, 'class="btn btn-sm btn-outline-light" href="{0}"'.format(reverse("patients:settings")))
         self.assertNotContains(response, 'class="btn btn-sm btn-light w-100">Logout')
 
+    def test_dashboard_nav_shows_calls_link_for_reception(self):
+        self.login_as_role("Reception", username="reception_calls_nav")
+
+        response = self.client.get(reverse("patients:dashboard"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, reverse("patients:calls_upcoming"))
+        self.assertContains(response, 'id="global-calls-link"')
+
+    def test_dashboard_nav_hides_calls_link_without_note_add_capability(self):
+        RoleSetting.objects.update_or_create(
+            role_name="Clerk",
+            defaults={
+                "can_case_create": True,
+                "can_case_edit": False,
+                "can_task_create": False,
+                "can_task_edit": False,
+                "can_note_add": False,
+                "can_manage_settings": False,
+            },
+        )
+        self.login_as_role("Clerk", username="clerk_nav")
+
+        response = self.client.get(reverse("patients:dashboard"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, reverse("patients:calls_upcoming"))
+
     def test_dashboard_nav_hides_case_create_actions_without_case_create_capability(self):
         self.login_as_role("Nurse", username="nurse_nav")
 
@@ -2944,6 +2972,111 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(payload["message"], "Could not log call outcome.")
         self.assertIn("task", payload["errors"])
 
+    def test_add_call_log_ajax_returns_quick_log_payload_for_confirmed_outcome(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-CALL-AJAX-CONFIRMED",
+            first_name="Call",
+            last_name="Confirmed",
+            phone_number="9876505890",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=8),
+            created_by=self.user,
+        )
+        task = Task.objects.create(
+            case=case,
+            title="Call task confirmed",
+            due_date=timezone.localdate(),
+            status=TaskStatus.SCHEDULED,
+            created_by=self.user,
+        )
+
+        response = self.ajax_post(
+            reverse("patients:case_call_create", kwargs={"pk": case.pk}),
+            {"task": task.pk, "outcome": CallOutcome.ANSWERED_CONFIRMED_VISIT, "notes": ""},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["call_summary"]["status"], CallCommunicationStatus.CONFIRMED)
+        self.assertEqual(payload["call_summary"]["failed_attempt_count"], 0)
+        self.assertEqual(payload["call_log"]["task_id"], task.id)
+        self.assertEqual(payload["call_log"]["outcome"], CallOutcome.ANSWERED_CONFIRMED_VISIT)
+
+    def test_add_call_log_ajax_returns_quick_log_payload_for_not_reachable_outcome(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-CALL-AJAX-NOT-REACHABLE",
+            first_name="Call",
+            last_name="Retry",
+            phone_number="9876505891",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=8),
+            created_by=self.user,
+        )
+        task = Task.objects.create(
+            case=case,
+            title="Call task retry",
+            due_date=timezone.localdate(),
+            status=TaskStatus.SCHEDULED,
+            created_by=self.user,
+        )
+        CallLog.objects.create(
+            case=case,
+            task=task,
+            outcome=CallOutcome.NO_ANSWER,
+            notes="First failed attempt",
+            staff_user=self.user,
+        )
+
+        response = self.ajax_post(
+            reverse("patients:case_call_create", kwargs={"pk": case.pk}),
+            {"task": task.pk, "outcome": CallOutcome.NO_ANSWER, "notes": ""},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["call_summary"]["status"], CallCommunicationStatus.NOT_REACHABLE)
+        self.assertEqual(payload["call_summary"]["failed_attempt_count"], 2)
+        self.assertEqual(payload["call_log"]["outcome"], CallOutcome.NO_ANSWER)
+
+    def test_add_call_log_ajax_returns_call_back_later_summary_without_changing_task_status(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-CALL-AJAX-CALLBACK",
+            first_name="Call",
+            last_name="Later",
+            phone_number="9876505892",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=8),
+            created_by=self.user,
+        )
+        task = Task.objects.create(
+            case=case,
+            title="Call task later",
+            due_date=timezone.localdate(),
+            status=TaskStatus.SCHEDULED,
+            created_by=self.user,
+        )
+
+        response = self.ajax_post(
+            reverse("patients:case_call_create", kwargs={"pk": case.pk}),
+            {"task": task.pk, "outcome": CallOutcome.CALL_BACK_LATER, "notes": ""},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["call_summary"]["status"], CallCommunicationStatus.CALL_BACK_LATER)
+        task.refresh_from_db()
+        self.assertEqual(task.status, TaskStatus.SCHEDULED)
+        self.assertTrue(CallLog.objects.filter(case=case, task=task, outcome=CallOutcome.CALL_BACK_LATER).exists())
+
     def test_case_detail_marks_task_date_inputs_for_crayons_datepicker(self):
         self.client.force_login(self.user)
         case = Case.objects.create(
@@ -3372,6 +3505,380 @@ class MedtrackViewTests(TestCase):
         self.assertContains(response, "--schedule-dot-ring: #abcdef;")
         self.assertContains(response, f"--schedule-dot-fill: {mix_colors('#123456', '#abcdef', 0.22)};")
         self.assertContains(response, "--upcoming-category-bg: #abcdef; --upcoming-category-text: #123456;")
+
+    def test_upcoming_calls_page_requires_call_logging_capability(self):
+        user = get_user_model().objects.create_user(username="upcoming_calls_blocked", password="strong-password-123")
+        self.client.force_login(user)
+
+        get_response = self.client.get(reverse("patients:calls_upcoming"))
+        post_response = self.client.post(
+            reverse("patients:calls_upcoming_bulk_log"),
+            {"range": "3d", "case_ids": ["1"], "outcome": CallOutcome.NO_ANSWER},
+        )
+
+        self.assertEqual(get_response.status_code, 403)
+        self.assertEqual(post_response.status_code, 403)
+
+    def test_upcoming_calls_page_allows_reception_role(self):
+        self.login_as_role("Reception", username="upcoming_calls_reception")
+
+        response = self.client.get(reverse("patients:calls_upcoming"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Upcoming Calling Sheet")
+
+    def test_upcoming_calls_page_shows_phone_number_and_direct_call_link_without_reveal_controls(self):
+        self.client.force_login(self.user)
+        today = timezone.localdate()
+        due_date = today + timedelta(days=1)
+        case = Case.objects.create(
+            uhid="UH-CALL-DIRECT",
+            first_name="Direct",
+            last_name="Dial",
+            phone_number="9876504020",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=due_date,
+            created_by=self.user,
+        )
+        Task.objects.create(case=case, title="Direct call visit", due_date=due_date, created_by=self.user)
+
+        response = self.client.get(reverse("patients:calls_upcoming"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, f"{due_date.strftime('%b')} {due_date.day}: Direct call visit")
+        self.assertContains(response, "Not contacted")
+        self.assertContains(response, "9876504020")
+        self.assertContains(response, 'href="tel:9876504020"')
+        self.assertNotContains(response, "First due")
+        self.assertNotContains(response, "1 day")
+        self.assertNotContains(response, "1 task")
+        self.assertNotContains(response, "data-call-reveal-trigger")
+        self.assertNotContains(response, "data-call-reveal-close")
+
+    def test_upcoming_calls_page_shows_no_phone_pill_when_phone_number_missing(self):
+        self.client.force_login(self.user)
+        today = timezone.localdate()
+        case = Case.objects.create(
+            uhid="UH-CALL-NO-PHONE",
+            first_name="Missing",
+            last_name="Phone",
+            phone_number="",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=today + timedelta(days=1),
+            created_by=self.user,
+        )
+        Task.objects.create(case=case, title="Check phone", due_date=today + timedelta(days=1), created_by=self.user)
+
+        response = self.client.get(reverse("patients:calls_upcoming"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "No phone")
+        self.assertNotContains(response, 'href="tel:"')
+
+    def test_upcoming_calls_page_defaults_to_three_day_range(self):
+        self.client.force_login(self.user)
+        today = timezone.localdate()
+        in_range_case = Case.objects.create(
+            uhid="UH-CALL-3D-IN",
+            first_name="Three",
+            last_name="Day",
+            phone_number="9876504010",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=today + timedelta(days=2),
+            created_by=self.user,
+        )
+        out_of_range_case = Case.objects.create(
+            uhid="UH-CALL-3D-OUT",
+            first_name="Four",
+            last_name="Day",
+            phone_number="9876504011",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=today + timedelta(days=4),
+            created_by=self.user,
+        )
+        Task.objects.create(case=in_range_case, title="In range visit", due_date=today + timedelta(days=2), created_by=self.user)
+        Task.objects.create(case=out_of_range_case, title="Out of range visit", due_date=today + timedelta(days=3), created_by=self.user)
+
+        response = self.client.get(reverse("patients:calls_upcoming"))
+        dashboard_response = self.client.get(reverse("patients:dashboard"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["filters"]["range"], "3d")
+        self.assertEqual(response.context["filters"]["range_start"], today)
+        self.assertEqual(response.context["filters"]["range_end"], today + timedelta(days=2))
+        rendered_case_ids = [row["case_id"] for row in response.context["queue_rows"]]
+        self.assertEqual(rendered_case_ids, [in_range_case.id])
+        self.assertContains(response, "Next 3 days")
+        self.assertNotContains(dashboard_response, "Upcoming Calling Sheet")
+
+    def test_upcoming_calls_page_week_range_uses_current_week_end(self):
+        self.client.force_login(self.user)
+        today = timezone.localdate()
+        current_week_start = today - timedelta(days=today.weekday())
+        current_week_end = current_week_start + timedelta(days=6)
+        next_week_start = current_week_end + timedelta(days=1)
+        this_week_case = Case.objects.create(
+            uhid="UH-CALL-WEEK-IN",
+            first_name="Week",
+            last_name="Inside",
+            phone_number="9876504012",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=current_week_end,
+            created_by=self.user,
+        )
+        next_week_case = Case.objects.create(
+            uhid="UH-CALL-WEEK-OUT",
+            first_name="Week",
+            last_name="Outside",
+            phone_number="9876504013",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=next_week_start,
+            created_by=self.user,
+        )
+        Task.objects.create(case=this_week_case, title="This week call", due_date=current_week_end, created_by=self.user)
+        Task.objects.create(case=next_week_case, title="Next week call", due_date=next_week_start, created_by=self.user)
+
+        response = self.client.get(reverse("patients:calls_upcoming"), {"range": "week"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["filters"]["range"], "week")
+        self.assertEqual(response.context["filters"]["range_end"], current_week_end)
+        rendered_case_ids = [row["case_id"] for row in response.context["queue_rows"]]
+        self.assertEqual(rendered_case_ids, [this_week_case.id])
+        self.assertContains(response, "Rest of week")
+        self.assertNotContains(response, "Next week call")
+
+    def test_upcoming_calls_page_groups_tasks_by_patient_across_selected_range(self):
+        self.client.force_login(self.user)
+        today = timezone.localdate()
+        case = Case.objects.create(
+            uhid="UH-CALL-GROUP",
+            first_name="Grouped",
+            last_name="Patient",
+            phone_number="9876504014",
+            category=self.surgery,
+            subcategory=CaseSubcategory.ORTHOPEDICS,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=today + timedelta(days=2),
+            created_by=self.user,
+        )
+        first_task = Task.objects.create(case=case, title="Visit A", due_date=today + timedelta(days=1), created_by=self.user)
+        Task.objects.create(case=case, title="Visit B", due_date=today + timedelta(days=2), created_by=self.user)
+        Task.objects.create(case=case, title="Visit B", due_date=today + timedelta(days=2), created_by=self.user)
+
+        response = self.client.get(reverse("patients:calls_upcoming"))
+
+        self.assertEqual(response.status_code, 200)
+        queue_row = next(row for row in response.context["queue_rows"] if row["case_id"] == case.id)
+        self.assertEqual(queue_row["primary_task_id"], first_task.id)
+        self.assertEqual(queue_row["day_total"], 2)
+        self.assertEqual(queue_row["task_total"], 3)
+        self.assertEqual(queue_row["primary_schedule_date_display"], f"{(today + timedelta(days=1)).strftime('%b')} {(today + timedelta(days=1)).day}")
+        self.assertEqual(queue_row["primary_schedule_title"], "Visit A")
+        self.assertEqual(queue_row["primary_schedule_more_count"], 2)
+        self.assertEqual(queue_row["subcategory_name"], case.get_subcategory_display())
+        self.assertEqual(queue_row["schedule_lines"][0]["task_titles"], ["Visit A"])
+        self.assertEqual(queue_row["schedule_lines"][1]["task_titles"], ["Visit B"])
+        self.assertContains(response, f"{(today + timedelta(days=1)).strftime('%b')} {(today + timedelta(days=1)).day}: Visit A")
+        self.assertContains(response, "+2")
+
+    def test_upcoming_calls_page_expanded_panel_shows_flags_and_referred_by_fallbacks_without_phone_field(self):
+        self.client.force_login(self.user)
+        today = timezone.localdate()
+        flagged_case = Case.objects.create(
+            uhid="UH-CALL-FLAGGED",
+            first_name="Flagged",
+            last_name="Patient",
+            phone_number="9876504021",
+            category=self.medicine,
+            subcategory=CaseSubcategory.GENERAL_MEDICINE,
+            status=CaseStatus.ACTIVE,
+            high_risk=True,
+            ncd_flags=[NonCommunicableDisease.T2DM, NonCommunicableDisease.SHTN],
+            referred_by="Dr. Ramesh, PHC Karur",
+            review_date=today + timedelta(days=1),
+            created_by=self.user,
+        )
+        plain_case = Case.objects.create(
+            uhid="UH-CALL-PLAIN",
+            first_name="Plain",
+            last_name="Patient",
+            phone_number="9876504022",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=today + timedelta(days=2),
+            created_by=self.user,
+        )
+        Task.objects.create(case=flagged_case, title="Consultant Review", due_date=today + timedelta(days=1), created_by=self.user)
+        Task.objects.create(case=plain_case, title="Wound check", due_date=today + timedelta(days=2), created_by=self.user)
+
+        response = self.client.get(reverse("patients:calls_upcoming"))
+
+        self.assertEqual(response.status_code, 200)
+        flagged_row = next(row for row in response.context["queue_rows"] if row["case_id"] == flagged_case.id)
+        plain_row = next(row for row in response.context["queue_rows"] if row["case_id"] == plain_case.id)
+        self.assertEqual(flagged_row["referred_by_display"], "Dr. Ramesh, PHC Karur")
+        self.assertEqual([flag["label"] for flag in flagged_row["flags"]], ["High risk", "T2DM", "SHTN"])
+        self.assertEqual(plain_row["referred_by_display"], "-")
+        self.assertEqual(plain_row["flags"], [])
+        self.assertContains(response, "High risk")
+        self.assertContains(response, "T2DM")
+        self.assertContains(response, "SHTN")
+        self.assertContains(response, "Dr. Ramesh, PHC Karur")
+        self.assertContains(response, "None")
+        self.assertContains(response, '<div class="dashboard-compact-detail-copy">-</div>', html=True)
+        self.assertNotContains(response, '<span class="dashboard-compact-detail-label">Phone</span>', html=True)
+
+    def test_upcoming_calls_page_bulk_log_creates_call_logs_and_activity_entries(self):
+        self.client.force_login(self.user)
+        today = timezone.localdate()
+        case_one = Case.objects.create(
+            uhid="UH-CALL-BULK-1",
+            first_name="Bulk",
+            last_name="One",
+            phone_number="9876504015",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=today + timedelta(days=1),
+            created_by=self.user,
+        )
+        case_two = Case.objects.create(
+            uhid="UH-CALL-BULK-2",
+            first_name="Bulk",
+            last_name="Two",
+            phone_number="9876504016",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=today + timedelta(days=2),
+            created_by=self.user,
+        )
+        task_one = Task.objects.create(case=case_one, title="Confirm visit", due_date=today + timedelta(days=1), created_by=self.user)
+        task_two = Task.objects.create(case=case_two, title="Confirm visit", due_date=today + timedelta(days=2), created_by=self.user)
+
+        response = self.client.post(
+            reverse("patients:calls_upcoming_bulk_log"),
+            {
+                "range": "3d",
+                "case_ids": [str(case_one.id), str(case_two.id)],
+                "outcome": CallOutcome.ANSWERED_CONFIRMED_VISIT,
+                "notes": "Batch confirmation",
+            },
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(CallLog.objects.count(), 2)
+        self.assertTrue(
+            CallLog.objects.filter(
+                case=case_one,
+                task=task_one,
+                outcome=CallOutcome.ANSWERED_CONFIRMED_VISIT,
+                notes="Batch confirmation",
+            ).exists()
+        )
+        self.assertTrue(
+            CallLog.objects.filter(
+                case=case_two,
+                task=task_two,
+                outcome=CallOutcome.ANSWERED_CONFIRMED_VISIT,
+                notes="Batch confirmation",
+            ).exists()
+        )
+        self.assertEqual(CaseActivityLog.objects.filter(event_type=ActivityEventType.CALL).count(), 2)
+        self.assertContains(response, "Call outcome logged for 2 patient(s).")
+
+    def test_upcoming_calls_page_bulk_log_skips_cases_outside_current_queue(self):
+        self.client.force_login(self.user)
+        today = timezone.localdate()
+        eligible_case = Case.objects.create(
+            uhid="UH-CALL-SKIP-1",
+            first_name="Eligible",
+            last_name="Patient",
+            phone_number="9876504017",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=today + timedelta(days=1),
+            created_by=self.user,
+        )
+        stale_case = Case.objects.create(
+            uhid="UH-CALL-SKIP-2",
+            first_name="Stale",
+            last_name="Patient",
+            phone_number="9876504018",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=today + timedelta(days=1),
+            created_by=self.user,
+        )
+        eligible_task = Task.objects.create(case=eligible_case, title="Eligible visit", due_date=today + timedelta(days=1), created_by=self.user)
+        stale_task = Task.objects.create(case=stale_case, title="Stale visit", due_date=today + timedelta(days=1), created_by=self.user)
+        stale_task.status = TaskStatus.COMPLETED
+        stale_task.save(update_fields=["status", "completed_at", "updated_at"])
+
+        response = self.client.post(
+            reverse("patients:calls_upcoming_bulk_log"),
+            {
+                "range": "3d",
+                "case_ids": [str(eligible_case.id), str(stale_case.id)],
+                "outcome": CallOutcome.NO_ANSWER,
+            },
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(CallLog.objects.count(), 1)
+        self.assertTrue(CallLog.objects.filter(case=eligible_case, task=eligible_task, outcome=CallOutcome.NO_ANSWER).exists())
+        self.assertFalse(CallLog.objects.filter(case=stale_case).exists())
+        self.assertContains(response, "Skipped 1 patient(s) no longer in this queue.")
+
+    def test_upcoming_calls_page_bulk_log_does_not_change_task_status(self):
+        self.client.force_login(self.user)
+        today = timezone.localdate()
+        case = Case.objects.create(
+            uhid="UH-CALL-STATUS",
+            first_name="Status",
+            last_name="Stable",
+            phone_number="9876504019",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=today + timedelta(days=1),
+            created_by=self.user,
+        )
+        task = Task.objects.create(case=case, title="Stable visit", due_date=today + timedelta(days=1), created_by=self.user)
+
+        response = self.client.post(
+            reverse("patients:calls_upcoming_bulk_log"),
+            {
+                "range": "3d",
+                "case_ids": [str(case.id)],
+                "outcome": CallOutcome.CALL_BACK_LATER,
+            },
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        task.refresh_from_db()
+        self.assertEqual(task.status, TaskStatus.SCHEDULED)
+        self.assertTrue(CallLog.objects.filter(case=case, task=task, outcome=CallOutcome.CALL_BACK_LATER).exists())
 
 
     def test_case_form_bootstraps_categories_when_empty(self):

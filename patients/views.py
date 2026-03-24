@@ -70,6 +70,7 @@ from .models import (
     AncHighRiskReason,
     CallCommunicationStatus,
     CallLog,
+    CallOutcome,
     Case,
     CaseActivityLog,
     CaseStatus,
@@ -163,6 +164,11 @@ RECENT_CASE_EDIT_ROLES = ("Doctor", "Admin")
 PENDING_DEVICE_LOGIN_SESSION_KEY = "device_access_pending_login"
 DEVICE_REGISTRATION_STATE_SESSION_KEY = "device_access_registration_state"
 DEVICE_AUTHENTICATION_STATE_SESSION_KEY = "device_access_authentication_state"
+UPCOMING_CALL_RANGE_DEFAULT = "3d"
+UPCOMING_CALL_RANGE_CHOICES = (
+    ("3d", "Next 3 days"),
+    ("week", "Rest of week"),
+)
 
 
 def _bytes_to_base64url(value):
@@ -603,6 +609,10 @@ def _can_edit_recent_cases(user):
     if group_names and group_names.issubset({"Reception"}):
         return False
     return has_capability(user, "case_edit") and has_capability(user, "task_edit")
+
+
+def _can_access_upcoming_calls(user):
+    return can_access_case_data(user) and has_capability(user, "note_add")
 
 
 def _user_group_names(user):
@@ -2699,6 +2709,375 @@ class DashboardView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
             else []
         )
         return context
+
+
+def _normalize_upcoming_call_range(raw_value):
+    valid_ranges = {value for value, _ in UPCOMING_CALL_RANGE_CHOICES}
+    return raw_value if raw_value in valid_ranges else UPCOMING_CALL_RANGE_DEFAULT
+
+
+def _build_upcoming_call_filters(raw_range):
+    today = timezone.localdate()
+    range_key = _normalize_upcoming_call_range(raw_range)
+    if range_key == "week":
+        range_end = DashboardView._week_start_for(today) + timedelta(days=6)
+    else:
+        range_end = today + timedelta(days=2)
+    return {
+        "range": range_key,
+        "range_start": today,
+        "range_end": range_end,
+        "range_days": (range_end - today).days + 1,
+        "range_label": dict(UPCOMING_CALL_RANGE_CHOICES)[range_key],
+        "date_window_label": f"{_month_day_display(today)} - {_month_day_display(range_end)}",
+    }
+
+
+def _upcoming_calls_page_url(range_key=UPCOMING_CALL_RANGE_DEFAULT):
+    query = {}
+    normalized_range = _normalize_upcoming_call_range(range_key)
+    if normalized_range != UPCOMING_CALL_RANGE_DEFAULT:
+        query["range"] = normalized_range
+    base_url = reverse("patients:calls_upcoming")
+    return f"{base_url}?{urlencode(query)}" if query else base_url
+
+
+def _upcoming_call_range_options(active_range):
+    options = []
+    for value, label in UPCOMING_CALL_RANGE_CHOICES:
+        options.append(
+            {
+                "value": value,
+                "label": label,
+                "href": _upcoming_calls_page_url(value),
+                "is_active": value == active_range,
+            }
+        )
+    return options
+
+
+UPCOMING_CALL_QUICK_LOG_ACTIONS = [
+    {
+        "label": "Confirmed",
+        "outcome": CallOutcome.ANSWERED_CONFIRMED_VISIT,
+        "tone": "success",
+    },
+    {
+        "label": "Not reachable",
+        "outcome": CallOutcome.NO_ANSWER,
+        "tone": "danger",
+    },
+    {
+        "label": "Call back later",
+        "outcome": CallOutcome.CALL_BACK_LATER,
+        "tone": "warning",
+    },
+    {
+        "label": "Lost follow-up",
+        "outcome": CallOutcome.PATIENT_SHIFTED,
+        "tone": "neutral",
+    },
+    {
+        "label": "Invalid contact",
+        "outcome": CallOutcome.INVALID_NUMBER,
+        "tone": "neutral",
+    },
+]
+
+
+def _upcoming_call_status_display(status, failed_attempt_count=0):
+    if status == CallCommunicationStatus.CONFIRMED:
+        return {"label": "Confirmed", "tone": "success"}
+    if status == CallCommunicationStatus.NOT_REACHABLE:
+        count = max(int(failed_attempt_count or 0), 0)
+        suffix = f" x{count}" if count else ""
+        return {"label": f"Not reachable{suffix}", "tone": "danger"}
+    if status == CallCommunicationStatus.INVALID_CONTACT:
+        return {"label": "Invalid contact", "tone": "neutral"}
+    if status == CallCommunicationStatus.LOST:
+        return {"label": "Lost follow-up", "tone": "neutral"}
+    if status == CallCommunicationStatus.CALL_BACK_LATER:
+        return {"label": "Call back later", "tone": "warning"}
+    return {"label": "Not contacted", "tone": "warning"}
+
+
+def _upcoming_call_ncd_flag_labels(raw_flags):
+    flag_choices = dict(NonCommunicableDisease.choices)
+    labels = []
+    for raw_flag in raw_flags or []:
+        normalized_flag = str(raw_flag or "").strip()
+        if not normalized_flag:
+            continue
+        labels.append(flag_choices.get(normalized_flag, normalized_flag.replace("_", " ").title()))
+    return labels
+
+
+def _upcoming_call_flag_payloads(case):
+    flags = []
+    if case.high_risk:
+        flags.append({"label": "High risk", "tone": "danger"})
+    for label in _upcoming_call_ncd_flag_labels(case.ncd_flags):
+        flags.append({"label": label, "tone": "warning"})
+    return flags
+
+
+def _upcoming_call_task_queryset(*, range_start, range_end):
+    return _visible_task_queryset(
+        Task.objects.select_related("case", "case__category")
+        .only(*DashboardView.task_only_fields)
+        .order_by("due_date", "case_id", "id")
+    ).filter(status=TaskStatus.SCHEDULED, due_date__range=(range_start, range_end))
+
+
+def _upcoming_call_summary_payloads(case_ids):
+    if not case_ids:
+        return {}
+    payloads = {}
+    grouped = OrderedDict()
+    call_logs = (
+        CallLog.objects.filter(case_id__in=case_ids)
+        .select_related("staff_user", "task")
+        .only(
+            "id",
+            "case_id",
+            "task_id",
+            "task__title",
+            "outcome",
+            "notes",
+            "created_at",
+            "staff_user__username",
+            "staff_user__first_name",
+            "staff_user__last_name",
+        )
+        .order_by("case_id", "-created_at", "-id")
+    )
+    for log in call_logs:
+        grouped.setdefault(log.case_id, []).append(log)
+    for case_id, logs in grouped.items():
+        latest = logs[0]
+        latest_logged_at = timezone.localtime(latest.created_at)
+        payloads[case_id] = {
+            "summary": CallLog.summarize_case(logs),
+            "latest_outcome": latest.outcome,
+            "latest_outcome_label": latest.get_outcome_display(),
+            "latest_logged_at_display": latest_logged_at.strftime("%d %b %Y %H:%M"),
+            "latest_staff_user": _display_user_name(latest.staff_user) or "system",
+        }
+    return payloads
+
+
+def _build_upcoming_call_queue(filters):
+    tasks = list(
+        _upcoming_call_task_queryset(
+            range_start=filters["range_start"],
+            range_end=filters["range_end"],
+        )
+    )
+    grouped_cases = OrderedDict()
+    for task in tasks:
+        case_group = grouped_cases.setdefault(
+            task.case_id,
+            {
+                "case": task.case,
+                "tasks": [],
+                "schedule_map": OrderedDict(),
+            },
+        )
+        case_group["tasks"].append(task)
+        daily_titles = case_group["schedule_map"].setdefault(task.due_date, [])
+        if task.title not in daily_titles:
+            daily_titles.append(task.title)
+
+    theme_category_colors = build_theme_category_colors(
+        [
+            group["case"].category
+            for group in grouped_cases.values()
+            if getattr(group["case"], "category", None) is not None
+        ]
+    )
+    call_payloads = _upcoming_call_summary_payloads(list(grouped_cases.keys()))
+    rows = []
+    primary_tasks_by_case = {}
+    for case_id, group in grouped_cases.items():
+        case = group["case"]
+        grouped_tasks = group["tasks"]
+        primary_task = grouped_tasks[0]
+        primary_tasks_by_case[case_id] = primary_task
+        category_theme = resolve_category_theme(theme_category_colors, case.category)
+        call_payload = call_payloads.get(case_id, {})
+        call_summary = call_payload.get(
+            "summary",
+            {
+                "status": CallCommunicationStatus.NONE,
+                "failed_attempt_count": 0,
+                "latest_outcome": "",
+                "latest_logged_at": None,
+            },
+        )
+        call_status = call_summary.get("status", CallCommunicationStatus.NONE)
+        failed_attempt_count = call_summary.get("failed_attempt_count", 0)
+        call_status_display = _upcoming_call_status_display(call_status, failed_attempt_count)
+        schedule_lines = []
+        schedule_titles = []
+        seen_schedule_titles = set()
+        for due_date, titles in group["schedule_map"].items():
+            schedule_lines.append(
+                {
+                    "date": due_date,
+                    "date_display": f"{due_date.strftime('%a, %b')} {due_date.day}",
+                    "task_titles": titles,
+                    "task_summary": ", ".join(titles),
+                }
+            )
+            for title in titles:
+                if title in seen_schedule_titles:
+                    continue
+                seen_schedule_titles.add(title)
+                schedule_titles.append(title)
+        patient_name = case.full_name or case.patient_name
+        primary_schedule_line = schedule_lines[0] if schedule_lines else {"date_display": "", "task_titles": []}
+        primary_schedule_titles = primary_schedule_line.get("task_titles", [])
+        rows.append(
+            {
+                "case_id": case.id,
+                "primary_task_id": primary_task.id,
+                "patient_name": patient_name,
+                "short_name": _build_short_name(case),
+                "sex_age": _case_sex_age_label(case),
+                "earliest_due_date": primary_task.due_date,
+                "earliest_due_date_display": _month_day_display(primary_task.due_date),
+                "diagnosis": case.diagnosis or case.category.name,
+                "phone_number": case.phone_number,
+                "referred_by_display": case.referred_by or "-",
+                "flags": _upcoming_call_flag_payloads(case),
+                "subcategory_name": case.get_subcategory_display() if case.subcategory else "",
+                "category_name": case.category.name,
+                "category_bg_color": category_theme["bg"],
+                "category_text_color": category_theme["text"],
+                "category_border_color": category_theme["border"],
+                "schedule_lines": schedule_lines,
+                "schedule_titles": schedule_titles,
+                "task_total": len(grouped_tasks),
+                "day_total": len(schedule_lines),
+                "primary_schedule_date_display": _month_day_display(primary_task.due_date),
+                "primary_schedule_title": primary_schedule_titles[0] if primary_schedule_titles else "",
+                "primary_schedule_more_count": max(len(grouped_tasks) - 1, 0),
+                "call_status": call_status,
+                "call_status_label": call_status_display["label"],
+                "call_status_tone": call_status_display["tone"],
+                "failed_attempt_count": failed_attempt_count,
+                "latest_call_outcome": call_payload.get("latest_outcome", ""),
+                "latest_call_outcome_label": call_payload.get("latest_outcome_label", ""),
+                "latest_call_logged_at_display": call_payload.get("latest_logged_at_display", ""),
+                "latest_call_staff_user": call_payload.get("latest_staff_user", ""),
+                "detail_url": reverse("patients:case_detail", kwargs={"pk": case.pk}),
+                "call_log_url": reverse("patients:case_call_create", kwargs={"pk": case.pk}),
+            }
+        )
+    rows.sort(key=lambda item: (item["earliest_due_date"], (item["patient_name"] or "").lower(), item["case_id"]))
+    return {
+        "rows": rows,
+        "primary_tasks_by_case": primary_tasks_by_case,
+        "theme_category_colors": theme_category_colors,
+    }
+
+
+def _parse_selected_case_ids(raw_values):
+    selected_ids = []
+    seen_ids = set()
+    for raw_value in raw_values:
+        try:
+            case_id = int(raw_value)
+        except (TypeError, ValueError):
+            continue
+        if case_id <= 0 or case_id in seen_ids:
+            continue
+        seen_ids.add(case_id)
+        selected_ids.append(case_id)
+    return selected_ids
+
+
+class UpcomingCallsAccessMixin:
+    def dispatch(self, request, *args, **kwargs):
+        if not _can_access_upcoming_calls(request.user):
+            return _forbidden_response(request, "You do not have permission to access the upcoming calling sheet.")
+        return super().dispatch(request, *args, **kwargs)
+
+
+class UpcomingCallsView(LoginRequiredMixin, UpcomingCallsAccessMixin, View):
+    template_name = "patients/calls_upcoming.html"
+
+    def get(self, request):
+        filters = _build_upcoming_call_filters(request.GET.get("range", UPCOMING_CALL_RANGE_DEFAULT))
+        queue_data = _build_upcoming_call_queue(filters)
+        context = {
+            "page_title": "Upcoming Calling Sheet",
+            "filters": {
+                **filters,
+                "range_options": _upcoming_call_range_options(filters["range"]),
+            },
+            "queue_rows": queue_data["rows"],
+            "theme_category_colors": queue_data["theme_category_colors"],
+            "outcome_choices": CallOutcome.choices,
+            "quick_log_actions": UPCOMING_CALL_QUICK_LOG_ACTIONS,
+            "can_apply_outcomes": has_capability(request.user, "note_add"),
+            "applied_case_ids": [],
+        }
+        return render(request, self.template_name, context)
+
+
+class UpcomingCallsBulkLogView(LoginRequiredMixin, UpcomingCallsAccessMixin, View):
+    def post(self, request):
+        filters = _build_upcoming_call_filters(request.POST.get("range", UPCOMING_CALL_RANGE_DEFAULT))
+        redirect_url = _upcoming_calls_page_url(filters["range"])
+        selected_case_ids = _parse_selected_case_ids(request.POST.getlist("case_ids"))
+        if not selected_case_ids:
+            messages.error(request, "Select at least one patient before applying a call outcome.")
+            return redirect(redirect_url)
+
+        outcome = (request.POST.get("outcome") or "").strip()
+        valid_outcomes = dict(CallOutcome.choices)
+        if outcome not in valid_outcomes:
+            messages.error(request, "Choose a valid call outcome before applying changes.")
+            return redirect(redirect_url)
+
+        notes = (request.POST.get("notes") or "").strip()
+        queue_data = _build_upcoming_call_queue(filters)
+        primary_tasks_by_case = queue_data["primary_tasks_by_case"]
+        applied_count = 0
+        skipped_count = 0
+        with transaction.atomic():
+            for case_id in selected_case_ids:
+                primary_task = primary_tasks_by_case.get(case_id)
+                if primary_task is None:
+                    skipped_count += 1
+                    continue
+                call_log = CallLog.objects.create(
+                    case=primary_task.case,
+                    task=primary_task,
+                    outcome=outcome,
+                    notes=notes,
+                    staff_user=request.user,
+                )
+                create_case_activity(
+                    case=primary_task.case,
+                    task=call_log.task,
+                    user=request.user,
+                    event_type=ActivityEventType.CALL,
+                    note=f"Call outcome logged: {call_log.get_outcome_display()}",
+                )
+                applied_count += 1
+
+        if applied_count and skipped_count:
+            messages.warning(
+                request,
+                f"Call outcome logged for {applied_count} patient(s). Skipped {skipped_count} patient(s) no longer in this queue.",
+            )
+        elif applied_count:
+            messages.success(request, f"Call outcome logged for {applied_count} patient(s).")
+        else:
+            messages.error(request, "None of the selected patients are still in this queue.")
+        return redirect(redirect_url)
 
 
 class RecentCasesView(LoginRequiredMixin, CaseDataAccessMixin, View):

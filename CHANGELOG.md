@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.03.24.03.12
+- Added the dedicated `Upcoming Calling Sheet` flow with navbar access, role-gated routing, queue grouping, and focused regression coverage for the separate calling-screen workflow.
+- Reworked the calling-sheet rows into a scan-first format with inline task summaries, text status pills, direct phone actions, flags/referred-by context, and an action-oriented expanded panel.
+- Added AJAX quick-log actions on the calling sheet so staff can log outcomes inline without leaving the queue, and polished the mobile collapsed layout so the closed rows stack and align cleanly on narrow screens.
+
 ## 2026.03.22.21.50
 - Tightened the temporary UHID control on the New Case page so it renders as a compact toggle instead of an oversized switch card.
 - Reflowed the new-patient identity section into four explicit rows: UHID plus temp toggle, name fields, gender/DOB/age, and place plus phone.

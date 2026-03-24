@@ -1,0 +1,1285 @@
+﻿{% extends 'base.html' %}
+{% load theme_tags %}
+{% block title %}{{ page_title }} | MEDTRACK{% endblock %}
+
+{% block content %}
+<style>
+  .calls-sheet-page {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .calls-sheet-header {
+    align-items: flex-start;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    justify-content: space-between;
+  }
+
+  .calls-sheet-range {
+    align-items: center;
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .calls-sheet-range-option {
+    background: color-mix(in srgb, var(--theme-shell-surface-bg) 92%, var(--theme-shell-link) 8%);
+    border: 1px solid var(--theme-shell-surface-border);
+    border-radius: 999px;
+    color: var(--theme-shell-page-text);
+    font-size: 0.92rem;
+    font-weight: 600;
+    padding: 0.55rem 0.95rem;
+    text-decoration: none;
+    transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+  }
+
+  .calls-sheet-range-option:hover,
+  .calls-sheet-range-option:focus-visible {
+    background: color-mix(in srgb, var(--theme-shell-link) 16%, var(--theme-shell-surface-bg));
+    border-color: var(--theme-shell-link);
+    color: var(--theme-shell-link);
+  }
+
+  .calls-sheet-range-option.is-active {
+    background: color-mix(in srgb, var(--theme-shell-link) 16%, var(--theme-shell-surface-bg));
+    border-color: color-mix(in srgb, var(--theme-shell-link) 44%, var(--theme-shell-surface-border));
+    color: var(--theme-shell-link);
+  }
+
+  .calls-sheet-summary {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+  }
+
+  .calls-sheet-window-pill {
+    background: color-mix(in srgb, var(--theme-shell-link) 12%, var(--theme-shell-surface-bg));
+    border: 1px solid color-mix(in srgb, var(--theme-shell-link) 26%, var(--theme-shell-surface-border));
+    border-radius: 999px;
+    color: var(--theme-shell-link);
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    padding: 0.35rem 0.7rem;
+    text-transform: uppercase;
+  }
+
+  .calls-sheet-form {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .calls-sheet-bulk {
+    background: color-mix(in srgb, var(--theme-shell-surface-bg) 96%, var(--theme-shell-surface-border) 4%);
+    border: 1px solid var(--theme-shell-surface-border);
+    border-radius: 0.95rem;
+    box-shadow: 0 0.22rem 0.6rem color-mix(in srgb, var(--theme-shell-shadow) 70%, transparent);
+    display: grid;
+    gap: 0.9rem;
+    padding: 0.8rem 0.95rem;
+    transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, padding 0.15s ease;
+  }
+
+  .calls-sheet-bulk.is-active {
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--theme-shell-surface-bg) 96%, var(--theme-shell-link) 4%) 0%,
+        color-mix(in srgb, var(--theme-shell-surface-bg) 90%, var(--theme-shell-link) 10%) 100%
+      );
+    border-color: color-mix(in srgb, var(--theme-shell-link) 18%, var(--theme-shell-surface-border));
+    box-shadow: 0 12px 28px var(--theme-shell-shadow);
+    padding: 1rem;
+  }
+
+  .calls-sheet-bulk:not(.is-active) {
+    gap: 0;
+  }
+
+  .calls-sheet-bulk:not(.is-active) .calls-sheet-bulk-header {
+    justify-content: flex-start;
+  }
+
+  .calls-sheet-bulk:not(.is-active) .calls-sheet-selection-copy {
+    color: var(--theme-shell-muted-text);
+    font-size: 0.9rem;
+  }
+
+  .calls-sheet-bulk:not(.is-active) .calls-sheet-selection-copy strong {
+    color: var(--theme-shell-page-text);
+  }
+
+  .calls-sheet-bulk-header {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    justify-content: space-between;
+  }
+
+  .calls-sheet-selection-copy {
+    color: var(--theme-shell-page-text);
+    font-size: 0.95rem;
+    font-weight: 600;
+  }
+
+  .calls-sheet-selection-copy strong {
+    color: var(--theme-shell-link);
+    font-size: 1.05rem;
+  }
+
+  .calls-sheet-bulk-links {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+  }
+
+  .calls-sheet-link-button {
+    background: transparent;
+    border: 0;
+    color: var(--theme-shell-link);
+    font-size: 0.88rem;
+    font-weight: 600;
+    padding: 0;
+    text-decoration: underline;
+  }
+
+  .calls-sheet-link-button:hover,
+  .calls-sheet-link-button:focus-visible {
+    color: var(--theme-shell-link-hover);
+  }
+
+  .calls-sheet-bulk-controls {
+    align-items: end;
+    display: grid;
+    gap: 0.85rem;
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.6fr) auto;
+  }
+
+  .calls-sheet-field {
+    display: grid;
+    gap: 0.35rem;
+  }
+
+  .calls-sheet-field label {
+    color: var(--theme-shell-muted-text);
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .calls-sheet-field textarea {
+    min-height: 3.25rem;
+    resize: vertical;
+  }
+
+  .dashboard-module-empty {
+    background: color-mix(in srgb, var(--theme-shell-surface-bg) 92%, var(--theme-shell-surface-border) 8%);
+    border: 1px dashed var(--theme-shell-surface-border);
+    border-radius: 0.9rem;
+    color: var(--theme-shell-muted-text);
+    padding: 1rem;
+  }
+
+  .dashboard-compact-list {
+    display: grid;
+    gap: 0.7rem;
+  }
+
+  .dashboard-compact-row {
+    background: color-mix(in srgb, var(--theme-shell-surface-bg) 87%, var(--theme-category-bg) 13%);
+    border: 1px solid color-mix(in srgb, var(--theme-category-border) 72%, var(--theme-shell-surface-bg) 28%);
+    border-radius: 0.95rem;
+    box-shadow: 0 0.22rem 0.6rem color-mix(in srgb, var(--theme-shell-shadow) 82%, transparent);
+    color: inherit;
+    overflow: hidden;
+    position: relative;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+  }
+
+  .dashboard-compact-row::before {
+    background: color-mix(in srgb, var(--theme-category-border) 70%, var(--theme-category-text) 30%);
+    content: "";
+    inset: -1px auto -1px -1px;
+    opacity: 1;
+    position: absolute;
+    width: calc(5px + 1px);
+  }
+
+  .dashboard-compact-row:hover,
+  .dashboard-compact-row:focus-within,
+  .dashboard-compact-row.is-open {
+    border-color: var(--theme-category-border);
+    box-shadow: 0 0.55rem 1rem var(--theme-shell-shadow);
+    transform: translateY(-1px);
+  }
+
+  .calls-sheet-row-shell {
+    display: grid;
+    gap: 0.7rem;
+    grid-template-columns: auto minmax(0, 1fr);
+    padding: 0;
+    position: relative;
+    z-index: 1;
+  }
+
+  .calls-sheet-row-select {
+    align-items: flex-start;
+    display: flex;
+    justify-content: center;
+    padding: 0.82rem 0 0 0.9rem;
+  }
+
+  .calls-sheet-row-select input[type="checkbox"] {
+    cursor: pointer;
+    height: 1.1rem;
+    margin: 0;
+    width: 1.1rem;
+  }
+
+  .dashboard-compact-row-top {
+    align-items: center;
+    display: grid;
+    gap: 0.7rem;
+    grid-template-columns: minmax(0, 1fr) auto;
+    position: relative;
+    z-index: 1;
+  }
+
+  .dashboard-compact-toggle {
+    align-items: center;
+    appearance: none;
+    background: transparent;
+    border: 0;
+    color: inherit;
+    cursor: pointer;
+    display: flex;
+    min-width: 0;
+    padding: 0.82rem 0.4rem 0.82rem 1rem;
+    text-align: left;
+    width: 100%;
+  }
+
+  .dashboard-compact-toggle:focus-visible,
+  .calls-sheet-link-button:focus-visible,
+  .calls-sheet-range-option:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--theme-category-text) 30%, var(--theme-shell-surface-bg));
+    outline-offset: -2px;
+  }
+
+  .dashboard-compact-summary {
+    align-items: center;
+    display: grid;
+    gap: 0.7rem;
+    grid-template-columns: minmax(0, 1fr) auto;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .calls-sheet-compact-primary {
+    align-items: center;
+    display: flex;
+    gap: 0.55rem;
+    min-width: 0;
+  }
+
+  .dashboard-compact-name-pill {
+    align-items: center;
+    background: color-mix(in srgb, var(--theme-category-bg) 72%, var(--theme-shell-surface-bg) 28%);
+    border: 1px solid color-mix(in srgb, var(--theme-category-border) 72%, var(--theme-shell-surface-bg) 28%);
+    border-radius: 999px;
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--theme-shell-surface-bg) 65%, transparent);
+    display: inline-flex;
+    justify-self: start;
+    max-width: 100%;
+    min-width: 0;
+    padding: 0.36rem 0.72rem;
+  }
+
+  .dashboard-compact-name {
+    color: var(--theme-category-text);
+    display: block;
+    font-size: 0.95rem;
+    font-weight: 700;
+    line-height: 1.15;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .dashboard-compact-summary-meta {
+    align-items: center;
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    justify-content: flex-end;
+    min-width: 0;
+  }
+
+  .dashboard-compact-separator {
+    color: var(--theme-shell-muted-text);
+    flex: 0 0 auto;
+    font-weight: 700;
+    opacity: 0.7;
+  }
+
+  .dashboard-compact-inline {
+    color: var(--theme-shell-muted-text);
+    flex: 0 0 auto;
+    font-size: 0.82rem;
+    font-weight: 600;
+    line-height: 1.35;
+  }
+
+  .calls-sheet-compact-diagnosis {
+    color: var(--theme-shell-muted-text);
+    font-size: 0.84rem;
+    font-weight: 500;
+    line-height: 1.2;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .calls-sheet-summary-pill {
+    align-items: center;
+    background: color-mix(in srgb, var(--theme-shell-surface-bg) 94%, var(--theme-shell-surface-border) 6%);
+    border: 1px solid color-mix(in srgb, var(--theme-shell-surface-border) 86%, transparent);
+    border-radius: 999px;
+    color: var(--theme-shell-page-text);
+    display: inline-flex;
+    gap: 0.34rem;
+    font-size: 0.79rem;
+    font-weight: 700;
+    line-height: 1.15;
+    max-width: 100%;
+    min-width: 0;
+    padding: 0.42rem 0.74rem;
+    white-space: nowrap;
+  }
+
+  .calls-sheet-summary-pill--schedule {
+    max-width: min(24rem, 100%);
+  }
+
+  .calls-sheet-summary-pill--schedule span:first-child {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .calls-sheet-summary-pill-more {
+    color: var(--theme-shell-muted-text);
+    flex: 0 0 auto;
+  }
+
+  .calls-sheet-summary-pill--phone {
+    background: color-mix(in srgb, var(--theme-alerts-success-bg) 76%, var(--theme-category-bg) 24%);
+    border-color: color-mix(in srgb, var(--theme-alerts-success-border) 58%, var(--theme-category-border) 42%);
+    color: var(--theme-alerts-success-text);
+  }
+
+  .calls-sheet-summary-pill--muted,
+  .calls-sheet-summary-pill[data-tone="neutral"] {
+    background: color-mix(in srgb, var(--theme-shell-surface-bg) 94%, var(--theme-shell-surface-border) 6%);
+    border-color: color-mix(in srgb, var(--theme-shell-surface-border) 90%, transparent);
+    color: var(--theme-shell-muted-text);
+  }
+
+  .calls-sheet-summary-pill[data-tone="success"] {
+    background: color-mix(in srgb, var(--theme-alerts-success-bg) 84%, var(--theme-shell-surface-bg) 16%);
+    border-color: var(--theme-alerts-success-border);
+    color: var(--theme-alerts-success-text);
+  }
+
+  .calls-sheet-summary-pill[data-tone="warning"] {
+    background: color-mix(in srgb, var(--theme-alerts-warning-bg) 86%, var(--theme-shell-surface-bg) 14%);
+    border-color: var(--theme-alerts-warning-border);
+    color: var(--theme-alerts-warning-text);
+  }
+
+  .calls-sheet-summary-pill[data-tone="danger"] {
+    background: color-mix(in srgb, var(--theme-alerts-danger-bg) 86%, var(--theme-shell-surface-bg) 14%);
+    border-color: var(--theme-alerts-danger-border);
+    color: var(--theme-alerts-danger-text);
+  }
+
+  .calls-sheet-row-actions {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    justify-content: flex-end;
+    margin: 0.55rem 0.7rem 0.55rem 0;
+    min-width: 0;
+    position: relative;
+    z-index: 3;
+  }
+
+  .dashboard-compact-call-link {
+    align-items: center;
+    background: var(--theme-buttons-success-bg);
+    border: 1px solid var(--theme-buttons-success-border);
+    border-radius: 999px;
+    color: var(--theme-buttons-success-text);
+    display: inline-flex;
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 1;
+    padding: 0.42rem 0.7rem;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+
+  .dashboard-compact-call-link:hover,
+  .dashboard-compact-call-link:focus-visible {
+    color: var(--theme-buttons-success-text);
+    text-decoration: none;
+  }
+
+  .dashboard-compact-detail-pill-link {
+    color: var(--theme-shell-link);
+    font-size: 0.84rem;
+    font-weight: 700;
+    text-decoration: none;
+  }
+
+  .dashboard-compact-detail-pill-link:hover,
+  .dashboard-compact-detail-pill-link:focus-visible {
+    color: var(--theme-shell-link-hover);
+    text-decoration: underline;
+  }
+
+  .dashboard-compact-details {
+    border-top: 1px solid color-mix(in srgb, var(--theme-category-border) 40%, var(--theme-shell-surface-bg));
+    display: grid;
+    gap: 0.8rem;
+    padding: 0.9rem 1rem 0.95rem;
+    position: relative;
+    z-index: 1;
+  }
+
+  .dashboard-compact-details[hidden] {
+    display: none;
+  }
+
+  .calls-sheet-detail-grid,
+  .calls-sheet-schedule-list {
+    display: grid;
+    gap: 0.85rem;
+  }
+
+  .calls-sheet-detail-top {
+    display: grid;
+    gap: 0.8rem;
+  }
+
+  .dashboard-compact-detail-block {
+    display: grid;
+    gap: 0.55rem;
+  }
+
+  .dashboard-compact-detail-label {
+    color: var(--theme-shell-muted-text);
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .dashboard-compact-detail-copy {
+    color: var(--theme-shell-page-text);
+    font-size: 0.92rem;
+    line-height: 1.45;
+  }
+
+  .calls-sheet-detail-pills {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    justify-content: flex-start;
+  }
+
+  .dashboard-compact-subcategory,
+  .calls-sheet-category-pill,
+  .calls-sheet-flag {
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    padding: 0.34rem 0.68rem;
+  }
+
+  .calls-sheet-category-pill {
+    border: 1px solid color-mix(in srgb, var(--theme-shell-page-text) 12%, transparent);
+  }
+
+  .calls-sheet-latest-call {
+    align-items: flex-start;
+    background: color-mix(in srgb, var(--theme-shell-surface-bg) 94%, var(--theme-shell-surface-border) 6%);
+    border: 1px solid color-mix(in srgb, var(--theme-shell-surface-border) 82%, transparent);
+    border-radius: 0.9rem;
+    color: var(--theme-shell-page-text);
+    display: inline-flex;
+    gap: 0.55rem;
+    min-height: 3rem;
+    padding: 0.72rem 0.95rem;
+  }
+
+  .calls-sheet-latest-call::before {
+    background: var(--theme-alerts-warning-text);
+    border-radius: 999px;
+    content: "";
+    flex: 0 0 auto;
+    height: 0.72rem;
+    width: 0.72rem;
+  }
+
+  .calls-sheet-latest-call[data-tone="success"]::before {
+    background: var(--theme-alerts-success-text);
+  }
+
+  .calls-sheet-latest-call[data-tone="danger"]::before {
+    background: var(--theme-alerts-danger-text);
+  }
+
+  .calls-sheet-latest-call[data-tone="neutral"]::before {
+    background: color-mix(in srgb, var(--theme-shell-muted-text) 78%, var(--theme-shell-page-text) 22%);
+  }
+
+  .calls-sheet-quick-log-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.65rem;
+  }
+
+  .calls-sheet-quick-log-button {
+    appearance: none;
+    background: color-mix(in srgb, var(--theme-shell-surface-bg) 96%, var(--theme-shell-surface-border) 4%);
+    border: 1px solid color-mix(in srgb, var(--theme-shell-surface-border) 86%, transparent);
+    border-radius: 0.85rem;
+    color: var(--theme-shell-page-text);
+    font-size: 0.82rem;
+    font-weight: 700;
+    line-height: 1.15;
+    min-width: 8.25rem;
+    padding: 0.72rem 1rem;
+    transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
+  }
+
+  .calls-sheet-quick-log-button:hover,
+  .calls-sheet-quick-log-button:focus-visible {
+    transform: translateY(-1px);
+  }
+
+  .calls-sheet-quick-log-button[data-tone="success"] {
+    background: color-mix(in srgb, var(--theme-alerts-success-bg) 84%, var(--theme-shell-surface-bg) 16%);
+    border-color: var(--theme-alerts-success-border);
+    color: var(--theme-alerts-success-text);
+  }
+
+  .calls-sheet-quick-log-button[data-tone="warning"] {
+    background: color-mix(in srgb, var(--theme-alerts-warning-bg) 86%, var(--theme-shell-surface-bg) 14%);
+    border-color: var(--theme-alerts-warning-border);
+    color: var(--theme-alerts-warning-text);
+  }
+
+  .calls-sheet-quick-log-button[data-tone="danger"] {
+    background: color-mix(in srgb, var(--theme-alerts-danger-bg) 86%, var(--theme-shell-surface-bg) 14%);
+    border-color: var(--theme-alerts-danger-border);
+    color: var(--theme-alerts-danger-text);
+  }
+
+  .calls-sheet-quick-log-button[data-tone="neutral"] {
+    background: color-mix(in srgb, var(--theme-shell-surface-bg) 98%, var(--theme-shell-surface-border) 2%);
+    border-color: color-mix(in srgb, var(--theme-shell-surface-border) 92%, transparent);
+    color: var(--theme-shell-page-text);
+  }
+
+  .calls-sheet-quick-log-button.is-loading,
+  .calls-sheet-quick-log-button:disabled {
+    cursor: wait;
+    opacity: 0.72;
+    transform: none;
+  }
+
+  .calls-sheet-feedback {
+    background: color-mix(in srgb, var(--theme-alerts-danger-bg) 90%, var(--theme-shell-surface-bg) 10%);
+    border: 1px solid var(--theme-alerts-danger-border);
+    border-radius: 0.8rem;
+    color: var(--theme-alerts-danger-text);
+    font-size: 0.84rem;
+    font-weight: 600;
+    padding: 0.55rem 0.75rem;
+  }
+
+  .calls-sheet-detail-meta {
+    display: grid;
+    gap: 0.85rem;
+  }
+
+  .calls-sheet-flag-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+  }
+
+  .calls-sheet-flag[data-tone="danger"] {
+    background: color-mix(in srgb, var(--theme-alerts-danger-bg) 80%, var(--theme-shell-surface-bg) 20%);
+    border: 1px solid var(--theme-alerts-danger-border);
+    color: var(--theme-alerts-danger-text);
+  }
+
+  .calls-sheet-flag[data-tone="warning"] {
+    background: color-mix(in srgb, var(--theme-alerts-warning-bg) 82%, var(--theme-shell-surface-bg) 18%);
+    border: 1px solid var(--theme-alerts-warning-border);
+    color: var(--theme-alerts-warning-text);
+  }
+
+  .calls-sheet-flag[data-tone="neutral"] {
+    background: color-mix(in srgb, var(--theme-shell-surface-bg) 98%, var(--theme-shell-surface-border) 2%);
+    border: 1px solid color-mix(in srgb, var(--theme-shell-surface-border) 92%, transparent);
+    color: var(--theme-shell-page-text);
+  }
+
+  .calls-sheet-schedule-item {
+    align-items: start;
+    background: color-mix(in srgb, var(--theme-shell-surface-bg) 94%, var(--theme-shell-surface-border) 6%);
+    border: 1px solid color-mix(in srgb, var(--theme-shell-surface-border) 82%, transparent);
+    border-radius: 0.85rem;
+    display: grid;
+    gap: 0.2rem;
+    padding: 0.85rem 0.95rem;
+  }
+
+  .calls-sheet-schedule-date {
+    color: var(--theme-shell-page-text);
+    font-size: 0.84rem;
+    font-weight: 700;
+  }
+
+  .calls-sheet-schedule-copy {
+    color: var(--theme-shell-page-text);
+    font-size: 0.84rem;
+    line-height: 1.4;
+  }
+
+  .calls-sheet-readonly {
+    color: var(--theme-shell-muted-text);
+    font-size: 0.88rem;
+  }
+
+  @media (min-width: 768px) {
+    .calls-sheet-detail-top {
+      align-items: start;
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    .calls-sheet-detail-pills {
+      justify-content: flex-end;
+    }
+
+    .calls-sheet-detail-meta {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .calls-sheet-schedule-list {
+      grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+    }
+  }
+
+  @media (max-width: 767.98px) {
+    .calls-sheet-header,
+    .calls-sheet-bulk-header {
+      align-items: stretch;
+      flex-direction: column;
+    }
+
+    .calls-sheet-bulk,
+    .calls-sheet-bulk.is-active {
+      padding: 0.9rem;
+    }
+
+    .calls-sheet-bulk-controls {
+      grid-template-columns: 1fr;
+    }
+
+    .calls-sheet-row-shell {
+      grid-template-columns: 1fr;
+      gap: 0;
+    }
+
+    .calls-sheet-row-select {
+      align-items: flex-start;
+      justify-content: flex-start;
+      padding: 0.72rem 0.85rem 0 0.85rem;
+    }
+
+    .dashboard-compact-row-top {
+      gap: 0.4rem;
+      grid-template-columns: 1fr;
+    }
+
+    .dashboard-compact-toggle {
+      padding: 0.72rem 0.2rem 0.72rem 0.85rem;
+    }
+
+    .dashboard-compact-summary {
+      gap: 0.5rem;
+      grid-template-columns: 1fr;
+    }
+
+    .calls-sheet-compact-primary {
+      align-items: flex-start;
+      flex-direction: column;
+      gap: 0.32rem;
+    }
+
+    .dashboard-compact-summary-meta {
+      align-items: flex-start;
+      gap: 0.45rem;
+      justify-content: flex-start;
+      width: 100%;
+    }
+
+    .dashboard-compact-separator {
+      display: none;
+    }
+
+    .dashboard-compact-name-pill {
+      padding: 0.34rem 0.82rem;
+    }
+
+    .dashboard-compact-name {
+      font-size: 0.89rem;
+    }
+
+    .calls-sheet-compact-diagnosis {
+      font-size: 0.83rem;
+      padding-left: 0.2rem;
+      white-space: normal;
+    }
+
+    .dashboard-compact-inline,
+    .dashboard-compact-separator,
+    .calls-sheet-summary-pill {
+      font-size: 0.74rem;
+    }
+
+    .dashboard-compact-inline {
+      min-width: 2rem;
+      padding-left: 0.2rem;
+    }
+
+    .calls-sheet-summary-pill {
+      max-width: 100%;
+    }
+
+    .calls-sheet-summary-pill--schedule {
+      line-height: 1.25;
+      padding: 0.46rem 0.72rem;
+      white-space: normal;
+    }
+
+    .calls-sheet-summary-pill--schedule span:first-child {
+      white-space: normal;
+    }
+
+    .calls-sheet-row-actions {
+      gap: 0.55rem;
+      justify-content: flex-start;
+      margin: 0 0.85rem 0.82rem;
+    }
+
+    .dashboard-compact-details {
+      gap: 0.9rem;
+      padding: 0.78rem 0.85rem 0.9rem;
+    }
+
+    .calls-sheet-detail-top {
+      gap: 0.7rem;
+    }
+
+    .calls-sheet-detail-pills {
+      gap: 0.5rem;
+    }
+
+    .calls-sheet-latest-call {
+      padding: 0.7rem 0.8rem;
+    }
+
+    .calls-sheet-quick-log-list {
+      display: grid;
+      gap: 0.55rem;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .calls-sheet-quick-log-button {
+      min-width: 0;
+      padding: 0.68rem 0.8rem;
+      width: 100%;
+    }
+
+    .calls-sheet-quick-log-button:last-child:nth-child(odd) {
+      grid-column: 1 / -1;
+    }
+
+    .calls-sheet-detail-meta {
+      gap: 0.75rem;
+    }
+
+    .calls-sheet-schedule-item {
+      padding: 0.78rem 0.82rem;
+    }
+  }
+</style>
+
+<div class="calls-sheet-page">
+  <header class="calls-sheet-header">
+    <h1 class="h4 mb-0">{{ page_title }}</h1>
+    <div class="calls-sheet-range" aria-label="Upcoming calling sheet ranges">
+      {% for option in filters.range_options %}
+        <a class="calls-sheet-range-option{% if option.is_active %} is-active{% endif %}" href="{{ option.href }}"{% if option.is_active %} aria-current="page"{% endif %}>{{ option.label }}</a>
+      {% endfor %}
+    </div>
+  </header>
+
+  <div class="calls-sheet-summary">
+    <span class="calls-sheet-window-pill">{{ filters.range_label }}</span>
+    <span class="text-muted">{{ queue_rows|length }} patient{{ queue_rows|length|pluralize }} in {{ filters.date_window_label }}</span>
+  </div>
+
+  <form method="post" action="{% url 'patients:calls_upcoming_bulk_log' %}" class="calls-sheet-form">
+    {% csrf_token %}
+    <input type="hidden" name="range" value="{{ filters.range }}" />
+
+    <section class="calls-sheet-bulk" data-calls-bulk-bar>
+      <div class="calls-sheet-bulk-header">
+        <div class="calls-sheet-selection-copy"><strong data-selected-count>0</strong> patient<span data-selected-plural>s</span> selected</div>
+        <div class="calls-sheet-bulk-links" data-bulk-links hidden>
+          <button type="button" class="calls-sheet-link-button" data-select-visible>Select visible</button>
+          <button type="button" class="calls-sheet-link-button" data-clear-selection>Clear</button>
+        </div>
+      </div>
+
+      <div class="calls-sheet-bulk-controls" data-bulk-controls hidden>
+        <div class="calls-sheet-field">
+          <label for="bulk-outcome">Call Outcome</label>
+          <select id="bulk-outcome" name="outcome" class="form-select" {% if not can_apply_outcomes %}disabled{% endif %}>
+            <option value="">Select outcome</option>
+            {% for value, label in outcome_choices %}
+              <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="calls-sheet-field">
+          <label for="bulk-notes">Shared Note</label>
+          <textarea id="bulk-notes" name="notes" class="form-control" rows="2" placeholder="Optional note added to every selected call log"></textarea>
+        </div>
+
+        <div class="calls-sheet-field">
+          <label for="bulk-apply-button">Apply</label>
+          {% if can_apply_outcomes %}
+            <button id="bulk-apply-button" type="submit" class="btn btn-primary" data-apply-button disabled>Apply To Selected</button>
+          {% else %}
+            <span class="calls-sheet-readonly">Read only</span>
+          {% endif %}
+        </div>
+      </div>
+    </section>
+
+    <div class="dashboard-compact-list" data-calls-sheet-list>
+      {% for row in queue_rows %}
+        <article
+          class="dashboard-compact-row"
+          data-calls-sheet-row
+          data-call-url="{{ row.call_log_url }}"
+          data-primary-task-id="{{ row.primary_task_id }}"
+          style="{% category_theme_style row.category_name theme_category_colors %}"
+        >
+          <div class="calls-sheet-row-shell">
+            <div class="calls-sheet-row-select">
+              <input id="call-case-{{ row.case_id }}" type="checkbox" name="case_ids" value="{{ row.case_id }}" data-case-select />
+            </div>
+
+            <div>
+              <div class="dashboard-compact-row-top">
+                <button
+                  type="button"
+                  class="dashboard-compact-toggle"
+                  data-compact-toggle
+                  aria-expanded="false"
+                  aria-controls="call-case-details-{{ row.case_id }}"
+                >
+                  <div class="dashboard-compact-summary">
+                    <span class="calls-sheet-compact-primary">
+                      <span class="dashboard-compact-name-pill">
+                        <span class="dashboard-compact-name" data-full-name="{{ row.patient_name }}" data-short-name="{{ row.short_name }}">{{ row.patient_name }}</span>
+                      </span>
+                      {% if row.diagnosis %}
+                        <span class="calls-sheet-compact-diagnosis">{{ row.diagnosis }}</span>
+                      {% endif %}
+                    </span>
+                    <span class="dashboard-compact-summary-meta">
+                      {% if row.sex_age %}
+                        <span class="dashboard-compact-inline">{{ row.sex_age }}</span>
+                      {% endif %}
+                      {% if row.primary_schedule_title %}
+                        {% if row.sex_age %}
+                          <span class="dashboard-compact-separator" aria-hidden="true">|</span>
+                        {% endif %}
+                        <span class="calls-sheet-summary-pill calls-sheet-summary-pill--schedule">
+                          <span>{{ row.primary_schedule_date_display }}: {{ row.primary_schedule_title }}</span>
+                          {% if row.primary_schedule_more_count %}
+                            <span class="calls-sheet-summary-pill-more">+{{ row.primary_schedule_more_count }}</span>
+                          {% endif %}
+                        </span>
+                      {% endif %}
+                      {% if row.call_status_label %}
+                        {% if row.sex_age or row.primary_schedule_title %}
+                          <span class="dashboard-compact-separator" aria-hidden="true">|</span>
+                        {% endif %}
+                        <span class="calls-sheet-summary-pill" data-status-pill data-tone="{{ row.call_status_tone }}">{{ row.call_status_label }}</span>
+                      {% endif %}
+                    </span>
+                  </div>
+                </button>
+
+                <div class="calls-sheet-row-actions">
+                  {% if row.phone_number %}
+                    <span class="calls-sheet-summary-pill calls-sheet-summary-pill--phone">{{ row.phone_number }}</span>
+                    <a class="dashboard-compact-call-link" href="tel:{{ row.phone_number }}" data-compact-action>Call</a>
+                  {% else %}
+                    <span class="calls-sheet-summary-pill calls-sheet-summary-pill--muted">No phone</span>
+                  {% endif %}
+                </div>
+              </div>
+
+              <div id="call-case-details-{{ row.case_id }}" class="dashboard-compact-details" data-compact-details hidden>
+                <div class="calls-sheet-detail-grid">
+                  <div class="calls-sheet-detail-top">
+                    <div class="dashboard-compact-detail-block">
+                      <span class="dashboard-compact-detail-label">Latest call outcome</span>
+                      <div class="calls-sheet-latest-call" data-latest-call-copy data-tone="{{ row.call_status_tone }}" aria-live="polite">
+                        {% if row.latest_call_outcome_label %}
+                          {{ row.latest_call_outcome_label }}{% if row.latest_call_logged_at_display %} &middot; {{ row.latest_call_logged_at_display }}{% endif %}{% if row.latest_call_staff_user %} &middot; {{ row.latest_call_staff_user }}{% endif %}
+                        {% else %}
+                          Not contacted yet
+                        {% endif %}
+                      </div>
+                    </div>
+                    <div class="calls-sheet-detail-pills">
+                      <span
+                        class="calls-sheet-category-pill"
+                        style="background: {{ row.category_bg_color }}; color: {{ row.category_text_color }};"
+                      >{{ row.category_name }}</span>
+                      {% if row.subcategory_name %}
+                        <span class="dashboard-compact-subcategory">{{ row.subcategory_name }}</span>
+                      {% endif %}
+                      <a class="dashboard-compact-detail-pill-link" href="{{ row.detail_url }}" data-compact-action>Open case</a>
+                    </div>
+                  </div>
+
+
+                  <div class="dashboard-compact-detail-block">
+                    <span class="dashboard-compact-detail-label">Quick log</span>
+                    {% if can_apply_outcomes %}
+                      <div class="calls-sheet-quick-log-list">
+                        {% for action in quick_log_actions %}
+                          <button
+                            type="button"
+                            class="calls-sheet-quick-log-button"
+                            data-quick-log-button
+                            data-tone="{{ action.tone }}"
+                            data-outcome="{{ action.outcome }}"
+                          >{{ action.label }}</button>
+                        {% endfor %}
+                      </div>
+                      <div class="calls-sheet-feedback" data-quick-log-feedback hidden aria-live="polite"></div>
+                    {% else %}
+                      <div class="calls-sheet-readonly">Read only</div>
+                    {% endif %}
+                  </div>
+
+                  <div class="calls-sheet-detail-meta">
+                    <div class="dashboard-compact-detail-block">
+                      <span class="dashboard-compact-detail-label">Flags</span>
+                      {% if row.flags %}
+                        <div class="calls-sheet-flag-list">
+                          {% for flag in row.flags %}
+                            <span class="calls-sheet-flag" data-tone="{{ flag.tone }}">{{ flag.label }}</span>
+                          {% endfor %}
+                        </div>
+                      {% else %}
+                        <div class="dashboard-compact-detail-copy">None</div>
+                      {% endif %}
+                    </div>
+
+                    <div class="dashboard-compact-detail-block">
+                      <span class="dashboard-compact-detail-label">Referred by</span>
+                      <div class="dashboard-compact-detail-copy">{{ row.referred_by_display }}</div>
+                    </div>
+                  </div>
+
+                  <div class="dashboard-compact-detail-block">
+                    <span class="dashboard-compact-detail-label">Upcoming schedule</span>
+                    <div class="calls-sheet-schedule-list">
+                      {% for line in row.schedule_lines %}
+                        <div class="calls-sheet-schedule-item">
+                          <span class="calls-sheet-schedule-date">{{ line.date_display }}</span>
+                          <span class="calls-sheet-schedule-copy">{{ line.task_summary }}</span>
+                        </div>
+                      {% endfor %}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+      {% empty %}
+        <div class="dashboard-module-empty">No patients are scheduled in this range yet.</div>
+      {% endfor %}
+    </div>
+  </form>
+</div>
+
+<script>
+  (() => {
+    const checkboxes = Array.from(document.querySelectorAll("[data-case-select]"));
+    const selectedCountEl = document.querySelector("[data-selected-count]");
+    const selectedPluralEl = document.querySelector("[data-selected-plural]");
+    const applyButton = document.querySelector("[data-apply-button]");
+    const outcomeSelect = document.getElementById("bulk-outcome");
+    const bulkBar = document.querySelector("[data-calls-bulk-bar]");
+    const bulkLinks = document.querySelector("[data-bulk-links]");
+    const bulkControls = document.querySelector("[data-bulk-controls]");
+
+    const updateSelectionState = () => {
+      const selectedCount = checkboxes.filter((checkbox) => checkbox.checked).length;
+      const hasSelection = selectedCount > 0;
+      if (selectedCountEl) {
+        selectedCountEl.textContent = String(selectedCount);
+      }
+      if (selectedPluralEl) {
+        selectedPluralEl.textContent = selectedCount === 1 ? "" : "s";
+      }
+      if (bulkBar) {
+        bulkBar.classList.toggle("is-active", hasSelection);
+      }
+      if (bulkLinks) {
+        bulkLinks.hidden = !hasSelection;
+      }
+      if (bulkControls) {
+        bulkControls.hidden = !hasSelection;
+      }
+      if (applyButton) {
+        applyButton.disabled = selectedCount === 0 || !(outcomeSelect && outcomeSelect.value);
+      }
+    };
+
+    document.querySelector("[data-select-visible]")?.addEventListener("click", () => {
+      checkboxes.forEach((checkbox) => {
+        if (!checkbox.disabled) {
+          checkbox.checked = true;
+        }
+      });
+      updateSelectionState();
+    });
+
+    document.querySelector("[data-clear-selection]")?.addEventListener("click", () => {
+      checkboxes.forEach((checkbox) => {
+        checkbox.checked = false;
+      });
+      updateSelectionState();
+    });
+
+    checkboxes.forEach((checkbox) => {
+      checkbox.addEventListener("change", updateSelectionState);
+      checkbox.addEventListener("click", (event) => event.stopPropagation());
+    });
+    outcomeSelect?.addEventListener("change", updateSelectionState);
+    updateSelectionState();
+
+    const listEl = document.querySelector("[data-calls-sheet-list]");
+    const getCookie = (name) => {
+      const cookieValue = document.cookie
+        .split(";")
+        .map((item) => item.trim())
+        .find((item) => item.startsWith(`${name}=`));
+      if (!cookieValue) {
+        return "";
+      }
+      return decodeURIComponent(cookieValue.split("=").slice(1).join("="));
+    };
+
+    const getCallStatusDisplay = (status, failedAttemptCount) => {
+      if (status === "CONFIRMED") {
+        return { label: "Confirmed", tone: "success" };
+      }
+      if (status === "NOT_REACHABLE") {
+        const count = Math.max(Number.parseInt(failedAttemptCount, 10) || 0, 0);
+        return { label: count ? `Not reachable x${count}` : "Not reachable", tone: "danger" };
+      }
+      if (status === "INVALID_CONTACT") {
+        return { label: "Invalid contact", tone: "neutral" };
+      }
+      if (status === "LOST") {
+        return { label: "Lost follow-up", tone: "neutral" };
+      }
+      if (status === "CALL_BACK_LATER") {
+        return { label: "Call back later", tone: "warning" };
+      }
+      return { label: "Not contacted", tone: "warning" };
+    };
+
+    const formatLatestCallCopy = (callLog) => {
+      if (!callLog || !callLog.outcome_label) {
+        return "Not contacted yet";
+      }
+      const segments = [callLog.outcome_label];
+      if (callLog.created_at_display) {
+        segments.push(callLog.created_at_display);
+      }
+      if (callLog.staff_user) {
+        segments.push(callLog.staff_user);
+      }
+      return segments.join(" · ");
+    };
+
+    const setQuickLogFeedback = (rowEl, message) => {
+      const feedbackEl = rowEl?.querySelector("[data-quick-log-feedback]");
+      if (!feedbackEl) {
+        return;
+      }
+      feedbackEl.textContent = message || "";
+      feedbackEl.hidden = !message;
+    };
+
+    const setQuickLogSubmitting = (rowEl, isSubmitting, activeButton = null) => {
+      rowEl.dataset.quickLogSubmitting = isSubmitting ? "true" : "false";
+      rowEl.querySelectorAll("[data-quick-log-button]").forEach((button) => {
+        button.disabled = isSubmitting;
+        button.classList.toggle("is-loading", Boolean(isSubmitting && activeButton === button));
+      });
+    };
+
+    const updateRowCallSummary = (rowEl, payload) => {
+      const summary = payload?.call_summary || {};
+      const display = getCallStatusDisplay(summary.status, summary.failed_attempt_count);
+      const statusPill = rowEl.querySelector("[data-status-pill]");
+      if (statusPill) {
+        statusPill.textContent = display.label;
+        statusPill.dataset.tone = display.tone;
+      }
+      const latestCallEl = rowEl.querySelector("[data-latest-call-copy]");
+      if (latestCallEl) {
+        latestCallEl.textContent = formatLatestCallCopy(payload?.call_log);
+        latestCallEl.dataset.tone = display.tone;
+      }
+    };
+
+    const closeOpenRow = (row) => {
+      if (!row) {
+        return;
+      }
+      row.classList.remove("is-open");
+      row.querySelector("[data-compact-toggle]")?.setAttribute("aria-expanded", "false");
+      const detailEl = row.querySelector("[data-compact-details]");
+      if (detailEl) {
+        detailEl.hidden = true;
+      }
+    };
+
+    listEl?.addEventListener("click", (event) => {
+      const toggle = event.target.closest("[data-compact-toggle]");
+      if (!toggle || !listEl.contains(toggle)) {
+        return;
+      }
+
+      const rowEl = toggle.closest("[data-calls-sheet-row]");
+      if (!rowEl) {
+        return;
+      }
+
+      const isOpen = rowEl.classList.contains("is-open");
+      listEl.querySelectorAll("[data-calls-sheet-row].is-open").forEach((openRow) => {
+        if (openRow !== rowEl) {
+          closeOpenRow(openRow);
+        }
+      });
+
+      if (isOpen) {
+        closeOpenRow(rowEl);
+        return;
+      }
+
+      rowEl.classList.add("is-open");
+      toggle.setAttribute("aria-expanded", "true");
+      const detailEl = rowEl.querySelector("[data-compact-details]");
+      if (detailEl) {
+        detailEl.hidden = false;
+      }
+    });
+
+    listEl?.addEventListener("click", async (event) => {
+      const button = event.target.closest("[data-quick-log-button]");
+      if (!button || !listEl.contains(button)) {
+        return;
+      }
+
+      event.preventDefault();
+      const rowEl = button.closest("[data-calls-sheet-row]");
+      if (!rowEl || rowEl.dataset.quickLogSubmitting === "true") {
+        return;
+      }
+
+      const callUrl = rowEl.dataset.callUrl;
+      const primaryTaskId = rowEl.dataset.primaryTaskId;
+      const outcome = button.dataset.outcome;
+      if (!callUrl || !primaryTaskId || !outcome) {
+        setQuickLogFeedback(rowEl, "Quick log is not configured for this case.");
+        return;
+      }
+
+      setQuickLogFeedback(rowEl, "");
+      setQuickLogSubmitting(rowEl, true, button);
+
+      try {
+        const response = await fetch(callUrl, {
+          method: "POST",
+          headers: {
+            "X-CSRFToken": getCookie("csrftoken"),
+            "X-Requested-With": "XMLHttpRequest",
+            Accept: "application/json",
+          },
+          body: new URLSearchParams({
+            task: primaryTaskId,
+            outcome,
+            notes: "",
+          }),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(payload.message || "Could not log call outcome.");
+        }
+        updateRowCallSummary(rowEl, payload);
+      } catch (error) {
+        setQuickLogFeedback(rowEl, error?.message || "Could not log call outcome.");
+      } finally {
+        setQuickLogSubmitting(rowEl, false, button);
+      }
+    });
+
+  })();
+</script>
+{% endblock %}
+

@@ -18,6 +18,8 @@ from .views import (
     CaseUpdateIdentityCheckView,
     DashboardView,
     DatabaseManagementSettingsView,
+    UpcomingCallsBulkLogView,
+    UpcomingCallsView,
     RecentCasesView,
     RecentCaseUpdateView,
     PatientDetailView,
@@ -45,6 +47,8 @@ app_name = "patients"
 
 urlpatterns = [
     path("", DashboardView.as_view(), name="dashboard"),
+    path("calls/upcoming/", UpcomingCallsView.as_view(), name="calls_upcoming"),
+    path("calls/upcoming/bulk-log/", UpcomingCallsBulkLogView.as_view(), name="calls_upcoming_bulk_log"),
     path("recent/", RecentCasesView.as_view(), name="recent_cases"),
     path("recent/<int:pk>/", RecentCaseUpdateView.as_view(), name="recent_case_update"),
     path("patients/search/", PatientSearchView.as_view(), name="patient_search"),

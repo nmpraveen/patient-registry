@@ -3307,7 +3307,7 @@ class CaseListView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
         status = self.request.GET.get("status", "").strip()
         category = self.request.GET.get("category", "").strip()
         category_groups = _normalized_search_category_groups(self.request.GET.getlist("category_group"))
-        assigned_user = self.request.GET.get("assigned_user", "").strip()
+        subcategory = self.request.GET.get("subcategory", "").strip()
         due_start = self.request.GET.get("due_start", "").strip()
         due_end = self.request.GET.get("due_end", "").strip()
 
@@ -3352,10 +3352,8 @@ class CaseListView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
             queryset = queryset.filter(category_group_query)
         if category:
             queryset = queryset.filter(category_id=category)
-        if assigned_user:
-            queryset = queryset.filter(
-                Exists(Task.objects.filter(case_id=OuterRef("pk"), assigned_user_id=assigned_user))
-            )
+        if subcategory:
+            queryset = queryset.filter(subcategory=subcategory)
         if due_start:
             queryset = queryset.filter(
                 Exists(Task.objects.filter(case_id=OuterRef("pk"), due_date__gte=due_start))
@@ -3383,12 +3381,15 @@ class CaseListView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
                 context["page_obj"].object_list = cases
         context["filters"] = {
             k: self.request.GET.get(k, "")
-            for k in ["q", "status", "category", "category_group", "assigned_user", "due_start", "due_end"]
+            for k in ["q", "status", "category", "category_group", "subcategory", "due_start", "due_end"]
         }
         context["filters"]["category_groups"] = selected_category_groups
         context["case_statuses"] = CaseStatus.choices
         context["categories"] = DepartmentConfig.objects.only("id", "name")
-        context["users"] = get_user_model().objects.only("id", "username").order_by("username")
+        context["subcategory_choices"] = [
+            {"value": value, "label": label}
+            for value, label in Case._meta.get_field("subcategory").choices
+        ]
         query_params = self.request.GET.copy()
         query_params.pop("page", None)
         context["filter_querystring"] = query_params.urlencode()

@@ -726,7 +726,6 @@ class MedtrackViewTests(TestCase):
 
     def test_case_list_query_count_stays_bounded_for_filtered_request(self):
         self.client.force_login(self.user)
-        assignee = get_user_model().objects.create_user(username="assignee", password="strong-password-123")
         today = timezone.localdate()
 
         for index in range(30):
@@ -736,6 +735,7 @@ class MedtrackViewTests(TestCase):
                 last_name=f"List {index}",
                 phone_number=f"8{index:09d}",
                 category=self.surgery,
+                subcategory=CaseSubcategory.ORTHOPEDICS if index % 2 == 0 else CaseSubcategory.GENERAL_SURGERY,
                 status=CaseStatus.ACTIVE,
                 place="Chennai",
                 surgical_pathway=SurgicalPathway.SURVEILLANCE,
@@ -746,7 +746,6 @@ class MedtrackViewTests(TestCase):
                 case=case,
                 title="Assigned follow-up",
                 due_date=today + timedelta(days=index % 7),
-                assigned_user=assignee if index % 2 == 0 else None,
                 created_by=self.user,
             )
 
@@ -757,7 +756,7 @@ class MedtrackViewTests(TestCase):
                 "q": "Perf",
                 "status": CaseStatus.ACTIVE,
                 "category": str(self.surgery.id),
-                "assigned_user": str(assignee.id),
+                "subcategory": CaseSubcategory.ORTHOPEDICS,
                 "due_start": (today - timedelta(days=1)).isoformat(),
                 "due_end": (today + timedelta(days=10)).isoformat(),
                 "page": "1",
@@ -766,6 +765,62 @@ class MedtrackViewTests(TestCase):
 
         self.assertIn("q=Perf", response.context["filter_querystring"])
         self.assertNotIn("page=", response.context["filter_querystring"])
+
+    def test_case_list_filters_by_subcategory_and_keeps_selected_option(self):
+        self.client.force_login(self.user)
+        today = timezone.localdate()
+        orthopedics_case = Case.objects.create(
+            uhid="UH-SUB-FILTER-ORTHO",
+            first_name="Ortho",
+            last_name="Match",
+            phone_number="8111000001",
+            category=self.surgery,
+            subcategory=CaseSubcategory.ORTHOPEDICS,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=today + timedelta(days=7),
+            created_by=self.user,
+        )
+        Case.objects.create(
+            uhid="UH-SUB-FILTER-GEN",
+            first_name="General",
+            last_name="Surgery",
+            phone_number="8111000002",
+            category=self.surgery,
+            subcategory=CaseSubcategory.GENERAL_SURGERY,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=today + timedelta(days=8),
+            created_by=self.user,
+        )
+        Case.objects.create(
+            uhid="UH-SUB-FILTER-MED",
+            first_name="General",
+            last_name="Medicine",
+            phone_number="8111000003",
+            category=self.medicine,
+            subcategory=CaseSubcategory.GENERAL_MEDICINE,
+            status=CaseStatus.ACTIVE,
+            review_date=today + timedelta(days=9),
+            created_by=self.user,
+        )
+
+        response = self.client.get(
+            reverse("patients:case_list"),
+            {"subcategory": CaseSubcategory.ORTHOPEDICS},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual({case.id for case in response.context["cases"]}, {orthopedics_case.id})
+        self.assertEqual(response.context["filters"]["subcategory"], CaseSubcategory.ORTHOPEDICS)
+        self.assertIn(f"subcategory={CaseSubcategory.ORTHOPEDICS}", response.context["filter_querystring"])
+        self.assertContains(response, 'name="subcategory"')
+        self.assertNotContains(response, 'name="assigned_user"')
+        self.assertContains(
+            response,
+            f'<option value="{CaseSubcategory.ORTHOPEDICS}" selected>Orthopedics</option>',
+            html=True,
+        )
 
     def test_case_list_category_group_filter_matches_dashboard_buckets(self):
         self.client.force_login(self.user)

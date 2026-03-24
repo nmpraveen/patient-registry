@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.03.24.13.27
+- Replaced the Case List search-page assignee dropdown with a subcategory filter so staff can narrow Surgery and Medicine cases by specialty directly from the list view.
+- Updated the case-list filtering/querystring flow and focused regression coverage so selected subcategories persist correctly alongside the existing search, status, category, and due-date filters.
+- Widened the two date-filter slots and Filter button slot on the Case List page so the Crayons datepicker no longer crowds the action button at desktop widths.
+
 ## 2026.03.24.03.12
 - Added the dedicated `Upcoming Calling Sheet` flow with navbar access, role-gated routing, queue grouping, and focused regression coverage for the separate calling-screen workflow.
 - Reworked the calling-sheet rows into a scan-first format with inline task summaries, text status pills, direct phone actions, flags/referred-by context, and an action-oriented expanded panel.

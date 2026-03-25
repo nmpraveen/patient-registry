@@ -132,6 +132,20 @@ class ReviewFrequency(models.TextChoices):
     YEARLY = "YEARLY", "Yearly"
 
 
+class StarterTaskAnchor(models.TextChoices):
+    LMP = "lmp", "LMP"
+    EFFECTIVE_EDD = "effective_edd", "EDD"
+    SURGERY_DATE = "surgery_date", "Surgery date"
+    REVIEW_DATE = "review_date", "Review date"
+    CREATED_DATE = "created_date", "Case created day"
+
+
+class StarterTaskAppliesTo(models.TextChoices):
+    ALWAYS = "always", "Always"
+    PLANNED_SURGERY = "planned_surgery", "Planned surgery"
+    SURVEILLANCE = "surveillance", "Surveillance"
+
+
 class CaseSubcategory(models.TextChoices):
     GENERAL_SURGERY = "GENERAL_SURGERY", "General Surgery"
     ORTHOPEDICS = "ORTHOPEDICS", "Orthopedics"
@@ -231,6 +245,7 @@ class DepartmentConfig(models.Model):
     name = models.CharField(max_length=100, unique=True)
     auto_follow_up_days = models.PositiveIntegerField(default=30)
     predefined_actions = models.JSONField(default=list, blank=True)
+    starter_task_templates = models.JSONField(default=list, blank=True)
     metadata_template = models.JSONField(default=dict, blank=True)
     theme_bg_color = models.CharField(max_length=7, blank=True, default="")
     theme_text_color = models.CharField(max_length=7, blank=True, default="")
@@ -247,6 +262,10 @@ class DepartmentConfig(models.Model):
         text_color = (self.theme_text_color or "").strip()
         self.theme_bg_color = normalize_hex_color(bg_color or default_theme["bg"])
         self.theme_text_color = normalize_hex_color(text_color or default_theme["text"])
+        self.starter_task_templates = normalize_starter_task_templates(
+            self.starter_task_templates or [],
+            workflow_key=workflow_key_for_category_name(self.name),
+        )
         super().save(*args, **kwargs)
 
 
@@ -802,6 +821,10 @@ def ensure_default_departments():
             name=item["name"],
             defaults={
                 "predefined_actions": item["predefined_actions"],
+                "starter_task_templates": default_starter_task_templates_for_category_name(
+                    item["name"],
+                    item["predefined_actions"],
+                ),
                 "metadata_template": item["metadata_template"],
                 "theme_bg_color": default_theme["bg"],
                 "theme_text_color": default_theme["text"],
@@ -1394,13 +1417,82 @@ def cancel_open_rch_reminders(case: Case) -> int:
     return len(reminder_ids)
 
 
-def plan_default_tasks(case: Case):
-    workflow_key = workflow_key_for_case(case)
-    tasks = []
-    today = timezone.localdate()
+def infer_starter_task_type(title):
+    normalized = str(title or "").strip().lower()
+    if "test" in normalized or "blood" in normalized or "urine" in normalized:
+        return TaskType.LAB
+    if "scan" in normalized or "injection" in normalized or "nst" in normalized:
+        return TaskType.PROCEDURE
+    return TaskType.VISIT
 
+
+def _default_starter_anchor_for_workflow(workflow_key, *, applies_to=StarterTaskAppliesTo.ALWAYS):
     if workflow_key == "anc":
-        start_date = case.lmp or today
+        return StarterTaskAnchor.LMP
+    if workflow_key == "surgery":
+        if applies_to == StarterTaskAppliesTo.SURVEILLANCE:
+            return StarterTaskAnchor.REVIEW_DATE
+        return StarterTaskAnchor.SURGERY_DATE
+    return StarterTaskAnchor.REVIEW_DATE
+
+
+def _default_starter_label_for_workflow(workflow_key, *, applies_to=StarterTaskAppliesTo.ALWAYS):
+    if workflow_key == "anc":
+        return "ANC"
+    if workflow_key == "surgery":
+        if applies_to == StarterTaskAppliesTo.SURVEILLANCE:
+            return "Surveillance"
+        if applies_to == StarterTaskAppliesTo.PLANNED_SURGERY:
+            return "Planned surgery"
+        return "Surgery"
+    return "Review"
+
+
+def normalize_starter_task_templates(templates, *, workflow_key):
+    normalized_templates = []
+    if not isinstance(templates, list):
+        return normalized_templates
+
+    valid_anchor_values = set(StarterTaskAnchor.values)
+    valid_applies_to_values = set(StarterTaskAppliesTo.values)
+    valid_task_type_values = set(TaskType.values)
+    for raw_template in templates:
+        if not isinstance(raw_template, dict):
+            continue
+        title = " ".join(str(raw_template.get("title") or "").split())
+        if not title:
+            continue
+        applies_to = str(raw_template.get("applies_to") or StarterTaskAppliesTo.ALWAYS).strip().lower()
+        if applies_to not in valid_applies_to_values:
+            applies_to = StarterTaskAppliesTo.ALWAYS
+        anchor = str(raw_template.get("anchor") or "").strip().lower()
+        if anchor not in valid_anchor_values:
+            anchor = _default_starter_anchor_for_workflow(workflow_key, applies_to=applies_to)
+        task_type = str(raw_template.get("task_type") or "").strip().upper()
+        if task_type not in valid_task_type_values:
+            task_type = infer_starter_task_type(title)
+        try:
+            offset_days = int(raw_template.get("offset_days", 0) or 0)
+        except (TypeError, ValueError):
+            offset_days = 0
+        frequency_label = " ".join(str(raw_template.get("frequency_label") or "").split())
+        normalized_templates.append(
+            {
+                "title": title,
+                "anchor": anchor,
+                "offset_days": offset_days,
+                "task_type": task_type,
+                "frequency_label": frequency_label,
+                "applies_to": applies_to,
+            }
+        )
+    return normalized_templates
+
+
+def default_starter_task_templates_for_category_name(name, predefined_actions=None):
+    workflow_key = workflow_key_for_category_name(name)
+    actions = list(predefined_actions or [])
+    if workflow_key == "anc":
         anc_schedule = {
             2: [
                 "Routine prenatal check up",
@@ -1430,82 +1522,160 @@ def plan_default_tasks(case: Case):
                 "Blood test (CBC/HIV/HBsAg)",
             ],
         }
-        for month, titles in anc_schedule.items():
-            due = start_date + timedelta(days=(month - 1) * 28)
-            if case.effective_edd and due > case.effective_edd:
-                due = case.effective_edd
-            for title in titles:
-                task_type = TaskType.VISIT
-                if "test" in title.lower() or "blood" in title.lower() or "urine" in title.lower():
-                    task_type = TaskType.LAB
-                elif "scan" in title.lower() or "injection" in title.lower() or "nst" in title.lower():
-                    task_type = TaskType.PROCEDURE
-                tasks.append(
-                    {
-                        "title": title,
-                        "due_date": due,
-                        "task_type": task_type,
-                        "frequency_label": f"ANC month {month}",
-                    }
-                )
-    elif workflow_key == "surgery":
-        if case.surgical_pathway == SurgicalPathway.PLANNED_SURGERY:
-            base_date = case.surgery_date or today
-            tasks.extend(
-                [
-                    {
-                        "title": "Lab test",
-                        "due_date": base_date - timedelta(days=7),
-                        "task_type": TaskType.LAB,
-                        "frequency_label": "Pre-op",
-                    },
-                    {
-                        "title": "Xray",
-                        "due_date": base_date - timedelta(days=7),
-                        "task_type": TaskType.PROCEDURE,
-                        "frequency_label": "Pre-op",
-                    },
-                    {
-                        "title": "ECG",
-                        "due_date": base_date - timedelta(days=7),
-                        "task_type": TaskType.PROCEDURE,
-                        "frequency_label": "Pre-op",
-                    },
-                    {
-                        "title": "Inform Anesthetist",
-                        "due_date": base_date - timedelta(days=5),
-                        "task_type": TaskType.CALL,
-                        "frequency_label": "Pre-op",
-                    },
-                    {
-                        "title": "Surgery Date",
-                        "due_date": base_date,
-                        "task_type": TaskType.PROCEDURE,
-                        "frequency_label": "Planned surgery",
-                    },
-                ]
-            )
-        else:
-            review = case.review_date or today + timedelta(days=30)
-            tasks.append(
-                {
-                    "title": "Surveillance Review",
-                    "due_date": review,
-                    "task_type": TaskType.VISIT,
-                    "frequency_label": case.get_review_frequency_display() or "Review",
-                }
-            )
-    else:
-        review = case.review_date or today + timedelta(days=30)
-        action = case.category.predefined_actions[0] if case.category.predefined_actions else "Review by consultant"
+        return [
+            {
+                "title": title,
+                "anchor": StarterTaskAnchor.LMP,
+                "offset_days": (month - 1) * 28,
+                "task_type": infer_starter_task_type(title),
+                "frequency_label": f"ANC month {month}",
+                "applies_to": StarterTaskAppliesTo.ALWAYS,
+            }
+            for month, titles in anc_schedule.items()
+            for title in titles
+        ]
+    if workflow_key == "surgery":
+        return [
+            {
+                "title": "Lab test",
+                "anchor": StarterTaskAnchor.SURGERY_DATE,
+                "offset_days": -7,
+                "task_type": TaskType.LAB,
+                "frequency_label": "Pre-op",
+                "applies_to": StarterTaskAppliesTo.PLANNED_SURGERY,
+            },
+            {
+                "title": "Xray",
+                "anchor": StarterTaskAnchor.SURGERY_DATE,
+                "offset_days": -7,
+                "task_type": TaskType.PROCEDURE,
+                "frequency_label": "Pre-op",
+                "applies_to": StarterTaskAppliesTo.PLANNED_SURGERY,
+            },
+            {
+                "title": "ECG",
+                "anchor": StarterTaskAnchor.SURGERY_DATE,
+                "offset_days": -7,
+                "task_type": TaskType.PROCEDURE,
+                "frequency_label": "Pre-op",
+                "applies_to": StarterTaskAppliesTo.PLANNED_SURGERY,
+            },
+            {
+                "title": "Inform Anesthetist",
+                "anchor": StarterTaskAnchor.SURGERY_DATE,
+                "offset_days": -5,
+                "task_type": TaskType.CALL,
+                "frequency_label": "Pre-op",
+                "applies_to": StarterTaskAppliesTo.PLANNED_SURGERY,
+            },
+            {
+                "title": "Surgery Date",
+                "anchor": StarterTaskAnchor.SURGERY_DATE,
+                "offset_days": 0,
+                "task_type": TaskType.PROCEDURE,
+                "frequency_label": "Planned surgery",
+                "applies_to": StarterTaskAppliesTo.PLANNED_SURGERY,
+            },
+            {
+                "title": "Surveillance Review",
+                "anchor": StarterTaskAnchor.REVIEW_DATE,
+                "offset_days": 0,
+                "task_type": TaskType.VISIT,
+                "frequency_label": "",
+                "applies_to": StarterTaskAppliesTo.SURVEILLANCE,
+            },
+        ]
+
+    action = actions[0] if actions else "Review by consultant"
+    return [
+        {
+            "title": action,
+            "anchor": StarterTaskAnchor.REVIEW_DATE,
+            "offset_days": 0,
+            "task_type": TaskType.CUSTOM,
+            "frequency_label": "",
+            "applies_to": StarterTaskAppliesTo.ALWAYS,
+        }
+    ]
+
+
+def starter_task_templates_for_category(category):
+    workflow_key = workflow_key_for_category_name(category.name)
+    saved_templates = normalize_starter_task_templates(
+        category.starter_task_templates or [],
+        workflow_key=workflow_key,
+    )
+    if saved_templates:
+        return saved_templates
+    return default_starter_task_templates_for_category_name(category.name, category.predefined_actions)
+
+
+def _starter_task_floor_date(case: Case, *, today=None):
+    if workflow_key_for_case(case) == "anc":
+        return None
+    if getattr(case, "created_at", None):
+        return timezone.localtime(case.created_at).date()
+    return today or timezone.localdate()
+
+
+def _starter_task_base_date(case, template, *, today):
+    anchor = template["anchor"]
+    if anchor == StarterTaskAnchor.LMP:
+        return case.lmp or today
+    if anchor == StarterTaskAnchor.EFFECTIVE_EDD:
+        return case.effective_edd or today
+    if anchor == StarterTaskAnchor.SURGERY_DATE:
+        return case.surgery_date or today
+    if anchor == StarterTaskAnchor.CREATED_DATE:
+        return _starter_task_floor_date(case, today=today) or today
+
+    if case.review_date:
+        return case.review_date
+    if case.review_frequency:
+        return today + timedelta(days=frequency_to_days(case.review_frequency))
+    return today + timedelta(days=30)
+
+
+def _starter_task_frequency_label(case, template):
+    label = str(template.get("frequency_label") or "").strip()
+    if label:
+        return label
+    if template["anchor"] == StarterTaskAnchor.REVIEW_DATE:
+        return case.get_review_frequency_display() or "Review"
+    workflow_key = workflow_key_for_case(case)
+    return _default_starter_label_for_workflow(workflow_key, applies_to=template["applies_to"])
+
+
+def plan_default_tasks(case: Case):
+    workflow_key = workflow_key_for_case(case)
+    tasks = []
+    today = timezone.localdate()
+    task_floor_date = _starter_task_floor_date(case, today=today)
+    templates = starter_task_templates_for_category(case.category)
+
+    for template in templates:
+        applies_to = template["applies_to"]
+        if workflow_key == "surgery":
+            if applies_to == StarterTaskAppliesTo.PLANNED_SURGERY and case.surgical_pathway != SurgicalPathway.PLANNED_SURGERY:
+                continue
+            if applies_to == StarterTaskAppliesTo.SURVEILLANCE and case.surgical_pathway == SurgicalPathway.PLANNED_SURGERY:
+                continue
+
+        due = _starter_task_base_date(case, template, today=today) + timedelta(days=template["offset_days"])
+        if workflow_key == "anc" and case.effective_edd and due > case.effective_edd:
+            due = case.effective_edd
         tasks.append(
             {
-                "title": action,
-                "due_date": review,
-                "task_type": TaskType.CUSTOM,
-                "frequency_label": case.get_review_frequency_display() or "Review",
+                "title": template["title"],
+                "due_date": due,
+                "task_type": template["task_type"],
+                "frequency_label": _starter_task_frequency_label(case, template),
             }
         )
+
+    if task_floor_date:
+        for task in tasks:
+            task["due_date"] = max(task["due_date"], task_floor_date)
 
     return tasks
 

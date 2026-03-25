@@ -50,6 +50,7 @@ from .models import (
     QUICK_ENTRY_DETAILS_TASK_TITLE,
     RCH_REMINDER_INTERVAL_DAYS,
     RCH_REMINDER_TASK_TITLE,
+    ReviewFrequency,
     RoleSetting,
     STAFF_PILOT_ROLE_NAME,
     STAFF_ROLE_NAME,
@@ -201,6 +202,46 @@ class MedtrackModelTests(TestCase):
             [(task.title, task.due_date, task.task_type, task.frequency_label) for task in created_tasks],
         )
 
+    def test_plan_default_tasks_for_planned_surgery_do_not_backdate_before_first_recorded_day(self):
+        today = timezone.localdate()
+        preview_case = Case(
+            uhid="UH-PLAN-SURG-FLOOR",
+            first_name="Preview",
+            last_name="Surgery",
+            phone_number="9000000007",
+            category=self.surgery,
+            surgical_pathway=SurgicalPathway.PLANNED_SURGERY,
+            surgery_date=today + timedelta(days=3),
+        )
+
+        task_plan = plan_default_tasks(preview_case)
+        due_dates = {item["title"]: item["due_date"] for item in task_plan}
+
+        self.assertEqual(due_dates["Lab test"], today)
+        self.assertEqual(due_dates["Xray"], today)
+        self.assertEqual(due_dates["ECG"], today)
+        self.assertEqual(due_dates["Inform Anesthetist"], today)
+        self.assertEqual(due_dates["Surgery Date"], today + timedelta(days=3))
+        self.assertTrue(all(item["due_date"] >= today for item in task_plan))
+
+    def test_plan_default_tasks_for_medicine_do_not_backdate_review_before_first_recorded_day(self):
+        today = timezone.localdate()
+        preview_case = Case(
+            uhid="UH-PLAN-MED-FLOOR",
+            first_name="Preview",
+            last_name="Medicine",
+            phone_number="9000000008",
+            category=self.medicine,
+            review_frequency=ReviewFrequency.MONTHLY,
+            review_date=today - timedelta(days=2),
+        )
+
+        task_plan = plan_default_tasks(preview_case)
+
+        self.assertEqual(len(task_plan), 1)
+        self.assertEqual(task_plan[0]["title"], "Consultant Review")
+        self.assertEqual(task_plan[0]["due_date"], today)
+
     def test_plan_default_tasks_for_medicine_uses_first_predefined_action(self):
         preview_case = Case(
             uhid="UH-PLAN-MED",
@@ -217,6 +258,48 @@ class MedtrackModelTests(TestCase):
         self.assertEqual(len(task_plan), 1)
         self.assertEqual(task_plan[0]["title"], "Consultant Review")
         self.assertEqual(task_plan[0]["task_type"], TaskType.CUSTOM)
+
+    def test_plan_default_tasks_uses_saved_category_starter_templates(self):
+        today = timezone.localdate()
+        self.anc.starter_task_templates = [
+            {
+                "title": "Booking visit",
+                "anchor": "lmp",
+                "offset_days": 0,
+                "task_type": TaskType.VISIT,
+                "frequency_label": "ANC month 1",
+                "applies_to": "always",
+            },
+            {
+                "title": "EDD reminder",
+                "anchor": "effective_edd",
+                "offset_days": -7,
+                "task_type": TaskType.CALL,
+                "frequency_label": "Final week",
+                "applies_to": "always",
+            },
+        ]
+        self.anc.save()
+
+        preview_case = Case(
+            uhid="UH-PLAN-ANC-CUSTOM",
+            first_name="Preview",
+            last_name="ANC",
+            phone_number="9000000010",
+            category=self.anc,
+            lmp=today - timedelta(days=56),
+            edd=today + timedelta(days=210),
+        )
+
+        task_plan = plan_default_tasks(preview_case)
+
+        self.assertEqual(
+            [(item["title"], item["due_date"], item["task_type"], item["frequency_label"]) for item in task_plan],
+            [
+                ("Booking visit", today - timedelta(days=56), TaskType.VISIT, "ANC month 1"),
+                ("EDD reminder", today + timedelta(days=203), TaskType.CALL, "Final week"),
+            ],
+        )
 
     def test_anc_case_requires_lmp_edd(self):
         case = Case(
@@ -453,6 +536,24 @@ class MedtrackViewTests(TestCase):
         self.user.groups.clear()
         self.user.groups.add(admin_group)
         self.client.force_login(self.user)
+
+    def starter_task_formset_data(self, prefix, rows):
+        data = {
+            f"{prefix}-TOTAL_FORMS": str(len(rows)),
+            f"{prefix}-INITIAL_FORMS": "0",
+            f"{prefix}-MIN_NUM_FORMS": "0",
+            f"{prefix}-MAX_NUM_FORMS": "1000",
+        }
+        for index, row in enumerate(rows):
+            data[f"{prefix}-{index}-title"] = row.get("title", "")
+            data[f"{prefix}-{index}-applies_to"] = row.get("applies_to", "always")
+            data[f"{prefix}-{index}-anchor"] = row.get("anchor", "review_date")
+            data[f"{prefix}-{index}-offset_days"] = str(row.get("offset_days", 0))
+            data[f"{prefix}-{index}-task_type"] = row.get("task_type", TaskType.CUSTOM)
+            data[f"{prefix}-{index}-frequency_label"] = row.get("frequency_label", "")
+            if row.get("DELETE"):
+                data[f"{prefix}-{index}-DELETE"] = "on"
+        return data
 
     def login_as_role(self, role_name, *, username):
         user = get_user_model().objects.create_user(username=username, password="strong-password-123")
@@ -4264,7 +4365,7 @@ class MedtrackViewTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "User Management")
-        self.assertContains(response, "Categories & Workflow")
+        self.assertContains(response, "Categories")
         self.assertContains(response, reverse("patients:settings_user_management"))
         self.assertContains(response, reverse("patients:settings_categories"))
         self.assertContains(response, reverse("patients:settings_database"))
@@ -4420,8 +4521,8 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(settings_response.status_code, 200)
         self.assertContains(settings_response, reverse("patients:settings_categories"))
         self.assertEqual(categories_response.status_code, 200)
-        self.assertContains(categories_response, "Categories & Workflow")
-        self.assertContains(categories_response, "does not alter live task generation today")
+        self.assertContains(categories_response, "Categories")
+        self.assertContains(categories_response, "Select a category, edit its starter tasks, or create a new one.")
 
     def test_admin_settings_page_shows_user_management_link_and_page_requires_manage_settings(self):
         self.client.force_login(self.user)
@@ -4616,49 +4717,174 @@ class MedtrackViewTests(TestCase):
 
     def test_categories_settings_page_can_create_category(self):
         self.login_as_admin()
+        post_data = {
+            "action": "create_category",
+            "name": "Postpartum",
+            "auto_follow_up_days": "21",
+            "metadata_template_text": "Visit type",
+        }
+        post_data.update(
+            self.starter_task_formset_data(
+                "create_starter_tasks",
+                [
+                    {
+                        "title": "First review",
+                        "anchor": "review_date",
+                        "offset_days": 0,
+                        "task_type": TaskType.CUSTOM,
+                        "frequency_label": "Review",
+                    },
+                    {
+                        "title": "Home visit",
+                        "anchor": "created_date",
+                        "offset_days": 7,
+                        "task_type": TaskType.VISIT,
+                        "frequency_label": "Week 1",
+                    },
+                ],
+            )
+        )
 
         response = self.client.post(
             reverse("patients:settings_categories"),
-            {
-                "action": "create_category",
-                "name": "Postpartum",
-                "auto_follow_up_days": "21",
-                "predefined_actions_text": "Review, Counseling",
-                "metadata_template_text": '{"visit_type": "String"}',
-            },
+            post_data,
             follow=True,
         )
 
         self.assertEqual(response.status_code, 200)
         category = DepartmentConfig.objects.get(name="Postpartum")
         self.assertEqual(category.auto_follow_up_days, 21)
-        self.assertEqual(category.predefined_actions, ["Review", "Counseling"])
-        self.assertEqual(category.metadata_template, {"visit_type": "String"})
+        self.assertEqual(category.metadata_template, {"Visit type": "String"})
+        self.assertEqual(
+            category.starter_task_templates,
+            [
+                {
+                    "title": "First review",
+                    "anchor": "review_date",
+                    "offset_days": 0,
+                    "task_type": TaskType.CUSTOM,
+                    "frequency_label": "Review",
+                    "applies_to": "always",
+                },
+                {
+                    "title": "Home visit",
+                    "anchor": "created_date",
+                    "offset_days": 7,
+                    "task_type": TaskType.VISIT,
+                    "frequency_label": "Week 1",
+                    "applies_to": "always",
+                },
+            ],
+        )
         self.assertContains(response, "Saved category Postpartum.")
+
+    def test_categories_settings_page_requires_at_least_one_starter_task(self):
+        self.login_as_admin()
+        post_data = {
+            "action": "create_category",
+            "name": "Outreach",
+            "auto_follow_up_days": "10",
+            "metadata_template_text": "review_date: Date",
+        }
+        post_data.update(self.starter_task_formset_data("create_starter_tasks", []))
+
+        response = self.client.post(
+            reverse("patients:settings_categories"),
+            post_data,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(DepartmentConfig.objects.filter(name="Outreach").exists())
+        self.assertContains(response, "Add at least one starter task.")
 
     def test_categories_settings_page_can_update_category(self):
         self.login_as_admin()
         category = DepartmentConfig.objects.get(name="ANC")
+        post_data = {
+            "action": "update_category",
+            "category_id": str(category.pk),
+            "name": "ANC",
+            "auto_follow_up_days": "14",
+            "metadata_template_text": "lmp: Date\nrisk_band: String",
+        }
+        post_data.update(
+            self.starter_task_formset_data(
+                "starter_tasks",
+                [
+                    {
+                        "title": "Booking visit",
+                        "anchor": "lmp",
+                        "offset_days": 0,
+                        "task_type": TaskType.VISIT,
+                        "frequency_label": "ANC month 1",
+                    },
+                    {
+                        "title": "EDD reminder",
+                        "anchor": "effective_edd",
+                        "offset_days": -7,
+                        "task_type": TaskType.CALL,
+                        "frequency_label": "Final week",
+                    },
+                ],
+            )
+        )
 
         response = self.client.post(
             reverse("patients:settings_categories"),
-            {
-                "action": "update_category",
-                "category_id": str(category.pk),
-                "name": "ANC",
-                "auto_follow_up_days": "14",
-                "predefined_actions_text": "ANC Visit, BP Check",
-                "metadata_template_text": '{"lmp": "Date", "risk_band": "String"}',
-            },
+            post_data,
             follow=True,
         )
 
         self.assertEqual(response.status_code, 200)
         category.refresh_from_db()
         self.assertEqual(category.auto_follow_up_days, 14)
-        self.assertEqual(category.predefined_actions, ["ANC Visit", "BP Check"])
         self.assertEqual(category.metadata_template, {"lmp": "Date", "risk_band": "String"})
+        self.assertEqual(
+            category.starter_task_templates,
+            [
+                {
+                    "title": "Booking visit",
+                    "anchor": "lmp",
+                    "offset_days": 0,
+                    "task_type": TaskType.VISIT,
+                    "frequency_label": "ANC month 1",
+                    "applies_to": "always",
+                },
+                {
+                    "title": "EDD reminder",
+                    "anchor": "effective_edd",
+                    "offset_days": -7,
+                    "task_type": TaskType.CALL,
+                    "frequency_label": "Final week",
+                    "applies_to": "always",
+                },
+            ],
+        )
         self.assertContains(response, "Updated category ANC.")
+
+    def test_categories_settings_page_explains_live_vs_stored_configuration(self):
+        self.login_as_admin()
+
+        response = self.client.get(reverse("patients:settings_categories"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Select a category, edit its starter tasks, or create a new one.")
+        self.assertContains(response, "Starter Tasks")
+        self.assertContains(response, "Based on")
+        self.assertContains(response, "Category Details")
+
+    def test_categories_settings_page_shows_selected_category_behavior_summary(self):
+        self.login_as_admin()
+        surgery = DepartmentConfig.objects.get(name="Surgery")
+
+        response = self.client.get(reverse("patients:settings_categories"), {"category": surgery.pk})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Surgery")
+        self.assertContains(response, "Use Show for to separate planned surgery and surveillance tasks.")
+        self.assertContains(response, "Uses surgery specialty list")
+        self.assertContains(response, "Show for")
+        self.assertContains(response, "Renaming built-in categories changes workflow routing.")
 
     def test_admin_settings_page_shows_database_link_and_page_requires_manage_settings(self):
         self.client.force_login(self.user)
@@ -5291,6 +5517,16 @@ class MedtrackViewTests(TestCase):
             name="Outreach",
             auto_follow_up_days=14,
             predefined_actions=["Home visit"],
+            starter_task_templates=[
+                {
+                    "title": "Home visit",
+                    "anchor": "review_date",
+                    "offset_days": 0,
+                    "task_type": TaskType.VISIT,
+                    "frequency_label": "Review",
+                    "applies_to": "always",
+                }
+            ],
             metadata_template={"review_date": "Date"},
             theme_bg_color="#aabbcc",
             theme_text_color="#112233",
@@ -5323,6 +5559,19 @@ class MedtrackViewTests(TestCase):
         recreated_category = DepartmentConfig.objects.get(name="Outreach")
         self.assertEqual(recreated_category.theme_bg_color, "#aabbcc")
         self.assertEqual(recreated_category.theme_text_color, "#112233")
+        self.assertEqual(
+            recreated_category.starter_task_templates,
+            [
+                {
+                    "title": "Home visit",
+                    "anchor": "review_date",
+                    "offset_days": 0,
+                    "task_type": TaskType.VISIT,
+                    "frequency_label": "Review",
+                    "applies_to": "always",
+                }
+            ],
+        )
         self.assertTrue(Case.objects.filter(category=recreated_category, uhid="UH-CAT-001").exists())
 
     def test_database_management_import_rolls_back_on_internal_error(self):
@@ -7781,8 +8030,10 @@ class MedtrackViewTests(TestCase):
             ).exists()
         )
 
-    def test_create_surgery_case_requires_pathway_and_generates_preop_tasks(self):
+    def test_create_surgery_case_generates_starter_tasks_without_backdating_preop_dates(self):
         self.client.force_login(self.user)
+        today = timezone.localdate()
+        surgery_date = today + timedelta(days=3)
         response = self.client.post(
             reverse("patients:case_create"),
             {
@@ -7796,12 +8047,19 @@ class MedtrackViewTests(TestCase):
                 "status": CaseStatus.ACTIVE,
                 "age": "42",
                 "surgical_pathway": SurgicalPathway.PLANNED_SURGERY,
-                "surgery_date": timezone.localdate() + timedelta(days=7),
+                "surgery_date": surgery_date,
             },
         )
         self.assertEqual(response.status_code, 302)
         case = Case.objects.get(uhid="UH333")
-        self.assertTrue(case.tasks.filter(title__icontains="Lab test").exists())
+        due_dates = {task.title: task.due_date for task in case.tasks.all()}
+
+        self.assertEqual(due_dates["Lab test"], today)
+        self.assertEqual(due_dates["Xray"], today)
+        self.assertEqual(due_dates["ECG"], today)
+        self.assertEqual(due_dates["Inform Anesthetist"], today)
+        self.assertEqual(due_dates["Surgery Date"], surgery_date)
+        self.assertTrue(all(task.due_date >= today for task in case.tasks.all()))
 
 
     def test_case_autocomplete_requires_authentication(self):

@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026.03.25.00.03
+- Added real per-category starter-task templates so ANC, Surgery, Medicine, and custom categories now store the actual starter plan used by task generation instead of relying on hardcoded-only settings descriptions.
+- Rebuilt the Categories settings page into a select-or-create flow with one selected-category editor, editable starter-task rows, add/remove task controls, and simpler labels focused on task name, base date, timing, type, and section.
+- Updated imports/exports, migrations, focused regression coverage, and live task planning so edited starter plans immediately affect case creation previews and saved starter tasks.
+
+## 2026.03.24.22.49
+- Simplified the Categories settings page into editable per-category cards that show the tasks each category creates, with shorter labels and much less helper text.
+- Replaced developer-style wording like predefined actions and advanced configuration with plain task names, case details, and more settings language, while keeping built-in ANC and Surgery tasks read-only and previewed clearly.
+- Tightened the card grid after a live browser check so shorter cards no longer stretch awkwardly beside taller categories.
+
+## 2026.03.24.22.27
+- Tightened the Categories & Workflow settings page after live review by removing most explanatory blocks, keeping only the key helper texts, and simplifying the selected-category summary.
+- Fixed the stretched metadata panel on the categories page so the right-side inspector renders as compact cards instead of tall empty columns.
+- Kept the richer category behavior summary and multiline predefined-actions editing while making the page scan faster as a practical admin settings screen.
+
+## 2026.03.24.22.14
+- Reworked the Categories & Workflow settings page into a detailed directory-plus-inspector layout that explains live workflow behavior, stored-only fields, and the impact of category naming.
+- Added per-category summaries for workflow routing, starter-task logic, subcategory mapping, case counts, stored starter labels, and metadata keys so admins can see what a category really controls before editing it.
+- Improved the category form guidance by clarifying name-based routing, making predefined actions easier to edit as multiline input, and keeping advanced stored-only fields grouped separately from live-impact settings.
+
+## 2026.03.24.21.49
+- Stopped non-ANC starter tasks from being backdated before the case's first recorded day, fixing planned-surgery pre-op tasks that could appear before the patient's first visit.
+- Kept ANC scheduling unchanged while preserving Surgery and Medicine starter-task generation by clamping non-ANC due dates at case creation time.
+- Added regression coverage for planned-surgery and Medicine task planning plus full case creation so issue #67 stays covered.
+
 ## 2026.03.24.21.26
 - Restored the shared Surgery and Medicine subcategory selector on the Edit Case page so legacy cases with blank subcategories can be completed without leaving the edit workflow.
 - Updated the edit-page HTMX preview response to swap the same subcategory fragment as the create flow, keeping category changes and legacy-case edits in sync.

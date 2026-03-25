@@ -1,199 +1,581 @@
 {% extends 'base.html' %}
-{% block title %}Categories & Workflow | MEDTRACK{% endblock %}
+{% block title %}Categories | MEDTRACK{% endblock %}
 {% block content %}
 <style>
-  .settings-shell-header {
+  .category-settings-header {
     padding: 1.5rem;
     border: 1px solid var(--theme-shell-surface-border);
     border-radius: 1.25rem;
-    background: linear-gradient(135deg, var(--theme-shell-surface-bg), var(--theme-shell-surface-hover-bg));
-    box-shadow: 0 16px 34px var(--theme-shell-shadow);
+    background:
+      radial-gradient(circle at top right, rgba(100, 181, 246, 0.18), transparent 34%),
+      linear-gradient(135deg, var(--theme-shell-surface-bg), var(--theme-shell-surface-hover-bg));
+    box-shadow: 0 16px 32px var(--theme-shell-shadow);
     margin-bottom: 1rem;
   }
 
-  .settings-panel-card {
+  .category-toolbar,
+  .category-editor,
+  .category-create-card {
     border: 1px solid var(--theme-shell-surface-border);
     border-radius: 1.2rem;
     background: var(--theme-shell-surface-bg);
-    box-shadow: 0 14px 30px var(--theme-shell-shadow);
-    height: 100%;
+    box-shadow: 0 14px 28px var(--theme-shell-shadow);
+    padding: 1.1rem;
+    margin-bottom: 1rem;
   }
 
-  .settings-panel-card .card-body {
-    padding: 1.2rem;
+  .category-toolbar__grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 0.85rem;
+    align-items: end;
   }
 
-  .settings-info-strip {
+  .category-summary {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.75rem;
+    margin: 1rem 0;
+  }
+
+  .category-summary__item {
+    border: 1px solid var(--theme-shell-surface-border);
+    border-radius: 0.95rem;
+    padding: 0.75rem 0.85rem;
+    background: rgba(255, 255, 255, 0.92);
+  }
+
+  .category-summary__label {
+    font-size: 0.74rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--theme-shell-muted-text);
+  }
+
+  .category-summary__value {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--theme-shell-page-text);
+  }
+
+  .workflow-pill {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    padding: 0.24rem 0.68rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    background: rgba(26, 35, 126, 0.08);
+    color: var(--theme-shell-link-hover);
+  }
+
+  .workflow-pill--muted {
+    background: rgba(109, 106, 99, 0.1);
+    color: var(--theme-shell-muted-text);
+  }
+
+  .category-note,
+  .category-warning {
+    border-radius: 0.95rem;
+    padding: 0.75rem 0.9rem;
+    margin-bottom: 0.9rem;
+    font-size: 0.92rem;
+  }
+
+  .category-note {
     border: 1px solid var(--theme-alerts-info-border);
     background: var(--theme-alerts-info-bg);
     color: var(--theme-alerts-info-text);
+  }
+
+  .category-warning {
+    border: 1px solid var(--theme-alerts-warning-border);
+    background: var(--theme-alerts-warning-bg);
+    color: var(--theme-alerts-warning-text);
+  }
+
+  .category-section {
+    border: 1px solid var(--theme-shell-surface-border);
     border-radius: 1rem;
-    padding: 0.9rem 1rem;
-    margin-bottom: 1rem;
+    padding: 1rem;
+    background: rgba(250, 248, 244, 0.88);
+    margin-bottom: 0.95rem;
+  }
+
+  .category-section__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .category-section__title {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 700;
+    color: var(--theme-shell-muted-text);
+  }
+
+  .starter-note {
+    color: var(--theme-shell-muted-text);
+    font-size: 0.88rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .starter-list {
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .starter-row {
+    border: 1px solid var(--theme-shell-surface-border);
+    border-radius: 0.95rem;
+    background: rgba(255, 255, 255, 0.95);
+    padding: 0.8rem;
+  }
+
+  .starter-row.is-hidden {
+    display: none;
+  }
+
+  .starter-row__grid {
+    display: grid;
+    grid-template-columns: 1.75fr 1.1fr 0.7fr 1fr 1fr auto;
+    gap: 0.7rem;
+    align-items: start;
+  }
+
+  .starter-row__grid.is-surgery {
+    grid-template-columns: 1.55fr 1fr 1fr 0.7fr 1fr 1fr auto;
+  }
+
+  .starter-field label {
+    display: block;
+    font-size: 0.74rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 0.35rem;
+    color: var(--theme-shell-muted-text);
+  }
+
+  .starter-remove {
+    align-self: end;
+  }
+
+  .field-pill-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+  }
+
+  .field-pill {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    padding: 0.28rem 0.68rem;
+    background: rgba(30, 136, 229, 0.08);
+    color: var(--theme-shell-link-hover);
+    font-size: 0.82rem;
+    font-weight: 600;
+  }
+
+  .field-pill--empty {
+    background: rgba(109, 106, 99, 0.12);
+    color: var(--theme-shell-muted-text);
+  }
+
+  .category-details-grid {
+    display: grid;
+    grid-template-columns: 1fr 0.7fr;
+    gap: 0.85rem;
+  }
+
+  @media (max-width: 1199.98px) {
+    .starter-row__grid,
+    .starter-row__grid.is-surgery,
+    .category-summary,
+    .category-details-grid,
+    .category-toolbar__grid {
+      grid-template-columns: 1fr;
+    }
   }
 </style>
 
-<section class="settings-shell-header">
+<section class="category-settings-header">
   <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3">
     <div>
-      <h1 class="h3 mb-1">Categories & Workflow</h1>
-      <p class="text-muted mb-0">Manage category names, action defaults, and metadata templates without touching theme colors.</p>
+      <h1 class="h3 mb-1">Categories</h1>
+      <p class="text-muted mb-0">Select a category, edit its starter tasks, or create a new one.</p>
     </div>
-    <div class="d-flex gap-2">
+    <div class="d-flex flex-wrap gap-2">
       <a class="btn btn-outline-secondary btn-sm" href="{% url 'patients:settings' %}">Back to Settings</a>
-      <a class="btn btn-outline-primary btn-sm" href="{% url 'patients:settings_theme' %}">Open Theme Settings</a>
+      <a class="btn btn-outline-primary btn-sm" href="{% url 'patients:settings_theme' %}">Theme Settings</a>
     </div>
   </div>
 </section>
 
-<div class="settings-info-strip">
-  <strong>Workflow note:</strong> <code>auto_follow_up_days</code> is retained configuration for future workflow defaults. Changing it here does not alter live task generation today.
-</div>
-
-<div class="row g-3 mb-3">
-  <div class="col-12 col-xl-5">
-    <div class="settings-panel-card">
-      <div class="card-body">
-        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-          <div>
-            <h2 class="h6 mb-1">Current Categories</h2>
-            <p class="text-muted small mb-0">Select a category to edit its defaults.</p>
-          </div>
-          <div class="text-muted small">{{ categories|length }} total</div>
-        </div>
-        <div class="table-responsive">
-          <table class="table table-sm align-middle mb-0">
-            <thead>
-              <tr>
-                <th>Category</th>
-                <th>Defaults</th>
-                <th class="text-end">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for category in categories %}
-                <tr{% if selected_category and category.pk == selected_category.pk %} class="table-secondary"{% endif %}>
-                  <td>
-                    <div class="fw-semibold">{{ category.name }}</div>
-                    <div class="text-muted small">{{ category.predefined_actions|length }} action{{ category.predefined_actions|length|pluralize }}</div>
-                  </td>
-                  <td>
-                    <div>{{ category.auto_follow_up_days }} day{{ category.auto_follow_up_days|pluralize }}</div>
-                  </td>
-                  <td class="text-end">
-                    <a class="btn btn-outline-primary btn-sm" href="{% url 'patients:settings_categories' %}?category={{ category.pk }}">Edit</a>
-                  </td>
-                </tr>
-              {% empty %}
-                <tr>
-                  <td colspan="3" class="text-muted">No categories are configured yet.</td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
+<section class="category-toolbar">
+  <div class="category-toolbar__grid">
+    <form method="get" class="d-flex gap-2 align-items-end">
+      <div class="flex-grow-1">
+        <label class="form-label mb-1">Category</label>
+        <select class="form-select" name="category">
+          {% for category in categories %}
+            <option value="{{ category.pk }}"{% if selected_category and category.pk == selected_category.pk %} selected{% endif %}>{{ category.name }}</option>
+          {% endfor %}
+        </select>
       </div>
-    </div>
+      <button class="btn btn-primary btn-sm" type="submit">Open</button>
+    </form>
+    <a class="btn btn-outline-primary btn-sm" href="{% url 'patients:settings_categories' %}?mode=create">New Category</a>
+    {% if create_mode and categories %}
+      <a class="btn btn-outline-secondary btn-sm" href="{% url 'patients:settings_categories' %}?category={{ categories.0.pk }}">Cancel</a>
+    {% endif %}
   </div>
+</section>
 
-  <div class="col-12 col-xl-7">
-    <div class="settings-panel-card">
-      <div class="card-body">
-        {% if selected_category and edit_form %}
-          <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
-            <div>
-              <h2 class="h6 mb-1">Edit Category</h2>
-              <div class="fw-semibold">{{ selected_category.name }}</div>
-              <div class="text-muted small">Theme colors stay on the Theme settings page.</div>
-            </div>
-            <a class="btn btn-outline-primary btn-sm" href="{% url 'patients:settings_theme' %}">Edit Colors</a>
-          </div>
-
-          {% if edit_form.non_field_errors %}
-            <div class="alert alert-danger py-2">{{ edit_form.non_field_errors }}</div>
-          {% endif %}
-
-          <form method="post">
-            {% csrf_token %}
-            <input type="hidden" name="action" value="update_category" />
-            <input type="hidden" name="category_id" value="{{ selected_category.pk }}" />
-            <div class="row g-3">
-              <div class="col-12 col-md-6">
-                {{ edit_form.name.label_tag }}
-                {{ edit_form.name }}
-                {% if edit_form.name.errors %}<div class="text-danger small mt-1">{{ edit_form.name.errors|striptags }}</div>{% endif %}
-              </div>
-              <div class="col-12 col-md-6">
-                {{ edit_form.auto_follow_up_days.label_tag }}
-                {{ edit_form.auto_follow_up_days }}
-                {% if edit_form.auto_follow_up_days.help_text %}<div class="form-text">{{ edit_form.auto_follow_up_days.help_text }}</div>{% endif %}
-                {% if edit_form.auto_follow_up_days.errors %}<div class="text-danger small mt-1">{{ edit_form.auto_follow_up_days.errors|striptags }}</div>{% endif %}
-              </div>
-              <div class="col-12">
-                {{ edit_form.predefined_actions_text.label_tag }}
-                {{ edit_form.predefined_actions_text }}
-                {% if edit_form.predefined_actions_text.help_text %}<div class="form-text">{{ edit_form.predefined_actions_text.help_text }}</div>{% endif %}
-                {% if edit_form.predefined_actions_text.errors %}<div class="text-danger small mt-1">{{ edit_form.predefined_actions_text.errors|striptags }}</div>{% endif %}
-              </div>
-              <div class="col-12">
-                {{ edit_form.metadata_template_text.label_tag }}
-                {{ edit_form.metadata_template_text }}
-                {% if edit_form.metadata_template_text.help_text %}<div class="form-text">{{ edit_form.metadata_template_text.help_text }}</div>{% endif %}
-                {% if edit_form.metadata_template_text.errors %}<div class="text-danger small mt-1">{{ edit_form.metadata_template_text.errors|striptags }}</div>{% endif %}
-              </div>
-            </div>
-            <button class="btn btn-primary btn-sm mt-3">Save Category</button>
-          </form>
-        {% else %}
-          <div class="text-muted">No categories are available to edit.</div>
+{% if selected_card %}
+  <section class="category-editor" data-starter-plan>
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
+      <div>
+        <h2 class="h4 mb-1">{{ selected_card.category.name }}</h2>
+        {% if selected_card.subcategory_group_label %}
+          <div class="text-muted small">{{ selected_card.subcategory_group_label }}</div>
         {% endif %}
       </div>
-    </div>
-  </div>
-</div>
-
-<div class="settings-panel-card">
-  <div class="card-body">
-    <div class="mb-3">
-      <h2 class="h6 mb-1">Create Category</h2>
-      <p class="text-muted small mb-0">Add a new category and set its non-visual defaults. Theme colors can be adjusted later on the Theme page.</p>
+      <span class="workflow-pill{% if selected_card.workflow_key == 'generic' %} workflow-pill--muted{% endif %}">{{ selected_card.workflow_badge }}</span>
     </div>
 
-    {% if create_form.non_field_errors %}
-      <div class="alert alert-danger py-2">{{ create_form.non_field_errors }}</div>
+    <div class="category-summary">
+      <div class="category-summary__item">
+        <div class="category-summary__label">Cases</div>
+        <div class="category-summary__value">{{ selected_card.case_count }}</div>
+      </div>
+      <div class="category-summary__item">
+        <div class="category-summary__label">Active</div>
+        <div class="category-summary__value">{{ selected_card.active_case_count }}</div>
+      </div>
+      <div class="category-summary__item">
+        <div class="category-summary__label">Starter tasks</div>
+        <div class="category-summary__value">{{ selected_card.task_formset.forms|length }}</div>
+      </div>
+      <div class="category-summary__item">
+        <div class="category-summary__label">Extra fields</div>
+        <div class="category-summary__value">{{ selected_card.metadata_items|length }}</div>
+      </div>
+    </div>
+
+    {% if selected_card.workflow_note %}
+      <div class="category-note">{{ selected_card.workflow_note }}</div>
+    {% endif %}
+    {% if selected_card.rename_is_risky %}
+      <div class="category-warning">{{ selected_card.rename_warning }}</div>
     {% endif %}
 
     <form method="post">
       {% csrf_token %}
+      <input type="hidden" name="action" value="update_category" />
+      <input type="hidden" name="category_id" value="{{ selected_card.category.pk }}" />
+
+      <section class="category-section">
+        <div class="category-section__header">
+          <div>
+            <div class="category-section__title">Starter Tasks</div>
+            <div class="starter-note">Use negative days for tasks before the base date.</div>
+          </div>
+          <button class="btn btn-outline-primary btn-sm" type="button" data-add-task>Add Task</button>
+        </div>
+
+        {{ selected_card.task_formset.management_form }}
+        {% if selected_card.task_formset.non_form_errors %}
+          <div class="alert alert-danger py-2">{{ selected_card.task_formset.non_form_errors }}</div>
+        {% endif %}
+
+        <div class="starter-list" data-task-list>
+          {% for task_form in selected_card.task_formset.forms %}
+            <article class="starter-row" data-task-row>
+              <div class="d-none">{{ task_form.DELETE }}</div>
+              <div class="starter-row__grid{% if selected_card.show_pathway %} is-surgery{% endif %}">
+                <div class="starter-field">
+                  {{ task_form.title.label_tag }}
+                  {{ task_form.title }}
+                  {% if task_form.title.errors %}<div class="text-danger small mt-1">{{ task_form.title.errors|striptags }}</div>{% endif %}
+                </div>
+                {% if selected_card.show_pathway %}
+                  <div class="starter-field">
+                    {{ task_form.applies_to.label_tag }}
+                    {{ task_form.applies_to }}
+                    {% if task_form.applies_to.errors %}<div class="text-danger small mt-1">{{ task_form.applies_to.errors|striptags }}</div>{% endif %}
+                  </div>
+                {% else %}
+                  {{ task_form.applies_to }}
+                {% endif %}
+                <div class="starter-field">
+                  {{ task_form.anchor.label_tag }}
+                  {{ task_form.anchor }}
+                  {% if task_form.anchor.errors %}<div class="text-danger small mt-1">{{ task_form.anchor.errors|striptags }}</div>{% endif %}
+                </div>
+                <div class="starter-field">
+                  {{ task_form.offset_days.label_tag }}
+                  {{ task_form.offset_days }}
+                  {% if task_form.offset_days.errors %}<div class="text-danger small mt-1">{{ task_form.offset_days.errors|striptags }}</div>{% endif %}
+                </div>
+                <div class="starter-field">
+                  {{ task_form.task_type.label_tag }}
+                  {{ task_form.task_type }}
+                  {% if task_form.task_type.errors %}<div class="text-danger small mt-1">{{ task_form.task_type.errors|striptags }}</div>{% endif %}
+                </div>
+                <div class="starter-field">
+                  {{ task_form.frequency_label.label_tag }}
+                  {{ task_form.frequency_label }}
+                  {% if task_form.frequency_label.errors %}<div class="text-danger small mt-1">{{ task_form.frequency_label.errors|striptags }}</div>{% endif %}
+                </div>
+                <button class="btn btn-outline-danger btn-sm starter-remove" type="button" data-task-remove>Remove</button>
+              </div>
+            </article>
+          {% endfor %}
+        </div>
+
+        <template data-empty-form-template>
+          <article class="starter-row" data-task-row>
+            <div class="d-none">{{ selected_card.task_formset.empty_form.DELETE }}</div>
+            <div class="starter-row__grid{% if selected_card.show_pathway %} is-surgery{% endif %}">
+              <div class="starter-field">
+                {{ selected_card.task_formset.empty_form.title.label_tag }}
+                {{ selected_card.task_formset.empty_form.title }}
+              </div>
+              {% if selected_card.show_pathway %}
+                <div class="starter-field">
+                  {{ selected_card.task_formset.empty_form.applies_to.label_tag }}
+                  {{ selected_card.task_formset.empty_form.applies_to }}
+                </div>
+              {% else %}
+                {{ selected_card.task_formset.empty_form.applies_to }}
+              {% endif %}
+              <div class="starter-field">
+                {{ selected_card.task_formset.empty_form.anchor.label_tag }}
+                {{ selected_card.task_formset.empty_form.anchor }}
+              </div>
+              <div class="starter-field">
+                {{ selected_card.task_formset.empty_form.offset_days.label_tag }}
+                {{ selected_card.task_formset.empty_form.offset_days }}
+              </div>
+              <div class="starter-field">
+                {{ selected_card.task_formset.empty_form.task_type.label_tag }}
+                {{ selected_card.task_formset.empty_form.task_type }}
+              </div>
+              <div class="starter-field">
+                {{ selected_card.task_formset.empty_form.frequency_label.label_tag }}
+                {{ selected_card.task_formset.empty_form.frequency_label }}
+              </div>
+              <button class="btn btn-outline-danger btn-sm starter-remove" type="button" data-task-remove>Remove</button>
+            </div>
+          </article>
+        </template>
+      </section>
+
+      <section class="category-section">
+        <div class="category-section__title">Category Details</div>
+        <div class="category-details-grid">
+          <div>
+            {{ selected_card.form.name.label_tag }}
+            {{ selected_card.form.name }}
+            {% if selected_card.form.name.errors %}<div class="text-danger small mt-1">{{ selected_card.form.name.errors|striptags }}</div>{% endif %}
+          </div>
+          <div>
+            {{ selected_card.form.auto_follow_up_days.label_tag }}
+            {{ selected_card.form.auto_follow_up_days }}
+            {% if selected_card.form.auto_follow_up_days.errors %}<div class="text-danger small mt-1">{{ selected_card.form.auto_follow_up_days.errors|striptags }}</div>{% endif %}
+          </div>
+        </div>
+
+        <div class="mt-3">
+          {% if selected_card.metadata_items %}
+            <div class="field-pill-list mb-3">
+              {% for meta in selected_card.metadata_items %}
+                <span class="field-pill">{{ meta.key }}{% if meta.display_value != 'Text' %}: {{ meta.display_value }}{% endif %}</span>
+              {% endfor %}
+            </div>
+          {% else %}
+            <div class="field-pill-list mb-3">
+              <span class="field-pill field-pill--empty">No extra case details</span>
+            </div>
+          {% endif %}
+          {{ selected_card.form.metadata_template_text.label_tag }}
+          {{ selected_card.form.metadata_template_text }}
+          {% if selected_card.form.metadata_template_text.help_text %}<div class="form-text">{{ selected_card.form.metadata_template_text.help_text }}</div>{% endif %}
+          {% if selected_card.form.metadata_template_text.errors %}<div class="text-danger small mt-1">{{ selected_card.form.metadata_template_text.errors|striptags }}</div>{% endif %}
+        </div>
+      </section>
+
+      {% if selected_card.form.non_field_errors %}
+        <div class="alert alert-danger py-2">{{ selected_card.form.non_field_errors }}</div>
+      {% endif %}
+
+      <button class="btn btn-primary btn-sm" type="submit">Save Category</button>
+    </form>
+  </section>
+{% endif %}
+
+{% if create_mode %}
+  <section class="category-create-card" data-starter-plan>
+    <h2 class="h4 mb-3">New Category</h2>
+
+    <form method="post">
+      {% csrf_token %}
       <input type="hidden" name="action" value="create_category" />
-      <input type="hidden" name="selected_category_id" value="{{ selected_category.pk|default:'' }}" />
-      <div class="row g-3">
-        <div class="col-12 col-md-6">
-          {{ create_form.name.label_tag }}
-          {{ create_form.name }}
-          {% if create_form.name.errors %}<div class="text-danger small mt-1">{{ create_form.name.errors|striptags }}</div>{% endif %}
+
+      <section class="category-section">
+        <div class="category-section__header">
+          <div>
+            <div class="category-section__title">Starter Tasks</div>
+            <div class="starter-note">Use negative days for tasks before the base date.</div>
+          </div>
+          <button class="btn btn-outline-primary btn-sm" type="button" data-add-task>Add Task</button>
         </div>
-        <div class="col-12 col-md-6">
-          {{ create_form.auto_follow_up_days.label_tag }}
-          {{ create_form.auto_follow_up_days }}
-          {% if create_form.auto_follow_up_days.help_text %}<div class="form-text">{{ create_form.auto_follow_up_days.help_text }}</div>{% endif %}
-          {% if create_form.auto_follow_up_days.errors %}<div class="text-danger small mt-1">{{ create_form.auto_follow_up_days.errors|striptags }}</div>{% endif %}
+
+        {{ create_task_formset.management_form }}
+        {% if create_task_formset.non_form_errors %}
+          <div class="alert alert-danger py-2">{{ create_task_formset.non_form_errors }}</div>
+        {% endif %}
+
+        <div class="starter-list" data-task-list>
+          {% for task_form in create_task_formset.forms %}
+            <article class="starter-row" data-task-row>
+              <div class="d-none">{{ task_form.DELETE }}</div>
+              <div class="starter-row__grid">
+                <div class="starter-field">
+                  {{ task_form.title.label_tag }}
+                  {{ task_form.title }}
+                  {% if task_form.title.errors %}<div class="text-danger small mt-1">{{ task_form.title.errors|striptags }}</div>{% endif %}
+                </div>
+                {{ task_form.applies_to }}
+                <div class="starter-field">
+                  {{ task_form.anchor.label_tag }}
+                  {{ task_form.anchor }}
+                  {% if task_form.anchor.errors %}<div class="text-danger small mt-1">{{ task_form.anchor.errors|striptags }}</div>{% endif %}
+                </div>
+                <div class="starter-field">
+                  {{ task_form.offset_days.label_tag }}
+                  {{ task_form.offset_days }}
+                  {% if task_form.offset_days.errors %}<div class="text-danger small mt-1">{{ task_form.offset_days.errors|striptags }}</div>{% endif %}
+                </div>
+                <div class="starter-field">
+                  {{ task_form.task_type.label_tag }}
+                  {{ task_form.task_type }}
+                  {% if task_form.task_type.errors %}<div class="text-danger small mt-1">{{ task_form.task_type.errors|striptags }}</div>{% endif %}
+                </div>
+                <div class="starter-field">
+                  {{ task_form.frequency_label.label_tag }}
+                  {{ task_form.frequency_label }}
+                  {% if task_form.frequency_label.errors %}<div class="text-danger small mt-1">{{ task_form.frequency_label.errors|striptags }}</div>{% endif %}
+                </div>
+                <button class="btn btn-outline-danger btn-sm starter-remove" type="button" data-task-remove>Remove</button>
+              </div>
+            </article>
+          {% endfor %}
         </div>
-        <div class="col-12">
-          {{ create_form.predefined_actions_text.label_tag }}
-          {{ create_form.predefined_actions_text }}
-          {% if create_form.predefined_actions_text.help_text %}<div class="form-text">{{ create_form.predefined_actions_text.help_text }}</div>{% endif %}
-          {% if create_form.predefined_actions_text.errors %}<div class="text-danger small mt-1">{{ create_form.predefined_actions_text.errors|striptags }}</div>{% endif %}
+
+        <template data-empty-form-template>
+          <article class="starter-row" data-task-row>
+            <div class="d-none">{{ create_task_formset.empty_form.DELETE }}</div>
+            <div class="starter-row__grid">
+              <div class="starter-field">
+                {{ create_task_formset.empty_form.title.label_tag }}
+                {{ create_task_formset.empty_form.title }}
+              </div>
+              {{ create_task_formset.empty_form.applies_to }}
+              <div class="starter-field">
+                {{ create_task_formset.empty_form.anchor.label_tag }}
+                {{ create_task_formset.empty_form.anchor }}
+              </div>
+              <div class="starter-field">
+                {{ create_task_formset.empty_form.offset_days.label_tag }}
+                {{ create_task_formset.empty_form.offset_days }}
+              </div>
+              <div class="starter-field">
+                {{ create_task_formset.empty_form.task_type.label_tag }}
+                {{ create_task_formset.empty_form.task_type }}
+              </div>
+              <div class="starter-field">
+                {{ create_task_formset.empty_form.frequency_label.label_tag }}
+                {{ create_task_formset.empty_form.frequency_label }}
+              </div>
+              <button class="btn btn-outline-danger btn-sm starter-remove" type="button" data-task-remove>Remove</button>
+            </div>
+          </article>
+        </template>
+      </section>
+
+      <section class="category-section">
+        <div class="category-section__title">Category Details</div>
+        <div class="category-details-grid">
+          <div>
+            {{ create_form.name.label_tag }}
+            {{ create_form.name }}
+            {% if create_form.name.errors %}<div class="text-danger small mt-1">{{ create_form.name.errors|striptags }}</div>{% endif %}
+          </div>
+          <div>
+            {{ create_form.auto_follow_up_days.label_tag }}
+            {{ create_form.auto_follow_up_days }}
+            {% if create_form.auto_follow_up_days.errors %}<div class="text-danger small mt-1">{{ create_form.auto_follow_up_days.errors|striptags }}</div>{% endif %}
+          </div>
         </div>
-        <div class="col-12">
+        <div class="mt-3">
           {{ create_form.metadata_template_text.label_tag }}
           {{ create_form.metadata_template_text }}
           {% if create_form.metadata_template_text.help_text %}<div class="form-text">{{ create_form.metadata_template_text.help_text }}</div>{% endif %}
           {% if create_form.metadata_template_text.errors %}<div class="text-danger small mt-1">{{ create_form.metadata_template_text.errors|striptags }}</div>{% endif %}
         </div>
-      </div>
-      <button class="btn btn-primary btn-sm mt-3">Create Category</button>
+      </section>
+
+      {% if create_form.non_field_errors %}
+        <div class="alert alert-danger py-2">{{ create_form.non_field_errors }}</div>
+      {% endif %}
+
+      <button class="btn btn-primary btn-sm" type="submit">Create Category</button>
     </form>
-  </div>
-</div>
+  </section>
+{% endif %}
+
+<script>
+  (() => {
+    function bindStarterPlan(shell) {
+      const totalFormsInput = shell.querySelector('input[name$="-TOTAL_FORMS"]');
+      const list = shell.querySelector('[data-task-list]');
+      const template = shell.querySelector('[data-empty-form-template]');
+      const addButton = shell.querySelector('[data-add-task]');
+      if (!totalFormsInput || !list || !template || !addButton) {
+        return;
+      }
+
+      addButton.addEventListener('click', () => {
+        const index = Number(totalFormsInput.value);
+        const html = template.innerHTML.replaceAll('__prefix__', String(index));
+        list.insertAdjacentHTML('beforeend', html);
+        totalFormsInput.value = String(index + 1);
+      });
+
+      shell.addEventListener('click', (event) => {
+        const removeButton = event.target.closest('[data-task-remove]');
+        if (!removeButton) {
+          return;
+        }
+        const row = removeButton.closest('[data-task-row]');
+        const deleteInput = row ? row.querySelector('input[name$="-DELETE"]') : null;
+        if (!row || !deleteInput) {
+          return;
+        }
+        deleteInput.checked = true;
+        row.classList.add('is-hidden');
+      });
+    }
+
+    document.querySelectorAll('[data-starter-plan]').forEach(bindStarterPlan);
+  })();
+</script>
 {% endblock %}

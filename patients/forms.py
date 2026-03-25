@@ -6,7 +6,7 @@ from django.utils import timezone
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.db.models import Q
-from django.forms import modelformset_factory
+from django.forms import formset_factory, modelformset_factory
 
 from .models import (
     AncHighRiskReason,
@@ -26,8 +26,11 @@ from .models import (
     PatientDataBackupSchedule,
     NonCommunicableDisease,
     RoleSetting,
+    StarterTaskAnchor,
+    StarterTaskAppliesTo,
     Task,
     TaskStatus,
+    TaskType,
     ThemeSettings,
     UserAdminNote,
     valid_case_subcategory_values_for_category_name,
@@ -65,6 +68,20 @@ PATIENT_MODE_CHOICES = [("new", "New patient"), ("existing", "Existing patient")
 
 
 class StyledModelForm(forms.ModelForm):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field in self.fields.values():
+            if isinstance(field.widget, (forms.CheckboxInput, forms.CheckboxSelectMultiple)):
+                css_class = "form-check-input"
+            elif isinstance(field.widget, forms.Select):
+                css_class = "form-select"
+            else:
+                css_class = "form-control"
+            existing = field.widget.attrs.get("class", "")
+            field.widget.attrs["class"] = f"{existing} {css_class}".strip()
+
+
+class StyledForm(forms.Form):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         for field in self.fields.values():
@@ -826,42 +843,187 @@ class RoleSettingUpdateForm(RoleSettingForm):
 
 
 class DepartmentConfigForm(StyledModelForm):
-    predefined_actions_text = forms.CharField(required=False, help_text="Comma-separated actions")
-    metadata_template_text = forms.CharField(required=False, widget=forms.Textarea(attrs={"rows": 2}), help_text="JSON object")
+    @staticmethod
+    def _friendly_field_type_label(value):
+        text = str(value or "").strip()
+        normalized = text.lower()
+        return {
+            "string": "Text",
+            "str": "Text",
+            "text": "Text",
+            "date": "Date",
+            "datetime": "Date",
+            "number": "Number",
+            "integer": "Number",
+            "int": "Number",
+            "float": "Number",
+            "decimal": "Number",
+            "bool": "Yes/No",
+            "boolean": "Yes/No",
+            "yes/no": "Yes/No",
+        }.get(normalized, text.title() if text else "Text")
+
+    @staticmethod
+    def _normalize_field_type_value(value):
+        text = str(value or "").strip()
+        normalized = text.lower()
+        return {
+            "": "String",
+            "text": "String",
+            "string": "String",
+            "str": "String",
+            "date": "Date",
+            "datetime": "Date",
+            "number": "Number",
+            "integer": "Number",
+            "int": "Number",
+            "float": "Number",
+            "decimal": "Number",
+            "bool": "Boolean",
+            "boolean": "Boolean",
+            "yes/no": "Boolean",
+        }.get(normalized, text.title() if text else "String")
+
+    metadata_template_text = forms.CharField(
+        required=False,
+        widget=forms.Textarea(
+            attrs={
+                "rows": 4,
+                "spellcheck": "false",
+                "placeholder": "Review date: Date\nVisit reason",
+            }
+        ),
+        help_text="Optional.",
+    )
 
     class Meta:
         model = DepartmentConfig
-        fields = ["name", "auto_follow_up_days", "predefined_actions_text", "metadata_template_text"]
+        fields = ["name", "auto_follow_up_days", "metadata_template_text"]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["auto_follow_up_days"].help_text = (
-            "Retained for future workflow defaults. Changing this does not alter live task generation today."
-        )
+        self.fields["name"].label = "Category name"
+        self.fields["auto_follow_up_days"].label = "Follow-up in days"
+        self.fields["metadata_template_text"].label = "Case details"
+        self.fields["name"].help_text = ""
+        self.fields["auto_follow_up_days"].help_text = ""
         if self.instance.pk:
-            self.fields["predefined_actions_text"].initial = ", ".join(self.instance.predefined_actions or [])
-            self.fields["metadata_template_text"].initial = json.dumps(self.instance.metadata_template or {})
+            self.fields["metadata_template_text"].initial = "\n".join(
+                f"{key}: {self._friendly_field_type_label(value)}"
+                for key, value in (self.instance.metadata_template or {}).items()
+            )
 
     def clean_metadata_template_text(self):
         raw = self.cleaned_data.get("metadata_template_text", "").strip()
         if not raw:
             return {}
+        if not raw.startswith("{"):
+            parsed = {}
+            for line in raw.replace("\r\n", "\n").split("\n"):
+                item = line.strip()
+                if not item:
+                    continue
+                if ":" in item:
+                    key, value = item.split(":", 1)
+                    key = key.strip()
+                    value = value.strip()
+                else:
+                    key = item
+                    value = "String"
+                if not key:
+                    raise forms.ValidationError("Each extra field needs a name.")
+                parsed[key] = self._normalize_field_type_value(value)
+            return parsed
         try:
             parsed = json.loads(raw)
             if not isinstance(parsed, dict):
                 raise forms.ValidationError("Metadata template must be a JSON object.")
-            return parsed
+            return {
+                str(key).strip(): self._normalize_field_type_value(value)
+                for key, value in parsed.items()
+                if str(key).strip()
+            }
         except json.JSONDecodeError as exc:
             raise forms.ValidationError(f"Invalid JSON: {exc}")
 
     def save(self, commit=True):
         instance = super().save(commit=False)
-        actions_raw = self.cleaned_data.get("predefined_actions_text", "")
-        instance.predefined_actions = [a.strip() for a in actions_raw.split(",") if a.strip()]
         instance.metadata_template = self.cleaned_data.get("metadata_template_text", {})
         if commit:
             instance.save()
         return instance
+
+
+class StarterTaskTemplateForm(StyledForm):
+    title = forms.CharField(
+        label="Task",
+        max_length=200,
+        widget=forms.TextInput(attrs={"placeholder": "Routine prenatal check up"}),
+    )
+    applies_to = forms.ChoiceField(
+        label="Show for",
+        choices=StarterTaskAppliesTo.choices,
+        required=False,
+    )
+    anchor = forms.ChoiceField(label="Based on", choices=())
+    offset_days = forms.IntegerField(
+        label="Days",
+        initial=0,
+        widget=forms.NumberInput(attrs={"step": "1"}),
+    )
+    task_type = forms.ChoiceField(label="Type", choices=TaskType.choices)
+    frequency_label = forms.CharField(
+        label="Section",
+        required=False,
+        max_length=100,
+        widget=forms.TextInput(attrs={"placeholder": "ANC month 2"}),
+    )
+
+    def __init__(self, *args, workflow_key="generic", show_pathway=False, **kwargs):
+        self.workflow_key = workflow_key
+        self.show_pathway = show_pathway
+        super().__init__(*args, **kwargs)
+        self.fields["anchor"].choices = self._anchor_choices_for_workflow(workflow_key)
+        self.fields["applies_to"].initial = StarterTaskAppliesTo.ALWAYS
+        if not show_pathway:
+            self.fields["applies_to"].widget = forms.HiddenInput()
+        if workflow_key == "anc":
+            self.fields["frequency_label"].widget.attrs["placeholder"] = "ANC month 2"
+        elif workflow_key == "surgery":
+            self.fields["frequency_label"].widget.attrs["placeholder"] = "Pre-op"
+        else:
+            self.fields["frequency_label"].widget.attrs["placeholder"] = "Review"
+
+    @staticmethod
+    def _anchor_choices_for_workflow(workflow_key):
+        if workflow_key == "anc":
+            return [
+                (StarterTaskAnchor.LMP, "LMP"),
+                (StarterTaskAnchor.EFFECTIVE_EDD, "EDD"),
+            ]
+        if workflow_key == "surgery":
+            return [
+                (StarterTaskAnchor.SURGERY_DATE, "Surgery date"),
+                (StarterTaskAnchor.REVIEW_DATE, "Review date"),
+                (StarterTaskAnchor.CREATED_DATE, "Case created day"),
+            ]
+        return [
+            (StarterTaskAnchor.REVIEW_DATE, "Review date"),
+            (StarterTaskAnchor.CREATED_DATE, "Case created day"),
+        ]
+
+    def clean(self):
+        cleaned_data = super().clean()
+        if not self.show_pathway:
+            cleaned_data["applies_to"] = StarterTaskAppliesTo.ALWAYS
+        return cleaned_data
+
+
+StarterTaskTemplateFormSet = formset_factory(
+    StarterTaskTemplateForm,
+    extra=0,
+    can_delete=True,
+)
 
 
 class ThemeSettingsForm(forms.Form):

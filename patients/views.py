@@ -59,6 +59,7 @@ from .forms import (
     RoleSettingForm,
     RoleSettingUpdateForm,
     SeedMockDataForm,
+    StarterTaskTemplateFormSet,
     TaskForm,
     ThemeSettingsForm,
     UserManagementCreateForm,
@@ -100,8 +101,10 @@ from .models import (
     VitalEntry,
     build_default_tasks,
     cancel_open_rch_reminders,
+    case_subcategory_group_for_category_name,
     clone_role_setting,
     create_quick_entry_details_task,
+    default_starter_task_templates_for_category_name,
     ensure_default_departments,
     ensure_rch_reminder_task,
     ensure_default_role_settings,
@@ -109,7 +112,9 @@ from .models import (
     generate_quick_entry_uhid,
     is_anc_case,
     plan_default_tasks,
+    starter_task_templates_for_category,
     workflow_key_for_case,
+    workflow_key_for_category_name,
 )
 from .theme import (
     build_theme_category_colors,
@@ -6159,31 +6164,188 @@ class CategorySettingsView(LoginRequiredMixin, View):
                     return category
         return categories[0] if categories else None
 
-    def _build_context(self, *, create_form=None, edit_form=None, selected_category_id=None):
+    def _categories(self):
         ensure_default_departments()
-        categories = list(DepartmentConfig.objects.order_by("name"))
-        selected_category = self._selected_category(categories, selected_category_id)
-        if edit_form is not None and getattr(edit_form.instance, "pk", None):
-            selected_category = next(
-                (category for category in categories if category.pk == edit_form.instance.pk),
-                edit_form.instance,
-            )
+        return list(
+            DepartmentConfig.objects.annotate(
+                case_count=Count("cases", distinct=True),
+                active_case_count=Count(
+                    "cases",
+                    filter=Q(cases__is_archived=False, cases__status=CaseStatus.ACTIVE),
+                    distinct=True,
+                ),
+            ).order_by("name")
+        )
+
+    @staticmethod
+    def _workflow_badge(workflow_key):
         return {
-            "create_form": create_form or DepartmentConfigForm(),
-            "edit_form": edit_form or (DepartmentConfigForm(instance=selected_category) if selected_category else None),
-            "selected_category": selected_category,
+            "anc": "ANC",
+            "surgery": "Surgery",
+            "medicine": "Medicine",
+            "generic": "Custom",
+        }.get(workflow_key, "Custom")
+
+    @staticmethod
+    def _friendly_field_type(value):
+        text = str(value or "").strip()
+        normalized = text.lower()
+        return {
+            "string": "Text",
+            "str": "Text",
+            "text": "Text",
+            "date": "Date",
+            "datetime": "Date",
+            "number": "Number",
+            "integer": "Number",
+            "int": "Number",
+            "float": "Number",
+            "decimal": "Number",
+            "bool": "Yes/No",
+            "boolean": "Yes/No",
+            "yes/no": "Yes/No",
+        }.get(normalized, text.title() if text else "Text")
+
+    @staticmethod
+    def _workflow_note(workflow_key):
+        return {
+            "anc": "Uses LMP and EDD. RCH reminder is still added automatically when RCH bypass is used.",
+            "surgery": "Use Show for to separate planned surgery and surveillance tasks.",
+            "medicine": "Tasks usually use review date.",
+            "generic": "Tasks can use review date or case created day.",
+        }.get(workflow_key, "")
+
+    def _describe_category(self, category, *, category_form, task_formset):
+        workflow_key = workflow_key_for_category_name(category.name)
+        subcategory_group = case_subcategory_group_for_category_name(category.name)
+        metadata_items = [
+            {
+                "key": key,
+                "display_value": self._friendly_field_type(value),
+            }
+            for key, value in sorted((category.metadata_template or {}).items())
+        ]
+        return {
+            "category": category,
+            "workflow_key": workflow_key,
+            "workflow_badge": self._workflow_badge(workflow_key),
+            "subcategory_group_label": {
+                "surgery": "Uses surgery specialty list",
+                "medicine": "Uses medicine specialty list",
+            }.get(subcategory_group),
+            "workflow_note": self._workflow_note(workflow_key),
+            "metadata_items": metadata_items,
+            "case_count": getattr(category, "case_count", 0),
+            "active_case_count": getattr(category, "active_case_count", 0),
+            "rename_is_risky": workflow_key != "generic",
+            "rename_warning": "Renaming built-in categories changes workflow routing.",
+            "form": category_form,
+            "task_formset": task_formset,
+            "show_pathway": workflow_key == "surgery",
+        }
+
+    def _task_formset(self, *, category=None, data=None, prefix="starter_tasks"):
+        workflow_key = workflow_key_for_category_name(category.name) if category else "generic"
+        kwargs = {
+            "data": data,
+            "prefix": prefix,
+            "form_kwargs": {
+                "workflow_key": workflow_key,
+                "show_pathway": workflow_key == "surgery",
+            },
+        }
+        if data is None:
+            kwargs["initial"] = (
+                starter_task_templates_for_category(category)
+                if category is not None
+                else default_starter_task_templates_for_category_name("Custom")
+            )
+        return StarterTaskTemplateFormSet(**kwargs)
+
+    @staticmethod
+    def _task_templates_from_formset(task_formset):
+        templates = []
+        for form in task_formset:
+            cleaned_data = getattr(form, "cleaned_data", None) or {}
+            if not cleaned_data or cleaned_data.get("DELETE"):
+                continue
+            title = cleaned_data.get("title")
+            if not title:
+                continue
+            templates.append(
+                {
+                    "title": cleaned_data["title"],
+                    "applies_to": cleaned_data.get("applies_to"),
+                    "anchor": cleaned_data["anchor"],
+                    "offset_days": cleaned_data["offset_days"],
+                    "task_type": cleaned_data["task_type"],
+                    "frequency_label": cleaned_data.get("frequency_label", ""),
+                }
+            )
+        return templates
+
+    def _validate_task_formset(self, task_formset):
+        if not task_formset.is_valid():
+            return False, []
+        templates = self._task_templates_from_formset(task_formset)
+        if templates:
+            return True, templates
+        task_formset._non_form_errors = task_formset.error_class(["Add at least one starter task."])
+        return False, []
+
+    def _save_category(self, category_form, task_formset):
+        category = category_form.save(commit=False)
+        category.starter_task_templates = self._task_templates_from_formset(task_formset)
+        category.save()
+        return category
+
+    def _build_context(
+        self,
+        *,
+        selected_category_id=None,
+        create_mode=False,
+        create_form=None,
+        create_task_formset=None,
+        edit_form=None,
+        edit_task_formset=None,
+    ):
+        categories = self._categories()
+        if not categories:
+            create_mode = True
+        selected_category = None if create_mode else self._selected_category(categories, selected_category_id)
+        if selected_category is None and categories and not create_mode:
+            selected_category = categories[0]
+
+        selected_card = None
+        if selected_category is not None:
+            selected_form = edit_form or DepartmentConfigForm(instance=selected_category)
+            selected_task_formset = edit_task_formset or self._task_formset(category=selected_category)
+            selected_card = self._describe_category(
+                selected_category,
+                category_form=selected_form,
+                task_formset=selected_task_formset,
+            )
+
+        create_form = create_form or DepartmentConfigForm()
+        create_task_formset = create_task_formset or self._task_formset(prefix="create_starter_tasks")
+        return {
             "categories": categories,
+            "selected_category": selected_category,
+            "selected_card": selected_card,
+            "create_mode": create_mode,
+            "create_form": create_form,
+            "create_task_formset": create_task_formset,
         }
 
     def get(self, request):
         denied = self._check_access(request)
         if denied:
             return denied
-        return render(
-            request,
-            self.template_name,
-            self._build_context(selected_category_id=request.GET.get("category")),
-        )
+        create_mode = request.GET.get("mode") == "create"
+        return render(request, self.template_name, self._build_context(
+            selected_category_id=request.GET.get("category"),
+            create_mode=create_mode,
+        ))
 
     def post(self, request):
         denied = self._check_access(request)
@@ -6191,36 +6353,47 @@ class CategorySettingsView(LoginRequiredMixin, View):
             return denied
 
         action = request.POST.get("action")
-        selected_category_id = request.POST.get("selected_category_id") or request.POST.get("category_id")
         if action == "create_category":
             create_form = DepartmentConfigForm(request.POST)
-            if create_form.is_valid():
-                category = create_form.save()
+            create_task_formset = self._task_formset(data=request.POST, prefix="create_starter_tasks")
+            is_task_formset_valid, _ = self._validate_task_formset(create_task_formset)
+            if create_form.is_valid() and is_task_formset_valid:
+                category = self._save_category(create_form, create_task_formset)
                 messages.success(request, f"Saved category {category.name}.")
                 return redirect(_settings_url("patients:settings_categories", category=category.pk))
             messages.error(request, "Category creation has errors.")
             return render(
                 request,
                 self.template_name,
-                self._build_context(create_form=create_form, selected_category_id=selected_category_id),
+                self._build_context(
+                    create_mode=True,
+                    create_form=create_form,
+                    create_task_formset=create_task_formset,
+                ),
             )
 
         if action == "update_category":
             category = get_object_or_404(DepartmentConfig, pk=request.POST.get("category_id"))
             edit_form = DepartmentConfigForm(request.POST, instance=category)
-            if edit_form.is_valid():
-                category = edit_form.save()
+            edit_task_formset = self._task_formset(category=category, data=request.POST)
+            is_task_formset_valid, _ = self._validate_task_formset(edit_task_formset)
+            if edit_form.is_valid() and is_task_formset_valid:
+                category = self._save_category(edit_form, edit_task_formset)
                 messages.success(request, f"Updated category {category.name}.")
                 return redirect(_settings_url("patients:settings_categories", category=category.pk))
             messages.error(request, "Category update has errors.")
             return render(
                 request,
                 self.template_name,
-                self._build_context(edit_form=edit_form, selected_category_id=category.pk),
+                self._build_context(
+                    selected_category_id=category.pk,
+                    edit_form=edit_form,
+                    edit_task_formset=edit_task_formset,
+                ),
             )
 
         messages.error(request, "Unknown category action.")
-        return redirect(_settings_url("patients:settings_categories", category=selected_category_id))
+        return redirect(_settings_url("patients:settings_categories"))
 
 
 class AdminSettingsView(LoginRequiredMixin, View):

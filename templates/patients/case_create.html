@@ -225,6 +225,10 @@
                         <dd>{{ selected_patient.get_gender_display|default:selected_patient.gender|default:"-" }}</dd>
                       </div>
                       <div>
+                        <dt>Blood Group</dt>
+                        <dd>{{ selected_patient.get_blood_group_display|default:selected_patient.blood_group|default:"-" }}</dd>
+                      </div>
+                      <div>
                         <dt>DOB</dt>
                         <dd>{% if selected_patient.date_of_birth %}{{ selected_patient.date_of_birth|date:"d M Y" }}{% else %}-{% endif %}</dd>
                       </div>
@@ -253,9 +257,10 @@
                 {% include 'patients/partials/case_create_field.html' with field=form.prefix col_class='col-12 col-md-4' %}
                 {% include 'patients/partials/case_create_field.html' with field=form.first_name col_class='col-12 col-md-4' %}
                 {% include 'patients/partials/case_create_field.html' with field=form.last_name col_class='col-12 col-md-4' %}
-                {% include 'patients/partials/case_create_field.html' with field=form.gender col_class='col-12 col-md-4 case-create-gender-field' %}
-                {% include 'patients/partials/case_create_field.html' with field=form.date_of_birth col_class='col-12 col-md-4' help_text='When DOB is entered, age is auto-calculated.' help_class='case-create-help-text' %}
-                {% include 'patients/partials/case_create_field.html' with field=form.age col_class='col-12 col-md-4' help_text='Enter age manually only if DOB is unknown.' %}
+                {% include 'patients/partials/case_create_field.html' with field=form.gender col_class='col-12 col-md-3 case-create-gender-field' %}
+                {% include 'patients/partials/case_create_field.html' with field=form.blood_group col_class='col-12 col-md-3' %}
+                {% include 'patients/partials/case_create_field.html' with field=form.date_of_birth col_class='col-12 col-md-3' help_text='When DOB is entered, age is auto-calculated.' help_class='case-create-help-text' %}
+                {% include 'patients/partials/case_create_field.html' with field=form.age col_class='col-12 col-md-3' %}
                 {% include 'patients/partials/case_create_field.html' with field=form.place col_class='col-12 col-md-6' %}
                 {% include 'patients/partials/case_create_field.html' with field=form.phone_number col_class='col-12 col-md-6' %}
               </div>

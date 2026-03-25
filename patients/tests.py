@@ -29,6 +29,7 @@ from . import backup_scheduler
 from .models import (
     ActivityEventType,
     AncHighRiskReason,
+    BloodGroup,
     CallCommunicationStatus,
     CallLog,
     CallOutcome,
@@ -1724,6 +1725,7 @@ class MedtrackViewTests(TestCase):
             last_name="Patient",
             phone_number="9876500450",
             age=29,
+            blood_group=BloodGroup.B_POSITIVE,
             category=self.surgery,
             subcategory=CaseSubcategory.GENERAL_SURGERY,
             status=CaseStatus.ACTIVE,
@@ -1758,6 +1760,8 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(response.status_code, 302)
         existing_case.patient.refresh_from_db()
         self.assertEqual(existing_case.patient.cases.count(), 2)
+        created_case = existing_case.patient.cases.get(diagnosis="Second issue")
+        self.assertEqual(created_case.blood_group, BloodGroup.B_POSITIVE)
         self.assertTrue(existing_case.patient.cases.filter(diagnosis="Second issue").exists())
 
     def test_case_create_existing_patient_mode_allows_hidden_identity_fields_to_be_omitted(self):
@@ -1768,6 +1772,7 @@ class MedtrackViewTests(TestCase):
             last_name="Patient",
             phone_number="9876500451",
             age=31,
+            blood_group=BloodGroup.A_NEGATIVE,
             category=self.surgery,
             subcategory=CaseSubcategory.GENERAL_SURGERY,
             status=CaseStatus.ACTIVE,
@@ -1796,6 +1801,7 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(created_case.first_name, existing_case.patient.first_name)
         self.assertEqual(created_case.last_name, existing_case.patient.last_name)
         self.assertEqual(created_case.phone_number, existing_case.patient.phone_number)
+        self.assertEqual(created_case.blood_group, BloodGroup.A_NEGATIVE)
         self.assertEqual(created_case.prefix, "")
 
     def test_patient_search_requires_three_characters_and_returns_identity_payload(self):
@@ -1811,6 +1817,7 @@ class MedtrackViewTests(TestCase):
             alternate_phone_number="9876501451",
             place="Salem",
             gender=Gender.FEMALE,
+            blood_group=BloodGroup.AB_NEGATIVE,
             date_of_birth=dob,
             category=self.surgery,
             subcategory=CaseSubcategory.GENERAL_SURGERY,
@@ -1835,11 +1842,40 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(payload[0]["first_name"], "Shanthi")
         self.assertEqual(payload[0]["last_name"], "Devi")
         self.assertEqual(payload[0]["gender"], Gender.FEMALE)
+        self.assertEqual(payload[0]["blood_group"], BloodGroup.AB_NEGATIVE)
+        self.assertEqual(payload[0]["blood_group_display"], BloodGroup.AB_NEGATIVE)
         self.assertEqual(payload[0]["date_of_birth"], "1991-05-14")
         self.assertEqual(payload[0]["age"], expected_age)
         self.assertEqual(payload[0]["age_display"], str(expected_age))
         self.assertEqual(payload[0]["phone_number"], "9876501450")
         self.assertEqual(payload[0]["alternate_phone_number"], "9876501451")
+
+    def test_case_create_existing_patient_summary_shows_blood_group(self):
+        existing_case = Case.objects.create(
+            uhid="UH-SUMMARY-001",
+            prefix=CasePrefix.MRS,
+            first_name="Summary",
+            last_name="Patient",
+            phone_number="9876501460",
+            age=34,
+            blood_group=BloodGroup.O_NEGATIVE,
+            category=self.surgery,
+            subcategory=CaseSubcategory.GENERAL_SURGERY,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=8),
+            created_by=self.user,
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get(
+            reverse("patients:case_create"),
+            {"patient_mode": "existing", "patient_id": existing_case.patient_id},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Blood Group")
+        self.assertContains(response, BloodGroup.O_NEGATIVE)
 
     def test_case_create_identity_check_reports_existing_patient_for_matching_uhid(self):
         case = Case.objects.create(
@@ -4106,6 +4142,8 @@ class MedtrackViewTests(TestCase):
         self.assertContains(response, "case-create-choice-grid")
         self.assertContains(response, "case-create-choice")
         self.assertContains(response, "case-create-gender-field")
+        self.assertContains(response, 'name="blood_group"')
+        self.assertNotContains(response, "Enter age manually only if DOB is unknown.")
         self.assertGreater(len(list(response.context["form"]["category"])), 0)
         self.assertNotContains(response, '<select name="category"')
 
@@ -6091,6 +6129,7 @@ class MedtrackViewTests(TestCase):
                 "first_name": "Asha",
                 "last_name": "Devi",
                 "gender": "FEMALE",
+                "blood_group": BloodGroup.A_POSITIVE,
                 "date_of_birth": "1995-01-15",
                 "place": "Chennai",
                 "phone_number": "9123456789",
@@ -6104,8 +6143,10 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(response.status_code, 302)
         case = Case.objects.get(uhid="UH444")
         self.assertEqual(case.gender, "FEMALE")
+        self.assertEqual(case.blood_group, BloodGroup.A_POSITIVE)
         self.assertEqual(case.place, "Chennai")
         self.assertEqual(case.date_of_birth.isoformat(), "1995-01-15")
+        self.assertEqual(case.patient.blood_group, BloodGroup.A_POSITIVE)
 
     def test_create_case_normalizes_patient_names_and_place(self):
         self.client.force_login(self.user)
@@ -6666,6 +6707,46 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(case.place, "New Delhi")
         self.assertEqual(case.patient_name, "Mrs. First Name Last Name")
 
+    def test_case_update_saves_blood_group_and_syncs_patient(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-EDIT-BLOOD",
+            prefix=CasePrefix.MS,
+            first_name="Asha",
+            last_name="Devi",
+            phone_number="9876500890",
+            blood_group=BloodGroup.A_POSITIVE,
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=7),
+            created_by=self.user,
+        )
+
+        response = self.client.post(
+            reverse("patients:case_edit", kwargs={"pk": case.pk}),
+            {
+                "uhid": case.uhid,
+                "prefix": case.prefix,
+                "first_name": case.first_name,
+                "last_name": case.last_name,
+                "phone_number": case.phone_number,
+                "blood_group": BloodGroup.O_NEGATIVE,
+                "category": self.surgery.id,
+                "subcategory": CaseSubcategory.GENERAL_SURGERY,
+                "status": CaseStatus.ACTIVE,
+                "age": "29",
+                "surgical_pathway": SurgicalPathway.SURVEILLANCE,
+                "review_date": case.review_date.isoformat(),
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        case.refresh_from_db()
+        case.patient.refresh_from_db()
+        self.assertEqual(case.blood_group, BloodGroup.O_NEGATIVE)
+        self.assertEqual(case.patient.blood_group, BloodGroup.O_NEGATIVE)
+
     def test_case_update_requires_prefix_for_legacy_blank_prefix_case(self):
         self.client.force_login(self.user)
         case = Case.objects.create(
@@ -6727,6 +6808,8 @@ class MedtrackViewTests(TestCase):
         self.assertContains(response, "data-case-edit-submit-button")
         self.assertContains(response, "case-create-choice-grid")
         self.assertContains(response, 'type="radio" name="category"')
+        self.assertContains(response, 'name="blood_group"')
+        self.assertNotContains(response, "Enter age manually only if DOB is unknown.")
         self.assertContains(response, 'name="prefix"')
         self.assertContains(response, 'name="status"')
 
@@ -7479,6 +7562,28 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Clinical details will appear here as the case record is updated.")
         self.assertContains(response, "0 of 0 tasks completed")
+
+    def test_case_detail_identity_header_shows_blood_group_in_clinical_details(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-IDENTITY-BLOOD-GROUP",
+            first_name="Blood",
+            last_name="Group",
+            phone_number="9876500212",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            blood_group=BloodGroup.B_POSITIVE,
+            created_by=self.user,
+        )
+
+        response = self.client.get(reverse("patients:case_detail", kwargs={"pk": case.pk}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Clinical Details")
+        self.assertContains(response, "Blood Group")
+        self.assertContains(response, BloodGroup.B_POSITIVE)
+        self.assertNotContains(response, "Clinical details will appear here as the case record is updated.")
 
     def test_case_detail_identity_header_shows_zero_gpla_summary(self):
         self.client.force_login(self.user)
@@ -8600,7 +8705,7 @@ class PatientDataBundleTests(TestCase):
         return Case.objects.create(**defaults)
 
     def test_patient_data_bundle_manifest_records_sha_and_counts(self):
-        case = self.create_case(uhid="UH-BUNDLE-001", phone_number="9555555501")
+        case = self.create_case(uhid="UH-BUNDLE-001", phone_number="9555555501", blood_group=BloodGroup.A_NEGATIVE)
         task = Task.objects.create(case=case, title="Bundle task", due_date=timezone.localdate(), created_by=self.user)
         VitalEntry.objects.create(case=case, recorded_at=timezone.now(), pr=75, created_by=self.user)
         CaseActivityLog.objects.create(case=case, task=task, user=self.user, note="Bundle activity")
@@ -8615,7 +8720,9 @@ class PatientDataBundleTests(TestCase):
         self.assertEqual(manifest["counts"], database_bundle.compute_payload_counts(payload))
         self.assertEqual(manifest["patient_data_sha256"], hashlib.sha256(patient_data_bytes).hexdigest())
         self.assertEqual(payload["patients"][0]["uhid"], "UH-BUNDLE-001")
+        self.assertEqual(payload["patients"][0]["blood_group"], BloodGroup.A_NEGATIVE)
         self.assertEqual(payload["cases"][0]["patient_uhid"], "UH-BUNDLE-001")
+        self.assertEqual(payload["cases"][0]["blood_group"], BloodGroup.A_NEGATIVE)
         self.assertEqual(manifest["counts"]["patients"], 1)
 
     def test_patient_data_bundle_round_trips_subcategory_and_accepts_legacy_payloads_without_it(self):
@@ -8625,6 +8732,7 @@ class PatientDataBundleTests(TestCase):
             first_name="Bundle",
             last_name="Shared",
             phone_number="9555555599",
+            blood_group=BloodGroup.A_POSITIVE,
             category=self.surgery,
             subcategory=CaseSubcategory.ORTHOPEDICS,
             status=CaseStatus.ACTIVE,
@@ -8638,6 +8746,7 @@ class PatientDataBundleTests(TestCase):
             first_name="Bundle",
             last_name="Shared",
             phone_number="9555555599",
+            blood_group=BloodGroup.A_POSITIVE,
             category=self.medicine,
             status=CaseStatus.ACTIVE,
             review_frequency="MONTHLY",
@@ -8651,12 +8760,16 @@ class PatientDataBundleTests(TestCase):
             first_name="Quick",
             last_name="Temp",
             phone_number="",
+            blood_group=BloodGroup.AB_POSITIVE,
             category=self.surgery,
             status=CaseStatus.ACTIVE,
             review_date=timezone.localdate() + timedelta(days=5),
             diagnosis="Quick entry pending details",
             metadata={"entry_mode": "quick_entry", "details_pending": True},
             created_by=self.user,
+        )
+        expected_shared_blood_group = (
+            Case.objects.filter(uhid="UH-BUNDLE-SHARED").values_list("blood_group", flat=True).first()
         )
 
         archive_bytes, _, _ = database_bundle.create_bundle_archive()
@@ -8666,10 +8779,13 @@ class PatientDataBundleTests(TestCase):
         shared_cases = Case.objects.filter(uhid="UH-BUNDLE-SHARED")
         self.assertEqual(shared_cases.count(), 2)
         self.assertTrue(shared_cases.filter(subcategory=CaseSubcategory.ORTHOPEDICS).exists())
+        self.assertEqual(shared_cases.filter(blood_group=expected_shared_blood_group).count(), 2)
         self.assertTrue(shared_cases.filter(category__name="Medicine").exists())
         quick_entry_case = Case.objects.get(uhid="TMP-20260318-001")
+        self.assertEqual(quick_entry_case.blood_group, BloodGroup.AB_POSITIVE)
         self.assertEqual(quick_entry_case.prefix, CasePrefix.MS)
         self.assertTrue(quick_entry_case.patient.is_temporary_id)
+        self.assertEqual(quick_entry_case.patient.blood_group, BloodGroup.AB_POSITIVE)
 
         with zipfile.ZipFile(io.BytesIO(archive_bytes), "r") as bundle_zip:
             payload = json.loads(bundle_zip.read(database_bundle.PATIENT_DATA_FILENAME).decode("utf-8"))
@@ -8701,10 +8817,13 @@ class PatientDataBundleTests(TestCase):
         legacy_shared_cases = Case.objects.filter(uhid="UH-BUNDLE-SHARED")
         self.assertEqual(legacy_shared_cases.count(), 2)
         self.assertTrue(legacy_shared_cases.filter(subcategory=CaseSubcategory.GENERAL_SURGERY).exists())
+        self.assertEqual(legacy_shared_cases.filter(blood_group=expected_shared_blood_group).count(), 2)
         self.assertTrue(legacy_shared_cases.filter(category__name="Medicine").exists())
         legacy_quick_entry_case = Case.objects.get(uhid="TMP-20260318-001")
+        self.assertEqual(legacy_quick_entry_case.blood_group, BloodGroup.AB_POSITIVE)
         self.assertEqual(legacy_quick_entry_case.prefix, "")
         self.assertTrue(legacy_quick_entry_case.patient.is_temporary_id)
+        self.assertEqual(legacy_quick_entry_case.patient.blood_group, BloodGroup.AB_POSITIVE)
         self.assertEqual(Patient.objects.count(), 2)
 
     def test_patient_data_bundle_round_trips_delivery_mode_counts(self):
@@ -8807,6 +8926,8 @@ class SeedMockDataCommandTests(TestCase):
             self.assertEqual(case.patient.uhid, case.uhid)
             self.assertTrue(case.prefix)
             self.assertTrue(case.gender)
+            self.assertTrue(case.blood_group)
+            self.assertEqual(case.patient.blood_group, case.blood_group)
             self.assertIsNotNone(case.age)
             self.assertTrue(case.diagnosis)
             self.assertTrue(case.metadata.get("seed_scenario"))

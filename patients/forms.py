@@ -10,6 +10,7 @@ from django.forms import formset_factory, modelformset_factory
 
 from .models import (
     AncHighRiskReason,
+    BloodGroup,
     CallLog,
     Case,
     case_subcategory_choices_for_category_name,
@@ -64,6 +65,7 @@ CRAYONS_DATEPICKER_ATTRS = {
 
 
 CASE_PREFIX_SELECT_CHOICES = [("", "Select prefix"), *list(CasePrefix.choices)]
+BLOOD_GROUP_SELECT_CHOICES = [("", "Optional"), *list(BloodGroup.choices)]
 PATIENT_MODE_CHOICES = [("new", "New patient"), ("existing", "Existing patient")]
 
 
@@ -107,6 +109,8 @@ class PatientForm(StyledModelForm):
         self.fields["prefix"].required = True
         self.fields["prefix"].label = "Prefix"
         self.fields["prefix"].choices = CASE_PREFIX_SELECT_CHOICES
+        self.fields["blood_group"].label = "Blood Group"
+        self.fields["blood_group"].choices = BLOOD_GROUP_SELECT_CHOICES
         self.fields["uhid"].label = "UHID"
         self.fields["date_of_birth"].input_formats = DATE_INPUT_FORMATS
         if self.instance and self.instance.pk:
@@ -150,6 +154,7 @@ class PatientForm(StyledModelForm):
             "first_name",
             "last_name",
             "gender",
+            "blood_group",
             "date_of_birth",
             "place",
             "age",
@@ -257,6 +262,8 @@ class CaseForm(StyledModelForm):
         self.fields["phone_number"].required = False
         self.fields["prefix"].label = "Prefix"
         self.fields["prefix"].choices = CASE_PREFIX_SELECT_CHOICES
+        self.fields["blood_group"].label = "Blood Group"
+        self.fields["blood_group"].choices = BLOOD_GROUP_SELECT_CHOICES
         self.fields["category"].queryset = self.fields["category"].queryset.order_by("name")
         self.fields["category"].widget = forms.RadioSelect()
         self.fields["category"].empty_label = None
@@ -281,6 +288,7 @@ class CaseForm(StyledModelForm):
             self.initial.setdefault("first_name", patient.first_name)
             self.initial.setdefault("last_name", patient.last_name)
             self.initial.setdefault("gender", patient.gender)
+            self.initial.setdefault("blood_group", patient.blood_group)
             self.initial.setdefault("date_of_birth", patient.date_of_birth)
             self.initial.setdefault("place", patient.place)
             self.initial.setdefault("age", patient.age)
@@ -322,6 +330,7 @@ class CaseForm(StyledModelForm):
         patient.first_name = cleaned_data.get("first_name") or ""
         patient.last_name = cleaned_data.get("last_name") or ""
         patient.gender = cleaned_data.get("gender") or ""
+        patient.blood_group = cleaned_data.get("blood_group") or ""
         patient.date_of_birth = cleaned_data.get("date_of_birth")
         patient.place = cleaned_data.get("place") or ""
         patient.age = cleaned_data.get("age")
@@ -340,6 +349,7 @@ class CaseForm(StyledModelForm):
         patient.first_name = cleaned_data.get("first_name") or ""
         patient.last_name = cleaned_data.get("last_name") or ""
         patient.gender = cleaned_data.get("gender") or ""
+        patient.blood_group = cleaned_data.get("blood_group") or ""
         patient.date_of_birth = cleaned_data.get("date_of_birth")
         patient.place = cleaned_data.get("place") or ""
         patient.age = cleaned_data.get("age")
@@ -361,6 +371,7 @@ class CaseForm(StyledModelForm):
             cleaned_data["first_name"] = selected_patient.first_name
             cleaned_data["last_name"] = selected_patient.last_name
             cleaned_data["gender"] = selected_patient.gender
+            cleaned_data["blood_group"] = selected_patient.blood_group
             cleaned_data["date_of_birth"] = selected_patient.date_of_birth
             cleaned_data["place"] = selected_patient.place
             cleaned_data["age"] = selected_patient.age
@@ -505,6 +516,7 @@ class CaseForm(StyledModelForm):
             "first_name",
             "last_name",
             "gender",
+            "blood_group",
             "date_of_birth",
             "place",
             "age",
@@ -621,6 +633,7 @@ class QuickEntryCaseForm(StyledModelForm):
         patient.first_name = instance.first_name or ""
         patient.last_name = ""
         patient.gender = instance.gender or ""
+        patient.blood_group = instance.blood_group or ""
         patient.age = instance.age
         patient.phone_number = ""
         patient.alternate_phone_number = ""

@@ -510,18 +510,11 @@
     const ageEl = document.getElementById("id_age");
     if (!dobEl || !ageEl) return;
 
-    const helpText = ageEl.closest(".case-create-field")?.querySelector(".form-text");
     if (dobEl.value) {
       ageEl.value = calculateAgeFromDob(dobEl.value);
       ageEl.setAttribute("readonly", "readonly");
-      if (helpText) {
-        helpText.textContent = "Age is auto-calculated from DOB.";
-      }
     } else {
       ageEl.removeAttribute("readonly");
-      if (helpText) {
-        helpText.textContent = "Enter age manually only if DOB is unknown.";
-      }
     }
   }
 
@@ -709,6 +702,10 @@
             <dd>${escapeHtml(patient.gender || "-")}</dd>
           </div>
           <div>
+            <dt>Blood Group</dt>
+            <dd>${escapeHtml(patient.blood_group_display || patient.blood_group || "-")}</dd>
+          </div>
+          <div>
             <dt>DOB</dt>
             <dd>${escapeHtml(patient.date_of_birth_display || "-")}</dd>
           </div>
@@ -832,6 +829,7 @@
     setPatientFieldValue("id_first_name", patient?.first_name || "");
     setPatientFieldValue("id_last_name", patient?.last_name || "");
     setPatientFieldValue("id_gender", patient?.gender || "");
+    setPatientFieldValue("id_blood_group", patient?.blood_group || "");
     setPatientFieldValue("id_date_of_birth", patient?.date_of_birth || "");
     setPatientFieldValue("id_age", patient?.age ?? "");
     setPatientFieldValue("id_place", patient?.place || "");
@@ -848,6 +846,7 @@
       first_name: "",
       last_name: "",
       gender: "",
+      blood_group: "",
       date_of_birth: "",
       age: "",
       place: "",

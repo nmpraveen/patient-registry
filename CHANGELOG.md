@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.03.25.02.07
+- Added optional blood-group capture to the new-case and edit-case flows, including patient sync, existing-patient prefill, and one-line demographic layout updates.
+- Extended blood-group persistence through bundle export/import, deterministic seed data, migration-backed storage, and focused regression coverage for create and edit behavior.
+- Added blood-group display to the case page Clinical Details card and kept the card empty state accurate when blood group is the only populated detail.
+
 ## 2026.03.25.01.18
 - Replaced DOB with age on the Case List, Patient List, Patient Detail header, and New Case existing-patient search results so those identity surfaces now show age instead of birth date.
 - Added age-display fallbacks in the list/detail views and search payload so those screens still show age when older records only have DOB populated.

@@ -24,6 +24,13 @@
       </div>
     {% endif %}
 
+    {% if case.blood_group %}
+      <div>
+        <div class="case-detail-facts__label">Blood Group</div>
+        <div class="case-detail-facts__value">{{ case.get_blood_group_display|default:case.blood_group }}</div>
+      </div>
+    {% endif %}
+
     {% if case.gravida != None or case.para != None or case.abortions != None or case.living != None %}
       <div class="case-detail-summary-list__wide">
         <div class="case-detail-facts__label">Obstetric Summary</div>
@@ -73,7 +80,7 @@
       </div>
     {% endif %}
 
-    {% if not case.diagnosis and case.gravida == None and case.para == None and case.abortions == None and case.living == None and not case.anc_high_risk_reason_labels and not case.referred_by and not case.notes %}
+    {% if not case.diagnosis and not case.blood_group and case.gravida == None and case.para == None and case.abortions == None and case.living == None and not case.anc_high_risk_reason_labels and not case.referred_by and not case.notes %}
       <div class="case-detail-summary-list__wide">
         <p class="case-detail-empty mb-0">Clinical details will appear here as the case record is updated.</p>
       </div>

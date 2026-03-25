@@ -505,6 +505,7 @@ def _merge_patient_records(*, source_patient, target_patient, actor):
                     "last_name",
                     "patient_name",
                     "gender",
+                    "blood_group",
                     "date_of_birth",
                     "place",
                     "age",
@@ -734,6 +735,8 @@ def _serialize_patient_search_result(patient):
         "record_type": "patient",
         "uhid": patient.uhid,
         "name": patient.full_name or patient.patient_name or patient.uhid,
+        "blood_group": patient.blood_group or "",
+        "blood_group_display": patient.get_blood_group_display() if patient.blood_group else "",
         "age": patient.age if patient.age is not None else "\u2014",
         "village": patient.place or "\u2014",
         "diagnosis": active_cases[0].diagnosis if active_cases and active_cases[0].diagnosis else (
@@ -844,6 +847,8 @@ def _serialize_patient_search_result(patient, *, exclude_case_id=None):
         "first_name": patient.first_name or "",
         "last_name": patient.last_name or "",
         "gender": patient.gender or "",
+        "blood_group": patient.blood_group or "",
+        "blood_group_display": patient.get_blood_group_display() if patient.blood_group else "",
         "date_of_birth": patient.date_of_birth.isoformat() if patient.date_of_birth else "",
         "age": patient.age,
         "age_display": _patient_age_number(patient),
@@ -3797,6 +3802,7 @@ def _build_preview_case(form):
     preview_case.first_name = _normalize_optional_text(_bound_form_value(form, "first_name"))
     preview_case.last_name = _normalize_optional_text(_bound_form_value(form, "last_name"))
     preview_case.gender = _normalize_optional_text(_bound_form_value(form, "gender"))
+    preview_case.blood_group = _normalize_optional_text(_bound_form_value(form, "blood_group"))
     preview_case.date_of_birth = _parse_optional_date_value(_bound_form_value(form, "date_of_birth"))
     preview_case.age = _parse_optional_int_value(_bound_form_value(form, "age"))
     preview_case.place = _normalize_optional_text(_bound_form_value(form, "place"))
@@ -4178,6 +4184,13 @@ def _build_case_edit_change_items(form, case, preview_case):
     )
     _append_case_edit_change(
         changes,
+        label="Blood group",
+        before=case.blood_group,
+        after=preview_case.blood_group,
+        formatter=lambda value: Case(blood_group=value).get_blood_group_display() if value else "Not set",
+    )
+    _append_case_edit_change(
+        changes,
         label="Date of birth",
         before=case.date_of_birth,
         after=preview_case.date_of_birth,
@@ -4357,6 +4370,8 @@ def _build_case_edit_summary_state(form, case, case_form_state):
     sex_age_label = _case_sex_age_label(preview_case)
     if sex_age_label != "-":
         summary_facts.append({"label": "Sex / Age", "value": sex_age_label})
+    if preview_case.blood_group:
+        summary_facts.append({"label": "Blood Group", "value": preview_case.get_blood_group_display()})
     if preview_case.place:
         summary_facts.append({"label": "Place", "value": preview_case.place})
     if preview_case.phone_number:
@@ -4460,6 +4475,7 @@ class CaseCreateView(LoginRequiredMixin, CaseCreateAccessMixin, CaseCreateContex
                     "first_name": selected_patient.first_name,
                     "last_name": selected_patient.last_name,
                     "gender": selected_patient.gender,
+                    "blood_group": selected_patient.blood_group,
                     "date_of_birth": selected_patient.date_of_birth,
                     "place": selected_patient.place,
                     "age": selected_patient.age,

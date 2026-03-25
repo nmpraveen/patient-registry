@@ -9,6 +9,7 @@
     "first_name",
     "last_name",
     "gender",
+    "blood_group",
     "date_of_birth",
     "age",
     "place",
@@ -427,18 +428,11 @@
     const ageEl = document.getElementById("id_age");
     if (!dobEl || !ageEl) return;
 
-    const helpText = ageEl.closest(".case-create-field")?.querySelector(".form-text");
     if (dobEl.value) {
       ageEl.value = calculateAgeFromDob(dobEl.value);
       ageEl.setAttribute("readonly", "readonly");
-      if (helpText) {
-        helpText.textContent = "Age is auto-calculated from DOB.";
-      }
     } else {
       ageEl.removeAttribute("readonly");
-      if (helpText) {
-        helpText.textContent = "Enter age manually only if DOB is unknown.";
-      }
     }
   }
 

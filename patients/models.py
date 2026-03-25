@@ -215,6 +215,17 @@ class Gender(models.TextChoices):
     UNKNOWN = "UNKNOWN", "Unknown"
 
 
+class BloodGroup(models.TextChoices):
+    A_POSITIVE = "A+", "A+"
+    A_NEGATIVE = "A-", "A-"
+    B_POSITIVE = "B+", "B+"
+    B_NEGATIVE = "B-", "B-"
+    AB_POSITIVE = "AB+", "AB+"
+    AB_NEGATIVE = "AB-", "AB-"
+    O_POSITIVE = "O+", "O+"
+    O_NEGATIVE = "O-", "O-"
+
+
 class NonCommunicableDisease(models.TextChoices):
     T2DM = "T2DM", "T2DM"
     SHTN = "SHTN", "SHTN"
@@ -349,6 +360,7 @@ class Patient(models.Model):
     last_name = models.CharField(max_length=100, default="")
     patient_name = models.CharField(max_length=200, blank=True)
     gender = models.CharField(max_length=20, choices=Gender.choices, blank=True)
+    blood_group = models.CharField(max_length=3, choices=BloodGroup.choices, blank=True)
     date_of_birth = models.DateField(blank=True, null=True)
     place = models.CharField(max_length=200, blank=True)
     age = models.PositiveSmallIntegerField(blank=True, null=True)
@@ -414,6 +426,7 @@ class Patient(models.Model):
             last_name=self.last_name,
             patient_name=self.patient_name,
             gender=self.gender,
+            blood_group=self.blood_group,
             date_of_birth=self.date_of_birth,
             place=self.place,
             age=self.age,
@@ -853,6 +866,7 @@ class Case(models.Model):
     last_name = models.CharField(max_length=100, default="")
     patient_name = models.CharField(max_length=200, blank=True)
     gender = models.CharField(max_length=20, choices=Gender.choices, blank=True)
+    blood_group = models.CharField(max_length=3, choices=BloodGroup.choices, blank=True)
     date_of_birth = models.DateField(blank=True, null=True)
     place = models.CharField(max_length=200, blank=True)
     age = models.PositiveSmallIntegerField(blank=True, null=True)
@@ -927,6 +941,7 @@ class Case(models.Model):
         self.last_name = self.patient.last_name
         self.patient_name = self.patient.patient_name or self.patient.full_name
         self.gender = self.patient.gender
+        self.blood_group = self.patient.blood_group
         self.date_of_birth = self.patient.date_of_birth
         self.place = self.patient.place
         self.age = self.patient.age
@@ -947,6 +962,7 @@ class Case(models.Model):
             "first_name": self.first_name or "",
             "last_name": self.last_name or "",
             "gender": self.gender or "",
+            "blood_group": self.blood_group or "",
             "date_of_birth": self.date_of_birth,
             "place": self.place or "",
             "age": self.age,
@@ -988,6 +1004,7 @@ class Case(models.Model):
         patient.last_name = self.last_name
         patient.patient_name = self.patient_name
         patient.gender = self.gender
+        patient.blood_group = self.blood_group
         patient.date_of_birth = self.date_of_birth
         patient.place = self.place
         patient.age = self.age
@@ -1121,6 +1138,7 @@ class Case(models.Model):
             "last_name",
             "patient_name",
             "gender",
+            "blood_group",
             "date_of_birth",
             "place",
             "age",

@@ -10,6 +10,7 @@ from django.utils import timezone
 from patients.models import (
     ActivityEventType,
     AncHighRiskReason,
+    BloodGroup,
     CallLog,
     CallOutcome,
     Case,
@@ -37,18 +38,18 @@ class Command(BaseCommand):
     help = "Seed mock MEDTRACK data (default 30 cases) for local demo/testing."
 
     mock_profiles = [
-        {"prefix": CasePrefix.MR, "first_name": "Karthik", "last_name": "Raman", "place": "Madurai", "gender": Gender.MALE, "date_of_birth": date(1989, 3, 11), "facility_code": "MDU"},
-        {"prefix": CasePrefix.MS, "first_name": "Nivetha", "last_name": "Sundaram", "place": "Coimbatore", "gender": Gender.FEMALE, "date_of_birth": date(1996, 7, 24), "facility_code": "CBE"},
-        {"prefix": CasePrefix.MR, "first_name": "Pradeep", "last_name": "Subramanian", "place": "Tirunelveli", "gender": Gender.MALE, "date_of_birth": date(1991, 11, 5), "facility_code": "TVL"},
-        {"prefix": CasePrefix.MRS, "first_name": "Anitha", "last_name": "Balasubramaniam", "place": "Salem", "gender": Gender.FEMALE, "date_of_birth": date(1994, 1, 17), "facility_code": "SLM"},
-        {"prefix": CasePrefix.MR, "first_name": "Vignesh", "last_name": "Narayanan", "place": "Erode", "gender": Gender.MALE, "date_of_birth": date(1987, 10, 9), "facility_code": "ERD"},
-        {"prefix": CasePrefix.MS, "first_name": "Harini", "last_name": "Sivakumar", "place": "Chengalpattu", "gender": Gender.FEMALE, "date_of_birth": date(1998, 5, 28), "facility_code": "CGP"},
-        {"prefix": CasePrefix.MR, "first_name": "Sathish", "last_name": "Arumugam", "place": "Trichy", "gender": Gender.MALE, "date_of_birth": date(1992, 12, 14), "facility_code": "TRY"},
-        {"prefix": CasePrefix.MRS, "first_name": "Meena", "last_name": "Rajendran", "place": "Thanjavur", "gender": Gender.FEMALE, "date_of_birth": date(1993, 4, 3), "facility_code": "TNJ"},
-        {"prefix": CasePrefix.MR, "first_name": "Aravind", "last_name": "Muthukumar", "place": "Vellore", "gender": Gender.MALE, "date_of_birth": date(1990, 8, 19), "facility_code": "VLR"},
-        {"prefix": CasePrefix.MS, "first_name": "Keerthana", "last_name": "Manikandan", "place": "Kanchipuram", "gender": Gender.FEMALE, "date_of_birth": date(1997, 9, 30), "facility_code": "KPM"},
-        {"prefix": CasePrefix.MR, "first_name": "Dinesh", "last_name": "Saravanan", "place": "Tiruppur", "gender": Gender.MALE, "date_of_birth": date(1988, 2, 21), "facility_code": "TPR"},
-        {"prefix": CasePrefix.MRS, "first_name": "Yamini", "last_name": "Periyasamy", "place": "Nagapattinam", "gender": Gender.FEMALE, "date_of_birth": date(1995, 6, 12), "facility_code": "NGP"},
+        {"prefix": CasePrefix.MR, "first_name": "Karthik", "last_name": "Raman", "place": "Madurai", "gender": Gender.MALE, "blood_group": BloodGroup.O_POSITIVE, "date_of_birth": date(1989, 3, 11), "facility_code": "MDU"},
+        {"prefix": CasePrefix.MS, "first_name": "Nivetha", "last_name": "Sundaram", "place": "Coimbatore", "gender": Gender.FEMALE, "blood_group": BloodGroup.A_POSITIVE, "date_of_birth": date(1996, 7, 24), "facility_code": "CBE"},
+        {"prefix": CasePrefix.MR, "first_name": "Pradeep", "last_name": "Subramanian", "place": "Tirunelveli", "gender": Gender.MALE, "blood_group": BloodGroup.B_POSITIVE, "date_of_birth": date(1991, 11, 5), "facility_code": "TVL"},
+        {"prefix": CasePrefix.MRS, "first_name": "Anitha", "last_name": "Balasubramaniam", "place": "Salem", "gender": Gender.FEMALE, "blood_group": BloodGroup.AB_POSITIVE, "date_of_birth": date(1994, 1, 17), "facility_code": "SLM"},
+        {"prefix": CasePrefix.MR, "first_name": "Vignesh", "last_name": "Narayanan", "place": "Erode", "gender": Gender.MALE, "blood_group": BloodGroup.O_NEGATIVE, "date_of_birth": date(1987, 10, 9), "facility_code": "ERD"},
+        {"prefix": CasePrefix.MS, "first_name": "Harini", "last_name": "Sivakumar", "place": "Chengalpattu", "gender": Gender.FEMALE, "blood_group": BloodGroup.A_NEGATIVE, "date_of_birth": date(1998, 5, 28), "facility_code": "CGP"},
+        {"prefix": CasePrefix.MR, "first_name": "Sathish", "last_name": "Arumugam", "place": "Trichy", "gender": Gender.MALE, "blood_group": BloodGroup.B_NEGATIVE, "date_of_birth": date(1992, 12, 14), "facility_code": "TRY"},
+        {"prefix": CasePrefix.MRS, "first_name": "Meena", "last_name": "Rajendran", "place": "Thanjavur", "gender": Gender.FEMALE, "blood_group": BloodGroup.AB_NEGATIVE, "date_of_birth": date(1993, 4, 3), "facility_code": "TNJ"},
+        {"prefix": CasePrefix.MR, "first_name": "Aravind", "last_name": "Muthukumar", "place": "Vellore", "gender": Gender.MALE, "blood_group": BloodGroup.O_POSITIVE, "date_of_birth": date(1990, 8, 19), "facility_code": "VLR"},
+        {"prefix": CasePrefix.MS, "first_name": "Keerthana", "last_name": "Manikandan", "place": "Kanchipuram", "gender": Gender.FEMALE, "blood_group": BloodGroup.A_POSITIVE, "date_of_birth": date(1997, 9, 30), "facility_code": "KPM"},
+        {"prefix": CasePrefix.MR, "first_name": "Dinesh", "last_name": "Saravanan", "place": "Tiruppur", "gender": Gender.MALE, "blood_group": BloodGroup.B_POSITIVE, "date_of_birth": date(1988, 2, 21), "facility_code": "TPR"},
+        {"prefix": CasePrefix.MRS, "first_name": "Yamini", "last_name": "Periyasamy", "place": "Nagapattinam", "gender": Gender.FEMALE, "blood_group": BloodGroup.AB_POSITIVE, "date_of_birth": date(1995, 6, 12), "facility_code": "NGP"},
     ]
 
     def add_arguments(self, parser):
@@ -106,6 +107,7 @@ class Command(BaseCommand):
             "first_name": patient.first_name,
             "last_name": patient.last_name,
             "gender": patient.gender,
+            "blood_group": patient.blood_group,
             "date_of_birth": patient.date_of_birth,
             "age": patient.age,
             "place": patient.place,
@@ -140,6 +142,7 @@ class Command(BaseCommand):
                 "first_name": profile["first_name"],
                 "last_name": "",
                 "gender": profile["gender"],
+                "blood_group": profile["blood_group"],
                 "date_of_birth": None,
                 "place": "",
                 "age": max(today.year - profile["date_of_birth"].year, 18),
@@ -154,6 +157,7 @@ class Command(BaseCommand):
             "first_name": profile["first_name"],
             "last_name": profile["last_name"],
             "gender": profile["gender"],
+            "blood_group": profile["blood_group"],
             "date_of_birth": profile["date_of_birth"],
             "place": profile["place"],
             "phone_number": self._build_phone_number(index),

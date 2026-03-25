@@ -2,7 +2,6 @@
 <aside class="case-detail-rail-card case-detail-panel" data-testid="case-detail-summary-module">
   <div class="case-detail-rail-card__header">
     <p class="case-detail-label mb-0">Clinical Details</p>
-    <span class="case-detail-chip case-detail-chip--neutral">Overview</span>
   </div>
 
   <div class="case-detail-summary-chips">
@@ -13,77 +12,192 @@
     {% if case.high_risk %}
       <span class="case-detail-chip app-pill high-risk">High-risk</span>
     {% endif %}
-    <span class="case-detail-chip case-detail-chip--neutral">{{ case.get_status_display }}</span>
+    <span class="case-detail-chip case-detail-chip--status-{{ case.get_status_display|slugify }}">{{ case.get_status_display }}</span>
   </div>
 
-  <div class="case-detail-summary-list">
-    {% if case.diagnosis %}
-      <div class="case-detail-summary-list__wide">
-        <div class="case-detail-facts__label">Diagnosis</div>
-        <div class="case-detail-facts__value">{{ case.diagnosis }}</div>
-      </div>
-    {% endif %}
-
-    {% if case.blood_group %}
-      <div>
-        <div class="case-detail-facts__label">Blood Group</div>
-        <div class="case-detail-facts__value">{{ case.get_blood_group_display|default:case.blood_group }}</div>
-      </div>
-    {% endif %}
-
-    {% if case.gravida != None or case.para != None or case.abortions != None or case.living != None %}
-      <div class="case-detail-summary-list__wide">
-        <div class="case-detail-facts__label">Obstetric Summary</div>
-        <div class="case-detail-facts__value">G{{ case.gravida|default:0 }} P{{ case.para|default:0 }} A{{ case.abortions|default:0 }} L{{ case.living|default:0 }}</div>
-      </div>
-    {% endif %}
-
-    {% if case.review_date %}
-      <div>
-        <div class="case-detail-facts__label">Review date</div>
-        <div class="case-detail-facts__value">{{ case.review_date|date:'d M Y' }}</div>
-      </div>
-    {% endif %}
-
-    {% if case.surgery_date %}
-      <div>
-        <div class="case-detail-facts__label">Surgery date</div>
-        <div class="case-detail-facts__value">{{ case.surgery_date|date:'d M Y' }}</div>
-      </div>
-    {% endif %}
-
-    {% if case.referred_by %}
-      <div class="case-detail-summary-list__wide">
-        <div class="case-detail-facts__label">Referred by</div>
-        <div class="case-detail-summary-referral">
-          <svg class="case-detail-icon" aria-hidden="true"><use href="#identity-icon-referral"></use></svg>
-          <span class="case-detail-facts__value">{{ case.referred_by }}</span>
+  {% if case.has_clinical_summary %}
+    <div class="case-detail-summary">
+      {% if case.diagnosis or case.clinical_headline_items %}
+        <div class="case-detail-summary-headline">
+          {% if case.diagnosis %}
+            <p class="case-detail-summary-headline__title">{{ case.diagnosis }}</p>
+          {% endif %}
+          {% if case.clinical_headline_items %}
+            <div class="case-detail-summary-headline__meta" aria-label="Clinical summary highlights">
+              {% for item in case.clinical_headline_items %}
+                <span class="case-detail-summary-headline__item">{{ item }}</span>
+              {% endfor %}
+            </div>
+          {% endif %}
         </div>
-      </div>
-    {% endif %}
+      {% endif %}
 
-    {% if case.notes %}
-      <div class="case-detail-summary-list__wide">
-        <div class="case-detail-facts__label">Notes</div>
-        <div class="case-detail-facts__value case-detail-facts__value--soft">{{ case.notes|truncatechars:160 }}</div>
-      </div>
-    {% endif %}
+      {% if case.has_pregnancy_details %}
+        <details class="case-detail-summary-section" data-testid="case-detail-summary-section-pregnancy" open>
+          <summary class="case-detail-summary-section__summary">
+            <span class="case-detail-summary-section__title">Pregnancy Details</span>
+          </summary>
+          <div class="case-detail-summary-section__body">
+            {% if case.obstetric_summary %}
+              <div class="case-detail-summary-block">
+                <div class="case-detail-facts__label">Obstetric Summary</div>
+                <div class="case-detail-facts__value">{{ case.obstetric_summary }}</div>
+              </div>
+            {% endif %}
+            <div class="case-detail-facts__grid">
+              {% if case.trimester_summary %}
+                <div>
+                  <div class="case-detail-facts__label">Trimester</div>
+                  <div class="case-detail-facts__value">{{ case.trimester_summary }}</div>
+                </div>
+              {% endif %}
+              {% if case.lmp %}
+                <div>
+                  <div class="case-detail-facts__label">LMP</div>
+                  <div class="case-detail-facts__value">{{ case.lmp|date:'d M Y' }}</div>
+                </div>
+              {% endif %}
+              {% if case.effective_edd %}
+                <div>
+                  <div class="case-detail-facts__label">EDD</div>
+                  <div class="case-detail-facts__value">{{ case.effective_edd|date:'d M Y' }}</div>
+                </div>
+              {% endif %}
+              {% if case.rch_number %}
+                <div>
+                  <div class="case-detail-facts__label">RCH #</div>
+                  <div class="case-detail-facts__value">{{ case.rch_number }}</div>
+                </div>
+              {% endif %}
+            </div>
+          </div>
+        </details>
+      {% endif %}
 
-    {% if case.anc_high_risk_reason_labels %}
-      <div class="case-detail-summary-list__wide">
-        <p class="case-detail-facts__label case-detail-facts__label--stacked mb-2">High-risk Reasons</p>
-        <div class="case-detail-reason-list" aria-label="High-risk reasons">
-          {% for reason in case.anc_high_risk_reason_labels %}
-            <span class="case-detail-reason-pill">{{ reason }}</span>
-          {% endfor %}
-        </div>
-      </div>
-    {% endif %}
+      {% if case.has_surgical_details %}
+        <details class="case-detail-summary-section" data-testid="case-detail-summary-section-surgical" open>
+          <summary class="case-detail-summary-section__summary">
+            <span class="case-detail-summary-section__title">Surgical Details</span>
+          </summary>
+          <div class="case-detail-summary-section__body">
+            <div class="case-detail-facts__grid">
+              {% if case.surgical_pathway %}
+                <div>
+                  <div class="case-detail-facts__label">Pathway</div>
+                  <div class="case-detail-facts__value">{{ case.get_surgical_pathway_display }}</div>
+                </div>
+              {% endif %}
+              <div>
+                <div class="case-detail-facts__label">Surgery Done</div>
+                <div class="case-detail-facts__value">{{ case.surgery_done|yesno:"Yes,No" }}</div>
+              </div>
+              {% if case.surgery_date %}
+                <div>
+                  <div class="case-detail-facts__label">Surgery Date</div>
+                  <div class="case-detail-facts__value">{{ case.surgery_date|date:'d M Y' }}</div>
+                </div>
+              {% endif %}
+              {% if case.review_date %}
+                <div>
+                  <div class="case-detail-facts__label">Review Date</div>
+                  <div class="case-detail-facts__value">{{ case.review_date|date:'d M Y' }}</div>
+                </div>
+              {% endif %}
+            </div>
+          </div>
+        </details>
+      {% endif %}
 
-    {% if not case.diagnosis and not case.blood_group and case.gravida == None and case.para == None and case.abortions == None and case.living == None and not case.anc_high_risk_reason_labels and not case.referred_by and not case.notes %}
+      {% if case.has_review_schedule %}
+        <details class="case-detail-summary-section" data-testid="case-detail-summary-section-review" open>
+          <summary class="case-detail-summary-section__summary">
+            <span class="case-detail-summary-section__title">Review Schedule</span>
+          </summary>
+          <div class="case-detail-summary-section__body">
+            <div class="case-detail-facts__grid">
+              {% if case.review_frequency %}
+                <div>
+                  <div class="case-detail-facts__label">Review Frequency</div>
+                  <div class="case-detail-facts__value">{{ case.get_review_frequency_display }}</div>
+                </div>
+              {% endif %}
+              {% if case.review_date %}
+                <div>
+                  <div class="case-detail-facts__label">Review Date</div>
+                  <div class="case-detail-facts__value">{{ case.review_date|date:'d M Y' }}</div>
+                </div>
+              {% endif %}
+            </div>
+          </div>
+        </details>
+      {% endif %}
+
+      {% if case.has_risk_factors %}
+        <details class="case-detail-summary-section" data-testid="case-detail-summary-section-risk" open>
+          <summary class="case-detail-summary-section__summary">
+            <span class="case-detail-summary-section__title">Risk Factors</span>
+          </summary>
+          <div class="case-detail-summary-section__body">
+            {% if case.high_risk %}
+              <div class="case-detail-summary-block">
+                <div class="case-detail-facts__label">Care Level</div>
+                <div class="case-detail-facts__value">High-risk</div>
+              </div>
+            {% endif %}
+            {% if case.anc_high_risk_reason_labels %}
+              <div class="case-detail-summary-block">
+                <div class="case-detail-facts__label">ANC High-risk Reasons</div>
+                <div class="case-detail-reason-list" aria-label="High-risk reasons">
+                  {% for reason in case.anc_high_risk_reason_labels %}
+                    <span class="case-detail-reason-pill">{{ reason }}</span>
+                  {% endfor %}
+                </div>
+              </div>
+            {% endif %}
+            {% if case.ncd_flag_labels %}
+              <div class="case-detail-summary-block">
+                <div class="case-detail-facts__label">NCDs</div>
+                <div class="case-detail-summary-pill-list" aria-label="NCD flags">
+                  {% for label in case.ncd_flag_labels %}
+                    <span class="case-detail-chip case-detail-chip--neutral">{{ label }}</span>
+                  {% endfor %}
+                </div>
+              </div>
+            {% endif %}
+          </div>
+        </details>
+      {% endif %}
+
+      {% if case.has_referral_notes %}
+        <details class="case-detail-summary-section" data-testid="case-detail-summary-section-referral">
+          <summary class="case-detail-summary-section__summary">
+            <span class="case-detail-summary-section__title">Referral &amp; Notes</span>
+          </summary>
+          <div class="case-detail-summary-section__body">
+            {% if case.referred_by %}
+              <div class="case-detail-summary-block">
+                <div class="case-detail-facts__label">Referred by</div>
+                <div class="case-detail-summary-referral">
+                  <svg class="case-detail-icon" aria-hidden="true"><use href="#identity-icon-referral"></use></svg>
+                  <span class="case-detail-facts__value">{{ case.referred_by }}</span>
+                </div>
+              </div>
+            {% endif %}
+            {% if case.notes %}
+              <div class="case-detail-summary-block">
+                <div class="case-detail-facts__label">Notes</div>
+                <div class="case-detail-facts__value case-detail-facts__value--soft case-detail-summary-note">{{ case.notes }}</div>
+              </div>
+            {% endif %}
+          </div>
+        </details>
+      {% endif %}
+    </div>
+  {% else %}
+    <div class="case-detail-summary-list">
       <div class="case-detail-summary-list__wide">
         <p class="case-detail-empty mb-0">Clinical details will appear here as the case record is updated.</p>
       </div>
-    {% endif %}
-  </div>
+    </div>
+  {% endif %}
 </aside>

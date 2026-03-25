@@ -7458,9 +7458,14 @@ class MedtrackViewTests(TestCase):
         self.assertContains(response, "word-break: normal;")
         self.assertContains(response, "grid-template-columns: clamp(25rem, 31vw, 34rem)")
 
-    def test_case_detail_identity_header_renders_redesigned_summary_with_icons(self):
+    def test_case_detail_identity_header_renders_collapsible_anc_clinical_sections(self):
         self.client.force_login(self.user)
         today = timezone.localdate()
+        notes = (
+            "Patient referred due to rising blood pressure with repeat headache episodes. "
+            "This detailed note should remain fully visible inside the referral section without truncation. "
+            "Unique note tail for verification."
+        )
         case = Case.objects.create(
             uhid="UH-IDENTITY-HEADER",
             prefix=CasePrefix.MRS,
@@ -7478,11 +7483,16 @@ class MedtrackViewTests(TestCase):
             lmp=today - timedelta(days=175),
             edd=today + timedelta(days=105),
             usg_edd=today + timedelta(days=104),
+            rch_number="12345678",
             gravida=2,
             para=1,
             abortions=0,
             living=1,
+            ftnd=1,
+            lscs=0,
+            ncd_flags=[NonCommunicableDisease.T2DM, NonCommunicableDisease.THYROID],
             anc_high_risk_reasons=[AncHighRiskReason.ANEMIA, AncHighRiskReason.PREVIOUS_LSCS],
+            notes=notes,
             created_by=self.user,
         )
         Task.objects.create(
@@ -7524,10 +7534,25 @@ class MedtrackViewTests(TestCase):
         self.assertContains(response, "Task Completion")
         self.assertContains(response, "1 of 2 tasks completed")
         self.assertContains(response, "Clinical Details")
+        self.assertNotContains(response, "Overview")
+        self.assertContains(response, "theme-category-chip")
+        self.assertContains(response, "case-detail-chip--status-active")
         self.assertContains(response, "Gestational diabetes mellitus")
-        self.assertContains(response, "Obstetric Summary")
-        self.assertContains(response, "High-risk Reasons")
+        self.assertContains(response, "Pregnancy Details")
+        self.assertContains(response, 'data-testid="case-detail-summary-section-pregnancy" open')
+        self.assertContains(response, case.trimester_summary)
+        self.assertContains(response, case.obstetric_summary)
+        self.assertContains(response, case.effective_edd.strftime("%d %b %Y"))
+        self.assertContains(response, "RCH #")
+        self.assertContains(response, "12345678")
+        self.assertContains(response, "Risk Factors")
+        self.assertContains(response, 'data-testid="case-detail-summary-section-risk" open')
         self.assertContains(response, "Previous LSCS")
+        self.assertContains(response, "T2DM")
+        self.assertContains(response, "Thyroid")
+        self.assertContains(response, "Referral &amp; Notes")
+        self.assertNotContains(response, 'data-testid="case-detail-summary-section-referral" open')
+        self.assertContains(response, "Unique note tail for verification.")
         self.assertContains(response, "#identity-icon-phone")
         self.assertContains(response, "#identity-icon-referral")
         self.assertContains(response, "app-pill high-risk")
@@ -7542,18 +7567,18 @@ class MedtrackViewTests(TestCase):
         self.assertNotContains(response, "Latest Snapshot")
         self.assertNotContains(response, "Recent Readings")
         self.assertNotContains(response, "BP Systolic")
+        self.assertNotContains(response, "Clinical details will appear here as the case record is updated.")
 
-    def test_case_detail_identity_header_shows_empty_clinical_state_for_sparse_case(self):
+    def test_case_detail_identity_header_shows_empty_clinical_state_for_truly_sparse_case(self):
         self.client.force_login(self.user)
+        custom_category = DepartmentConfig.objects.create(name="Custom Specialty")
         case = Case.objects.create(
             uhid="UH-IDENTITY-SPARSE",
             first_name="Sparse",
             last_name="Case",
             phone_number="9876500210",
-            category=self.surgery,
+            category=custom_category,
             status=CaseStatus.ACTIVE,
-            surgical_pathway=SurgicalPathway.SURVEILLANCE,
-            review_date=timezone.localdate() + timedelta(days=10),
             created_by=self.user,
         )
 
@@ -7563,7 +7588,79 @@ class MedtrackViewTests(TestCase):
         self.assertContains(response, "Clinical details will appear here as the case record is updated.")
         self.assertContains(response, "0 of 0 tasks completed")
 
-    def test_case_detail_identity_header_shows_blood_group_in_clinical_details(self):
+    def test_case_detail_identity_header_shows_surgical_section_for_schedule_only_case(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-IDENTITY-SURGICAL",
+            first_name="Surgical",
+            last_name="Summary",
+            phone_number="9876500213",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.PLANNED_SURGERY,
+            surgery_done=False,
+            surgery_date=timezone.localdate() + timedelta(days=10),
+            created_by=self.user,
+        )
+
+        response = self.client.get(reverse("patients:case_detail", kwargs={"pk": case.pk}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Surgical Details")
+        self.assertContains(response, 'data-testid="case-detail-summary-section-surgical" open')
+        self.assertContains(response, "Planned for surgery")
+        self.assertContains(response, "Surgery Done")
+        self.assertContains(response, "No")
+        self.assertContains(response, case.surgery_date.strftime("%d %b %Y"))
+        self.assertNotContains(response, "Clinical details will appear here as the case record is updated.")
+
+    def test_case_detail_identity_header_shows_review_schedule_for_medicine_case(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-IDENTITY-MEDICINE",
+            first_name="Medicine",
+            last_name="Review",
+            phone_number="9876500214",
+            category=self.medicine,
+            status=CaseStatus.ACTIVE,
+            review_frequency=ReviewFrequency.MONTHLY,
+            review_date=timezone.localdate() + timedelta(days=14),
+            created_by=self.user,
+        )
+
+        response = self.client.get(reverse("patients:case_detail", kwargs={"pk": case.pk}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Review Schedule")
+        self.assertContains(response, 'data-testid="case-detail-summary-section-review" open')
+        self.assertContains(response, "Monthly")
+        self.assertContains(response, case.review_date.strftime("%d %b %Y"))
+        self.assertNotContains(response, "Clinical details will appear here as the case record is updated.")
+
+    def test_case_detail_identity_header_shows_ncd_risk_section_for_generic_case(self):
+        self.client.force_login(self.user)
+        custom_category = DepartmentConfig.objects.create(name="Generic Follow Up")
+        case = Case.objects.create(
+            uhid="UH-IDENTITY-NCDS",
+            first_name="Ncd",
+            last_name="Only",
+            phone_number="9876500215",
+            category=custom_category,
+            status=CaseStatus.ACTIVE,
+            ncd_flags=[NonCommunicableDisease.T2DM, NonCommunicableDisease.THYROID],
+            created_by=self.user,
+        )
+
+        response = self.client.get(reverse("patients:case_detail", kwargs={"pk": case.pk}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Risk Factors")
+        self.assertContains(response, 'data-testid="case-detail-summary-section-risk" open')
+        self.assertContains(response, "T2DM")
+        self.assertContains(response, "Thyroid")
+        self.assertNotContains(response, "Clinical details will appear here as the case record is updated.")
+
+    def test_case_detail_identity_header_shows_blood_group_in_clinical_headline(self):
         self.client.force_login(self.user)
         case = Case.objects.create(
             uhid="UH-IDENTITY-BLOOD-GROUP",
@@ -7581,7 +7678,6 @@ class MedtrackViewTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Clinical Details")
-        self.assertContains(response, "Blood Group")
         self.assertContains(response, BloodGroup.B_POSITIVE)
         self.assertNotContains(response, "Clinical details will appear here as the case record is updated.")
 
@@ -7608,8 +7704,9 @@ class MedtrackViewTests(TestCase):
         response = self.client.get(reverse("patients:case_detail", kwargs={"pk": case.pk}))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Obstetric Summary")
-        self.assertContains(response, "G0 P0 A0 L0")
+        self.assertContains(response, "Pregnancy Details")
+        self.assertContains(response, 'data-testid="case-detail-summary-section-pregnancy" open')
+        self.assertContains(response, case.obstetric_summary)
         self.assertNotContains(response, "Clinical details will appear here as the case record is updated.")
 
     def test_case_detail_uses_latest_vitals_timestamp(self):

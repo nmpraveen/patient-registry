@@ -830,6 +830,20 @@
   margin-bottom: 0.95rem;
 }
 
+.case-detail-summary-chips .theme-category-chip {
+  min-height: 2rem;
+  padding: 0.25rem 0.75rem;
+  border-color: var(--theme-category-border);
+  background: var(--theme-category-bg);
+  color: var(--theme-category-text);
+}
+
+.case-detail-summary-chips .theme-category-chip:hover,
+.case-detail-summary-chips .theme-category-chip:focus-visible {
+  background: var(--theme-category-hover-bg);
+  color: var(--theme-category-text);
+}
+
 .case-detail-chip--neutral {
   background: var(--theme-shell-surface-hover-bg);
   border-color: var(--app-border);
@@ -1753,6 +1767,123 @@
 
 .case-detail-rail-card {
   padding: 1rem;
+}
+
+.case-detail-summary {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.case-detail-summary-headline {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.case-detail-summary-headline__title {
+  margin: 0;
+  color: var(--case-detail-strong-text);
+  font-size: 1rem;
+  font-weight: 800;
+  line-height: 1.4;
+}
+
+.case-detail-summary-headline__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem 0.65rem;
+}
+
+.case-detail-summary-headline__item {
+  display: inline-flex;
+  align-items: center;
+  color: var(--case-detail-muted-text);
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.case-detail-summary-headline__item + .case-detail-summary-headline__item::before {
+  content: "";
+  width: 0.26rem;
+  height: 0.26rem;
+  border-radius: 999px;
+  margin-right: 0.65rem;
+  background: var(--case-detail-surface-divider);
+}
+
+.case-detail-summary-section {
+  margin: 0;
+  padding-top: 0.82rem;
+  border-top: 1px solid var(--case-detail-surface-divider);
+}
+
+.case-detail-summary > .case-detail-summary-section:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.case-detail-summary-section__summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  cursor: pointer;
+  list-style: none;
+}
+
+.case-detail-summary-section__summary::-webkit-details-marker {
+  display: none;
+}
+
+.case-detail-summary-section__summary::after {
+  content: "";
+  width: 0.62rem;
+  height: 0.62rem;
+  flex-shrink: 0;
+  border-right: 2px solid var(--case-detail-faint-text);
+  border-bottom: 2px solid var(--case-detail-faint-text);
+  transform: rotate(45deg);
+  transition: transform 0.18s ease, border-color 0.18s ease;
+}
+
+.case-detail-summary-section[open] > .case-detail-summary-section__summary::after {
+  border-color: var(--case-detail-strong-text);
+  transform: rotate(225deg);
+}
+
+.case-detail-summary-section__title {
+  color: var(--case-detail-strong-text);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.case-detail-summary-section__body {
+  display: grid;
+  gap: 0.9rem;
+  padding-top: 0.8rem;
+}
+
+.case-detail-summary-block {
+  display: grid;
+  gap: 0.32rem;
+}
+
+.case-detail-summary-pill-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-top: 0.45rem;
+}
+
+.case-detail-summary-pill-list .case-detail-chip {
+  min-height: 1.9rem;
+  padding: 0.2rem 0.7rem;
+}
+
+.case-detail-summary-note {
+  white-space: pre-line;
 }
 
 .case-detail-summary-list {

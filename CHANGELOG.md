@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.03.25.13.00
+- Redesigned the Case Detail `Clinical Details` card into a richer category-aware summary with a compact headline, collapsible sections, ANC pregnancy details, surgery/review schedule sections, NCD pills, and full referral notes.
+- Added read-only case presentation helpers for trimester-with-weeks, effective EDD, readable NCD labels, section visibility, and richer obstetric summaries so the clinical card stays template-driven without schema changes.
+- Removed the `Overview` badge from the clinical-card header and anchored the category and status chips to existing theme-driven category and case-status colors so future global theme updates flow through automatically.
+
 ## 2026.03.25.02.07
 - Added optional blood-group capture to the new-case and edit-case flows, including patient sync, existing-patient prefill, and one-line demographic layout updates.
 - Extended blood-group persistence through bundle export/import, deterministic seed data, migration-backed storage, and focused regression coverage for create and edit behavior.

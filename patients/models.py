@@ -1169,15 +1169,33 @@ class Case(models.Model):
         super().save(*args, **kwargs)
 
     @property
-    def trimester(self):
+    def workflow_key(self):
+        return workflow_key_for_case(self)
+
+    @property
+    def gestation_weeks(self):
         if not self.lmp:
             return None
-        weeks = max((timezone.localdate() - self.lmp).days // 7, 0)
+        return max((timezone.localdate() - self.lmp).days // 7, 0)
+
+    @property
+    def trimester(self):
+        weeks = self.gestation_weeks
+        if weeks is None:
+            return None
         if weeks < 13:
             return "First"
         if weeks < 28:
             return "Second"
         return "Third"
+
+    @property
+    def trimester_summary(self):
+        if not self.trimester:
+            return ""
+        if self.gestation_weeks is None:
+            return self.trimester
+        return f"{self.trimester} ({self.gestation_weeks}w)"
 
     @property
     def effective_edd(self):
@@ -1187,6 +1205,19 @@ class Case(models.Model):
     def anc_high_risk_reason_labels(self):
         choice_map = dict(AncHighRiskReason.choices)
         return [choice_map[value] for value in (self.anc_high_risk_reasons or []) if value in choice_map]
+
+    @property
+    def ncd_flag_labels(self):
+        choice_map = dict(NonCommunicableDisease.choices)
+        labels = []
+        for raw_flag in self.ncd_flags or []:
+            normalized_flag = str(raw_flag or "").strip()
+            if not normalized_flag:
+                continue
+            label = choice_map.get(normalized_flag, normalized_flag.replace("_", " ").title())
+            if label not in labels:
+                labels.append(label)
+        return labels
 
     @property
     def is_primi(self):
@@ -1213,6 +1244,55 @@ class Case(models.Model):
         if self.show_delivery_mode_history:
             summary += f" | FTND {self.ftnd or 0} LSCS {self.lscs or 0}"
         return summary
+
+    @property
+    def clinical_headline_items(self):
+        items = []
+        if self.blood_group:
+            items.append(self.get_blood_group_display() or self.blood_group)
+        if self.obstetric_summary:
+            items.append(self.obstetric_summary)
+        if self.surgical_pathway:
+            items.append(self.get_surgical_pathway_display())
+        if self.review_frequency:
+            items.append(self.get_review_frequency_display())
+        return items
+
+    @property
+    def has_pregnancy_details(self):
+        return self.workflow_key == "anc" and any(
+            [self.trimester_summary, self.lmp, self.effective_edd, self.rch_number, self.obstetric_summary]
+        )
+
+    @property
+    def has_surgical_details(self):
+        return self.workflow_key == "surgery" and any(
+            [self.surgical_pathway, self.surgery_done, self.surgery_date, self.review_date]
+        )
+
+    @property
+    def has_review_schedule(self):
+        return self.workflow_key == "medicine" and any([self.review_frequency, self.review_date])
+
+    @property
+    def has_risk_factors(self):
+        return bool(self.high_risk or self.anc_high_risk_reason_labels or self.ncd_flag_labels)
+
+    @property
+    def has_referral_notes(self):
+        return bool(self.referred_by or self.notes)
+
+    @property
+    def has_clinical_summary(self):
+        return bool(
+            self.diagnosis
+            or self.clinical_headline_items
+            or self.has_pregnancy_details
+            or self.has_surgical_details
+            or self.has_review_schedule
+            or self.has_risk_factors
+            or self.has_referral_notes
+        )
 
     def __str__(self) -> str:
         return f"{self.uhid} - {self.full_name}"

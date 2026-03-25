@@ -13,7 +13,7 @@
 
       <form method="get" class="row g-2 mb-3">
         <div class="col-12 col-lg-6">
-          <input class="form-control" type="search" name="q" value="{{ query|default:'' }}" placeholder="UHID, name, DOB, phone, or place" />
+          <input class="form-control" type="search" name="q" value="{{ query|default:'' }}" placeholder="UHID, name, phone, or place" />
         </div>
         <div class="col-12 col-lg-auto">
           <button class="btn btn-outline-primary w-100" type="submit">Search</button>
@@ -40,8 +40,8 @@
                   <td>{{ patient.uhid }}</td>
                   <td>
                     <div class="fw-semibold">{{ patient.full_name|default:patient.patient_name }}</div>
-                    {% if patient.date_of_birth %}
-                      <div class="small text-muted">DOB {{ patient.date_of_birth|date:"d M Y" }}</div>
+                    {% if patient.age_display != "-" %}
+                      <div class="small text-muted">Age {{ patient.age_display }}</div>
                     {% endif %}
                   </td>
                   <td>{{ patient.phone_number|default:"-" }}</td>

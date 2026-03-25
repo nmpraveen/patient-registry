@@ -61,7 +61,7 @@
       {% if search_mode %}
         <tr><th>UHID</th><th>Name</th><th>Diagnosis</th><th>Place</th><th>Phone</th><th>Category</th><th>Status</th><th>Tasks</th><th>Matching Note</th></tr>
       {% else %}
-        <tr><th>UHID</th><th>Name</th><th>Gender</th><th>DOB</th><th>Place</th><th>Phone</th><th>Category</th><th>Status</th><th>Tasks</th></tr>
+        <tr><th>UHID</th><th>Name</th><th>Gender</th><th>Age</th><th>Place</th><th>Phone</th><th>Category</th><th>Status</th><th>Tasks</th></tr>
       {% endif %}
     </thead>
     <tbody>
@@ -81,7 +81,7 @@
                 {% else %}
                   -
                 {% endif %}
-                - {{ case.date_of_birth|default:"-" }}
+                - Age {{ case.age_display }}
               </div>
             </td>
             <td>{{ case.diagnosis|default:"-" }}</td>
@@ -110,7 +110,7 @@
                 -
               {% endif %}
             </td>
-            <td>{{ case.date_of_birth|default:"-" }}</td>
+            <td>{{ case.age_display }}</td>
             <td>{{ case.place|default:"-" }}</td>
             <td>{{ case.phone_number|default:"Phone pending" }}</td>
             <td>
@@ -145,7 +145,7 @@
           {% else %}
             -
           {% endif %}
-          - {{ case.date_of_birth|default:"-" }}
+          - Age {{ case.age_display }}
         </div>
         <div class="small text-muted">{{ case.place|default:"-" }} - {{ case.phone_number|default:"Phone pending" }}</div>
         {% if search_mode %}

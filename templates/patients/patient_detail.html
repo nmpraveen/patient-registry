@@ -11,7 +11,7 @@
             <span>UHID {{ patient.uhid }}</span>
             {% if patient.phone_number %}<span>{{ patient.phone_number }}</span>{% endif %}
             {% if patient.place %}<span>{{ patient.place }}</span>{% endif %}
-            {% if patient.date_of_birth %}<span>DOB {{ patient.date_of_birth|date:"d M Y" }}</span>{% endif %}
+            {% if patient_age_display != "-" %}<span>Age {{ patient_age_display }}</span>{% endif %}
             {% if patient.is_temporary_id %}<span>Temporary ID</span>{% endif %}
           </div>
         </div>

@@ -1799,6 +1799,9 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(created_case.prefix, "")
 
     def test_patient_search_requires_three_characters_and_returns_identity_payload(self):
+        dob = date(1991, 5, 14)
+        today = timezone.localdate()
+        expected_age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
         existing_case = Case.objects.create(
             uhid="UH-SEARCH-001",
             prefix=CasePrefix.MRS,
@@ -1808,8 +1811,7 @@ class MedtrackViewTests(TestCase):
             alternate_phone_number="9876501451",
             place="Salem",
             gender=Gender.FEMALE,
-            date_of_birth=date(1991, 5, 14),
-            age=33,
+            date_of_birth=dob,
             category=self.surgery,
             subcategory=CaseSubcategory.GENERAL_SURGERY,
             status=CaseStatus.ACTIVE,
@@ -1834,6 +1836,8 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(payload[0]["last_name"], "Devi")
         self.assertEqual(payload[0]["gender"], Gender.FEMALE)
         self.assertEqual(payload[0]["date_of_birth"], "1991-05-14")
+        self.assertEqual(payload[0]["age"], expected_age)
+        self.assertEqual(payload[0]["age_display"], str(expected_age))
         self.assertEqual(payload[0]["phone_number"], "9876501450")
         self.assertEqual(payload[0]["alternate_phone_number"], "9876501451")
 
@@ -1868,12 +1872,15 @@ class MedtrackViewTests(TestCase):
         self.assertContains(response, "Create new case for this patient")
 
     def test_patient_list_detail_and_edit_routes_render(self):
+        dob = date(1995, 1, 15)
+        today = timezone.localdate()
+        expected_age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
         case = Case.objects.create(
             uhid="UH-PATIENT-ROUTE-001",
             prefix=CasePrefix.MS,
             first_name="Route",
             last_name="Patient",
-            age=31,
+            date_of_birth=dob,
             phone_number="9876500452",
             category=self.surgery,
             subcategory=CaseSubcategory.GENERAL_SURGERY,
@@ -1890,10 +1897,44 @@ class MedtrackViewTests(TestCase):
 
         self.assertEqual(list_response.status_code, 200)
         self.assertContains(list_response, "UH-PATIENT-ROUTE-001")
+        self.assertContains(list_response, f"Age {expected_age}")
+        self.assertNotContains(list_response, "DOB")
         self.assertEqual(detail_response.status_code, 200)
         self.assertContains(detail_response, "Add New Case")
+        self.assertContains(detail_response, f"Age {expected_age}")
+        self.assertNotContains(detail_response, f"DOB {dob.strftime('%d %b %Y')}")
         self.assertEqual(edit_response.status_code, 200)
         self.assertContains(edit_response, "Edit Patient")
+
+    def test_case_list_shows_age_instead_of_dob_on_list_and_search_rows(self):
+        self.client.force_login(self.user)
+        dob = date(1982, 4, 5)
+        today = timezone.localdate()
+        expected_age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+        Case.objects.create(
+            uhid="UH-AGE-LIST-001",
+            prefix=CasePrefix.MR,
+            first_name="Age",
+            last_name="Listed",
+            date_of_birth=dob,
+            phone_number="9876500444",
+            category=self.surgery,
+            subcategory=CaseSubcategory.GENERAL_SURGERY,
+            status=CaseStatus.ACTIVE,
+            diagnosis="Age swap case",
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=7),
+            created_by=self.user,
+        )
+
+        list_response = self.client.get(reverse("patients:case_list"))
+        search_response = self.client.get(reverse("patients:case_list"), {"q": "Age swap case"})
+
+        self.assertContains(list_response, "<th>Age</th>", html=True)
+        self.assertContains(list_response, f"<td>{expected_age}</td>", html=True)
+        self.assertNotContains(list_response, "<th>DOB</th>", html=True)
+        self.assertContains(search_response, f"Age {expected_age}")
+        self.assertNotContains(search_response, dob.isoformat())
 
     def test_patient_merge_reassigns_cases_and_marks_source_patient(self):
         source_case = Case.objects.create(

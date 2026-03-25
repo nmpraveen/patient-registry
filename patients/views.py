@@ -846,7 +846,7 @@ def _serialize_patient_search_result(patient, *, exclude_case_id=None):
         "gender": patient.gender or "",
         "date_of_birth": patient.date_of_birth.isoformat() if patient.date_of_birth else "",
         "age": patient.age,
-        "age_display": patient.age if patient.age is not None else "\u2014",
+        "age_display": _patient_age_number(patient),
         "village": patient.place or "\u2014",
         "diagnosis": active_cases[0].diagnosis if active_cases and active_cases[0].diagnosis else (
             active_cases[0].category.name if active_cases else "\u2014"
@@ -2221,6 +2221,18 @@ def _case_age_label(case):
     return f"{age_number}Y"
 
 
+def _patient_age_number(patient):
+    if patient.age is not None:
+        return str(patient.age)
+    if patient.date_of_birth:
+        today = timezone.localdate()
+        years = today.year - patient.date_of_birth.year - (
+            (today.month, today.day) < (patient.date_of_birth.month, patient.date_of_birth.day)
+        )
+        return str(max(years, 0))
+    return "-"
+
+
 def _case_age_number(case):
     if case.age is not None:
         return str(case.age)
@@ -3296,6 +3308,7 @@ class CaseListView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
                 "first_name",
                 "last_name",
                 "patient_name",
+                "age",
                 "gender",
                 "date_of_birth",
                 "place",
@@ -3381,11 +3394,13 @@ class CaseListView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
         search_mode = bool(q)
         selected_category_groups = raw_category_groups or (list(CASE_CATEGORY_GROUP_FILTERS.keys()) if search_mode else [])
         cases = list(context["cases"])
+        for case in cases:
+            case.age_display = _case_age_number(case)
         if search_mode and cases:
             _attach_case_search_snippets(cases, q)
-            context["cases"] = cases
-            if context.get("page_obj") is not None:
-                context["page_obj"].object_list = cases
+        context["cases"] = cases
+        if context.get("page_obj") is not None:
+            context["page_obj"].object_list = cases
         context["filters"] = {
             k: self.request.GET.get(k, "")
             for k in ["q", "status", "category", "category_group", "subcategory", "due_start", "due_end"]
@@ -4582,6 +4597,12 @@ class PatientListView(LoginRequiredMixin, PatientDataAccessMixin, ListView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        patients = list(context["patients"])
+        for patient in patients:
+            patient.age_display = _patient_age_number(patient)
+        context["patients"] = patients
+        if context.get("page_obj") is not None:
+            context["page_obj"].object_list = patients
         context["query"] = (self.request.GET.get("q") or "").strip()
         return context
 
@@ -4597,6 +4618,7 @@ class PatientDetailView(LoginRequiredMixin, PatientDataAccessMixin, DetailView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         patient = self.object
+        context["patient_age_display"] = _patient_age_number(patient)
         context["patient_cases"] = _patient_case_rows(patient)
         context["can_edit_patient"] = has_capability(self.request.user, "case_edit")
         context["can_patient_merge"] = has_capability(self.request.user, "patient_merge")

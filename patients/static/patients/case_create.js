@@ -640,7 +640,6 @@
       patient?.uhid || "",
       patient?.phone_number || "",
       patient?.place || "",
-      patient?.date_of_birth_display ? `DOB ${patient.date_of_birth_display}` : "",
       patientAgeLabel(patient) !== "\u2014" ? `Age ${patientAgeLabel(patient)}` : "",
     ];
     return parts.filter(Boolean).map((part) => escapeHtml(part)).join(" &middot; ");
@@ -763,7 +762,7 @@
         <div class="case-create-empty-state__icon" aria-hidden="true">?</div>
         <div>
           <div class="fw-semibold">No matching patients yet.</div>
-          <div class="small text-muted">No existing patient matched "${escapeHtml(query)}". Try a longer name, UHID, phone number, place, or full DOB.</div>
+          <div class="small text-muted">No existing patient matched "${escapeHtml(query)}". Try a longer name, UHID, phone number, or place.</div>
         </div>
       </div>
     `;

@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.03.25.01.18
+- Replaced DOB with age on the Case List, Patient List, Patient Detail header, and New Case existing-patient search results so those identity surfaces now show age instead of birth date.
+- Added age-display fallbacks in the list/detail views and search payload so those screens still show age when older records only have DOB populated.
+- Updated focused regression coverage for the patient search payload plus the patient-list, patient-detail, and case-list identity displays.
+
 ## 2026.03.25.00.03
 - Added real per-category starter-task templates so ANC, Surgery, Medicine, and custom categories now store the actual starter plan used by task generation instead of relying on hardcoded-only settings descriptions.
 - Rebuilt the Categories settings page into a select-or-create flow with one selected-category editor, editable starter-task rows, add/remove task controls, and simpler labels focused on task name, base date, timing, type, and section.

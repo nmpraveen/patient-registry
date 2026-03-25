@@ -495,25 +495,7 @@ def _merge_patient_records(*, source_patient, target_patient, actor):
         for case in affected_cases:
             previous_uhid = case.uhid
             case.patient = target_patient
-            case.sync_identity_from_patient()
-            case.save(
-                update_fields=[
-                    "patient",
-                    "uhid",
-                    "prefix",
-                    "first_name",
-                    "last_name",
-                    "patient_name",
-                    "gender",
-                    "blood_group",
-                    "date_of_birth",
-                    "place",
-                    "age",
-                    "phone_number",
-                    "alternate_phone_number",
-                    "updated_at",
-                ]
-            )
+            case.save(update_fields=["patient", "updated_at"])
             create_case_activity(
                 case=case,
                 user=actor,
@@ -650,105 +632,6 @@ def _visible_task_queryset(queryset=None):
 def _visible_patient_queryset(queryset=None):
     queryset = queryset if queryset is not None else Patient.objects.all()
     return queryset.filter(merged_into__isnull=True)
-
-
-def _parse_patient_search_date(raw_value):
-    normalized = (raw_value or "").strip()
-    if not normalized:
-        return None
-    for fmt in ("%Y-%m-%d", "%d/%m/%Y"):
-        try:
-            return datetime.strptime(normalized, fmt).date()
-        except ValueError:
-            continue
-    return None
-
-
-def _patient_search_queryset(query=""):
-    queryset = _visible_patient_queryset(
-        Patient.objects.annotate(
-            total_case_count=Count("cases", distinct=True),
-            active_case_count=Count(
-                "cases",
-                filter=Q(cases__is_archived=False, cases__status=CaseStatus.ACTIVE),
-                distinct=True,
-            ),
-        )
-        .order_by("patient_name", "uhid")
-    )
-    normalized_query = (query or "").strip()
-    if normalized_query:
-        filters = (
-            Q(uhid__icontains=normalized_query)
-            | Q(first_name__icontains=normalized_query)
-            | Q(last_name__icontains=normalized_query)
-            | Q(patient_name__icontains=normalized_query)
-            | Q(phone_number__icontains=normalized_query)
-            | Q(alternate_phone_number__icontains=normalized_query)
-            | Q(place__icontains=normalized_query)
-        )
-        parsed_date = _parse_patient_search_date(normalized_query)
-        if parsed_date:
-            filters |= Q(date_of_birth=parsed_date)
-        queryset = queryset.filter(filters)
-    return queryset
-
-
-def _patient_active_cases(patient, *, include_archived=False, limit=None):
-    queryset = patient.cases.select_related("category").order_by("-updated_at", "-id")
-    if not include_archived:
-        queryset = queryset.filter(is_archived=False)
-    if limit is not None:
-        queryset = queryset[:limit]
-    return list(queryset)
-
-
-def _serialize_patient_case_summary(case):
-    return {
-        "id": case.id,
-        "category_name": case.category.name,
-        "status": case.status,
-        "status_label": case.get_status_display(),
-        "diagnosis": (case.diagnosis or case.category.name).strip(),
-        "detail_url": reverse("patients:case_detail", kwargs={"pk": case.pk}),
-    }
-
-
-def _serialize_patient_search_result(patient):
-    active_cases = [
-        case
-        for case in _patient_active_cases(patient, limit=3)
-        if case.status == CaseStatus.ACTIVE
-    ]
-    tags = []
-    seen_categories = set()
-    for case in active_cases:
-        category_name = case.category.name
-        if category_name in seen_categories:
-            continue
-        seen_categories.add(category_name)
-        tags.append({"kind": "category", "label": category_name, "value": category_name.lower()})
-    if patient.is_temporary_id:
-        tags.append({"kind": "temporary", "label": "Temporary ID"})
-    return {
-        "id": patient.id,
-        "record_type": "patient",
-        "uhid": patient.uhid,
-        "name": patient.full_name or patient.patient_name or patient.uhid,
-        "blood_group": patient.blood_group or "",
-        "blood_group_display": patient.get_blood_group_display() if patient.blood_group else "",
-        "age": patient.age if patient.age is not None else "\u2014",
-        "village": patient.place or "\u2014",
-        "diagnosis": active_cases[0].diagnosis if active_cases and active_cases[0].diagnosis else (
-            active_cases[0].category.name if active_cases else "\u2014"
-        ),
-        "phone_number": patient.phone_number or "\u2014",
-        "active_case_count": getattr(patient, "active_case_count", len(active_cases)),
-        "total_case_count": getattr(patient, "total_case_count", patient.cases.count()),
-        "cases": [_serialize_patient_case_summary(case) for case in active_cases],
-        "tags": tags,
-        "detail_url": reverse("patients:patient_detail", kwargs={"pk": patient.pk}),
-    }
 
 
 def _case_management_queryset(query=""):
@@ -1572,59 +1455,6 @@ def _delta_direction(value):
     if value < 0:
         return "down"
     return "flat"
-
-
-def _vitals_metric_specs():
-    return [
-        {
-            "key": "pr",
-            "field_name": "pr",
-            "label": "Pulse Rate",
-            "short_label": "PR",
-            "icon": "💓",
-            "unit": "bpm",
-            "minimum": 40,
-            "maximum": 140,
-            "formatter": _format_integer,
-            "delta_precision": 0,
-        },
-        {
-            "key": "spo2",
-            "field_name": "spo2",
-            "label": "SpO2",
-            "short_label": "SpO2",
-            "icon": "🫁",
-            "unit": "%",
-            "minimum": 80,
-            "maximum": 100,
-            "formatter": _format_integer,
-            "delta_precision": 0,
-        },
-        {
-            "key": "weight",
-            "field_name": "weight_kg",
-            "label": "Weight",
-            "short_label": "Wt",
-            "icon": "⚖️",
-            "unit": "kg",
-            "minimum": 30,
-            "maximum": 120,
-            "formatter": _format_decimal_one,
-            "delta_precision": 1,
-        },
-        {
-            "key": "hemoglobin",
-            "field_name": "hemoglobin",
-            "label": "Hemoglobin",
-            "short_label": "Hb",
-            "icon": "🩸",
-            "unit": "g/dL",
-            "minimum": 4,
-            "maximum": 16,
-            "formatter": _format_decimal_one,
-            "delta_precision": 1,
-        },
-    ]
 
 
 def _vitals_metric_specs():
@@ -3185,109 +3015,12 @@ class PatientSearchView(LoginRequiredMixin, CaseDataAccessMixin, View):
         query = (request.GET.get("q") or "").strip()
         if len(query) < self.min_query_length:
             return JsonResponse({"results": []})
-        queryset = _patient_search_queryset(query)
+        queryset = _patient_queryset(query)
         category_query = self._category_query(request.GET.getlist("category"))
         if category_query:
             queryset = queryset.filter(category_query).distinct()
         patients = list(queryset[: self.max_results])
         return JsonResponse({"results": [_serialize_patient_search_result(patient) for patient in patients]})
-
-
-class PatientListView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
-    model = Patient
-    template_name = "patients/patient_list.html"
-    context_object_name = "patients"
-    paginate_by = 25
-
-    def get_queryset(self):
-        return _patient_search_queryset(self.request.GET.get("q", ""))
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context["patient_query"] = (self.request.GET.get("q") or "").strip()
-        return context
-
-
-class PatientDetailView(LoginRequiredMixin, CaseDataAccessMixin, DetailView):
-    model = Patient
-    template_name = "patients/patient_detail.html"
-    context_object_name = "patient"
-
-    def get_queryset(self):
-        return _visible_patient_queryset(Patient.objects.all())
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        patient = self.object
-        visible_cases = _visible_case_queryset(patient.cases.select_related("category").order_by("-updated_at", "-id"))
-        context["active_cases"] = [case for case in visible_cases if case.status == CaseStatus.ACTIVE]
-        context["closed_cases"] = [case for case in visible_cases if case.status != CaseStatus.ACTIVE]
-        context["can_edit_patient"] = has_capability(self.request.user, "case_edit")
-        context["can_merge_patient"] = has_capability(self.request.user, "patient_merge")
-        context["merge_form"] = PatientMergeForm(source_patient=patient)
-        return context
-
-
-class PatientUpdateView(LoginRequiredMixin, CaseDataAccessMixin, UpdateView):
-    model = Patient
-    form_class = PatientForm
-    template_name = "patients/patient_form.html"
-
-    def dispatch(self, request, *args, **kwargs):
-        if not has_capability(request.user, "case_edit"):
-            return HttpResponseForbidden("You do not have permission to edit patient records.")
-        return super().dispatch(request, *args, **kwargs)
-
-    def get_queryset(self):
-        return _visible_patient_queryset(Patient.objects.all())
-
-    def form_valid(self, form):
-        response = super().form_valid(form)
-        for case in self.object.cases.all():
-            case.save()
-        return response
-
-    def get_success_url(self):
-        return reverse("patients:patient_detail", kwargs={"pk": self.object.pk})
-
-
-def _merge_patients(*, source_patient, target_patient, actor):
-    if source_patient.pk == target_patient.pk:
-        raise ValidationError("Choose a different patient to merge into.")
-    if source_patient.is_merged:
-        raise ValidationError("This patient has already been merged.")
-    moved_cases = list(source_patient.cases.select_related("category"))
-    with transaction.atomic():
-        for case in moved_cases:
-            case.patient = target_patient
-            case.save()
-            create_case_activity(
-                case=case,
-                user=actor,
-                event_type=ActivityEventType.SYSTEM,
-                note=f"Patient record merged: {source_patient.uhid} -> {target_patient.uhid}",
-            )
-        source_patient.merged_into = target_patient
-        source_patient.save(update_fields=["merged_into", "updated_at"])
-
-
-class PatientMergeView(LoginRequiredMixin, CaseDataAccessMixin, View):
-    def post(self, request, pk):
-        if not has_capability(request.user, "patient_merge"):
-            return HttpResponseForbidden("You do not have permission to merge patient records.")
-        source_patient = get_object_or_404(_visible_patient_queryset(Patient.objects.all()), pk=pk)
-        form = PatientMergeForm(request.POST, source_patient=source_patient)
-        if not form.is_valid():
-            messages.error(request, "Choose a valid patient to merge into.")
-            return redirect("patients:patient_detail", pk=source_patient.pk)
-        target_patient = form.cleaned_data["target_patient"]
-        try:
-            _merge_patients(source_patient=source_patient, target_patient=target_patient, actor=request.user)
-        except ValidationError as exc:
-            messages.error(request, exc.messages[0])
-            return redirect("patients:patient_detail", pk=source_patient.pk)
-        messages.success(request, f"Merged {source_patient.uhid} into {target_patient.uhid}.")
-        return redirect("patients:patient_detail", pk=target_patient.pk)
 
 
 class CaseListView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
@@ -4654,10 +4387,7 @@ class PatientUpdateView(LoginRequiredMixin, PatientEditAccessMixin, UpdateView):
         return Patient.objects.filter(merged_into__isnull=True)
 
     def form_valid(self, form):
-        response = super().form_valid(form)
-        for case in self.object.cases.all():
-            case.save()
-        return response
+        return super().form_valid(form)
 
     def get_success_url(self):
         return reverse("patients:patient_detail", kwargs={"pk": self.object.pk})

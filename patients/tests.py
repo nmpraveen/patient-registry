@@ -105,7 +105,7 @@ class MedtrackModelTests(TestCase):
         self.assertEqual(case.place, "Chennai")
         self.assertEqual(case.patient_name, "Mrs. First Name Last Name")
 
-    def test_case_save_with_update_fields_normalizes_names_place_and_keeps_patient_name_synced(self):
+    def test_patient_save_with_update_fields_normalizes_names_place_and_keeps_case_mirrors_synced(self):
         case = Case.objects.create(
             uhid="UH-NAME-002",
             prefix=CasePrefix.MS,
@@ -119,10 +119,11 @@ class MedtrackModelTests(TestCase):
             created_by=self.user,
         )
 
-        case.prefix = CasePrefix.MRS
-        case.first_name = "  FIRST   NAME  "
-        case.place = "  nEW   dELHI  "
-        case.save(update_fields=["prefix", "first_name", "place"])
+        patient = case.patient
+        patient.prefix = CasePrefix.MRS
+        patient.first_name = "  FIRST   NAME  "
+        patient.place = "  nEW   dELHI  "
+        patient.save(update_fields=["prefix", "first_name", "place"])
         case.refresh_from_db()
 
         self.assertEqual(case.prefix, CasePrefix.MRS)
@@ -156,6 +157,83 @@ class MedtrackModelTests(TestCase):
         self.assertEqual(case.first_name, "  FIRST   NAME  ")
         self.assertEqual(case.last_name, "  mR  ")
         self.assertEqual(case.patient_name, "  FIRST   NAME     mR  ")
+
+    def test_patient_identity_update_syncs_other_cases_for_same_patient(self):
+        case = Case.objects.create(
+            uhid="UH-SHARED-001",
+            prefix=CasePrefix.MS,
+            first_name="Asha",
+            last_name="Devi",
+            place="Pune",
+            phone_number="9000000011",
+            category=self.surgery,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=7),
+            created_by=self.user,
+        )
+        sibling_case = Case.objects.create(
+            patient=case.patient,
+            uhid=case.uhid,
+            prefix=case.prefix,
+            first_name=case.first_name,
+            last_name=case.last_name,
+            patient_name=case.patient_name,
+            phone_number=case.phone_number,
+            place=case.place,
+            age=case.age,
+            gender=case.gender,
+            blood_group=case.blood_group,
+            date_of_birth=case.date_of_birth,
+            alternate_phone_number=case.alternate_phone_number,
+            category=self.medicine,
+            review_date=timezone.localdate() + timedelta(days=14),
+            created_by=self.user,
+        )
+
+        patient = case.patient
+        patient.prefix = CasePrefix.MRS
+        patient.first_name = "  FIRST   NAME  "
+        patient.last_name = "  lAST   NAME  "
+        patient.place = "  nEW   dELHI  "
+        patient.save(update_fields=["prefix", "first_name", "last_name", "place"])
+
+        case.refresh_from_db()
+        sibling_case.refresh_from_db()
+        case.patient.refresh_from_db()
+
+        self.assertEqual(case.patient.prefix, CasePrefix.MRS)
+        self.assertEqual(case.patient.first_name, "First Name")
+        self.assertEqual(case.patient.last_name, "Last Name")
+        self.assertEqual(case.patient.place, "New Delhi")
+        self.assertEqual(case.patient.patient_name, "Mrs. First Name Last Name")
+        self.assertEqual(sibling_case.prefix, CasePrefix.MRS)
+        self.assertEqual(sibling_case.first_name, "First Name")
+        self.assertEqual(sibling_case.last_name, "Last Name")
+        self.assertEqual(sibling_case.place, "New Delhi")
+        self.assertEqual(sibling_case.patient_name, "Mrs. First Name Last Name")
+
+    def test_case_save_with_linked_patient_keeps_patient_identity_authoritative(self):
+        case = Case.objects.create(
+            uhid="UH-PATIENT-SYNC-001",
+            prefix=CasePrefix.MS,
+            first_name="Meera",
+            last_name="Devi",
+            phone_number="9000000010",
+            blood_group=BloodGroup.A_POSITIVE,
+            category=self.surgery,
+            subcategory=CaseSubcategory.GENERAL_SURGERY,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=7),
+            created_by=self.user,
+        )
+
+        case.blood_group = BloodGroup.O_NEGATIVE
+        case.save(update_fields=["blood_group"])
+        case.refresh_from_db()
+        case.patient.refresh_from_db()
+
+        self.assertEqual(case.blood_group, BloodGroup.A_POSITIVE)
+        self.assertEqual(case.patient.blood_group, BloodGroup.A_POSITIVE)
 
     def test_plan_default_tasks_for_anc_returns_preview_without_writing_tasks(self):
         preview_case = Case(
@@ -1942,6 +2020,53 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(edit_response.status_code, 200)
         self.assertContains(edit_response, "Edit Patient")
 
+    def test_patient_edit_updates_linked_case_without_resaving_each_case(self):
+        case = Case.objects.create(
+            uhid="UH-PATIENT-EDIT-001",
+            prefix=CasePrefix.MRS,
+            first_name="Original",
+            last_name="Patient",
+            phone_number="9876500458",
+            blood_group=BloodGroup.A_POSITIVE,
+            category=self.surgery,
+            subcategory=CaseSubcategory.GENERAL_SURGERY,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=9),
+            created_by=self.user,
+        )
+        self.login_as_admin()
+
+        with patch("patients.views.Case.save", autospec=True) as mock_case_save:
+            response = self.client.post(
+                reverse("patients:patient_edit", kwargs={"pk": case.patient_id}),
+                {
+                    "uhid": case.patient.uhid,
+                    "prefix": CasePrefix.MRS,
+                    "first_name": "Updated",
+                    "last_name": "Patient",
+                    "gender": Gender.FEMALE,
+                    "blood_group": BloodGroup.O_NEGATIVE,
+                    "age": "36",
+                    "place": "Madurai",
+                    "phone_number": "9876500999",
+                    "alternate_phone_number": "",
+                },
+            )
+
+        self.assertEqual(response.status_code, 302)
+        mock_case_save.assert_not_called()
+        case.refresh_from_db()
+        case.patient.refresh_from_db()
+        self.assertEqual(case.first_name, "Updated")
+        self.assertEqual(case.patient.first_name, "Updated")
+        self.assertEqual(case.blood_group, BloodGroup.O_NEGATIVE)
+        self.assertEqual(case.patient.blood_group, BloodGroup.O_NEGATIVE)
+        self.assertEqual(case.phone_number, "9876500999")
+        self.assertEqual(case.patient.phone_number, "9876500999")
+        self.assertEqual(case.place, "Madurai")
+        self.assertEqual(case.patient.place, "Madurai")
+
     def test_case_list_shows_age_instead_of_dob_on_list_and_search_rows(self):
         self.client.force_login(self.user)
         dob = date(1982, 4, 5)
@@ -2052,6 +2177,76 @@ class MedtrackViewTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 403)
+
+    def test_patient_edit_updates_related_cases_without_resaving_cases(self):
+        source_case = Case.objects.create(
+            uhid="UH-PATIENT-EDIT-001",
+            prefix=CasePrefix.MS,
+            first_name="Asha",
+            last_name="Devi",
+            age=31,
+            place="Pune",
+            phone_number="9876501455",
+            category=self.surgery,
+            subcategory=CaseSubcategory.GENERAL_SURGERY,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=8),
+            created_by=self.user,
+        )
+        sibling_case = Case.objects.create(
+            patient=source_case.patient,
+            uhid=source_case.uhid,
+            prefix=source_case.prefix,
+            first_name=source_case.first_name,
+            last_name=source_case.last_name,
+            patient_name=source_case.patient_name,
+            age=source_case.age,
+            place=source_case.place,
+            phone_number=source_case.phone_number,
+            category=self.medicine,
+            subcategory=CaseSubcategory.GENERAL_MEDICINE,
+            status=CaseStatus.ACTIVE,
+            review_date=timezone.localdate() + timedelta(days=12),
+            created_by=self.user,
+        )
+        self.login_as_admin()
+
+        with patch("patients.models.Case.save", autospec=True) as mocked_case_save:
+            response = self.client.post(
+                reverse("patients:patient_edit", kwargs={"pk": source_case.patient_id}),
+                {
+                    "uhid": source_case.patient.uhid,
+                    "prefix": CasePrefix.MRS,
+                    "first_name": "  FIRST   NAME  ",
+                    "last_name": "  lAST   NAME  ",
+                    "gender": Gender.FEMALE,
+                    "blood_group": "",
+                    "date_of_birth": "",
+                    "place": "  nEW   dELHI  ",
+                    "age": "31",
+                    "phone_number": "9876501455",
+                    "alternate_phone_number": "",
+                },
+            )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(mocked_case_save.called)
+
+        source_case.refresh_from_db()
+        sibling_case.refresh_from_db()
+        patient = source_case.patient
+        patient.refresh_from_db()
+
+        self.assertEqual(patient.prefix, CasePrefix.MRS)
+        self.assertEqual(patient.first_name, "First Name")
+        self.assertEqual(patient.last_name, "Last Name")
+        self.assertEqual(patient.place, "New Delhi")
+        self.assertEqual(patient.patient_name, "Mrs. First Name Last Name")
+        self.assertEqual(source_case.patient_name, "Mrs. First Name Last Name")
+        self.assertEqual(sibling_case.patient_name, "Mrs. First Name Last Name")
+        self.assertEqual(source_case.place, "New Delhi")
+        self.assertEqual(sibling_case.place, "New Delhi")
 
     def test_quick_entry_cases_show_phone_pending_fallback_in_detail_and_list(self):
         case = Case.objects.create(
@@ -6723,19 +6918,85 @@ class MedtrackViewTests(TestCase):
             created_by=self.user,
         )
 
+        with patch.object(Patient, "sync_case_mirrors", autospec=True) as mock_sync_case_mirrors:
+            response = self.client.post(
+                reverse("patients:case_edit", kwargs={"pk": case.pk}),
+                {
+                    "uhid": case.uhid,
+                    "prefix": case.prefix,
+                    "first_name": case.first_name,
+                    "last_name": case.last_name,
+                    "phone_number": case.phone_number,
+                    "blood_group": BloodGroup.O_NEGATIVE,
+                    "category": self.surgery.id,
+                    "subcategory": CaseSubcategory.GENERAL_SURGERY,
+                    "status": CaseStatus.ACTIVE,
+                    "age": "29",
+                    "surgical_pathway": SurgicalPathway.SURVEILLANCE,
+                    "review_date": case.review_date.isoformat(),
+                },
+            )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(mock_sync_case_mirrors.call_count, 1)
+        case.refresh_from_db()
+        case.patient.refresh_from_db()
+        self.assertEqual(case.blood_group, BloodGroup.O_NEGATIVE)
+        self.assertEqual(case.patient.blood_group, BloodGroup.O_NEGATIVE)
+
+    def test_case_update_syncs_patient_and_sibling_case_mirrors(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-EDIT-SHARED",
+            prefix=CasePrefix.MS,
+            first_name="Asha",
+            last_name="Devi",
+            phone_number="9876500892",
+            blood_group=BloodGroup.A_POSITIVE,
+            category=self.surgery,
+            subcategory=CaseSubcategory.GENERAL_SURGERY,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=7),
+            created_by=self.user,
+        )
+        sibling_case = Case.objects.create(
+            patient=case.patient,
+            uhid=case.uhid,
+            prefix=case.prefix,
+            first_name=case.first_name,
+            last_name=case.last_name,
+            patient_name=case.patient_name,
+            gender=case.gender,
+            blood_group=case.blood_group,
+            date_of_birth=case.date_of_birth,
+            place=case.place,
+            age=case.age,
+            phone_number=case.phone_number,
+            alternate_phone_number=case.alternate_phone_number,
+            category=self.medicine,
+            subcategory=CaseSubcategory.GENERAL_MEDICINE,
+            status=CaseStatus.ACTIVE,
+            review_date=timezone.localdate() + timedelta(days=10),
+            created_by=self.user,
+        )
+
         response = self.client.post(
             reverse("patients:case_edit", kwargs={"pk": case.pk}),
             {
                 "uhid": case.uhid,
-                "prefix": case.prefix,
-                "first_name": case.first_name,
-                "last_name": case.last_name,
-                "phone_number": case.phone_number,
+                "prefix": CasePrefix.MRS,
+                "first_name": "Updated",
+                "last_name": "Patient",
+                "gender": Gender.FEMALE,
                 "blood_group": BloodGroup.O_NEGATIVE,
+                "place": "Ann Arbor",
+                "phone_number": "9876500997",
+                "alternate_phone_number": "9876500996",
                 "category": self.surgery.id,
                 "subcategory": CaseSubcategory.GENERAL_SURGERY,
                 "status": CaseStatus.ACTIVE,
-                "age": "29",
+                "age": "31",
                 "surgical_pathway": SurgicalPathway.SURVEILLANCE,
                 "review_date": case.review_date.isoformat(),
             },
@@ -6743,9 +7004,20 @@ class MedtrackViewTests(TestCase):
 
         self.assertEqual(response.status_code, 302)
         case.refresh_from_db()
+        sibling_case.refresh_from_db()
         case.patient.refresh_from_db()
-        self.assertEqual(case.blood_group, BloodGroup.O_NEGATIVE)
+        self.assertEqual(case.patient.patient_name, "Mrs. Updated Patient")
         self.assertEqual(case.patient.blood_group, BloodGroup.O_NEGATIVE)
+        self.assertEqual(case.patient.phone_number, "9876500997")
+        self.assertEqual(case.patient.alternate_phone_number, "9876500996")
+        self.assertEqual(sibling_case.prefix, CasePrefix.MRS)
+        self.assertEqual(sibling_case.first_name, "Updated")
+        self.assertEqual(sibling_case.last_name, "Patient")
+        self.assertEqual(sibling_case.patient_name, "Mrs. Updated Patient")
+        self.assertEqual(sibling_case.blood_group, BloodGroup.O_NEGATIVE)
+        self.assertEqual(sibling_case.phone_number, "9876500997")
+        self.assertEqual(sibling_case.alternate_phone_number, "9876500996")
+        self.assertEqual(sibling_case.place, "Ann Arbor")
 
     def test_case_update_requires_prefix_for_legacy_blank_prefix_case(self):
         self.client.force_login(self.user)

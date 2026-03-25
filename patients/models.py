@@ -45,6 +45,22 @@ TEMP_PATIENT_ID_PREFIX = "TMP"
 STAFF_ROLE_NAME = "Staff"
 STAFF_PILOT_ROLE_NAME = "Staff Pilot"
 DEVICE_APPROVAL_MAX_APPROVED = 3
+PATIENT_CASE_IDENTITY_FIELDS = (
+    "uhid",
+    "prefix",
+    "first_name",
+    "last_name",
+    "patient_name",
+    "gender",
+    "blood_group",
+    "date_of_birth",
+    "place",
+    "age",
+    "phone_number",
+    "alternate_phone_number",
+)
+PATIENT_CASE_IDENTITY_FIELD_SET = frozenset(PATIENT_CASE_IDENTITY_FIELDS)
+PATIENT_CASE_NAME_FIELD_SET = frozenset({"prefix", "first_name", "last_name", "patient_name", "place"})
 
 
 def normalize_backup_schedule_time(value):
@@ -419,23 +435,24 @@ class Patient(models.Model):
     def sync_case_mirrors(self):
         if not self.pk:
             return
-        self.cases.update(
-            uhid=self.uhid,
-            prefix=self.prefix,
-            first_name=self.first_name,
-            last_name=self.last_name,
-            patient_name=self.patient_name,
-            gender=self.gender,
-            blood_group=self.blood_group,
-            date_of_birth=self.date_of_birth,
-            place=self.place,
-            age=self.age,
-            phone_number=self.phone_number,
-            alternate_phone_number=self.alternate_phone_number,
-            updated_at=timezone.now(),
-        )
+        mirror_values = {field_name: getattr(self, field_name) for field_name in PATIENT_CASE_IDENTITY_FIELDS}
+        self.cases.update(**mirror_values, updated_at=timezone.now())
 
     def save(self, *args, **kwargs):
+        update_fields = kwargs.get("update_fields")
+        should_sync_case_mirrors = update_fields is None
+
+        if update_fields is not None:
+            update_fields = set(update_fields)
+            if "uhid" in update_fields:
+                update_fields.add("is_temporary_id")
+            if "date_of_birth" in update_fields:
+                update_fields.add("age")
+            if PATIENT_CASE_NAME_FIELD_SET & update_fields:
+                update_fields.update(PATIENT_CASE_NAME_FIELD_SET)
+            should_sync_case_mirrors = bool(PATIENT_CASE_IDENTITY_FIELD_SET & update_fields)
+            kwargs["update_fields"] = tuple(sorted(update_fields))
+
         self.uhid = " ".join((self.uhid or "").split()).upper()
         self.is_temporary_id = is_temporary_patient_uhid(self.uhid)
         if self.date_of_birth:
@@ -445,7 +462,8 @@ class Patient(models.Model):
             self.age = years if has_had_birthday else years - 1
         self._normalize_identity_fields()
         super().save(*args, **kwargs)
-        self.sync_case_mirrors()
+        if should_sync_case_mirrors:
+            self.sync_case_mirrors()
 
     def __str__(self) -> str:
         return f"{self.uhid} - {self.full_name or self.patient_name}"
@@ -994,24 +1012,6 @@ class Case(models.Model):
         self.patient = patient
         return patient
 
-    def sync_patient_from_case(self):
-        if not self.patient_id:
-            return None
-        patient = self.patient
-        patient.uhid = self.uhid
-        patient.prefix = self.prefix
-        patient.first_name = self.first_name
-        patient.last_name = self.last_name
-        patient.patient_name = self.patient_name
-        patient.gender = self.gender
-        patient.blood_group = self.blood_group
-        patient.date_of_birth = self.date_of_birth
-        patient.place = self.place
-        patient.age = self.age
-        patient.phone_number = self.phone_number
-        patient.alternate_phone_number = self.alternate_phone_number
-        return patient
-
     def _normalize_identity_fields(self):
         self.first_name = normalize_case_name(self.first_name)
         self.last_name = normalize_case_name(self.last_name)
@@ -1130,42 +1130,28 @@ class Case(models.Model):
             raise ValidationError({"review_date": "Medicine cases require a review date."})
 
     def save(self, *args, **kwargs):
-        tracked_name_fields = {"prefix", "first_name", "last_name", "patient_name", "place"}
-        patient_mirror_fields = {
-            "uhid",
-            "prefix",
-            "first_name",
-            "last_name",
-            "patient_name",
-            "gender",
-            "blood_group",
-            "date_of_birth",
-            "place",
-            "age",
-            "phone_number",
-            "alternate_phone_number",
-        }
         update_fields = kwargs.get("update_fields")
         should_sync_names = update_fields is None
-        should_push_identity_to_patient = update_fields is None
+        should_sync_from_patient = bool(self.patient_id) and update_fields is None
 
         if update_fields is not None:
             update_fields = set(update_fields)
-            should_sync_names = bool(tracked_name_fields & update_fields)
-            should_push_identity_to_patient = bool(patient_mirror_fields & update_fields)
-            if self.patient_id and should_push_identity_to_patient:
-                update_fields.update(patient_mirror_fields)
-            if should_sync_names:
-                update_fields.update(tracked_name_fields)
+            should_sync_names = bool(PATIENT_CASE_NAME_FIELD_SET & update_fields)
+            should_sync_from_patient = bool(self.patient_id) and bool(
+                {"patient"} & update_fields or PATIENT_CASE_IDENTITY_FIELD_SET & update_fields
+            )
+            if should_sync_from_patient:
+                update_fields.update(PATIENT_CASE_IDENTITY_FIELD_SET)
+                update_fields.add("patient")
+            elif should_sync_names:
+                update_fields.update(PATIENT_CASE_NAME_FIELD_SET)
             kwargs["update_fields"] = tuple(sorted(update_fields))
 
         self.ensure_patient_link()
-        if should_sync_names:
-            self._normalize_identity_fields()
-        if self.patient_id and should_push_identity_to_patient:
-            patient = self.sync_patient_from_case()
-            patient.save()
+        if self.patient_id and should_sync_from_patient:
             self.sync_identity_from_patient()
+        elif should_sync_names:
+            self._normalize_identity_fields()
         super().save(*args, **kwargs)
 
     @property

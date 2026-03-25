@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.03.25.18.30
+- Removed shadowed duplicate patient and helper definitions from `patients/views.py` so the active patient routes, merge flow, and vitals helpers now have a single implementation path.
+- Made patient identity the authoritative sync source by centralizing mirrored field handling, letting `Patient.save()` fan updates out to related cases, and stopping linked `Case.save()` calls from pushing identity back upstream.
+- Added regression coverage for patient-authoritative case sync, patient edit mirror updates without per-case resaves, and case edit flows that still update the linked patient and sibling cases safely.
+
 ## 2026.03.25.13.00
 - Redesigned the Case Detail `Clinical Details` card into a richer category-aware summary with a compact headline, collapsible sections, ANC pregnancy details, surgery/review schedule sections, NCD pills, and full referral notes.
 - Added read-only case presentation helpers for trimester-with-weeks, effective EDD, readable NCD labels, section visibility, and richer obstetric summaries so the clinical card stays template-driven without schema changes.

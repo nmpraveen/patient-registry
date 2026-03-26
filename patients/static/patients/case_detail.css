@@ -830,45 +830,6 @@
   margin-bottom: 0.95rem;
 }
 
-.case-detail-covert-ref {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.42rem;
-  border: 1px solid var(--app-border);
-}
-
-.case-detail-covert-ref:hover,
-.case-detail-covert-ref:focus-visible {
-  background: var(--theme-shell-surface-hover-bg);
-  border-color: var(--case-detail-surface-border-strong);
-  color: var(--theme-shell-page-text);
-}
-
-.case-detail-covert-ref:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--case-action-solid) 28%, transparent);
-  outline-offset: 2px;
-}
-
-.case-detail-covert-ref__label {
-  display: inline-flex;
-  align-items: center;
-}
-
-.case-detail-covert-ref__code {
-  display: inline-block;
-  padding: 0;
-  margin: 0;
-  background: transparent;
-  color: var(--theme-shell-page-text);
-  font-size: 0.78rem;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-}
-
-.case-detail-covert-ref__code[hidden] {
-  display: none;
-}
-
 .case-detail-summary-chips .theme-category-chip {
   min-height: 2rem;
   padding: 0.25rem 0.75rem;
@@ -2221,18 +2182,6 @@
   line-height: 1.15;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-}
-
-.case-composer__label-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.6rem;
-  margin-bottom: 0.42rem;
-}
-
-.case-composer__label-row .form-label {
-  margin-bottom: 0;
 }
 
 .case-composer__field :is(input:not([type="hidden"]), select, textarea) {

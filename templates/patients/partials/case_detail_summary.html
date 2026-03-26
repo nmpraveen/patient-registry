@@ -13,18 +13,6 @@
       <span class="case-detail-chip app-pill high-risk">High-risk</span>
     {% endif %}
     <span class="case-detail-chip case-detail-chip--status-{{ case.get_status_display|slugify }}">{{ case.get_status_display }}</span>
-    {% if can_quote_cost_access and quoted_cost_display %}
-      <button
-        type="button"
-        class="case-detail-chip case-detail-chip--neutral case-detail-covert-ref"
-        data-quoted-cost-reveal-toggle
-        aria-label="CHR"
-        aria-expanded="false"
-      >
-        <span class="case-detail-covert-ref__label" aria-hidden="true">CHR</span>
-        <code class="case-detail-covert-ref__code" data-quoted-cost-reveal-code hidden>{{ quoted_cost_display.display_code }}</code>
-      </button>
-    {% endif %}
   </div>
 
   {% if case.has_clinical_summary %}

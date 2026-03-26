@@ -32,7 +32,6 @@ from patients.models import (
     ensure_default_departments,
     generate_temporary_patient_uhid,
 )
-from patients.quoted_cost import build_quoted_cost_metadata, update_quoted_cost_metadata
 
 
 class Command(BaseCommand):
@@ -396,38 +395,6 @@ class Command(BaseCommand):
                 extra.status = TaskStatus.CANCELLED
                 extra.save(update_fields=["status", "completed_at", "updated_at"])
 
-    def _quoted_cost_payload_for_case(self, case, scenario, index):
-        scenario_payloads = {
-            "anc_high_risk": "18-19 EX",
-            "anc_rch_missing": "12 AI",
-            "surgery_planned": "30 AI",
-            "non_surgical_overdue": "24 EX",
-            "quick_entry_pending_details": "16 AI",
-        }
-        if scenario in scenario_payloads:
-            return scenario_payloads[scenario]
-        if scenario != "default_mixed" or index % 4 != 0:
-            return ""
-        return {
-            "ANC": "14 AI",
-            "SURGERY": "26-28 EX",
-            "MEDICINE": "21 AI",
-        }.get(case.category.name.upper(), "")
-
-    def seed_quoted_cost_for_case(self, case, demo_user, scenario, index, today):
-        payload = self._quoted_cost_payload_for_case(case, scenario, index)
-        if not payload:
-            return
-        recorded_at = timezone.make_aware(
-            datetime.combine(
-                today - timedelta(days=(index - 1) % 3),
-                time(hour=9 + ((index - 1) % 4), minute=(index * 7) % 60),
-            )
-        )
-        quoted_cost_metadata = build_quoted_cost_metadata(payload, user=demo_user, recorded_at=recorded_at)
-        case.metadata = update_quoted_cost_metadata(case.metadata, quoted_cost_metadata)
-        case.save(update_fields=["metadata", "updated_at"])
-
     def _require_reset_all_confirmation(self, yes_reset_all):
         if yes_reset_all:
             return
@@ -709,7 +676,6 @@ class Command(BaseCommand):
                 details_task = create_quick_entry_details_task(case, demo_user, due_date=case.review_date)
             tasks = build_default_tasks(case, demo_user)
             self.mutate_seeded_tasks(case, rng, today)
-            self.seed_quoted_cost_for_case(case, demo_user, scenario, i, today)
             CaseActivityLog.objects.create(
                 case=case,
                 user=demo_user,

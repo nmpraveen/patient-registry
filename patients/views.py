@@ -116,14 +116,6 @@ from .models import (
     workflow_key_for_case,
     workflow_key_for_category_name,
 )
-from .quoted_cost import (
-    QUOTED_COST_ACTIVITY_NOTE,
-    QUOTED_COST_SUCCESS_MESSAGE,
-    build_quoted_cost_metadata,
-    extract_quoted_cost_payload,
-    get_quoted_cost_record,
-    update_quoted_cost_metadata,
-)
 from .theme import (
     build_theme_category_colors,
     flatten_theme_tokens,
@@ -404,7 +396,6 @@ CAPABILITY_FIELD_MAP = {
     "task_create": "can_task_create",
     "task_edit": "can_task_edit",
     "note_add": "can_note_add",
-    "quote_cost_access": "can_quote_cost_access",
     "patient_merge": "can_patient_merge",
     "manage_settings": "can_manage_settings",
 }
@@ -429,7 +420,6 @@ def _user_role_settings(user):
                 "can_task_create",
                 "can_task_edit",
                 "can_note_add",
-                "can_quote_cost_access",
                 "can_patient_merge",
                 "can_manage_settings",
             )
@@ -910,16 +900,6 @@ def _display_user_name(user):
     if not user:
         return ""
     return user.get_full_name().strip() or user.username
-
-
-def _quoted_cost_display_payload(case):
-    record = get_quoted_cost_record(case.metadata)
-    if not record:
-        return None
-
-    return {
-        "display_code": record["display_code"],
-    }
 
 
 def _settings_admin_user_count():
@@ -1475,7 +1455,6 @@ def _build_case_detail_summary(case, *, user, tasks, call_logs, activity_logs, l
             "diagnosis": case.diagnosis or "",
             "place": case.place or "",
             "notes": case.notes or "",
-            "quoted_cost_display": _quoted_cost_display_payload(case) if has_capability(user, "quote_cost_access") else None,
             "task_counts": task_counts,
             "open_task_count": task_counts["open"],
             "overdue_task_count": task_counts["overdue"],
@@ -1514,7 +1493,6 @@ def _build_case_detail_summary(case, *, user, tasks, call_logs, activity_logs, l
             call_logs=call_logs,
             activity_logs=activity_logs,
             timeline_filter=timeline_filter,
-            user=user,
         ),
         "latest_vitals_recorded_at": timezone.localtime(latest_vital.recorded_at) if latest_vital else None,
         "vitals_summary_metrics": latest_vitals_summary,
@@ -2400,13 +2378,7 @@ def _serialize_activity_timeline_entry(activity):
         "is_task_note": is_task_note,
     }
 
-def _can_view_activity_timeline_entry(*, activity, user):
-    if activity.note == QUOTED_COST_ACTIVITY_NOTE:
-        return False
-    return True
-
-
-def _build_timeline_entries(*, call_logs, activity_logs, timeline_filter, user):
+def _build_timeline_entries(*, call_logs, activity_logs, timeline_filter):
     entries = []
     if timeline_filter in {"all", "calls"}:
         for call in call_logs:
@@ -2415,8 +2387,6 @@ def _build_timeline_entries(*, call_logs, activity_logs, timeline_filter, user):
     if timeline_filter in {"all", "tasks", "notes"}:
         for activity in activity_logs:
             if activity.event_type == ActivityEventType.CALL:
-                continue
-            if not _can_view_activity_timeline_entry(activity=activity, user=user):
                 continue
             if timeline_filter == "tasks" and activity.event_type != ActivityEventType.TASK:
                 continue
@@ -4774,7 +4744,6 @@ class CaseDetailView(LoginRequiredMixin, DetailView):
             call_logs=call_logs,
             activity_logs=activity_logs,
             timeline_filter=timeline_filter,
-            user=self.request.user,
         )
         context["timeline_collapsed"] = self.request.GET.get("show_logs") != "1"
         context["logs_url"] = f"{reverse('patients:case_detail', kwargs={'pk': case.pk})}?show_logs=1#clinical-timeline"
@@ -4790,7 +4759,6 @@ class CaseDetailView(LoginRequiredMixin, DetailView):
         context["can_task_create"] = has_capability(self.request.user, "task_create")
         context["can_task_edit"] = has_capability(self.request.user, "task_edit")
         context["can_note_add"] = has_capability(self.request.user, "note_add")
-        context["can_quote_cost_access"] = has_capability(self.request.user, "quote_cost_access")
         context["can_vitals_edit"] = has_capability(self.request.user, "task_edit")
         context["vitals_editor_form"] = VitalEntryForm()
         context["latest_vital"] = latest_vital
@@ -4816,7 +4784,6 @@ class CaseDetailView(LoginRequiredMixin, DetailView):
         context["call_summary"] = detail_summary["case_summary"]["call_summary"]
         context["latest_activity"] = detail_summary["latest_activity"]
         context["latest_call_log"] = detail_summary["latest_call_log"]
-        context["quoted_cost_display"] = detail_summary["case_summary"]["quoted_cost_display"]
         patient = case.patient
         context["patient_record"] = patient
         context["patient_detail_url"] = reverse("patients:patient_detail", kwargs={"pk": patient.pk}) if patient else ""
@@ -5100,37 +5067,6 @@ class AddCaseNoteView(LoginRequiredMixin, View):
         case = get_object_or_404(Case.objects.select_related("category"), pk=pk)
         form = ActivityLogForm(request.POST)
         if form.is_valid():
-            note_text = (form.cleaned_data.get("note") or "").strip()
-            quoted_cost_payload = extract_quoted_cost_payload(note_text)
-            if quoted_cost_payload is not None:
-                if not has_capability(request.user, "quote_cost_access"):
-                    return _forbidden_response(
-                        request,
-                        "You do not have permission to use CHR commands.",
-                    )
-                try:
-                    quoted_cost_metadata = build_quoted_cost_metadata(quoted_cost_payload, user=request.user)
-                except ValueError as exc:
-                    form.add_error("note", str(exc))
-                else:
-                    with transaction.atomic():
-                        case.metadata = update_quoted_cost_metadata(case.metadata, quoted_cost_metadata)
-                        case.save(update_fields=["metadata", "updated_at"])
-                    if _request_wants_json(request):
-                        payload = _build_case_detail_json_payload(case, user=request.user)
-                        payload["message"] = QUOTED_COST_SUCCESS_MESSAGE
-                        return JsonResponse(payload)
-                    messages.success(request, QUOTED_COST_SUCCESS_MESSAGE)
-                    return redirect("patients:case_detail", pk=pk)
-            if form.errors:
-                if _request_wants_json(request):
-                    return JsonResponse(
-                        {"message": "Could not save note.", "errors": form.errors.get_json_data()},
-                        status=400,
-                    )
-                messages.error(request, "Could not save note.")
-                return redirect("patients:case_detail", pk=pk)
-
             log = form.save(commit=False)
             log.case = case
             log.user = request.user

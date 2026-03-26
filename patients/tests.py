@@ -69,15 +69,6 @@ from .models import (
     ensure_default_role_settings,
     plan_default_tasks,
 )
-from .quoted_cost import (
-    QUOTED_COST_ACTIVITY_NOTE,
-    QUOTED_COST_METADATA_KEY,
-    QUOTED_COST_SUCCESS_MESSAGE,
-    build_quoted_cost_metadata,
-    extract_quoted_cost_payload,
-    get_quoted_cost_record,
-    parse_quoted_cost_payload,
-)
 from .theme import (
     field_name_to_css_var,
     flatten_theme_tokens,
@@ -443,59 +434,6 @@ class MedtrackModelTests(TestCase):
 
     def test_project_timezone_is_asia_kolkata(self):
         self.assertEqual(settings.TIME_ZONE, "Asia/Kolkata")
-
-
-class QuotedCostHelperTests(TestCase):
-    def test_extract_quoted_cost_payload_requires_prefix_at_start(self):
-        self.assertIsNone(extract_quoted_cost_payload("Routine note CHR: 30 AI"))
-        self.assertEqual(extract_quoted_cost_payload("  CHR: 30 AI "), "30 AI")
-
-    def test_parse_quoted_cost_payload_accepts_lenient_shorthand(self):
-        parsed = parse_quoted_cost_payload("18 - 19 ex")
-
-        self.assertEqual(parsed["amount_min_k"], 18)
-        self.assertEqual(parsed["amount_max_k"], 19)
-        self.assertEqual(parsed["coverage"], "EX")
-        self.assertEqual(parsed["raw_input"], "18-19 EX")
-
-        single_value = parse_quoted_cost_payload("30K AI")
-        self.assertEqual(single_value["amount_min_k"], 30)
-        self.assertEqual(single_value["amount_max_k"], 30)
-        self.assertEqual(single_value["raw_input"], "30 AI")
-
-    def test_build_quoted_cost_metadata_formats_canonical_code(self):
-        reference_time = timezone.make_aware(datetime(2026, 3, 25, 9, 34))
-
-        metadata = build_quoted_cost_metadata("18-19 EX", now=reference_time)
-
-        self.assertEqual(metadata["canonical_code"], "25-03-26|09:34|18-19|EX")
-        self.assertEqual(metadata["raw_input"], "18-19 EX")
-        self.assertEqual(metadata["amount_min_k"], 18)
-        self.assertEqual(metadata["amount_max_k"], 19)
-        self.assertEqual(metadata["coverage"], "EX")
-
-    def test_get_quoted_cost_record_formats_timestamped_display_code(self):
-        reference_time = timezone.make_aware(datetime(2026, 3, 25, 9, 34))
-        metadata = build_quoted_cost_metadata("18-19 EX", now=reference_time)
-
-        record = get_quoted_cost_record({QUOTED_COST_METADATA_KEY: metadata})
-
-        self.assertIsNotNone(record)
-        self.assertEqual(record["display_code"], "2503260934.18-19.EX")
-
-    def test_parse_quoted_cost_payload_rejects_invalid_shapes(self):
-        invalid_payloads = [
-            "",
-            "30",
-            "30 MAYBE",
-            "20-10 EX",
-            "18-19 EX urgent",
-            "18- EX",
-        ]
-
-        for payload in invalid_payloads:
-            with self.assertRaises(ValueError):
-                parse_quoted_cost_payload(payload)
 
 
 class ThemeSystemTests(TestCase):
@@ -3200,187 +3138,6 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(payload["message"], "Could not save note.")
         self.assertIn("note", payload["errors"])
 
-    def test_add_case_note_chr_updates_hidden_quote_metadata(self):
-        self.client.force_login(self.user)
-        case = Case.objects.create(
-            uhid="UH-NOTE-CHR-OK",
-            first_name="Quoted",
-            last_name="Cost",
-            phone_number="9876505779",
-            category=self.surgery,
-            status=CaseStatus.ACTIVE,
-            surgical_pathway=SurgicalPathway.SURVEILLANCE,
-            review_date=timezone.localdate() + timedelta(days=8),
-            created_by=self.user,
-        )
-
-        response = self.ajax_post(
-            reverse("patients:case_note_create", kwargs={"pk": case.pk}),
-            {"note": "CHR: 18 - 19 ex"},
-        )
-
-        self.assertEqual(response.status_code, 200)
-        case.refresh_from_db()
-        quoted_cost = case.metadata.get(QUOTED_COST_METADATA_KEY)
-        self.assertIsNotNone(quoted_cost)
-        self.assertEqual(quoted_cost["raw_input"], "18-19 EX")
-        self.assertRegex(quoted_cost["canonical_code"], r"^\d{2}-\d{2}-\d{2}\|\d{2}:\d{2}\|18-19\|EX$")
-        self.assertEqual(response.json()["message"], QUOTED_COST_SUCCESS_MESSAGE)
-        self.assertFalse(CaseActivityLog.objects.filter(case=case).exists())
-        self.assertFalse(CaseActivityLog.objects.filter(case=case, note__icontains="CHR:").exists())
-
-    def test_add_case_note_chr_requires_quote_cost_access(self):
-        reception_user = self.login_as_role("Reception", username="reception_quote_denied")
-        case = Case.objects.create(
-            uhid="UH-NOTE-CHR-DENIED",
-            first_name="Denied",
-            last_name="Quote",
-            phone_number="9876505780",
-            category=self.surgery,
-            status=CaseStatus.ACTIVE,
-            surgical_pathway=SurgicalPathway.SURVEILLANCE,
-            review_date=timezone.localdate() + timedelta(days=8),
-            created_by=self.user,
-        )
-
-        response = self.client.post(
-            reverse("patients:case_note_create", kwargs={"pk": case.pk}),
-            {"note": "CHR: 30 AI"},
-        )
-
-        self.assertEqual(response.status_code, 403)
-        case.refresh_from_db()
-        self.assertFalse(case.metadata.get(QUOTED_COST_METADATA_KEY))
-        self.assertFalse(CaseActivityLog.objects.filter(case=case, user=reception_user).exists())
-
-    def test_add_case_note_chr_overwrites_existing_quote_metadata(self):
-        self.client.force_login(self.user)
-        first_time = timezone.make_aware(datetime(2026, 3, 24, 8, 15))
-        case = Case.objects.create(
-            uhid="UH-NOTE-CHR-OVERWRITE",
-            first_name="Repeat",
-            last_name="Quote",
-            phone_number="9876505784",
-            category=self.surgery,
-            status=CaseStatus.ACTIVE,
-            surgical_pathway=SurgicalPathway.SURVEILLANCE,
-            review_date=timezone.localdate() + timedelta(days=8),
-            metadata={
-                QUOTED_COST_METADATA_KEY: build_quoted_cost_metadata("18-19 EX", user=self.user, now=first_time)
-            },
-            created_by=self.user,
-        )
-
-        response = self.ajax_post(
-            reverse("patients:case_note_create", kwargs={"pk": case.pk}),
-            {"note": "CHR: 30K AI"},
-        )
-
-        self.assertEqual(response.status_code, 200)
-        case.refresh_from_db()
-        quoted_cost = case.metadata[QUOTED_COST_METADATA_KEY]
-        self.assertEqual(quoted_cost["raw_input"], "30 AI")
-        self.assertRegex(quoted_cost["canonical_code"], r"^\d{2}-\d{2}-\d{2}\|\d{2}:\d{2}\|30\|AI$")
-        self.assertNotEqual(quoted_cost["canonical_code"], "24-03-26|08:15|18-19|EX")
-
-    def test_add_case_note_chr_invalid_payload_returns_validation_error(self):
-        self.client.force_login(self.user)
-        case = Case.objects.create(
-            uhid="UH-NOTE-CHR-INVALID",
-            first_name="Broken",
-            last_name="Quote",
-            phone_number="9876505781",
-            category=self.surgery,
-            status=CaseStatus.ACTIVE,
-            surgical_pathway=SurgicalPathway.SURVEILLANCE,
-            review_date=timezone.localdate() + timedelta(days=8),
-            created_by=self.user,
-        )
-
-        response = self.ajax_post(
-            reverse("patients:case_note_create", kwargs={"pk": case.pk}),
-            {"note": "CHR: 18-19 EX urgent"},
-        )
-
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("note", response.json()["errors"])
-        case.refresh_from_db()
-        self.assertFalse(case.metadata.get(QUOTED_COST_METADATA_KEY))
-        self.assertFalse(CaseActivityLog.objects.filter(case=case).exists())
-
-    def test_case_detail_shows_quoted_cost_reference_only_with_capability(self):
-        reference_time = timezone.make_aware(datetime(2026, 3, 25, 9, 34))
-        case = Case.objects.create(
-            uhid="UH-NOTE-CHR-VIEW",
-            first_name="Visible",
-            last_name="Quote",
-            phone_number="9876505782",
-            category=self.surgery,
-            status=CaseStatus.ACTIVE,
-            surgical_pathway=SurgicalPathway.SURVEILLANCE,
-            review_date=timezone.localdate() + timedelta(days=8),
-            metadata={
-                QUOTED_COST_METADATA_KEY: build_quoted_cost_metadata("18-19 EX", user=self.user, now=reference_time)
-            },
-            created_by=self.user,
-        )
-        CaseActivityLog.objects.create(
-            case=case,
-            user=self.user,
-            event_type=ActivityEventType.SYSTEM,
-            note=QUOTED_COST_ACTIVITY_NOTE,
-        )
-
-        self.client.force_login(self.user)
-        allowed_response = self.client.get(reverse("patients:case_detail", kwargs={"pk": case.pk}))
-        self.assertContains(allowed_response, 'data-quoted-cost-reveal-toggle')
-        self.assertContains(allowed_response, 'data-quoted-cost-reveal-code')
-        self.assertContains(allowed_response, 'aria-expanded="false"')
-        self.assertContains(allowed_response, "2503260934.18-19.EX")
-        self.assertNotContains(allowed_response, 'data-quoted-cost-help-toggle')
-        self.assertNotContains(allowed_response, 'data-quoted-cost-help-inline')
-        self.assertNotContains(allowed_response, "CHR: 35 AI")
-        self.assertNotContains(allowed_response, "CHR: 18-19 EX")
-        self.assertNotContains(allowed_response, "Quoted Cost Reference")
-        self.assertNotContains(allowed_response, "Reference Code")
-        self.assertNotContains(allowed_response, "Updated By")
-        self.assertNotContains(allowed_response, "25-03-26|09:34|18-19|EX")
-        self.assertNotContains(allowed_response, "to update the hidden quoted-cost reference.")
-        self.assertNotContains(allowed_response, QUOTED_COST_ACTIVITY_NOTE)
-
-        self.login_as_role("Reception", username="reception_quote_hidden")
-        restricted_response = self.client.get(reverse("patients:case_detail", kwargs={"pk": case.pk}))
-        self.assertNotContains(restricted_response, 'data-quoted-cost-reveal-toggle')
-        self.assertNotContains(restricted_response, "2503260934.18-19.EX")
-        self.assertNotContains(restricted_response, 'data-quoted-cost-help-toggle')
-        self.assertNotContains(restricted_response, QUOTED_COST_ACTIVITY_NOTE)
-
-    def test_consumed_chr_command_does_not_leak_into_case_search(self):
-        self.client.force_login(self.user)
-        case = Case.objects.create(
-            uhid="UH-QUOTE-SEARCH-001",
-            first_name="Hidden",
-            last_name="Signal",
-            phone_number="9876505783",
-            category=self.surgery,
-            status=CaseStatus.ACTIVE,
-            surgical_pathway=SurgicalPathway.SURVEILLANCE,
-            review_date=timezone.localdate() + timedelta(days=8),
-            diagnosis="Routine follow-up",
-            created_by=self.user,
-        )
-
-        response = self.ajax_post(
-            reverse("patients:case_note_create", kwargs={"pk": case.pk}),
-            {"note": "CHR: 30 AI"},
-        )
-        self.assertEqual(response.status_code, 200)
-
-        search_response = self.client.get(reverse("patients:case_list"), {"q": "30 AI"})
-        self.assertEqual(search_response.status_code, 200)
-        result_ids = [result.id for result in search_response.context["cases"]]
-        self.assertNotIn(case.id, result_ids)
-
     def test_add_call_log_supports_ajax_json_and_redirect_fallback(self):
         self.client.force_login(self.user)
         case = Case.objects.create(
@@ -4979,31 +4736,14 @@ class MedtrackViewTests(TestCase):
                 "can_case_create": "on",
                 "can_case_edit": "on",
                 "can_note_add": "on",
-                "can_quote_cost_access": "on",
             },
             follow=True,
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertTrue(
-            RoleSetting.objects.filter(
-                role_name="Coordinator",
-                can_case_create=True,
-                can_note_add=True,
-                can_quote_cost_access=True,
-            ).exists()
-        )
+        self.assertTrue(RoleSetting.objects.filter(role_name="Coordinator", can_case_create=True, can_note_add=True).exists())
         self.assertTrue(Group.objects.filter(name="Coordinator").exists())
         self.assertContains(response, "Created role Coordinator.")
-
-    def test_default_role_settings_enable_quote_cost_access_for_admin_and_doctor_only(self):
-        ensure_default_role_settings()
-
-        self.assertTrue(RoleSetting.objects.get(role_name="Admin").can_quote_cost_access)
-        self.assertTrue(RoleSetting.objects.get(role_name="Doctor").can_quote_cost_access)
-        self.assertFalse(RoleSetting.objects.get(role_name="Reception").can_quote_cost_access)
-        self.assertFalse(RoleSetting.objects.get(role_name="Nurse").can_quote_cost_access)
-        self.assertFalse(RoleSetting.objects.get(role_name="Caller").can_quote_cost_access)
 
     def test_user_management_roles_tab_can_update_role_permissions(self):
         self.login_as_admin()
@@ -5020,7 +4760,6 @@ class MedtrackViewTests(TestCase):
                 "can_task_create": "on",
                 "can_task_edit": "on",
                 "can_note_add": "on",
-                "can_quote_cost_access": "on",
                 "can_manage_settings": "on",
             },
             follow=True,
@@ -5028,7 +4767,6 @@ class MedtrackViewTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         role.refresh_from_db()
-        self.assertTrue(role.can_quote_cost_access)
         self.assertTrue(role.can_manage_settings)
         self.assertContains(response, "Updated permissions for Doctor.")
 
@@ -9178,27 +8916,6 @@ class PatientDataBundleTests(TestCase):
         self.assertTrue(legacy_shared_cases.filter(subcategory=CaseSubcategory.GENERAL_SURGERY).exists())
         self.assertEqual(legacy_shared_cases.filter(blood_group=expected_shared_blood_group).count(), 2)
 
-    def test_patient_data_bundle_round_trips_quoted_cost_metadata(self):
-        reference_time = timezone.make_aware(datetime(2026, 3, 25, 9, 34))
-        case = self.create_case(
-            uhid="UH-BUNDLE-QUOTE-001",
-            phone_number="9555555511",
-            metadata={
-                QUOTED_COST_METADATA_KEY: build_quoted_cost_metadata("18-19 EX", user=self.user, now=reference_time)
-            },
-        )
-
-        archive_bytes, _, _ = database_bundle.create_bundle_archive()
-        import_result = database_bundle.import_bundle_bytes(archive_bytes)
-
-        self.assertEqual(import_result["counts"]["cases"], 1)
-        imported_case = Case.objects.get(uhid=case.uhid)
-        self.assertIn(QUOTED_COST_METADATA_KEY, imported_case.metadata)
-        self.assertEqual(
-            imported_case.metadata[QUOTED_COST_METADATA_KEY]["canonical_code"],
-            "25-03-26|09:34|18-19|EX",
-        )
-
     def test_patient_data_bundle_round_trips_delivery_mode_counts(self):
         source_case = self.create_case(
             uhid="UH-BUNDLE-ANC-DELIVERY",
@@ -9348,14 +9065,6 @@ class SeedMockDataCommandTests(TestCase):
         self.assertTrue(typed_non_surgical_cases)
         self.assertTrue(all(case.subcategory for case in typed_non_surgical_cases))
         self.assertGreaterEqual(len({case.subcategory for case in typed_non_surgical_cases}), 2)
-
-        quoted_cost_cases = [case for case in seeded_cases if case.metadata.get(QUOTED_COST_METADATA_KEY)]
-        self.assertTrue(quoted_cost_cases)
-        for case in quoted_cost_cases:
-            quoted_cost = case.metadata[QUOTED_COST_METADATA_KEY]
-            self.assertRegex(quoted_cost["canonical_code"], r"^\d{2}-\d{2}-\d{2}\|\d{2}:\d{2}\|\d+(?:-\d+)?\|(AI|EX)$")
-            self.assertIn(quoted_cost["coverage"], {"AI", "EX"})
-            self.assertTrue(quoted_cost["raw_input"])
 
         quick_entry_case = seeded_cases.get(metadata__seed_scenario="quick_entry_pending_details")
         self.assertTrue(quick_entry_case.prefix)

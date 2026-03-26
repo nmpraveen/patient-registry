@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.03.26.14.03
+- Rolled back the CHR quoted-cost feature from notes, case detail UI, role settings, and seeded mock data.
+- Added a cleanup migration to remove stored CHR metadata from existing cases and drop the temporary quoted-cost role permission field.
+
 ## 2026.03.26.02.22
 - Added covert `CHR:` quoted-cost tracking with role-gated access, server-side parsing/storage in case metadata, and no raw `CHR:` leakage into visible notes, timeline text, or search surfaces.
 - Added the new quoted-cost access role capability, migration-backed defaults for Admin and Doctor, settings UI support, export/import coverage, and seeded demo cases with CHR metadata.

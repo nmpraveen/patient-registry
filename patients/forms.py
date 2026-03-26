@@ -825,10 +825,6 @@ class RecentCaseUpdateForm(StyledModelForm):
 
 
 class RoleSettingForm(StyledModelForm):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.fields["can_quote_cost_access"].label = "Quoted cost access"
-
     class Meta:
         model = RoleSetting
         fields = [
@@ -838,7 +834,6 @@ class RoleSettingForm(StyledModelForm):
             "can_task_create",
             "can_task_edit",
             "can_note_add",
-            "can_quote_cost_access",
             "can_patient_merge",
             "can_manage_settings",
         ]
@@ -848,7 +843,6 @@ class RoleSettingForm(StyledModelForm):
             "can_task_create": forms.CheckboxInput(),
             "can_task_edit": forms.CheckboxInput(),
             "can_note_add": forms.CheckboxInput(),
-            "can_quote_cost_access": forms.CheckboxInput(),
             "can_patient_merge": forms.CheckboxInput(),
             "can_manage_settings": forms.CheckboxInput(),
         }

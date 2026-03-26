@@ -55,7 +55,6 @@
   const timelineBody = shell.querySelector("#clinical-timeline-body");
   const feedback = shell.querySelector("[data-case-feedback]");
   const ajaxForms = Array.from(shell.querySelectorAll("[data-case-ajax-form='true']"));
-  const quotedCostRevealToggles = Array.from(shell.querySelectorAll("[data-quoted-cost-reveal-toggle]"));
   const taskEditorCopy = {
     reschedule: {
       label: "Reschedule",
@@ -199,25 +198,6 @@
     }
 
     target.scrollIntoView({ behavior: "smooth", block: "start" });
-  };
-
-  const setQuotedCostRevealState = (toggle, expanded) => {
-    if (!toggle) {
-      return;
-    }
-    toggle.setAttribute("aria-expanded", expanded ? "true" : "false");
-    const code = toggle.querySelector("[data-quoted-cost-reveal-code]");
-    if (code) {
-      code.hidden = !expanded;
-    }
-  };
-
-  const closeQuotedCostReveals = (except = null) => {
-    quotedCostRevealToggles.forEach((toggle) => {
-      if (toggle !== except) {
-        setQuotedCostRevealState(toggle, false);
-      }
-    });
   };
 
   const setAllTaskOpen = (open) => {
@@ -589,27 +569,6 @@
         window.history.replaceState({}, "", href);
       }
     });
-  });
-
-  quotedCostRevealToggles.forEach((toggle) => {
-    toggle.addEventListener("click", () => {
-      const nextExpanded = toggle.getAttribute("aria-expanded") !== "true";
-      closeQuotedCostReveals(nextExpanded ? toggle : null);
-      setQuotedCostRevealState(toggle, nextExpanded);
-    });
-  });
-
-  document.addEventListener("click", (event) => {
-    if (!quotedCostRevealToggles.some((toggle) => toggle.contains(event.target))) {
-      closeQuotedCostReveals();
-    }
-  });
-
-  document.addEventListener("keydown", (event) => {
-    if (event.key !== "Escape") {
-      return;
-    }
-    closeQuotedCostReveals();
   });
 
   ajaxForms.forEach((form) => {

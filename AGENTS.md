@@ -22,8 +22,8 @@ Implementation:
 - Do not silently change core workflows (case creation, task generation, role checks) without stating the behavior change.
 - Any newly introduced color or theme token must also be added to the Theme settings page (`/patients/settings/theme/`) so it can be modified later. Create a new category only for genuinely new UI elements; otherwise add it to the existing relevant category.
 - Any new function or workflow that creates or updates patient data must also include corresponding `seed_mock_data` support so seeded environments populate the new data and do not leave blank values.
-- If your change modifies user-visible behavior or shipped code, update the `VERSION` file to the current UTC timestamp in `year.month.day.hours.min` format (example: `2026.03.03.17.38`) before committing.
-- For each `VERSION` bump, append a matching section to `CHANGELOG.md` with that version header and bullet-pointed change notes.
+- If your change modifies user-visible behavior or shipped code, update the `VERSION` file only when that change set is being pushed to GitHub. Set it to the current UTC timestamp in `year.month.day.hours.min` format (example: `2026.03.03.17.38`).
+- For each such push, prepend a matching section to the top of `CHANGELOG.md` using that version header and concise bullet-pointed summary notes for the changes included in that GitHub update.
 
 Verification (do not skip):
 - If you changed models: run `python manage.py makemigrations` and `python manage.py migrate`, and commit migrations.

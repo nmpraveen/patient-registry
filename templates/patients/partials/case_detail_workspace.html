@@ -140,7 +140,9 @@
                   <h3 class="case-composer__panel-title h6 mb-0">Add note</h3>
                   <div class="case-composer__grid">
                     <div class="case-composer__field case-composer__field--wide">
-                      <label class="form-label small" for="{{ log_form.note.id_for_label }}">{{ log_form.note.label }}</label>
+                      <div class="case-composer__label-row">
+                        <label class="form-label small mb-0" for="{{ log_form.note.id_for_label }}">{{ log_form.note.label }}</label>
+                      </div>
                       {{ log_form.note }}
                     </div>
                   </div>

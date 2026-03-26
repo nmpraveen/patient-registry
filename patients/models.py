@@ -287,6 +287,7 @@ class RoleSetting(models.Model):
     can_task_create = models.BooleanField(default=False)
     can_task_edit = models.BooleanField(default=False)
     can_note_add = models.BooleanField(default=False)
+    can_quote_cost_access = models.BooleanField(default=False)
     can_patient_merge = models.BooleanField(default=False)
     can_manage_settings = models.BooleanField(default=False)
 
@@ -300,6 +301,7 @@ class RoleSetting(models.Model):
             "task_create": self.can_task_create,
             "task_edit": self.can_task_edit,
             "note_add": self.can_note_add,
+            "quote_cost_access": self.can_quote_cost_access,
             "patient_merge": self.can_patient_merge,
             "manage_settings": self.can_manage_settings,
         }
@@ -311,6 +313,7 @@ class RoleSetting(models.Model):
             "can_task_create": self.can_task_create,
             "can_task_edit": self.can_task_edit,
             "can_note_add": self.can_note_add,
+            "can_quote_cost_access": self.can_quote_cost_access,
             "can_patient_merge": self.can_patient_merge,
             "can_manage_settings": self.can_manage_settings,
         }
@@ -801,6 +804,7 @@ DEFAULT_ROLE_SETTINGS = {
         "can_task_create": True,
         "can_task_edit": True,
         "can_note_add": True,
+        "can_quote_cost_access": True,
         "can_patient_merge": True,
         "can_manage_settings": True,
     },
@@ -810,19 +814,23 @@ DEFAULT_ROLE_SETTINGS = {
         "can_task_create": True,
         "can_task_edit": True,
         "can_note_add": True,
+        "can_quote_cost_access": True,
     },
     "Reception": {
         "can_case_create": True,
         "can_case_edit": True,
         "can_task_create": True,
         "can_note_add": True,
+        "can_quote_cost_access": False,
     },
     "Nurse": {
         "can_task_edit": True,
         "can_note_add": True,
+        "can_quote_cost_access": False,
     },
     "Caller": {
         "can_note_add": True,
+        "can_quote_cost_access": False,
     },
 }
 

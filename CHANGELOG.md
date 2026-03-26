@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.03.26.02.22
+- Added covert `CHR:` quoted-cost tracking with role-gated access, server-side parsing/storage in case metadata, and no raw `CHR:` leakage into visible notes, timeline text, or search surfaces.
+- Added the new quoted-cost access role capability, migration-backed defaults for Admin and Doctor, settings UI support, export/import coverage, and seeded demo cases with CHR metadata.
+- Reworked the case-detail CHR UI into a hidden Clinical Details pill with timestamped coded output, removed the Add note CHR helper affordance, and changed the reveal to stay open until dismissed by outside click.
+
 ## 2026.03.25.13.00
 - Redesigned the Case Detail `Clinical Details` card into a richer category-aware summary with a compact headline, collapsible sections, ANC pregnancy details, surgery/review schedule sections, NCD pills, and full referral notes.
 - Added read-only case presentation helpers for trimester-with-weeks, effective EDD, readable NCD labels, section visibility, and richer obstetric summaries so the clinical card stays template-driven without schema changes.

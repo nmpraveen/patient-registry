@@ -1,4 +1,8 @@
+from functools import lru_cache
+from pathlib import Path
+
 from django import template
+from django.contrib.staticfiles import finders
 from django.utils.safestring import mark_safe
 
 from patients.models import RoleSetting
@@ -32,6 +36,23 @@ def category_theme_style(category, theme_category_colors):
         f"--theme-category-border: {theme['border']}; "
         f"--theme-category-hover-bg: {theme['hover_bg']};"
     )
+
+
+@lru_cache(maxsize=128)
+def _read_static_svg(static_path):
+    if not static_path or not str(static_path).endswith(".svg") or ".." in str(static_path):
+        return ""
+    resolved = finders.find(static_path)
+    if isinstance(resolved, (list, tuple)):
+        resolved = resolved[0] if resolved else None
+    if not resolved:
+        return ""
+    return Path(resolved).read_text(encoding="utf-8")
+
+
+@register.simple_tag
+def inline_static_svg(static_path):
+    return mark_safe(_read_static_svg(static_path))
 
 
 @register.filter

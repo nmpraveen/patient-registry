@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.03.30.02.39
+- Added a theme icon mockup page linked from Theme Settings so admins can review finalized category and subcategory SVG icons with the live theme colors.
+- Added inline SVG rendering support plus the bundled category and subcategory icon asset set, including the local icon source map for review and future implementation.
+- Added focused regression coverage for the new theme icon mockup route and settings-page link while leaving the dashboard view unchanged.
+
 ## 2026.03.26.14.03
 - Rolled back the CHR quoted-cost feature from notes, case detail UI, role settings, and seeded mock data.
 - Added a cleanup migration to remove stored CHR metadata from existing cases and drop the temporary quoted-cost role permission field.

@@ -20,6 +20,7 @@ from django.core.management.base import CommandError
 from django.db import ProgrammingError, connection
 from django.test import TestCase
 from django.test.utils import CaptureQueriesContext
+from django.templatetags.static import static
 from django.urls import reverse
 from django.utils import timezone
 
@@ -9314,3 +9315,10 @@ class LoginPageVersionTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, f"Version {app_version}")
+
+    def test_login_page_references_site_favicon(self):
+        response = self.client.get(reverse("login"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'rel="icon"')
+        self.assertContains(response, static("patients/favicon.ico"))

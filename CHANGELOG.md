@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.03.30.12.07
+- Added the shared site favicon and wired it into the base template so login and app pages use the provided browser tab icon.
+- Finalized and bundled the updated category and subcategory SVG icon assets for the icon refresh branch.
+
 ## 2026.03.30.02.39
 - Added a theme icon mockup page linked from Theme Settings so admins can review finalized category and subcategory SVG icons with the live theme colors.
 - Added inline SVG rendering support plus the bundled category and subcategory icon asset set, including the local icon source map for review and future implementation.

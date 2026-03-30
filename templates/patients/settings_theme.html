@@ -400,6 +400,7 @@
     <p class="text-muted mb-0">Global color controls for layout, status badges, search, charts, and category accents.</p>
   </div>
   <div class="d-flex gap-2">
+    <a class="btn btn-outline-primary btn-sm" href="{% url 'patients:settings_theme_icon_mockup' %}">Icon Mockup</a>
     <a class="btn btn-outline-secondary btn-sm" href="{% url 'patients:settings' %}">Back to Settings</a>
     <form method="post" class="m-0">
       {% csrf_token %}

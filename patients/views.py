@@ -149,6 +149,132 @@ CASE_DATA_CAPABILITIES = (
 
 DATE_INPUT_FORMATS = ("%Y-%m-%d", "%d/%m/%Y")
 
+THEME_ICON_MOCKUP_SECTIONS = (
+    {
+        "title": "Category Icons",
+        "description": "Top-level workflow icons rendered with the live category theme colors.",
+        "items": (
+            {
+                "label": "ANC",
+                "kind": "Category",
+                "theme_name": "ANC",
+                "svg_path": "patients/icons/categories/anc.svg",
+                "source_title": "Antenatal Care Visit",
+            },
+            {
+                "label": "Surgery",
+                "kind": "Category",
+                "theme_name": "Surgery",
+                "svg_path": "patients/icons/categories/surgery.svg",
+                "source_title": "Surgical Tools",
+            },
+            {
+                "label": "Medicine",
+                "kind": "Category",
+                "theme_name": "Medicine",
+                "svg_path": "patients/icons/categories/medicine.svg",
+                "source_title": "Stethoscope",
+            },
+        ),
+    },
+    {
+        "title": "Surgery Subcategories",
+        "description": "All surgical subcategory icons tinted with the Surgery theme.",
+        "items": (
+            {
+                "label": "General Surgery",
+                "kind": "Subcategory",
+                "theme_name": "Surgery",
+                "svg_path": "patients/icons/subcategories/general_surgery.svg",
+                "source_title": "Surgical Department",
+            },
+            {
+                "label": "Orthopedics",
+                "kind": "Subcategory",
+                "theme_name": "Surgery",
+                "svg_path": "patients/icons/subcategories/orthopedics.svg",
+                "source_title": "Orthopaedics",
+            },
+            {
+                "label": "Plastic Surgery",
+                "kind": "Subcategory",
+                "theme_name": "Surgery",
+                "svg_path": "patients/icons/subcategories/plastic_surgery.svg",
+                "source_title": "Plastic Surgery",
+            },
+            {
+                "label": "Pediatric Surgery",
+                "kind": "Subcategory",
+                "theme_name": "Surgery",
+                "svg_path": "patients/icons/subcategories/pediatric_surgery.svg",
+                "source_title": "Pediatric Surgery",
+            },
+            {
+                "label": "Urology",
+                "kind": "Subcategory",
+                "theme_name": "Surgery",
+                "svg_path": "patients/icons/subcategories/urology.svg",
+                "source_title": "Urology",
+            },
+            {
+                "label": "ENT",
+                "kind": "Subcategory",
+                "theme_name": "Surgery",
+                "svg_path": "patients/icons/subcategories/ent.svg",
+                "source_title": "Ear Nose and Throat",
+            },
+            {
+                "label": "Other Specialty",
+                "kind": "Subcategory",
+                "theme_name": "Surgery",
+                "svg_path": "patients/icons/subcategories/other_specialty.svg",
+                "source_title": "Medical Search",
+                "fallback_note": "Catch-all label using a generic medical fallback.",
+            },
+        ),
+    },
+    {
+        "title": "Medicine Subcategories",
+        "description": "Internal medicine icons tinted with the Medicine theme.",
+        "items": (
+            {
+                "label": "General Medicine",
+                "kind": "Subcategory",
+                "theme_name": "Medicine",
+                "svg_path": "patients/icons/subcategories/general_medicine.svg",
+                "source_title": "Medicines",
+            },
+            {
+                "label": "Psychiatry",
+                "kind": "Subcategory",
+                "theme_name": "Medicine",
+                "svg_path": "patients/icons/subcategories/psychiatry.svg",
+                "source_title": "Psychology",
+            },
+            {
+                "label": "Cardiology (ECHO)",
+                "kind": "Subcategory",
+                "theme_name": "Medicine",
+                "svg_path": "patients/icons/subcategories/cardiology_echo.svg",
+                "source_title": "Cardiogram",
+            },
+            {
+                "label": "Pediatric",
+                "kind": "Subcategory",
+                "theme_name": "Medicine",
+                "svg_path": "patients/icons/subcategories/pediatric.svg",
+                "source_title": "Pediatrics",
+            },
+            {
+                "label": "Medical Oncology",
+                "kind": "Subcategory",
+                "theme_name": "Medicine",
+                "svg_path": "patients/icons/subcategories/medical_oncology.svg",
+                "source_title": "Oncology",
+            },
+        ),
+    },
+)
 
 CHANGELOG_FILE = Path(settings.BASE_DIR) / "CHANGELOG.md"
 SETTINGS_SCHEMA_WARNING_HINT = "Run python manage.py migrate on the VPS and reload this page."
@@ -6185,6 +6311,27 @@ class ThemeSettingsView(LoginRequiredMixin, View):
 
         messages.error(request, "Theme settings have errors.")
         return render(request, self.template_name, self._build_context(theme_form, department_theme_formset))
+
+
+class ThemeIconMockupView(LoginRequiredMixin, View):
+    template_name = "patients/settings_theme_icon_mockup.html"
+
+    def _check_access(self, request):
+        if not has_capability(request.user, "manage_settings"):
+            return HttpResponseForbidden("Only admins can access settings.")
+        return None
+
+    def get(self, request):
+        denied = self._check_access(request)
+        if denied:
+            return denied
+        return render(
+            request,
+            self.template_name,
+            {
+                "icon_mockup_sections": THEME_ICON_MOCKUP_SECTIONS,
+            },
+        )
 
 
 class CategorySettingsView(LoginRequiredMixin, View):

@@ -1,0 +1,130 @@
+{% extends 'base.html' %}
+{% load theme_tags %}
+{% block title %}Icon Mockup | MEDTRACK{% endblock %}
+{% block content %}
+<style>
+  .icon-mockup-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+  }
+
+  .icon-mockup-section-stack {
+    display: grid;
+    gap: 1.25rem;
+  }
+
+  .icon-mockup-section {
+    display: grid;
+    gap: 0.85rem;
+  }
+
+  .icon-mockup-section__header {
+    display: grid;
+    gap: 0.2rem;
+  }
+
+  .icon-mockup-section__title {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 700;
+  }
+
+  .icon-mockup-section__copy {
+    margin: 0;
+    color: var(--theme-shell-muted-text);
+    font-size: 0.9rem;
+  }
+
+  .icon-mockup-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 0.85rem;
+  }
+
+  .icon-mockup-tile {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.8rem;
+    min-height: 9rem;
+    padding: 1rem 0.75rem;
+    border: 1px solid var(--theme-shell-surface-border);
+    border-radius: 0.85rem;
+    background: var(--theme-shell-surface-bg);
+    text-align: center;
+  }
+
+  .icon-mockup-art {
+    display: grid;
+    place-items: center;
+    width: 4.6rem;
+    height: 4.6rem;
+    border-radius: 999px;
+    background: var(--theme-category-bg);
+    color: var(--theme-category-text);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--theme-category-border) 60%, transparent 40%);
+  }
+
+  .icon-mockup-art svg {
+    display: block;
+    width: 68%;
+    height: 68%;
+  }
+
+  .icon-mockup-label {
+    font-size: 0.95rem;
+    font-weight: 700;
+    line-height: 1.15;
+    color: var(--theme-shell-surface-text);
+  }
+
+  @media (max-width: 767.98px) {
+    .icon-mockup-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @media (max-width: 575.98px) {
+    .icon-mockup-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+</style>
+
+<div class="icon-mockup-toolbar">
+  <div>
+    <h1 class="h4 mb-1">Theme Icon Mockup</h1>
+    <p class="text-muted mb-0">Simple review layout: colored icon with the label underneath.</p>
+  </div>
+  <div class="d-flex gap-2">
+    <a class="btn btn-outline-secondary btn-sm" href="{% url 'patients:settings_theme' %}">Back to Theme Settings</a>
+    <a class="btn btn-outline-primary btn-sm" href="{% url 'patients:settings' %}">Settings</a>
+  </div>
+</div>
+
+<div class="icon-mockup-section-stack">
+  {% for section in icon_mockup_sections %}
+    <section class="icon-mockup-section">
+      <div class="icon-mockup-section__header">
+        <h2 class="icon-mockup-section__title">{{ section.title }}</h2>
+        <p class="icon-mockup-section__copy">{{ section.description }}</p>
+      </div>
+      <div class="icon-mockup-grid">
+        {% for item in section.items %}
+          <article class="icon-mockup-tile" style="{% category_theme_style item.theme_name theme_category_colors %}" data-icon-tile="{{ item.label }}">
+            <div class="icon-mockup-art" aria-hidden="true">
+              {% inline_static_svg item.svg_path %}
+            </div>
+            <div class="icon-mockup-label">{{ item.label }}</div>
+          </article>
+        {% endfor %}
+      </div>
+    </section>
+  {% endfor %}
+</div>
+{% endblock %}

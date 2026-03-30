@@ -41,6 +41,7 @@ from .views import (
     TaskQuickNoteView,
     TaskQuickRescheduleView,
     TaskUpdateView,
+    ThemeIconMockupView,
 )
 
 app_name = "patients"
@@ -62,6 +63,7 @@ urlpatterns = [
     path("settings/database/", DatabaseManagementSettingsView.as_view(), name="settings_database"),
     path("settings/device-access/", DeviceAccessSettingsView.as_view(), name="settings_device_access"),
     path("settings/theme/", ThemeSettingsView.as_view(), name="settings_theme"),
+    path("settings/theme/icon-mockup/", ThemeIconMockupView.as_view(), name="settings_theme_icon_mockup"),
     path("settings/users/", UserManagementSettingsView.as_view(), name="settings_user_management"),
     path("settings/changelog/", ChangelogView.as_view(), name="changelog"),
     path("settings/seed-mock-data/", SeedMockDataSettingsView.as_view(), name="settings_seed_mock_data"),

@@ -4512,6 +4512,7 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(settings_response.status_code, 200)
         self.assertContains(settings_response, reverse("patients:settings_theme"))
         self.assertEqual(theme_response.status_code, 200)
+        self.assertContains(theme_response, reverse("patients:settings_theme_icon_mockup"))
         anc = DepartmentConfig.objects.get(name="ANC")
         self.assertContains(theme_response, "Theme Settings")
         self.assertContains(theme_response, "Success Button")
@@ -4534,6 +4535,29 @@ class MedtrackViewTests(TestCase):
         self.assertContains(theme_response, "Filter categories preview")
         self.assertContains(theme_response, "global-search-filter-panel")
         self.assertNotContains(theme_response, "bp-systolic")
+
+    def test_theme_icon_mockup_page_requires_manage_settings_and_renders_inline_svgs(self):
+        self.client.force_login(self.user)
+
+        forbidden_get = self.client.get(reverse("patients:settings_theme_icon_mockup"))
+
+        self.assertEqual(forbidden_get.status_code, 403)
+
+        self.login_as_admin()
+        response = self.client.get(reverse("patients:settings_theme_icon_mockup"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, reverse("patients:settings_theme"))
+        self.assertContains(response, "Theme Icon Mockup")
+        self.assertContains(response, "Category Icons")
+        self.assertContains(response, "Surgery Subcategories")
+        self.assertContains(response, "Medicine Subcategories")
+        self.assertContains(response, 'data-icon-tile="ANC"')
+        self.assertContains(response, 'data-icon-tile="General Surgery"')
+        self.assertContains(response, "Simple review layout")
+        self.assertContains(response, "colored icon with the label underneath")
+        self.assertContains(response, 'fill="currentColor"')
+        self.assertNotContains(response, "Source icon:")
 
     def test_admin_settings_subpages_show_theme_link(self):
         self.login_as_admin()

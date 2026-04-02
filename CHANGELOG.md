@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.04.02.22.58
+- Added permission-gated undo for completed tasks so Admin and Doctor can reopen mistaken completions from the case history while other task editors remain blocked.
+- Enforced reopen rules on both the inline undo action and the full task edit route, with Scheduled-only reopen behavior and RCH reminder cleanup for reopened follow-ups.
+- Updated local repo instructions so `push to GitHub` means committing and pushing the current changes to `main` directly unless a branch or PR workflow is explicitly requested.
+
 ## 2026.04.02.22.55
 - Added a dedicated task-reopen role permission, default-enabled it for Admin and Doctor, and exposed it in role management and admin surfaces.
 - Added inline completed-task undo on the case page with server-side reopen enforcement for both the new quick action and the existing task edit route.

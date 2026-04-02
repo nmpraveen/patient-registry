@@ -16,6 +16,15 @@ Before coding:
 - Identify the exact files you will touch, then propose a short plan plus acceptance checks.
 - Ask targeted questions if requirements affect permissions, PHI exposure, migrations, or data retention.
 
+Local Codex setup on this Mac:
+- The checked-out `main` branch should stay aligned with GitHub. A few extra local-only helper files are intentionally present in this working copy and should remain local-only unless the user explicitly asks to push them.
+- When the user says `push to GitHub`, interpret that as committing and pushing the current changes to `main` directly.
+- Do not create feature branches or open pull requests unless the user explicitly asks for a branch-based or PR-based workflow.
+- Local-only files intentionally restored here: `package.json`, `package-lock.json`, `patients/management/commands/ensure_local_demo_superuser.py`, `local-dev/TEST_NNH_SERVER.md`, `local-dev/test-nnh-up.ps1`, and `local-dev/test-nnh-web-start.sh`.
+- Purpose of those local-only files: improve Playwright reliability for Codex in this repo and keep the local Test NNH server able to recreate the demo superuser with username `admin` and password `pass`.
+- Local generated directories such as `.venv/`, `node_modules/`, and `staticfiles/` are also intentional and should not be treated as repo changes.
+- Do not ask to recreate or remove this local-only setup unless the user explicitly wants that. If needed, the preserved local-only snapshot branch is `local/dev-tools`.
+
 Implementation:
 - Prefer existing patterns over new abstractions.
 - Keep diffs small and scoped to the requested feature.

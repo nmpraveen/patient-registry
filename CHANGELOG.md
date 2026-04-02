@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.04.02.23.19
+- Added `Master` as a patient prefix option across shared patient and case identity flows, with the stored value `MST` and matching full-name rendering.
+- Updated deterministic mock seeding so demo environments include a young boy with the `Master` salutation.
+- Added migration-backed schema updates and focused regression coverage for model normalization, quick entry, and seeded demo scenarios.
+
 ## 2026.04.02.22.58
 - Added permission-gated undo for completed tasks so Admin and Doctor can reopen mistaken completions from the case history while other task editors remain blocked.
 - Enforced reopen rules on both the inline undo action and the full task edit route, with Scheduled-only reopen behavior and RCH reminder cleanup for reopened follow-ups.

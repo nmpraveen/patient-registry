@@ -17,6 +17,7 @@ class CaseStatus(models.TextChoices):
 
 class CasePrefix(models.TextChoices):
     MR = "MR", "Mr."
+    MASTER = "MST", "Master"
     MS = "MS", "Ms."
     MRS = "MRS", "Mrs."
 

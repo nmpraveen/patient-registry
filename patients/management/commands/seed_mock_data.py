@@ -48,7 +48,7 @@ class Command(BaseCommand):
         {"prefix": CasePrefix.MRS, "first_name": "Meena", "last_name": "Rajendran", "place": "Thanjavur", "gender": Gender.FEMALE, "blood_group": BloodGroup.AB_NEGATIVE, "date_of_birth": date(1993, 4, 3), "facility_code": "TNJ"},
         {"prefix": CasePrefix.MR, "first_name": "Aravind", "last_name": "Muthukumar", "place": "Vellore", "gender": Gender.MALE, "blood_group": BloodGroup.O_POSITIVE, "date_of_birth": date(1990, 8, 19), "facility_code": "VLR"},
         {"prefix": CasePrefix.MS, "first_name": "Keerthana", "last_name": "Manikandan", "place": "Kanchipuram", "gender": Gender.FEMALE, "blood_group": BloodGroup.A_POSITIVE, "date_of_birth": date(1997, 9, 30), "facility_code": "KPM"},
-        {"prefix": CasePrefix.MR, "first_name": "Dinesh", "last_name": "Saravanan", "place": "Tiruppur", "gender": Gender.MALE, "blood_group": BloodGroup.B_POSITIVE, "date_of_birth": date(1988, 2, 21), "facility_code": "TPR"},
+        {"prefix": CasePrefix.MASTER, "first_name": "Dinesh", "last_name": "Saravanan", "place": "Tiruppur", "gender": Gender.MALE, "blood_group": BloodGroup.B_POSITIVE, "date_of_birth": date(2018, 2, 21), "facility_code": "TPR"},
         {"prefix": CasePrefix.MRS, "first_name": "Yamini", "last_name": "Periyasamy", "place": "Nagapattinam", "gender": Gender.FEMALE, "blood_group": BloodGroup.AB_POSITIVE, "date_of_birth": date(1995, 6, 12), "facility_code": "NGP"},
     ]
 

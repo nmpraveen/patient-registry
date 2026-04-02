@@ -106,6 +106,28 @@ class MedtrackModelTests(TestCase):
         self.assertEqual(case.place, "Chennai")
         self.assertEqual(case.patient_name, "Mrs. First Name Last Name")
 
+    def test_case_save_supports_master_prefix_display(self):
+        case = Case.objects.create(
+            uhid="UH-NAME-001B",
+            prefix=CasePrefix.MASTER,
+            first_name="  arjun  ",
+            last_name="  kumar  ",
+            age=10,
+            gender=Gender.MALE,
+            phone_number="9000000011",
+            category=self.surgery,
+            subcategory=CaseSubcategory.PEDIATRIC_SURGERY,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=14),
+            created_by=self.user,
+        )
+
+        self.assertEqual(case.first_name, "Arjun")
+        self.assertEqual(case.last_name, "Kumar")
+        self.assertEqual(case.patient_name, "Master Arjun Kumar")
+        self.assertEqual(case.full_name, "Master Arjun Kumar")
+
     def test_case_save_with_update_fields_normalizes_names_place_and_keeps_patient_name_synced(self):
         case = Case.objects.create(
             uhid="UH-NAME-002",
@@ -1525,6 +1547,8 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'name="subcategory"')
         self.assertContains(response, 'name="prefix"')
+        self.assertContains(response, 'value="MST"')
+        self.assertContains(response, "Master")
         self.assertContains(response, "data-quick-entry-subcategory-wrapper")
         self.assertContains(response, '"help_text": "Optional for quick entry. Choose the surgical specialty if known."')
         self.assertRegex(response_text, r"data-quick-entry-subcategory-wrapper\s+hidden")
@@ -1597,6 +1621,30 @@ class MedtrackViewTests(TestCase):
         self.assertTrue(case.tasks.filter(title=QUICK_ENTRY_DETAILS_TASK_TITLE, due_date=review_date).exists())
         self.assertTrue(case.tasks.filter(title="Surveillance Review").exists())
         self.assertTrue(case.activity_logs.filter(note__icontains="Quick entry created with 1 starter task(s)").exists())
+
+    def test_quick_case_create_accepts_master_prefix(self):
+        review_date = timezone.localdate() + timedelta(days=9)
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("patients:case_quick_create"),
+            {
+                "prefix": CasePrefix.MASTER,
+                "first_name": "Arjun",
+                "age": "10",
+                "gender": Gender.MALE,
+                "diagnosis": "Pediatric surgical review",
+                "category": self.surgery.id,
+                "subcategory": CaseSubcategory.PEDIATRIC_SURGERY,
+                "review_date": review_date.isoformat(),
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        case = Case.objects.get(metadata__entry_mode="quick_entry", first_name="Arjun")
+        self.assertEqual(case.prefix, CasePrefix.MASTER)
+        self.assertEqual(case.patient_name, "Master Arjun")
+        self.assertEqual(case.patient.prefix, CasePrefix.MASTER)
 
     def test_quick_case_create_accepts_optional_subcategory_when_provided(self):
         review_date = timezone.localdate() + timedelta(days=8)
@@ -9369,6 +9417,7 @@ class SeedMockDataCommandTests(TestCase):
         seeded_patients = Patient.objects.filter(cases__metadata__source="seed_mock_data").distinct()
         self.assertTrue(seeded_patients.exists())
         self.assertTrue(seeded_patients.filter(is_temporary_id=True).exists())
+        self.assertTrue(seeded_cases.filter(prefix=CasePrefix.MASTER).exists())
         patient_case_counts = {}
 
         for case in seeded_cases:
@@ -9434,6 +9483,11 @@ class SeedMockDataCommandTests(TestCase):
         self.assertEqual(quick_entry_case.subcategory, "")
         self.assertTrue(quick_entry_case.tasks.filter(title=QUICK_ENTRY_DETAILS_TASK_TITLE).exists())
         self.assertTrue(quick_entry_case.patient.is_temporary_id)
+
+        master_case = seeded_cases.filter(prefix=CasePrefix.MASTER).first()
+        self.assertIsNotNone(master_case)
+        self.assertEqual(master_case.gender, Gender.MALE)
+        self.assertTrue(master_case.patient_name.startswith("Master "))
 
         self.assertTrue(Task.objects.filter(case=anc_high_risk, status=TaskStatus.AWAITING_REPORTS).exists())
         self.assertTrue(Task.objects.filter(case=anc_high_risk, status=TaskStatus.COMPLETED).exists())

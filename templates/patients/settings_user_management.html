@@ -426,7 +426,7 @@
                       <div class="fw-semibold">{{ role.role_name }}</div>
                       <div class="text-muted small">
                         Case {{ role.can_case_create|yesno:"create,-" }} / {{ role.can_case_edit|yesno:"edit,-" }},
-                        Task {{ role.can_task_create|yesno:"create,-" }} / {{ role.can_task_edit|yesno:"edit,-" }}
+                        Task {{ role.can_task_create|yesno:"create,-" }} / {{ role.can_task_edit|yesno:"edit,-" }} / {{ role.can_task_reopen|yesno:"reopen,-" }}
                       </div>
                     </td>
                     <td>{{ role.member_count }}</td>

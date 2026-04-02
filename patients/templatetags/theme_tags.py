@@ -15,6 +15,7 @@ CAPABILITY_FIELD_MAP = {
     "case_edit": "can_case_edit",
     "task_create": "can_task_create",
     "task_edit": "can_task_edit",
+    "task_reopen": "can_task_reopen",
     "note_add": "can_note_add",
     "patient_merge": "can_patient_merge",
     "manage_settings": "can_manage_settings",

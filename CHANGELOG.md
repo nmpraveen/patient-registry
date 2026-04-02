@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.04.02.22.55
+- Added a dedicated task-reopen role permission, default-enabled it for Admin and Doctor, and exposed it in role management and admin surfaces.
+- Added inline completed-task undo on the case page with server-side reopen enforcement for both the new quick action and the existing task edit route.
+- Reopened tasks now return to Scheduled, clear completion timestamps, cancel duplicate RCH follow-up reminders when needed, and include focused regression coverage for permissions and history flow.
+
 ## 2026.03.30.12.07
 - Added the shared site favicon and wired it into the base template so login and app pages use the provided browser tab icon.
 - Finalized and bundled the updated category and subcategory SVG icon assets for the icon refresh branch.

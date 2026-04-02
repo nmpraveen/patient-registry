@@ -283,6 +283,7 @@
                 <th>Completed On</th>
                 <th>Latest Call</th>
                 <th>Notes</th>
+                <th>Action</th>
               </tr>
             </thead>
             <tbody>
@@ -312,10 +313,20 @@
                     {% endif %}
                   </td>
                   <td>{{ task.notes|default:"-" }}</td>
+                  <td>
+                    {% if task.status == 'COMPLETED' and can_task_reopen %}
+                      <form method="post" action="{% url 'patients:task_quick_reopen' task.id %}" data-case-ajax-form="true">
+                        {% csrf_token %}
+                        <button class="btn btn-sm btn-outline-secondary case-task-action" type="submit">Undo completion</button>
+                      </form>
+                    {% else %}
+                      -
+                    {% endif %}
+                  </td>
                 </tr>
               {% empty %}
                 <tr>
-                  <td colspan="6" class="case-task-empty-cell">No tasks available.</td>
+                  <td colspan="7" class="case-task-empty-cell">No tasks available.</td>
                 </tr>
               {% endfor %}
             </tbody>
@@ -356,6 +367,12 @@
               <span class="case-task-history-card__label">Notes</span>
               <span>{{ task.notes|default:"-" }}</span>
             </div>
+            {% if task.status == 'COMPLETED' and can_task_reopen %}
+              <form method="post" action="{% url 'patients:task_quick_reopen' task.id %}" data-case-ajax-form="true" class="mt-3">
+                {% csrf_token %}
+                <button class="btn btn-sm btn-outline-secondary case-task-action w-100" type="submit">Undo completion</button>
+              </form>
+            {% endif %}
           </article>
         {% empty %}
           <p class="case-detail-muted mb-0">No tasks available.</p>

@@ -286,6 +286,7 @@ class RoleSetting(models.Model):
     can_case_edit = models.BooleanField(default=False)
     can_task_create = models.BooleanField(default=False)
     can_task_edit = models.BooleanField(default=False)
+    can_task_reopen = models.BooleanField(default=False)
     can_note_add = models.BooleanField(default=False)
     can_patient_merge = models.BooleanField(default=False)
     can_manage_settings = models.BooleanField(default=False)
@@ -299,6 +300,7 @@ class RoleSetting(models.Model):
             "case_edit": self.can_case_edit,
             "task_create": self.can_task_create,
             "task_edit": self.can_task_edit,
+            "task_reopen": self.can_task_reopen,
             "note_add": self.can_note_add,
             "patient_merge": self.can_patient_merge,
             "manage_settings": self.can_manage_settings,
@@ -310,6 +312,7 @@ class RoleSetting(models.Model):
             "can_case_edit": self.can_case_edit,
             "can_task_create": self.can_task_create,
             "can_task_edit": self.can_task_edit,
+            "can_task_reopen": self.can_task_reopen,
             "can_note_add": self.can_note_add,
             "can_patient_merge": self.can_patient_merge,
             "can_manage_settings": self.can_manage_settings,
@@ -800,6 +803,7 @@ DEFAULT_ROLE_SETTINGS = {
         "can_case_edit": True,
         "can_task_create": True,
         "can_task_edit": True,
+        "can_task_reopen": True,
         "can_note_add": True,
         "can_patient_merge": True,
         "can_manage_settings": True,
@@ -809,6 +813,7 @@ DEFAULT_ROLE_SETTINGS = {
         "can_case_edit": True,
         "can_task_create": True,
         "can_task_edit": True,
+        "can_task_reopen": True,
         "can_note_add": True,
     },
     "Reception": {
@@ -1503,8 +1508,11 @@ def ensure_rch_reminder_task(case: Case, actor, due_date=None):
     )
 
 
-def cancel_open_rch_reminders(case: Case) -> int:
-    reminder_ids = list(open_rch_reminder_queryset(case).values_list("id", flat=True))
+def cancel_open_rch_reminders(case: Case, exclude_task_ids=None) -> int:
+    reminder_queryset = open_rch_reminder_queryset(case)
+    if exclude_task_ids:
+        reminder_queryset = reminder_queryset.exclude(id__in=list(exclude_task_ids))
+    reminder_ids = list(reminder_queryset.values_list("id", flat=True))
     if not reminder_ids:
         return 0
     Task.objects.filter(id__in=reminder_ids).update(

@@ -18,6 +18,7 @@ class RoleSettingAdmin(admin.ModelAdmin):
         "can_patient_merge",
         "can_task_create",
         "can_task_edit",
+        "can_task_reopen",
         "can_note_add",
         "can_manage_settings",
     )

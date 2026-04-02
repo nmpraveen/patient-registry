@@ -674,11 +674,20 @@ class PatientMergeForm(forms.Form):
 
 
 class TaskForm(StyledModelForm):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, allow_reopen=True, **kwargs):
+        self.allow_reopen = allow_reopen
         super().__init__(*args, **kwargs)
         self.fields["due_date"].input_formats = DATE_INPUT_FORMATS
         instance = getattr(self, "instance", None)
         if not instance or not instance.pk:
+            return
+        if instance.status == TaskStatus.COMPLETED:
+            allowed_statuses = {TaskStatus.COMPLETED}
+            if self.allow_reopen:
+                allowed_statuses.add(TaskStatus.SCHEDULED)
+            self.fields["status"].choices = [
+                choice for choice in self.fields["status"].choices if choice[0] in allowed_statuses
+            ]
             return
         is_anc = instance.case and instance.case.category.name.upper() == "ANC"
         if is_anc and instance.due_date and instance.due_date > timezone.localdate():
@@ -833,6 +842,7 @@ class RoleSettingForm(StyledModelForm):
             "can_case_edit",
             "can_task_create",
             "can_task_edit",
+            "can_task_reopen",
             "can_note_add",
             "can_patient_merge",
             "can_manage_settings",
@@ -842,6 +852,7 @@ class RoleSettingForm(StyledModelForm):
             "can_case_edit": forms.CheckboxInput(),
             "can_task_create": forms.CheckboxInput(),
             "can_task_edit": forms.CheckboxInput(),
+            "can_task_reopen": forms.CheckboxInput(),
             "can_note_add": forms.CheckboxInput(),
             "can_patient_merge": forms.CheckboxInput(),
             "can_manage_settings": forms.CheckboxInput(),

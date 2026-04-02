@@ -3,11 +3,15 @@
 {% block content %}
 <div class="card"><div class="card-body">
   <h1 class="h5">Edit Task</h1>
+  {% if form.non_field_errors %}
+    <div class="alert alert-danger py-2">{{ form.non_field_errors }}</div>
+  {% endif %}
   <form method="post" class="row g-3">{% csrf_token %}
     {% for field in form %}
       <div class="col-12 col-md-6">
         <label class="form-label">{{ field.label }}</label>
         {{ field }}
+        {% if field.errors %}<div class="text-danger small mt-1">{{ field.errors|striptags }}</div>{% endif %}
       </div>
     {% endfor %}
     <div class="col-12"><button class="btn btn-primary w-100 w-sm-auto">Save Task</button></div>

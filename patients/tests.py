@@ -2599,6 +2599,61 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, expected_date)
 
+    def test_case_detail_completed_task_shows_reopen_action_for_authorized_role(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-COMP-UNDO",
+            first_name="Completed",
+            last_name="Undo",
+            phone_number="9876504441",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=10),
+            created_by=self.user,
+        )
+        task = Task.objects.create(
+            case=case,
+            title="Completed task",
+            due_date=timezone.localdate() - timedelta(days=1),
+            status=TaskStatus.COMPLETED,
+            created_by=self.user,
+        )
+
+        response = self.client.get(reverse("patients:case_detail", kwargs={"pk": case.pk}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, reverse("patients:task_quick_reopen", kwargs={"pk": task.pk}))
+        self.assertContains(response, "Undo completion")
+
+    def test_case_detail_completed_task_hides_reopen_action_without_permission(self):
+        nurse_user = self.login_as_role("Nurse", username="nurse-history-undo")
+        case = Case.objects.create(
+            uhid="UH-COMP-HIDE",
+            first_name="Completed",
+            last_name="NoUndo",
+            phone_number="9876504440",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=10),
+            created_by=self.user,
+        )
+        task = Task.objects.create(
+            case=case,
+            title="Completed task",
+            due_date=timezone.localdate() - timedelta(days=1),
+            status=TaskStatus.COMPLETED,
+            created_by=self.user,
+        )
+
+        self.client.force_login(nurse_user)
+        response = self.client.get(reverse("patients:case_detail", kwargs={"pk": case.pk}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, reverse("patients:task_quick_reopen", kwargs={"pk": task.pk}))
+        self.assertNotContains(response, "Undo completion")
+
     def test_case_detail_completed_task_falls_back_to_due_date_when_completed_at_missing(self):
         self.client.force_login(self.user)
         case = Case.objects.create(
@@ -2914,6 +2969,146 @@ class MedtrackViewTests(TestCase):
                 note__icontains="Task completed",
             ).exists()
         )
+
+    def test_task_quick_reopen_marks_scheduled_clears_completed_at_and_updates_case_counts(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-ACTION-03B",
+            first_name="Quick",
+            last_name="Reopen",
+            phone_number="9876505334",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=5),
+            created_by=self.user,
+        )
+        task = Task.objects.create(
+            case=case,
+            title="Quick reopen task",
+            due_date=timezone.localdate(),
+            status=TaskStatus.COMPLETED,
+            created_by=self.user,
+        )
+        Task.objects.filter(pk=task.pk).update(
+            completed_at=timezone.make_aware(datetime(2026, 1, 15, 10, 30)),
+        )
+
+        response = self.client.post(reverse("patients:task_quick_reopen", kwargs={"pk": task.pk}))
+
+        self.assertEqual(response.status_code, 302)
+        task.refresh_from_db()
+        self.assertEqual(task.status, TaskStatus.SCHEDULED)
+        self.assertIsNone(task.completed_at)
+        self.assertTrue(
+            CaseActivityLog.objects.filter(
+                case=case,
+                task=task,
+                event_type=ActivityEventType.TASK,
+                note__icontains="Task reopened",
+            ).exists()
+        )
+        detail_response = self.client.get(reverse("patients:case_detail", kwargs={"pk": case.pk}))
+        self.assertEqual(detail_response.context["open_task_count"], 1)
+        self.assertEqual(detail_response.context["completed_task_count"], 0)
+        self.assertEqual([item.title for item in detail_response.context["prominent_tasks"]], [task.title])
+
+    def test_task_quick_reopen_requires_reopen_permission(self):
+        nurse_user = self.login_as_role("Nurse", username="nurse-quick-reopen")
+        case = Case.objects.create(
+            uhid="UH-ACTION-03C",
+            first_name="Quick",
+            last_name="NoReopen",
+            phone_number="9876505335",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=5),
+            created_by=self.user,
+        )
+        task = Task.objects.create(
+            case=case,
+            title="Protected completed task",
+            due_date=timezone.localdate(),
+            status=TaskStatus.COMPLETED,
+            created_by=self.user,
+        )
+
+        self.client.force_login(nurse_user)
+        response = self.client.post(reverse("patients:task_quick_reopen", kwargs={"pk": task.pk}))
+
+        self.assertEqual(response.status_code, 403)
+        task.refresh_from_db()
+        self.assertEqual(task.status, TaskStatus.COMPLETED)
+
+    def test_task_quick_reopen_rch_reminder_cancels_follow_up_reminder(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-ACTION-RCH-UNDO",
+            first_name="Quick",
+            last_name="RCHUndo",
+            phone_number="9876505336",
+            category=self.anc,
+            status=CaseStatus.ACTIVE,
+            lmp=timezone.localdate() - timedelta(days=56),
+            edd=timezone.localdate() + timedelta(days=210),
+            rch_bypass=True,
+            created_by=self.user,
+        )
+        reopened_task = Task.objects.create(
+            case=case,
+            title=RCH_REMINDER_TASK_TITLE,
+            due_date=timezone.localdate(),
+            status=TaskStatus.COMPLETED,
+            task_type=TaskType.CALL,
+            created_by=self.user,
+        )
+        follow_up_task = Task.objects.create(
+            case=case,
+            title=RCH_REMINDER_TASK_TITLE,
+            due_date=timezone.localdate() + timedelta(days=RCH_REMINDER_INTERVAL_DAYS),
+            status=TaskStatus.SCHEDULED,
+            task_type=TaskType.CALL,
+            created_by=self.user,
+        )
+
+        response = self.client.post(reverse("patients:task_quick_reopen", kwargs={"pk": reopened_task.pk}))
+
+        self.assertEqual(response.status_code, 302)
+        reopened_task.refresh_from_db()
+        follow_up_task.refresh_from_db()
+        self.assertEqual(reopened_task.status, TaskStatus.SCHEDULED)
+        self.assertEqual(follow_up_task.status, TaskStatus.CANCELLED)
+
+    def test_task_quick_reopen_rch_reminder_without_follow_up_still_succeeds(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-ACTION-RCH-UNDO-2",
+            first_name="Quick",
+            last_name="RCHSolo",
+            phone_number="9876505337",
+            category=self.anc,
+            status=CaseStatus.ACTIVE,
+            lmp=timezone.localdate() - timedelta(days=56),
+            edd=timezone.localdate() + timedelta(days=210),
+            rch_bypass=True,
+            created_by=self.user,
+        )
+        task = Task.objects.create(
+            case=case,
+            title=RCH_REMINDER_TASK_TITLE,
+            due_date=timezone.localdate(),
+            status=TaskStatus.COMPLETED,
+            task_type=TaskType.CALL,
+            created_by=self.user,
+        )
+
+        response = self.client.post(reverse("patients:task_quick_reopen", kwargs={"pk": task.pk}))
+
+        self.assertEqual(response.status_code, 302)
+        task.refresh_from_db()
+        self.assertEqual(task.status, TaskStatus.SCHEDULED)
+        self.assertIsNone(task.completed_at)
 
     def test_task_quick_reschedule_blocks_completed_tasks(self):
         self.client.force_login(self.user)
@@ -4784,6 +4979,7 @@ class MedtrackViewTests(TestCase):
                 "can_case_edit": "on",
                 "can_task_create": "on",
                 "can_task_edit": "on",
+                "can_task_reopen": "on",
                 "can_note_add": "on",
                 "can_manage_settings": "on",
             },
@@ -4792,6 +4988,7 @@ class MedtrackViewTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         role.refresh_from_db()
+        self.assertTrue(role.can_task_reopen)
         self.assertTrue(role.can_manage_settings)
         self.assertContains(response, "Updated permissions for Doctor.")
 
@@ -7196,6 +7393,145 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(
             next_reminder.due_date,
             timezone.localtime(task.completed_at).date() + timedelta(days=RCH_REMINDER_INTERVAL_DAYS),
+        )
+
+    def test_task_edit_reopen_of_completed_task_requires_reopen_permission(self):
+        nurse_user = self.login_as_role("Nurse", username="nurse-edit-reopen")
+        case = Case.objects.create(
+            uhid="UH-RCH-REOPEN-403",
+            first_name="Reminder",
+            last_name="Blocked",
+            phone_number="9876500196",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=10),
+            created_by=self.user,
+        )
+        task = Task.objects.create(
+            case=case,
+            title="Completed task",
+            due_date=timezone.localdate(),
+            status=TaskStatus.COMPLETED,
+            task_type="CALL",
+            created_by=self.user,
+        )
+
+        self.client.force_login(nurse_user)
+        response = self.client.post(
+            reverse("patients:task_edit", kwargs={"pk": task.pk}),
+            {
+                "title": task.title,
+                "due_date": task.due_date.isoformat(),
+                "status": TaskStatus.SCHEDULED,
+                "assigned_user": "",
+                "task_type": task.task_type,
+                "frequency_label": task.frequency_label,
+                "notes": "",
+            },
+        )
+
+        self.assertEqual(response.status_code, 403)
+        task.refresh_from_db()
+        self.assertEqual(task.status, TaskStatus.COMPLETED)
+
+    def test_task_edit_reopen_of_completed_task_only_allows_scheduled(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-RCH-REOPEN-400",
+            first_name="Reminder",
+            last_name="Invalid",
+            phone_number="9876500194",
+            category=self.surgery,
+            status=CaseStatus.ACTIVE,
+            surgical_pathway=SurgicalPathway.SURVEILLANCE,
+            review_date=timezone.localdate() + timedelta(days=10),
+            created_by=self.user,
+        )
+        task = Task.objects.create(
+            case=case,
+            title="Completed task",
+            due_date=timezone.localdate(),
+            status=TaskStatus.COMPLETED,
+            task_type="CALL",
+            created_by=self.user,
+        )
+
+        response = self.client.post(
+            reverse("patients:task_edit", kwargs={"pk": task.pk}),
+            {
+                "title": task.title,
+                "due_date": task.due_date.isoformat(),
+                "status": TaskStatus.CANCELLED,
+                "assigned_user": "",
+                "task_type": task.task_type,
+                "frequency_label": task.frequency_label,
+                "notes": "",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        task.refresh_from_db()
+        self.assertEqual(task.status, TaskStatus.COMPLETED)
+        self.assertContains(response, "Select a valid choice.")
+
+    def test_task_edit_reopen_of_rch_reminder_cancels_follow_up_reminder(self):
+        self.client.force_login(self.user)
+        case = Case.objects.create(
+            uhid="UH-RCH-REOPEN",
+            first_name="Reminder",
+            last_name="Reopen",
+            phone_number="9876500195",
+            category=self.anc,
+            status=CaseStatus.ACTIVE,
+            lmp=timezone.localdate() - timedelta(days=56),
+            edd=timezone.localdate() + timedelta(days=210),
+            rch_bypass=True,
+            created_by=self.user,
+        )
+        task = Task.objects.create(
+            case=case,
+            title=RCH_REMINDER_TASK_TITLE,
+            due_date=timezone.localdate(),
+            status=TaskStatus.COMPLETED,
+            task_type="CALL",
+            created_by=self.user,
+        )
+        follow_up_task = Task.objects.create(
+            case=case,
+            title=RCH_REMINDER_TASK_TITLE,
+            due_date=timezone.localdate() + timedelta(days=RCH_REMINDER_INTERVAL_DAYS),
+            status=TaskStatus.SCHEDULED,
+            task_type="CALL",
+            created_by=self.user,
+        )
+
+        response = self.client.post(
+            reverse("patients:task_edit", kwargs={"pk": task.pk}),
+            {
+                "title": task.title,
+                "due_date": task.due_date.isoformat(),
+                "status": TaskStatus.SCHEDULED,
+                "assigned_user": "",
+                "task_type": task.task_type,
+                "frequency_label": task.frequency_label,
+                "notes": "",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        task.refresh_from_db()
+        follow_up_task.refresh_from_db()
+        self.assertEqual(task.status, TaskStatus.SCHEDULED)
+        self.assertIsNone(task.completed_at)
+        self.assertEqual(follow_up_task.status, TaskStatus.CANCELLED)
+        self.assertTrue(
+            CaseActivityLog.objects.filter(
+                case=case,
+                task=task,
+                event_type=ActivityEventType.TASK,
+                note__icontains="Task reopened",
+            ).exists()
         )
 
     def test_vitals_create_requires_task_edit_capability(self):

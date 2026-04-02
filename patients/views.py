@@ -521,6 +521,7 @@ CAPABILITY_FIELD_MAP = {
     "case_edit": "can_case_edit",
     "task_create": "can_task_create",
     "task_edit": "can_task_edit",
+    "task_reopen": "can_task_reopen",
     "note_add": "can_note_add",
     "patient_merge": "can_patient_merge",
     "manage_settings": "can_manage_settings",
@@ -545,6 +546,7 @@ def _user_role_settings(user):
                 "can_case_edit",
                 "can_task_create",
                 "can_task_edit",
+                "can_task_reopen",
                 "can_note_add",
                 "can_patient_merge",
                 "can_manage_settings",
@@ -745,6 +747,10 @@ def _can_edit_recent_cases(user):
 
 def _can_access_upcoming_calls(user):
     return can_access_case_data(user) and has_capability(user, "note_add")
+
+
+def _can_reopen_tasks(user):
+    return has_capability(user, "task_edit") and has_capability(user, "task_reopen")
 
 
 def _user_group_names(user):
@@ -1377,6 +1383,38 @@ def _complete_task_inline(task, *, user):
         note=f"Task completed: {task.title}",
     )
     return True, "Task marked as completed."
+
+
+def _reopen_task_follow_up_cleanup(task):
+    if task.title != RCH_REMINDER_TASK_TITLE:
+        return 0
+    return cancel_open_rch_reminders(task.case, exclude_task_ids={task.id})
+
+
+def _reopen_task_inline(task, *, user):
+    if task.status != TaskStatus.COMPLETED:
+        return False, "Only completed tasks can be reopened."
+
+    task.status = TaskStatus.SCHEDULED
+    try:
+        task.full_clean()
+        task.save()
+    except ValidationError:
+        return False, "Could not reopen task. Please review task state."
+
+    cancelled_count = _reopen_task_follow_up_cleanup(task)
+    note = f"Task reopened: {task.title}"
+    if cancelled_count:
+        reminder_label = "follow-up reminder" if cancelled_count == 1 else "follow-up reminders"
+        note = f"{note} ({cancelled_count} {reminder_label} cancelled)"
+    create_case_activity(
+        case=task.case,
+        task=task,
+        user=user,
+        event_type=ActivityEventType.TASK,
+        note=note,
+    )
+    return True, "Task reopened."
 
 
 def _reschedule_task_inline(task, *, due_date_raw, user):
@@ -4884,6 +4922,7 @@ class CaseDetailView(LoginRequiredMixin, DetailView):
         context["call_log_form"] = call_log_form
         context["can_task_create"] = has_capability(self.request.user, "task_create")
         context["can_task_edit"] = has_capability(self.request.user, "task_edit")
+        context["can_task_reopen"] = _can_reopen_tasks(self.request.user)
         context["can_note_add"] = has_capability(self.request.user, "note_add")
         context["can_vitals_edit"] = has_capability(self.request.user, "task_edit")
         context["vitals_editor_form"] = VitalEntryForm()
@@ -5111,6 +5150,18 @@ class TaskQuickCompleteView(LoginRequiredMixin, View):
         return _task_action_success_response(request, task=task, message=message)
 
 
+class TaskQuickReopenView(LoginRequiredMixin, View):
+    def post(self, request, pk):
+        if not _can_reopen_tasks(request.user):
+            return _forbidden_response(request, "You do not have permission to reopen completed tasks.")
+
+        task = get_object_or_404(Task.objects.select_related("case", "case__category"), pk=pk)
+        success, message = _reopen_task_inline(task, user=request.user)
+        if not success:
+            return _task_action_error_response(request, case_id=task.case_id, message=message)
+        return _task_action_success_response(request, task=task, message=message)
+
+
 class TaskQuickRescheduleView(LoginRequiredMixin, View):
     def post(self, request, pk):
         if not has_capability(request.user, "task_edit"):
@@ -5153,16 +5204,47 @@ class TaskUpdateView(LoginRequiredMixin, UpdateView):
             return HttpResponseForbidden("You do not have permission to edit tasks.")
         return super().dispatch(request, *args, **kwargs)
 
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        task = self.object if getattr(self, "object", None) is not None else self.get_object()
+        kwargs["allow_reopen"] = not (task.status == TaskStatus.COMPLETED and not _can_reopen_tasks(self.request.user))
+        return kwargs
+
+    def post(self, request, *args, **kwargs):
+        self.object = self.get_object()
+        requested_status = request.POST.get("status")
+        if (
+            self.object.status == TaskStatus.COMPLETED
+            and requested_status
+            and requested_status != TaskStatus.COMPLETED
+            and not _can_reopen_tasks(request.user)
+        ):
+            return _forbidden_response(request, "You do not have permission to reopen completed tasks.")
+        return super().post(request, *args, **kwargs)
+
     def form_valid(self, form):
         previous_task = self.get_object()
         previous_status = previous_task.status
+        next_status = form.cleaned_data.get("status")
+        is_reopening = previous_status == TaskStatus.COMPLETED and next_status != TaskStatus.COMPLETED
+        if is_reopening and next_status != TaskStatus.SCHEDULED:
+            form.add_error("status", "Completed tasks can only be reopened to Scheduled.")
+            return self.form_invalid(form)
         response = super().form_valid(form)
+        if is_reopening:
+            cancelled_count = _reopen_task_follow_up_cleanup(self.object)
+            note = f"Task reopened: {self.object.title}"
+            if cancelled_count:
+                reminder_label = "follow-up reminder" if cancelled_count == 1 else "follow-up reminders"
+                note = f"{note} ({cancelled_count} {reminder_label} cancelled)"
+        else:
+            note = f"Task updated: {self.object.title} ({self.object.status})"
         create_case_activity(
             case=self.object.case,
             task=self.object,
             user=self.request.user,
             event_type=ActivityEventType.TASK,
-            note=f"Task updated: {self.object.title} ({self.object.status})",
+            note=note,
         )
         if (
             previous_status != TaskStatus.COMPLETED

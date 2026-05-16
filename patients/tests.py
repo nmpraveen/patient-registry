@@ -8,6 +8,7 @@ import zipfile
 from datetime import date, datetime, time as dt_time, timedelta
 from decimal import Decimal
 from pathlib import Path
+from unittest import skipUnless
 from unittest.mock import patch
 
 from django.conf import settings
@@ -15,7 +16,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.core.management import call_command
+from django.core.management import call_command, get_commands
 from django.core.management.base import CommandError
 from django.db import ProgrammingError, connection
 from django.test import TestCase
@@ -9741,6 +9742,10 @@ class SeedMockDataCommandTests(TestCase):
         self.assertEqual(snapshot_first, snapshot_second)
 
 
+@skipUnless(
+    "ensure_local_demo_superuser" in get_commands(),
+    "local-only demo superuser command is not installed",
+)
 class LocalDemoSuperuserCommandTests(TestCase):
     def test_command_creates_expected_local_demo_superuser(self):
         self.assertFalse(get_user_model().objects.filter(username="admin").exists())

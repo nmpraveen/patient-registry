@@ -74,6 +74,7 @@ from .models import (
     CallOutcome,
     Case,
     CaseActivityLog,
+    CaseSubcategory,
     CaseStatus,
     DepartmentConfig,
     DeviceApprovalPolicy,
@@ -136,6 +137,27 @@ CASE_CATEGORY_GROUP_FILTERS = {
     "anc": Q(category__name__iexact="ANC"),
     "surgery": Q(category__name__iexact="Surgery"),
     "non_surgical": NON_SURGICAL_CASE_FILTER,
+}
+
+DASHBOARD_CATEGORY_ICON_PATHS = {
+    "ANC": "patients/icons/categories/anc.svg",
+    "SURGERY": "patients/icons/categories/surgery.svg",
+    "MEDICINE": "patients/icons/categories/medicine.svg",
+}
+
+DASHBOARD_SUBCATEGORY_ICON_PATHS = {
+    CaseSubcategory.GENERAL_SURGERY: "patients/icons/subcategories/general_surgery.svg",
+    CaseSubcategory.ORTHOPEDICS: "patients/icons/subcategories/orthopedics.svg",
+    CaseSubcategory.PLASTIC_SURGERY: "patients/icons/subcategories/plastic_surgery.svg",
+    CaseSubcategory.PEDIATRIC_SURGERY: "patients/icons/subcategories/pediatric_surgery.svg",
+    CaseSubcategory.UROLOGY: "patients/icons/subcategories/urology.svg",
+    CaseSubcategory.ENT: "patients/icons/subcategories/ent.svg",
+    CaseSubcategory.OTHER_SPECIALTY: "patients/icons/subcategories/other_specialty.svg",
+    CaseSubcategory.GENERAL_MEDICINE: "patients/icons/subcategories/general_medicine.svg",
+    CaseSubcategory.PSYCHIATRY: "patients/icons/subcategories/psychiatry.svg",
+    CaseSubcategory.CARDIOLOGY_ECHO: "patients/icons/subcategories/cardiology_echo.svg",
+    CaseSubcategory.PEDIATRIC: "patients/icons/subcategories/pediatric.svg",
+    CaseSubcategory.MEDICAL_ONCOLOGY: "patients/icons/subcategories/medical_oncology.svg",
 }
 
 CASE_DATA_CAPABILITIES = (
@@ -1200,6 +1222,7 @@ def _serialize_recent_case(case, user, *, today=None, can_edit_recent=None, can_
     if today is None:
         today = timezone.localdate()
     created_local = timezone.localtime(case.created_at)
+    recent_time = _dashboard_recent_time_payload(created_local, today)
     diagnosis = (case.diagnosis or case.category.name).strip()
     if can_edit_recent is None:
         can_edit_recent = _can_edit_recent_cases(user)
@@ -1231,10 +1254,16 @@ def _serialize_recent_case(case, user, *, today=None, can_edit_recent=None, can_
         "created_at": created_local.isoformat(),
         "created_at_display": created_local.strftime("%d %b %Y %H:%M"),
         "created_at_short_display": _month_day_display(created_local),
+        "created_badge_label": recent_time["badge"],
+        "created_badge_suffix": recent_time["suffix"],
+        "created_date_label": recent_time["date_label"],
+        "created_tone": recent_time["tone"],
         "is_new_today": created_local.date() == today,
         "can_edit": can_edit_recent,
         "category_name": category_name,
         "subcategory_name": case.get_subcategory_display() if case.subcategory else "",
+        "subcategory_icon_path": _dashboard_subcategory_icon_path(case.subcategory),
+        "category_icon_path": _dashboard_category_icon_path(category_name),
         "category_bg_color": category_theme["bg"],
         "category_text_color": category_theme["text"],
         "category_border_color": category_theme["border"],
@@ -1247,6 +1276,7 @@ def _serialize_recent_case_summary(case, user, *, today=None, can_edit_recent=No
     if today is None:
         today = timezone.localdate()
     created_local = timezone.localtime(case.created_at)
+    recent_time = _dashboard_recent_time_payload(created_local, today)
     diagnosis = (case.diagnosis or case.category.name).strip()
     if can_edit_recent is None:
         can_edit_recent = _can_edit_recent_cases(user)
@@ -1271,10 +1301,16 @@ def _serialize_recent_case_summary(case, user, *, today=None, can_edit_recent=No
         "created_at": created_local.isoformat(),
         "created_at_display": created_local.strftime("%d %b %Y %H:%M"),
         "created_at_short_display": _month_day_display(created_local),
+        "created_badge_label": recent_time["badge"],
+        "created_badge_suffix": recent_time["suffix"],
+        "created_date_label": recent_time["date_label"],
+        "created_tone": recent_time["tone"],
         "is_new_today": created_local.date() == today,
         "can_edit": can_edit_recent,
         "category_name": case.category.name,
         "subcategory_name": case.get_subcategory_display() if case.subcategory else "",
+        "subcategory_icon_path": _dashboard_subcategory_icon_path(case.subcategory),
+        "category_icon_path": _dashboard_category_icon_path(case.category.name),
         "category_bg_color": category_theme["bg"],
         "category_text_color": category_theme["text"],
         "category_border_color": category_theme["border"],
@@ -2451,6 +2487,124 @@ def _case_initials(case):
     return "--"
 
 
+def _dashboard_category_key(category_name):
+    normalized = " ".join((category_name or "").replace("-", " ").split()).upper()
+    if normalized in {"NON SURGICAL", "NONSURGICAL"}:
+        return "MEDICINE"
+    return normalized
+
+
+def _dashboard_category_icon_path(category_name):
+    return DASHBOARD_CATEGORY_ICON_PATHS.get(_dashboard_category_key(category_name), "")
+
+
+def _dashboard_subcategory_icon_path(subcategory):
+    return DASHBOARD_SUBCATEGORY_ICON_PATHS.get(subcategory, "")
+
+
+def _dashboard_task_count_label(task_count):
+    count = len(task_count) if isinstance(task_count, (list, tuple)) else int(task_count or 0)
+    suffix = "" if count == 1 else "s"
+    return f"{count} task{suffix}"
+
+
+def _dashboard_call_status_display(status, failed_attempt_count=0):
+    if status == CallCommunicationStatus.CONFIRMED:
+        return {"label": "Confirmed", "tone": "success"}
+    if status == CallCommunicationStatus.NOT_REACHABLE:
+        count = max(int(failed_attempt_count or 0), 0)
+        suffix = f" x{count}" if count else ""
+        return {"label": f"Not reached{suffix}", "tone": "danger"}
+    if status == CallCommunicationStatus.INVALID_CONTACT:
+        return {"label": "Invalid contact", "tone": "neutral"}
+    if status == CallCommunicationStatus.LOST:
+        return {"label": "Lost follow-up", "tone": "neutral"}
+    if status == CallCommunicationStatus.CALL_BACK_LATER:
+        return {"label": "Call back later", "tone": "warning"}
+    return {"label": "Not contacted", "tone": "warning"}
+
+
+def _dashboard_overdue_label(due_date, today=None):
+    if today is None:
+        today = timezone.localdate()
+    days_overdue = max((today - due_date).days, 0)
+    suffix = "" if days_overdue == 1 else "s"
+    return days_overdue, f"{days_overdue} day{suffix}"
+
+
+def _dashboard_overdue_tone(days_overdue):
+    if days_overdue >= 30:
+        return "critical"
+    if days_overdue >= 15:
+        return "severe"
+    if days_overdue >= 8:
+        return "moderate"
+    return "mild"
+
+
+def _dashboard_waiting_label(due_date, today=None):
+    if today is None:
+        today = timezone.localdate()
+    waiting_days = max((today - due_date).days, 0)
+    if waiting_days == 0:
+        return waiting_days, "Today"
+    suffix = "" if waiting_days == 1 else "s"
+    return waiting_days, f"{waiting_days} day{suffix}"
+
+
+def _dashboard_recent_time_payload(created_local, today=None, now=None):
+    if today is None:
+        today = timezone.localdate()
+    if now is None:
+        now = timezone.localtime()
+    created_date = created_local.date()
+    age_delta = max(now - created_local, timedelta())
+    age_days = max((today - created_date).days, 0)
+    if age_delta < timedelta(days=1):
+        hours = max(int(age_delta.total_seconds() // 3600), 1)
+        badge = f"{hours}h"
+    else:
+        badge = f"{max(age_days, 1)}d"
+    if age_days <= 1:
+        tone = "today"
+    elif age_days <= 7:
+        tone = "week"
+    else:
+        tone = "older"
+    return {
+        "badge": badge,
+        "suffix": "ago",
+        "date_label": "Today" if created_date == today else _month_day_display(created_local),
+        "tone": tone,
+    }
+
+
+def _dashboard_recent_time_badge(created_local, today=None):
+    return _dashboard_recent_time_payload(created_local, today)["badge"]
+
+
+def _dashboard_report_tag(title):
+    normalized = " ".join((title or "").lower().split())
+    imaging_terms = {"usg", "ultrasound", "sonography", "scan", "xray", "x-ray", "ct", "mri"}
+    lab_terms = {"blood", "lab", "cbc", "hba1c", "urine", "marker", "test"}
+    pathology_terms = {"biopsy", "pathology", "histopath", "histology", "cytology"}
+    if any(term in normalized for term in pathology_terms):
+        return {"label": "Biopsy Report" if "biopsy" in normalized else "Pathology Report", "tone": "pathology"}
+    if any(term in normalized for term in imaging_terms):
+        if "usg" in normalized:
+            label = "USG Report"
+        elif "xray" in normalized or "x-ray" in normalized:
+            label = "X-ray Report"
+        elif "ultrasound" in normalized or "sonography" in normalized:
+            label = "Ultrasound Report"
+        else:
+            label = "Imaging Report"
+        return {"label": label, "tone": "imaging"}
+    if any(term in normalized for term in lab_terms):
+        return {"label": "Blood Work" if "blood" in normalized else "Lab Report", "tone": "lab"}
+    return {"label": "Report", "tone": "general"}
+
+
 def _case_name_size_class(case):
     name_length = len(case.full_name)
     if name_length >= 34:
@@ -2620,11 +2774,21 @@ class DashboardView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
                     unique_titles.append(task.title)
                     seen_titles.add(task.title)
             call_summary = call_summary_by_case.get(case.id, {})
+            call_status = call_summary.get("status", CallCommunicationStatus.NONE)
+            failed_attempt_count = call_summary.get("failed_attempt_count", 0)
+            call_status_display = _dashboard_call_status_display(call_status, failed_attempt_count)
+            days_overdue, overdue_label = _dashboard_overdue_label(first_task.due_date)
+            overdue_day_unit = "day" if days_overdue == 1 else "days"
             full_name = case.full_name or case.patient_name
             cards.append(
                 {
                     "due_date": first_task.due_date,
                     "due_date_display": _month_day_display(first_task.due_date),
+                    "days_overdue": days_overdue,
+                    "overdue_label": overdue_label,
+                    "overdue_day_unit": overdue_day_unit,
+                    "overdue_due_label": f"Due {_month_day_display(first_task.due_date)}",
+                    "overdue_tone": _dashboard_overdue_tone(days_overdue),
                     "case_id": case.id,
                     "patient_name": full_name,
                     "short_name": _build_short_name(case),
@@ -2634,15 +2798,22 @@ class DashboardView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
                     "high_risk": case.high_risk,
                     "ncd_flags": case.ncd_flags or [],
                     "subcategory_name": case.get_subcategory_display() if case.subcategory else "",
+                    "subcategory_icon_path": _dashboard_subcategory_icon_path(case.subcategory),
                     "task_titles": unique_titles,
+                    "task_count": len(unique_titles),
+                    "task_count_label": _dashboard_task_count_label(unique_titles),
                     "task_summary": " \u2022 ".join(unique_titles),
-                    "call_status": call_summary.get("status", CallCommunicationStatus.NONE),
-                    "failed_attempt_count": call_summary.get("failed_attempt_count", 0),
+                    "call_status": call_status,
+                    "failed_attempt_count": failed_attempt_count,
+                    "call_status_label": call_status_display["label"],
+                    "call_status_tone": call_status_display["tone"],
                     "latest_call_outcome": call_summary.get("latest_outcome", ""),
                     "gender_code": _case_gender_code(case),
                     "age_number": _case_age_number(case),
                     "sex_age": _case_sex_age_label(case),
+                    "patient_initials": _case_initials(case),
                     "category_name": case.category.name,
+                    "category_icon_path": _dashboard_category_icon_path(case.category.name),
                     "category_bg_color": category_theme["bg"],
                     "category_text_color": category_theme["text"],
                     "category_border_color": category_theme["border"],
@@ -2657,6 +2828,8 @@ class DashboardView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
         for task in task_queryset:
             case = task.case
             category_theme = resolve_category_theme(theme_category_colors, case.category)
+            waiting_days, waiting_label = _dashboard_waiting_label(task.due_date)
+            report_tag = _dashboard_report_tag(task.title)
             full_name = case.full_name or case.patient_name
             rows.append(
                 {
@@ -2668,10 +2841,16 @@ class DashboardView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
                     "age_number": _case_age_number(case),
                     "sex_age": _case_sex_age_label(case),
                     "due_date_display": _month_day_display(task.due_date),
+                    "waiting_days": waiting_days,
+                    "waiting_label": waiting_label,
                     "diagnosis": case.diagnosis or case.category.name,
                     "report_detail": task.title,
+                    "report_tag_label": report_tag["label"],
+                    "report_tag_tone": report_tag["tone"],
                     "subcategory_name": case.get_subcategory_display() if case.subcategory else "",
+                    "subcategory_icon_path": _dashboard_subcategory_icon_path(case.subcategory),
                     "category_name": case.category.name,
+                    "category_icon_path": _dashboard_category_icon_path(case.category.name),
                     "category_bg_color": category_theme["bg"],
                     "category_text_color": category_theme["text"],
                     "category_border_color": category_theme["border"],
@@ -2707,6 +2886,7 @@ class DashboardView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
             "name": category_name,
             "bg_color": bg_color,
             "text_color": text_color,
+            "border_color": mix_colors(bg_color, text_color, 0.20),
             "dot_color": mix_colors(text_color, bg_color, 0.22),
         }
 
@@ -2755,12 +2935,19 @@ class DashboardView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
                     {
                         "case_id": case.id,
                         "patient_name": case.full_name or case.patient_name,
+                        "short_name": _build_short_name(case),
+                        "sex_age": _case_sex_age_label(case),
                         "diagnosis": case.diagnosis or case.category.name,
                         "task_titles": unique_titles,
+                        "task_count": len(unique_titles),
+                        "task_count_label": _dashboard_task_count_label(unique_titles),
                         "subcategory_name": case.get_subcategory_display() if case.subcategory else "",
+                        "subcategory_icon_path": _dashboard_subcategory_icon_path(case.subcategory),
                         "category_name": category_theme["name"],
+                        "category_icon_path": _dashboard_category_icon_path(category_theme["name"]),
                         "category_bg_color": category_theme["bg_color"],
                         "category_text_color": category_theme["text_color"],
+                        "category_border_color": category_theme["border_color"],
                         "detail_url": reverse("patients:case_detail", kwargs={"pk": case.pk}),
                     }
                 )
@@ -2770,6 +2957,7 @@ class DashboardView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
                         subcategory_name,
                         {
                             "label": subcategory_name,
+                            "icon_path": _dashboard_subcategory_icon_path(case.subcategory),
                             "bg_color": category_theme["bg_color"],
                             "text_color": category_theme["text_color"],
                         },

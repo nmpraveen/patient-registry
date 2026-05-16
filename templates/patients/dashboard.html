@@ -6,32 +6,32 @@
   <div class="container-fluid container-lg px-3 px-md-0 nav-stats-bar-inner">
     <div class="nav-stats-item nav-stats-item--today" data-dashboard-summary-item data-nav-stats-item>
       <span class="nav-stats-accent"></span>
-      <span class="nav-stats-label">Today</span>
+      <span class="nav-stats-label nav-stats-label--with-icon"><span class="nav-stats-icon nav-stats-icon--today" aria-hidden="true"></span><span>Today</span></span>
       <span class="nav-stats-value">{{ today_tasks|length }}</span>
     </div>
     <div class="nav-stats-item nav-stats-item--upcoming" data-dashboard-summary-item data-nav-stats-item>
       <span class="nav-stats-accent"></span>
-      <span class="nav-stats-label">Upcoming</span>
+      <span class="nav-stats-label nav-stats-label--with-icon"><span class="nav-stats-icon nav-stats-icon--upcoming" aria-hidden="true"></span><span>Upcoming</span></span>
       <span class="nav-stats-value">{{ upcoming_tasks|length }}</span>
     </div>
     <div class="nav-stats-item nav-stats-item--overdue" data-dashboard-summary-item data-nav-stats-item>
       <span class="nav-stats-accent"></span>
-      <span class="nav-stats-label">Overdue</span>
+      <span class="nav-stats-label nav-stats-label--with-icon"><span class="nav-stats-icon nav-stats-icon--overdue" aria-hidden="true"></span><span>Overdue</span></span>
       <span class="nav-stats-value">{{ overdue_tasks|length }}</span>
     </div>
     <a class="nav-stats-item nav-stats-item--category" href="{% url 'patients:case_list' %}?status=ACTIVE&category_group=anc" aria-label="View active ANC cases" style="{% category_theme_style 'ANC' theme_category_colors %}" data-dashboard-summary-item data-nav-stats-item>
       <span class="nav-stats-accent"></span>
-      <span class="nav-stats-label">ANC</span>
+      <span class="nav-stats-label nav-stats-label--with-icon"><span class="nav-stats-icon" aria-hidden="true">{% inline_static_svg "patients/icons/categories/anc.svg" %}</span><span>ANC</span></span>
       <span class="nav-stats-value">{{ anc_case_count }}</span>
     </a>
     <a class="nav-stats-item nav-stats-item--category" href="{% url 'patients:case_list' %}?status=ACTIVE&category_group=surgery" aria-label="View active Surgery cases" style="{% category_theme_style 'Surgery' theme_category_colors %}" data-dashboard-summary-item data-nav-stats-item>
       <span class="nav-stats-accent"></span>
-      <span class="nav-stats-label">Surgery</span>
+      <span class="nav-stats-label nav-stats-label--with-icon"><span class="nav-stats-icon" aria-hidden="true">{% inline_static_svg "patients/icons/categories/surgery.svg" %}</span><span>Surgery</span></span>
       <span class="nav-stats-value">{{ surgery_case_count }}</span>
     </a>
     <a class="nav-stats-item nav-stats-item--category" href="{% url 'patients:case_list' %}?status=ACTIVE&category_group=non_surgical" aria-label="View active Medicine cases" style="{% category_theme_style 'Medicine' theme_category_colors %}" data-dashboard-summary-item data-nav-stats-item>
       <span class="nav-stats-accent"></span>
-      <span class="nav-stats-label">Medicine</span>
+      <span class="nav-stats-label nav-stats-label--with-icon"><span class="nav-stats-icon" aria-hidden="true">{% inline_static_svg "patients/icons/categories/medicine.svg" %}</span><span>Medicine</span></span>
       <span class="nav-stats-value">{{ non_surgical_case_count }}</span>
     </a>
   </div>
@@ -60,6 +60,57 @@
       );
     box-shadow: 0 12px 28px var(--theme-shell-shadow), inset 0 1px 0 color-mix(in srgb, var(--theme-shell-surface-bg) 28%, transparent);
     padding: 1rem;
+  }
+
+  .nav-stats-label--with-icon {
+    align-items: center;
+    display: inline-flex;
+    gap: 0.28rem;
+    line-height: 1;
+  }
+
+  .nav-stats-icon {
+    align-items: center;
+    border-radius: 999px;
+    display: inline-flex;
+    flex: 0 0 auto;
+    height: 1.05rem;
+    justify-content: center;
+    position: relative;
+    width: 1.05rem;
+  }
+
+  .nav-stats-icon svg {
+    display: block;
+    height: 0.92rem;
+    width: 0.92rem;
+  }
+
+  .nav-stats-icon--today {
+    border: 1px solid currentColor;
+  }
+
+  .nav-stats-icon--today::before {
+    border-top: 2px solid currentColor;
+    content: "";
+    height: 0.52rem;
+    width: 0.62rem;
+  }
+
+  .nav-stats-icon--upcoming::before {
+    border-right: 2px solid currentColor;
+    border-top: 2px solid currentColor;
+    content: "";
+    height: 0.46rem;
+    transform: rotate(45deg);
+    width: 0.46rem;
+  }
+
+  .nav-stats-icon--overdue::before {
+    content: "!";
+    font-size: 0.86rem;
+    font-weight: 900;
+    line-height: 1;
   }
 
   .dashboard-module--today {
@@ -102,6 +153,28 @@
     color: inherit;
     font-size: 1rem;
     margin-bottom: 0;
+  }
+
+  .dashboard-module-title-group {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.55rem;
+    min-width: 0;
+  }
+
+  .dashboard-module-count {
+    align-items: center;
+    background: color-mix(in srgb, var(--theme-shell-surface-bg) 70%, var(--dashboard-module-bg) 30%);
+    border: 1px solid color-mix(in srgb, var(--dashboard-module-border) 54%, var(--theme-shell-surface-bg) 46%);
+    border-radius: 999px;
+    color: var(--dashboard-module-text);
+    display: inline-flex;
+    font-size: 0.72rem;
+    font-weight: 800;
+    line-height: 1;
+    padding: 0.36rem 0.62rem;
+    white-space: nowrap;
   }
 
   .recent-case-modal-muted {
@@ -774,9 +847,9 @@
   }
 
   .upcoming-schedule-row-diagnosis {
+    color: color-mix(in srgb, var(--theme-shell-page-text) 76%, var(--theme-shell-muted-text) 24%);
     font-size: 0.86rem;
     line-height: 1.4;
-    margin-bottom: 0.28rem;
   }
 
   .upcoming-schedule-row-tasks {
@@ -826,6 +899,112 @@
   .upcoming-schedule-open-link:focus-visible {
     color: var(--upcoming-category-text);
     text-decoration: none;
+  }
+
+  .upcoming-v7-row {
+    align-items: center;
+    gap: 0.72rem;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    padding: 0.72rem 0.85rem 0.72rem 1rem;
+  }
+
+  .upcoming-v7-icon {
+    --theme-category-bg: var(--upcoming-category-bg);
+    --theme-category-text: var(--upcoming-category-text);
+    --theme-category-border: var(--upcoming-category-border, var(--upcoming-category-text));
+  }
+
+  .upcoming-v7-main {
+    display: grid;
+    gap: 0.24rem;
+    min-width: 0;
+  }
+
+  .upcoming-v7-title-line {
+    align-items: center;
+    display: flex;
+    gap: 0.45rem;
+    min-width: 0;
+  }
+
+  .upcoming-v7-name {
+    color: var(--theme-shell-page-text);
+    display: block;
+    font-size: 0.94rem;
+    font-weight: 800;
+    line-height: 1.15;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .upcoming-v7-sex-age {
+    color: var(--theme-shell-muted-text);
+    flex: 0 0 auto;
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .upcoming-v7-task-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.32rem;
+    min-width: 0;
+  }
+
+  .upcoming-v7-bottom {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.34rem;
+    min-width: 0;
+  }
+
+  .upcoming-v7-dot,
+  .dashboard-awaiting-dot,
+  .dashboard-overdue-separator {
+    color: var(--theme-shell-muted-text);
+    flex: 0 0 auto;
+    font-size: 0.72rem;
+    font-weight: 800;
+    line-height: 1;
+    opacity: 0.72;
+  }
+
+  .upcoming-v7-dot::before,
+  .dashboard-awaiting-dot::before {
+    content: "•";
+  }
+
+  .upcoming-v7-task-chip,
+  .upcoming-v7-task-count {
+    align-items: center;
+    border-radius: 999px;
+    display: inline-flex;
+    font-size: 0.68rem;
+    font-weight: 800;
+    line-height: 1;
+    padding: 0.28rem 0.5rem;
+    white-space: nowrap;
+  }
+
+  .upcoming-v7-task-chip {
+    background: color-mix(in srgb, var(--theme-shell-surface-bg) 88%, var(--upcoming-category-bg) 12%);
+    border: 1px solid color-mix(in srgb, var(--upcoming-category-border, var(--upcoming-category-text)) 48%, var(--theme-shell-surface-bg) 52%);
+    color: color-mix(in srgb, var(--theme-shell-page-text) 82%, var(--upcoming-category-text) 18%);
+  }
+
+  .upcoming-v7-task-count {
+    background: color-mix(in srgb, var(--theme-shell-surface-bg) 62%, var(--upcoming-category-bg) 38%);
+    border: 1px solid color-mix(in srgb, var(--upcoming-category-border, var(--upcoming-category-text)) 68%, var(--theme-shell-surface-bg) 32%);
+    color: var(--upcoming-category-text);
+  }
+
+  .upcoming-v7-meta {
+    align-self: center;
+    gap: 0.42rem;
   }
 
   .upcoming-schedule-empty {
@@ -930,6 +1109,387 @@
     min-width: 0;
   }
 
+  .dashboard-row-category-icon {
+    align-items: center;
+    background: color-mix(in srgb, var(--theme-category-bg) 78%, var(--theme-shell-surface-bg) 22%);
+    border: 1px solid color-mix(in srgb, var(--theme-category-border) 76%, var(--theme-shell-surface-bg) 24%);
+    border-radius: 999px;
+    color: var(--theme-category-text);
+    display: inline-flex;
+    flex: 0 0 auto;
+    height: 2.55rem;
+    justify-content: center;
+    position: relative;
+    width: 2.55rem;
+  }
+
+  .dashboard-row-category-icon svg {
+    display: block;
+    height: 1.48rem;
+    width: 1.48rem;
+  }
+
+  .dashboard-row-category-fallback {
+    font-size: 0.72rem;
+    font-weight: 800;
+    line-height: 1;
+  }
+
+  .dashboard-recent-summary {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .dashboard-overdue-summary {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .dashboard-awaiting-summary {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .dashboard-recent-timeline,
+  .dashboard-awaiting-wait {
+    align-items: center;
+    color: var(--dashboard-module-text);
+    display: inline-flex;
+    flex: 0 0 auto;
+    font-size: 0.72rem;
+    font-weight: 800;
+    gap: 0.32rem;
+    line-height: 1;
+    white-space: nowrap;
+  }
+
+  .dashboard-awaiting-wait::before {
+    background: var(--dashboard-module-text);
+    border-radius: 999px;
+    box-shadow: 0 0 0 0.18rem color-mix(in srgb, var(--dashboard-module-bg) 64%, var(--theme-shell-surface-bg) 36%);
+    content: "";
+    height: 0.45rem;
+    width: 0.45rem;
+  }
+
+  .dashboard-recent-timeline {
+    color: var(--theme-dashboard-recent-text);
+    flex-direction: column;
+    gap: 0.12rem;
+    justify-content: center;
+    min-width: 2.9rem;
+  }
+
+  .dashboard-recent-time-badge {
+    align-items: center;
+    border-radius: 999px;
+    display: inline-flex;
+    font-size: 0.72rem;
+    font-weight: 900;
+    justify-content: center;
+    line-height: 1;
+    min-width: 2rem;
+    padding: 0.32rem 0.46rem;
+  }
+
+  .dashboard-recent-time-label {
+    font-size: 0.58rem;
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    line-height: 1;
+    text-transform: uppercase;
+  }
+
+  .dashboard-recent-time-badge--today {
+    background: color-mix(in srgb, var(--theme-dashboard-recent-bg) 64%, var(--theme-dashboard-recent-text) 36%);
+    border: 1px solid color-mix(in srgb, var(--theme-dashboard-recent-border) 72%, var(--theme-dashboard-recent-text) 28%);
+    color: var(--theme-dashboard-recent-text);
+  }
+
+  .dashboard-recent-time-badge--week {
+    background: color-mix(in srgb, var(--theme-dashboard-recent-bg) 78%, var(--theme-shell-surface-bg) 22%);
+    border: 1px solid color-mix(in srgb, var(--theme-dashboard-recent-border) 58%, var(--theme-shell-surface-bg) 42%);
+    color: color-mix(in srgb, var(--theme-dashboard-recent-text) 78%, var(--theme-shell-muted-text) 22%);
+  }
+
+  .dashboard-recent-time-badge--older {
+    background: color-mix(in srgb, var(--theme-shell-surface-bg) 76%, var(--theme-shell-surface-border) 24%);
+    border: 1px solid var(--theme-shell-surface-border);
+    color: var(--theme-shell-muted-text);
+  }
+
+  .dashboard-recent-body,
+  .dashboard-overdue-body,
+  .dashboard-awaiting-body {
+    display: grid;
+    gap: 0.22rem;
+    min-width: 0;
+  }
+
+  .dashboard-recent-main,
+  .dashboard-overdue-main,
+  .dashboard-awaiting-main {
+    align-items: center;
+    display: flex;
+    gap: 0.45rem;
+    min-width: 0;
+  }
+
+  .dashboard-recent-main {
+    flex-wrap: wrap;
+  }
+
+  .dashboard-overdue-main,
+  .dashboard-awaiting-main {
+    flex-wrap: wrap;
+  }
+
+  .dashboard-recent-name,
+  .dashboard-overdue-name,
+  .dashboard-awaiting-name {
+    color: var(--theme-shell-page-text);
+    display: block;
+    font-size: 0.94rem;
+    font-weight: 800;
+    line-height: 1.15;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .dashboard-recent-sex-age,
+  .dashboard-overdue-sex-age,
+  .dashboard-awaiting-sex-age {
+    color: var(--theme-shell-muted-text);
+    flex: 0 0 auto;
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .dashboard-overdue-name,
+  .dashboard-awaiting-name {
+    flex: 1 1 8rem;
+  }
+
+  .dashboard-recent-meta,
+  .dashboard-overdue-meta,
+  .dashboard-awaiting-meta {
+    align-items: center;
+    color: var(--theme-shell-muted-text);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.34rem;
+    min-width: 0;
+  }
+
+  .dashboard-recent-diagnosis,
+  .dashboard-overdue-date,
+  .dashboard-overdue-task-text,
+  .dashboard-awaiting-diagnosis {
+    color: color-mix(in srgb, var(--theme-shell-page-text) 74%, var(--theme-shell-muted-text) 26%);
+    font-size: 0.78rem;
+    font-weight: 600;
+    line-height: 1.25;
+    max-width: min(100%, 15rem);
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .dashboard-overdue-date {
+    color: var(--theme-alerts-danger-text);
+    font-weight: 800;
+  }
+
+  .dashboard-recent-category,
+  .dashboard-overdue-category,
+  .dashboard-awaiting-report-tag,
+  .dashboard-awaiting-category,
+  .dashboard-overdue-flag,
+  .dashboard-open-compact {
+    align-items: center;
+    border-radius: 999px;
+    display: inline-flex;
+    flex: 0 0 auto;
+    font-size: 0.68rem;
+    font-weight: 800;
+    line-height: 1;
+    padding: 0.28rem 0.5rem;
+    white-space: nowrap;
+  }
+
+  .dashboard-recent-category,
+  .dashboard-overdue-category,
+  .dashboard-awaiting-category {
+    background: color-mix(in srgb, var(--theme-shell-surface-bg) 62%, var(--theme-category-bg) 38%);
+    border: 1px solid color-mix(in srgb, var(--theme-category-border) 68%, var(--theme-shell-surface-bg) 32%);
+    color: var(--theme-category-text);
+  }
+
+  .dashboard-category-inline-icon {
+    align-items: center;
+    background: color-mix(in srgb, var(--theme-shell-surface-bg) 62%, var(--theme-category-bg) 38%);
+    border: 1px solid color-mix(in srgb, var(--theme-category-border) 68%, var(--theme-shell-surface-bg) 32%);
+    border-radius: 999px;
+    color: var(--theme-category-text);
+    display: inline-flex;
+    flex: 0 0 auto;
+    font-size: 0.68rem;
+    font-weight: 800;
+    height: 1.65rem;
+    justify-content: center;
+    line-height: 1;
+    min-height: 1.65rem;
+    padding: 0;
+    white-space: nowrap;
+    width: 1.65rem;
+  }
+
+  .dashboard-category-icon-glyph {
+    align-items: center;
+    display: inline-flex;
+    flex: 0 0 auto;
+    height: 0.95rem;
+    justify-content: center;
+    width: 0.95rem;
+  }
+
+  .dashboard-category-icon-glyph svg {
+    display: block;
+    height: 0.95rem;
+    width: 0.95rem;
+  }
+
+  .dashboard-category-icon-label {
+    display: none;
+  }
+
+  .dashboard-category-inline-icon .dashboard-row-category-fallback {
+    font-size: 0.56rem;
+    font-weight: 900;
+  }
+
+  .dashboard-open-compact {
+    background: color-mix(in srgb, var(--theme-shell-surface-bg) 76%, var(--theme-category-bg) 24%);
+    border: 1px solid color-mix(in srgb, var(--theme-category-text) 20%, var(--theme-shell-surface-bg));
+    color: var(--theme-category-text);
+    text-decoration: none;
+  }
+
+  .dashboard-open-compact:hover,
+  .dashboard-open-compact:focus-visible {
+    color: var(--theme-category-text);
+    text-decoration: none;
+  }
+
+  .dashboard-overdue-urgency {
+    align-items: center;
+    border-radius: 0.8rem;
+    display: inline-grid;
+    flex: 0 0 auto;
+    justify-items: center;
+    line-height: 1;
+    min-width: 3rem;
+    padding: 0.42rem 0.48rem;
+  }
+
+  .dashboard-overdue-urgency-number {
+    font-size: 1rem;
+    font-weight: 900;
+  }
+
+  .dashboard-overdue-urgency-label {
+    font-size: 0.56rem;
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    margin-top: 0.12rem;
+    text-transform: uppercase;
+  }
+
+  .dashboard-overdue-urgency--mild {
+    background: color-mix(in srgb, var(--theme-alerts-warning-bg) 82%, var(--theme-shell-surface-bg) 18%);
+    border: 1px solid var(--theme-alerts-warning-border);
+    color: var(--theme-alerts-warning-text);
+  }
+
+  .dashboard-overdue-urgency--moderate {
+    background: color-mix(in srgb, var(--theme-alerts-warning-bg) 58%, var(--theme-alerts-danger-bg) 42%);
+    border: 1px solid color-mix(in srgb, var(--theme-alerts-warning-border) 52%, var(--theme-alerts-danger-border) 48%);
+    color: color-mix(in srgb, var(--theme-alerts-warning-text) 48%, var(--theme-alerts-danger-text) 52%);
+  }
+
+  .dashboard-overdue-urgency--severe {
+    background: color-mix(in srgb, var(--theme-alerts-danger-bg) 82%, var(--theme-shell-surface-bg) 18%);
+    border: 1px solid var(--theme-alerts-danger-border);
+    color: var(--theme-alerts-danger-text);
+  }
+
+  .dashboard-overdue-urgency--critical {
+    background: var(--theme-alerts-danger-text);
+    border: 1px solid color-mix(in srgb, var(--theme-alerts-danger-text) 82%, var(--theme-alerts-danger-border) 18%);
+    color: var(--theme-shell-surface-bg);
+  }
+
+  .dashboard-overdue-flag {
+    background: color-mix(in srgb, var(--theme-alerts-danger-bg) 82%, var(--theme-shell-surface-bg) 18%);
+    border: 1px solid var(--theme-alerts-danger-border);
+    color: var(--theme-alerts-danger-text);
+  }
+
+  .dashboard-awaiting-report-tag {
+    background: color-mix(in srgb, var(--theme-task-status-awaiting-reports-bg) 82%, var(--theme-shell-surface-bg) 18%);
+    border: 1px solid var(--theme-task-status-awaiting-reports-border);
+    color: var(--theme-task-status-awaiting-reports-text);
+    max-width: 11rem;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .dashboard-awaiting-report-tag--imaging {
+    background: color-mix(in srgb, var(--theme-alerts-info-bg) 82%, var(--theme-shell-surface-bg) 18%);
+    border-color: var(--theme-alerts-info-border);
+    color: var(--theme-alerts-info-text);
+  }
+
+  .dashboard-awaiting-report-tag--lab {
+    background: color-mix(in srgb, var(--theme-alerts-success-bg) 78%, var(--theme-shell-surface-bg) 22%);
+    border-color: var(--theme-alerts-success-border);
+    color: var(--theme-alerts-success-text);
+  }
+
+  .dashboard-awaiting-report-tag--pathology {
+    background: color-mix(in srgb, var(--theme-alerts-danger-bg) 82%, var(--theme-shell-surface-bg) 18%);
+    border-color: var(--theme-alerts-danger-border);
+    color: var(--theme-alerts-danger-text);
+  }
+
+  .dashboard-awaiting-meta-actions,
+  .dashboard-overdue-actions,
+  .dashboard-recent-date {
+    align-items: center;
+    display: flex;
+    flex: 0 0 auto;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    justify-content: flex-end;
+  }
+
+  .dashboard-recent-date {
+    color: var(--theme-shell-muted-text);
+    font-size: 0.72rem;
+    font-weight: 800;
+    white-space: nowrap;
+  }
+
+  .dashboard-awaiting-meta-actions {
+    max-width: 13rem;
+  }
+
+  .dashboard-awaiting-open {
+    margin-right: 0.85rem;
+  }
+
   .dashboard-compact-name-pill {
     align-items: center;
     background: color-mix(in srgb, var(--theme-category-bg) 72%, var(--theme-shell-surface-bg) 28%);
@@ -985,6 +1545,296 @@
     gap: 0.2rem;
   }
 
+  .dashboard-today-row {
+    background: color-mix(in srgb, var(--theme-shell-surface-bg) 92%, var(--theme-category-bg) 8%);
+  }
+
+  .dashboard-today-row::before {
+    background: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--theme-category-text) 82%, var(--theme-category-bg) 18%) 0%,
+      var(--theme-category-border) 100%
+    );
+    width: 0.42rem;
+  }
+
+  .dashboard-today-toggle {
+    padding: 0.72rem 0.35rem 0.72rem 1rem;
+  }
+
+  .dashboard-today-summary {
+    align-items: center;
+    display: grid;
+    gap: 0.72rem;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .dashboard-today-avatar {
+    align-items: center;
+    background: color-mix(in srgb, var(--theme-category-bg) 78%, var(--theme-shell-surface-bg) 22%);
+    border: 1px solid color-mix(in srgb, var(--theme-category-border) 76%, var(--theme-shell-surface-bg) 24%);
+    border-radius: 999px;
+    color: var(--theme-category-text);
+    display: inline-flex;
+    flex: 0 0 auto;
+    height: 2.8rem;
+    justify-content: center;
+    position: relative;
+    width: 2.8rem;
+  }
+
+  .dashboard-today-avatar-initials {
+    font-size: 0.76rem;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    line-height: 1;
+  }
+
+  .dashboard-today-avatar-icon {
+    align-items: center;
+    color: var(--theme-category-text);
+    display: inline-flex;
+    height: 1.65rem;
+    justify-content: center;
+    width: 1.65rem;
+  }
+
+  .dashboard-today-avatar-icon svg {
+    display: block;
+    height: 1.65rem;
+    width: 1.65rem;
+  }
+
+  .dashboard-today-body {
+    display: grid;
+    gap: 0.22rem;
+    min-width: 0;
+  }
+
+  .dashboard-today-main {
+    align-items: center;
+    display: flex;
+    gap: 0.45rem;
+    min-width: 0;
+  }
+
+  .dashboard-today-name {
+    color: var(--theme-shell-page-text);
+    font-size: 0.94rem;
+    font-weight: 800;
+    line-height: 1.15;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .dashboard-today-sex-age {
+    color: var(--theme-shell-muted-text);
+    flex: 0 0 auto;
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .dashboard-today-meta {
+    align-items: center;
+    color: var(--theme-shell-muted-text);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.34rem;
+    min-width: 0;
+  }
+
+  .dashboard-today-diagnosis {
+    color: color-mix(in srgb, var(--theme-shell-page-text) 74%, var(--theme-shell-muted-text) 26%);
+    font-size: 0.78rem;
+    font-weight: 600;
+    line-height: 1.25;
+    max-width: min(100%, 16rem);
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .dashboard-today-dot {
+    background: color-mix(in srgb, var(--theme-category-text) 42%, var(--theme-shell-muted-text) 58%);
+    border-radius: 999px;
+    flex: 0 0 auto;
+    height: 0.24rem;
+    width: 0.24rem;
+  }
+
+  .dashboard-today-task-count,
+  .dashboard-today-flag {
+    align-items: center;
+    border-radius: 999px;
+    display: inline-flex;
+    flex: 0 0 auto;
+    font-size: 0.68rem;
+    font-weight: 800;
+    line-height: 1;
+    padding: 0.25rem 0.5rem;
+    white-space: nowrap;
+  }
+
+  .dashboard-today-task-count {
+    background: color-mix(in srgb, var(--theme-shell-surface-bg) 64%, var(--theme-category-bg) 36%);
+    border: 1px solid color-mix(in srgb, var(--theme-category-border) 62%, var(--theme-shell-surface-bg) 38%);
+    color: var(--theme-category-text);
+  }
+
+  .dashboard-today-flag {
+    background: color-mix(in srgb, var(--theme-shell-surface-bg) 82%, var(--theme-category-bg) 18%);
+    border: 1px solid color-mix(in srgb, var(--theme-category-border) 46%, var(--theme-shell-surface-bg) 54%);
+    color: var(--theme-shell-muted-text);
+  }
+
+  .dashboard-today-flag--danger {
+    background: color-mix(in srgb, var(--theme-alerts-danger-bg) 82%, var(--theme-shell-surface-bg) 18%);
+    border-color: var(--theme-alerts-danger-border);
+    color: var(--theme-alerts-danger-text);
+  }
+
+  .dashboard-today-flag--info {
+    background: color-mix(in srgb, var(--theme-alerts-info-bg) 82%, var(--theme-shell-surface-bg) 18%);
+    border-color: var(--theme-alerts-info-border);
+    color: var(--theme-alerts-info-text);
+  }
+
+  .dashboard-today-call-status {
+    align-items: center;
+    border-radius: 999px;
+    display: inline-flex;
+    flex: 0 0 auto;
+    font-size: 0.68rem;
+    font-weight: 800;
+    gap: 0.3rem;
+    line-height: 1;
+    padding: 0.34rem 0.58rem;
+    white-space: nowrap;
+  }
+
+  .dashboard-today-call-status::before {
+    border-radius: 999px;
+    content: "";
+    height: 0.42rem;
+    width: 0.42rem;
+  }
+
+  .dashboard-today-call-status--success {
+    background: color-mix(in srgb, var(--theme-alerts-success-bg) 82%, var(--theme-shell-surface-bg) 18%);
+    border: 1px solid var(--theme-alerts-success-border);
+    color: var(--theme-alerts-success-text);
+  }
+
+  .dashboard-today-call-status--success::before {
+    background: var(--theme-alerts-success-text);
+  }
+
+  .dashboard-today-call-status--danger {
+    background: color-mix(in srgb, var(--theme-alerts-danger-bg) 82%, var(--theme-shell-surface-bg) 18%);
+    border: 1px solid var(--theme-alerts-danger-border);
+    color: var(--theme-alerts-danger-text);
+  }
+
+  .dashboard-today-call-status--danger::before {
+    background: var(--theme-alerts-danger-text);
+  }
+
+  .dashboard-today-call-status--warning {
+    background: color-mix(in srgb, var(--theme-alerts-warning-bg) 82%, var(--theme-shell-surface-bg) 18%);
+    border: 1px solid var(--theme-alerts-warning-border);
+    color: var(--theme-alerts-warning-text);
+  }
+
+  .dashboard-today-call-status--warning::before {
+    background: var(--theme-alerts-warning-text);
+  }
+
+  .dashboard-today-call-status--neutral {
+    background: color-mix(in srgb, var(--theme-vitals-status-na-bg) 82%, var(--theme-shell-surface-bg) 18%);
+    border: 1px solid var(--theme-vitals-status-na-border);
+    color: var(--theme-vitals-status-na-text);
+  }
+
+  .dashboard-today-call-status--neutral::before {
+    background: var(--theme-vitals-status-na-text);
+  }
+
+  .dashboard-today-row .dashboard-compact-call,
+  .dashboard-today-row .dashboard-compact-call-reveal,
+  .dashboard-overdue-row .dashboard-compact-call,
+  .dashboard-overdue-row .dashboard-compact-call-reveal {
+    align-self: center;
+    margin-bottom: 0;
+    margin-top: 0;
+  }
+
+  .dashboard-today-row .dashboard-compact-call,
+  .dashboard-overdue-row .dashboard-compact-call {
+    min-height: 2.05rem;
+  }
+
+  .dashboard-today-row .dashboard-compact-call-group,
+  .dashboard-overdue-row .dashboard-compact-call-group,
+  .dashboard-overdue-actions {
+    align-self: center;
+  }
+
+  .dashboard-today-details {
+    gap: 0.68rem;
+  }
+
+  .dashboard-today-detail-header {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    justify-content: space-between;
+  }
+
+  .dashboard-today-category-chip,
+  .dashboard-today-task-chip {
+    align-items: center;
+    border-radius: 999px;
+    display: inline-flex;
+    font-size: 0.72rem;
+    font-weight: 800;
+    line-height: 1;
+    padding: 0.36rem 0.58rem;
+    white-space: nowrap;
+  }
+
+  .dashboard-today-category-chip {
+    background: color-mix(in srgb, var(--theme-shell-surface-bg) 62%, var(--theme-category-bg) 38%);
+    border: 1px solid color-mix(in srgb, var(--theme-category-border) 68%, var(--theme-shell-surface-bg) 32%);
+    color: var(--theme-category-text);
+    gap: 0.35rem;
+  }
+
+  .dashboard-today-task-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+
+  .dashboard-today-task-chip {
+    background: color-mix(in srgb, var(--theme-shell-surface-bg) 92%, var(--theme-category-bg) 8%);
+    border: 1px solid color-mix(in srgb, var(--theme-category-border) 50%, var(--theme-shell-surface-bg) 50%);
+    color: var(--theme-shell-page-text);
+  }
+
+  .dashboard-today-category-chip.dashboard-category-inline-icon {
+    height: 1.65rem;
+    min-height: 1.65rem;
+    padding: 0;
+    width: 1.65rem;
+  }
+
   .dashboard-compact-call {
     appearance: none;
     align-items: center;
@@ -1007,6 +1857,13 @@
     cursor: pointer;
   }
 
+  .dashboard-compact-call::before {
+    content: "\260E";
+    font-size: 0.72rem;
+    line-height: 1;
+    margin-right: 0.28rem;
+  }
+
   .dashboard-compact-call:hover,
   .dashboard-compact-call:focus-visible {
     color: color-mix(in srgb, var(--theme-alerts-success-text) 86%, var(--theme-shell-page-text));
@@ -1022,6 +1879,12 @@
   .dashboard-compact-call-group {
     align-items: center;
     display: flex;
+    min-width: 0;
+    position: relative;
+    z-index: 3;
+  }
+
+  .dashboard-overdue-actions {
     min-width: 0;
     position: relative;
     z-index: 3;
@@ -1132,6 +1995,20 @@
     white-space: nowrap;
   }
 
+  .dashboard-compact-subcategory.dashboard-category-inline-icon,
+  .dashboard-recent-category.dashboard-category-inline-icon,
+  .dashboard-overdue-category.dashboard-category-inline-icon,
+  .dashboard-awaiting-category.dashboard-category-inline-icon,
+  .upcoming-schedule-row-category.dashboard-category-inline-icon,
+  .upcoming-schedule-legend-pill.dashboard-category-inline-icon {
+    height: 1.65rem;
+    justify-content: center;
+    max-width: 1.65rem;
+    min-height: 1.65rem;
+    padding: 0;
+    width: 1.65rem;
+  }
+
   .dashboard-compact-detail-block {
     display: grid;
     gap: 0.18rem;
@@ -1230,6 +2107,46 @@
     border-color: var(--theme-buttons-primary-bg);
     color: color-mix(in srgb, var(--theme-buttons-primary-text) 88%, var(--theme-shell-page-text));
     text-decoration: none;
+  }
+
+  .dashboard-open-compact,
+  .upcoming-schedule-open-link.dashboard-open-compact {
+    background: color-mix(in srgb, var(--theme-shell-surface-bg) 76%, var(--theme-category-bg) 24%);
+    border: 1px solid color-mix(in srgb, var(--theme-category-text) 20%, var(--theme-shell-surface-bg));
+    border-radius: 999px;
+    box-shadow: none;
+    color: var(--theme-category-text);
+    gap: 0.28rem;
+    padding: 0.42rem 0.72rem;
+  }
+
+  .upcoming-schedule-open-link.dashboard-open-compact {
+    background: color-mix(in srgb, var(--theme-shell-surface-bg) 76%, var(--upcoming-category-bg) 24%);
+    border-color: color-mix(in srgb, var(--upcoming-category-text) 20%, var(--theme-shell-surface-bg));
+    color: var(--upcoming-category-text);
+  }
+
+  .dashboard-open-compact::after,
+  .upcoming-schedule-open-link.dashboard-open-compact::after {
+    background: none;
+    content: "->";
+    display: inline;
+    height: auto;
+    width: auto;
+  }
+
+  .dashboard-open-compact:hover,
+  .dashboard-open-compact:focus-visible {
+    background: color-mix(in srgb, var(--theme-shell-surface-bg) 68%, var(--theme-category-bg) 32%);
+    border-color: color-mix(in srgb, var(--theme-category-text) 32%, var(--theme-shell-surface-bg));
+    color: var(--theme-category-text);
+  }
+
+  .upcoming-schedule-open-link.dashboard-open-compact:hover,
+  .upcoming-schedule-open-link.dashboard-open-compact:focus-visible {
+    background: color-mix(in srgb, var(--theme-shell-surface-bg) 68%, var(--upcoming-category-bg) 32%);
+    border-color: color-mix(in srgb, var(--upcoming-category-text) 32%, var(--theme-shell-surface-bg));
+    color: var(--upcoming-category-text);
   }
 
   .dashboard-compact-detail-label {
@@ -1441,10 +2358,19 @@
       padding-right: 0.85rem;
     }
 
+    .upcoming-v7-row {
+      align-items: flex-start;
+      grid-template-columns: auto minmax(0, 1fr);
+    }
+
     .dashboard-awaiting-row-meta,
     .upcoming-schedule-row-meta {
       align-items: flex-start;
       justify-items: start;
+    }
+
+    .upcoming-v7-meta {
+      grid-column: 2;
     }
 
     .upcoming-schedule-row-actions {
@@ -1464,6 +2390,58 @@
     .dashboard-compact-summary {
       gap: 0.5rem;
       grid-template-columns: 1fr;
+    }
+
+    .dashboard-recent-summary,
+    .dashboard-overdue-summary,
+    .dashboard-awaiting-summary {
+      align-items: flex-start;
+      grid-template-columns: auto minmax(0, 1fr);
+    }
+
+    .dashboard-recent-timeline {
+      grid-column: 1;
+      justify-self: start;
+    }
+
+    .dashboard-recent-date,
+    .dashboard-awaiting-meta-actions,
+    .dashboard-overdue-actions {
+      grid-column: 2;
+      justify-content: flex-start;
+      justify-self: start;
+    }
+
+    .dashboard-awaiting-open {
+      grid-column: 2;
+      justify-self: start;
+      margin: 0 0 0.72rem 0.85rem;
+    }
+
+    .dashboard-recent-body,
+    .dashboard-overdue-body,
+    .dashboard-awaiting-body {
+      min-width: 0;
+    }
+
+    .dashboard-overdue-urgency,
+    .dashboard-awaiting-wait {
+      justify-self: start;
+    }
+
+    .dashboard-today-summary {
+      align-items: flex-start;
+      gap: 0.58rem;
+      grid-template-columns: auto minmax(0, 1fr);
+    }
+
+    .dashboard-today-call-status {
+      grid-column: 2;
+      justify-self: start;
+    }
+
+    .dashboard-today-diagnosis {
+      max-width: 100%;
     }
 
     .dashboard-compact-summary-meta {
@@ -1546,7 +2524,10 @@
   <div class="col-12 col-lg-6">
     <section class="dashboard-module dashboard-module--today" data-dashboard-module="today" data-compact-module data-compact-limit="10">
       <div class="dashboard-module-header">
-        <h2 class="h6">Today : {{ today_date_display }}</h2>
+        <div class="dashboard-module-title-group">
+          <h2 class="h6">Today : {{ today_date_display }}</h2>
+          <span class="dashboard-module-count">{{ today_cards|length }} patient{{ today_cards|length|pluralize }}</span>
+        </div>
         {% if today_cards|length > 10 %}
           <button type="button" class="btn dashboard-module-expand" data-compact-expand>Expand</button>
         {% endif %}
@@ -1554,29 +2535,38 @@
       <div class="dashboard-module-body dashboard-module-body--compact">
         <div class="dashboard-compact-list">
         {% for card in today_cards %}
-          <article class="dashboard-compact-row" data-compact-row{% if forloop.counter > 10 %} hidden{% endif %} style="{% category_theme_style card.category_name theme_category_colors %}">
+          <article class="dashboard-compact-row dashboard-today-row" data-compact-row{% if forloop.counter > 10 %} hidden{% endif %} style="{% category_theme_style card.category_name theme_category_colors %}">
             <div class="dashboard-compact-row-top">
               <button
                 type="button"
-                class="dashboard-compact-toggle"
+                class="dashboard-compact-toggle dashboard-today-toggle"
                 data-compact-toggle
                 aria-expanded="false"
                 aria-controls="today-card-detail-{{ forloop.counter }}"
               >
-                <div class="dashboard-compact-summary">
-                  <span class="dashboard-compact-name-pill">
-                    <span class="dashboard-compact-name" data-compact-name data-full-name="{{ card.patient_name }}" data-short-name="{{ card.short_name }}">{{ card.patient_name }}</span>
+                <div class="dashboard-today-summary">
+                  <span class="dashboard-today-avatar" aria-hidden="true">
+                    {% if card.category_icon_path %}
+                      <span class="dashboard-today-avatar-icon" data-category-icon-path="{{ card.category_icon_path }}">{% inline_static_svg card.category_icon_path %}</span>
+                    {% else %}
+                      <span class="dashboard-today-avatar-initials">{{ card.patient_initials }}</span>
+                    {% endif %}
                   </span>
-                  <span class="dashboard-compact-summary-meta">
-                    <span class="dashboard-compact-inline dashboard-compact-status">
-                      {% if card.call_status == "CONFIRMED" %}<span title="Confirmed">&#128994;&#128222;</span>
-                      {% elif card.call_status == "NOT_REACHABLE" %}<span title="Not reachable">&#128308;&#128222; x{{ card.failed_attempt_count }}</span>
-                      {% elif card.call_status == "INVALID_CONTACT" %}<span title="Invalid contact">&#9888;&#65039;&#128222;</span>
-                      {% elif card.call_status == "LOST" %}<span title="Lost follow-up">&#10060;</span>
-                      {% elif card.call_status == "CALL_BACK_LATER" %}<span title="Call back later">&#128993;&#128222;</span>
-                      {% else %}<span title="Not contacted">&#128222;</span>{% endif %}
+                  <span class="dashboard-today-body">
+                    <span class="dashboard-today-main">
+                      <span class="dashboard-today-name" data-compact-name data-full-name="{{ card.patient_name }}" data-short-name="{{ card.short_name }}">{{ card.patient_name }}</span>
+                      {% if card.sex_age != "-" %}<span class="dashboard-today-sex-age">{{ card.sex_age }}</span>{% endif %}
+                    </span>
+                    <span class="dashboard-today-meta">
+                      <span class="dashboard-today-diagnosis">{{ card.diagnosis|default:"-" }}</span>
+                      <span class="dashboard-today-dot" aria-hidden="true"></span>
+                      <span class="dashboard-today-task-count">{{ card.task_count_label }}</span>
+                      {% if card.high_risk %}<span class="dashboard-today-flag dashboard-today-flag--danger">High-risk</span>{% endif %}
+                      {% if card.referred_by %}<span class="dashboard-today-flag dashboard-today-flag--info">Referred</span>{% endif %}
+                      {% if card.ncd_flags %}<span class="dashboard-today-flag">NCD</span>{% endif %}
                     </span>
                   </span>
+                  <span class="dashboard-today-call-status dashboard-today-call-status--{{ card.call_status_tone }}">{{ card.call_status_label }}</span>
                 </div>
               </button>
               {% if card.phone_number %}
@@ -1598,29 +2588,43 @@
                 <span class="dashboard-compact-call is-disabled">Call</span>
               {% endif %}
             </div>
-            <div id="today-card-detail-{{ forloop.counter }}" class="dashboard-compact-details{% if card.subcategory_name %} dashboard-compact-details--with-subcategory{% endif %}" data-compact-details hidden>
+            <div id="today-card-detail-{{ forloop.counter }}" class="dashboard-compact-details dashboard-today-details{% if card.subcategory_name %} dashboard-compact-details--with-subcategory{% endif %}" data-compact-details hidden>
               <div class="dashboard-compact-detail-grid">
-                <div class="dashboard-compact-detail-line dashboard-compact-detail-line--with-pills">
-                  <div class="dashboard-compact-detail-line-main">
-                    <span class="dashboard-compact-detail-label">Diagnosis :</span>
-                    <span class="dashboard-compact-detail-copy">{{ card.diagnosis|default:"-" }}</span>
-                  </div>
+                <div class="dashboard-today-detail-header">
                   <div class="dashboard-compact-detail-pills">
-                    {% if card.subcategory_name %}<span class="dashboard-compact-subcategory">{{ card.subcategory_name }}</span>{% endif %}
-                    <a class="dashboard-compact-detail-pill-link" href="{{ card.detail_url }}" data-compact-action>Open case</a>
+                    <span class="dashboard-today-category-chip dashboard-category-inline-icon" title="{{ card.category_name }}" aria-label="{{ card.category_name }}"{% if card.category_icon_path %} data-category-icon-path="{{ card.category_icon_path }}"{% endif %}>
+                      <span class="dashboard-category-icon-glyph">
+                        {% if card.category_icon_path %}
+                          {% inline_static_svg card.category_icon_path %}
+                        {% else %}
+                          <span class="dashboard-row-category-fallback">{{ card.category_name|slice:":2"|upper }}</span>
+                        {% endif %}
+                      </span>
+                      <span class="dashboard-category-icon-label">{{ card.category_name }}</span>
+                    </span>
+                    {% if card.subcategory_name %}
+                      <span class="dashboard-compact-subcategory dashboard-category-inline-icon" title="{{ card.subcategory_name }}" aria-label="{{ card.subcategory_name }}"{% if card.subcategory_icon_path %} data-subcategory-icon-path="{{ card.subcategory_icon_path }}"{% endif %}>
+                        <span class="dashboard-category-icon-glyph">
+                          {% if card.subcategory_icon_path %}
+                            {% inline_static_svg card.subcategory_icon_path %}
+                          {% else %}
+                            <span class="dashboard-row-category-fallback">{{ card.subcategory_name|slice:":2"|upper }}</span>
+                          {% endif %}
+                        </span>
+                        <span class="dashboard-category-icon-label">{{ card.subcategory_name }}</span>
+                      </span>
+                    {% endif %}
                   </div>
+                  <a class="dashboard-compact-detail-pill-link" href="{{ card.detail_url }}" data-compact-action>Open case</a>
                 </div>
                 <div class="dashboard-compact-detail-line">
                   <span class="dashboard-compact-detail-label">Tasks :</span>
-                  <span class="dashboard-compact-task-line">{{ card.task_titles|join:', ' }}</span>
+                  <span class="dashboard-today-task-chips">
+                    {% for task_title in card.task_titles %}
+                      <span class="dashboard-today-task-chip">{{ task_title }}</span>
+                    {% endfor %}
+                  </span>
                 </div>
-                {% if card.high_risk or card.referred_by or card.ncd_flags %}
-                  <div class="dashboard-compact-flags">
-                    {% if card.high_risk %}<span class="dashboard-compact-flag dashboard-compact-flag--danger">High-risk</span>{% endif %}
-                    {% if card.referred_by %}<span class="dashboard-compact-flag dashboard-compact-flag--info">Referred by {{ card.referred_by }}</span>{% endif %}
-                    {% if card.ncd_flags %}<span class="dashboard-compact-flag dashboard-compact-flag--neutral">NCD: {{ card.ncd_flags|join:', ' }}</span>{% endif %}
-                  </div>
-                {% endif %}
               </div>
             </div>
           </article>
@@ -1692,9 +2696,21 @@
                 <div class="upcoming-schedule-legend">
                   {% for subcategory in day.subcategories %}
                     <span
-                      class="upcoming-schedule-legend-pill"
+                      class="upcoming-schedule-legend-pill dashboard-category-inline-icon"
+                      title="{{ subcategory.label }}"
+                      aria-label="{{ subcategory.label }}"
+                      {% if subcategory.icon_path %}data-subcategory-icon-path="{{ subcategory.icon_path }}"{% endif %}
                       style="background: {{ subcategory.bg_color }}; color: {{ subcategory.text_color }}; border: 1px solid color-mix(in srgb, {{ subcategory.text_color }} 16%, var(--theme-shell-surface-bg));"
-                    >{{ subcategory.label }}</span>
+                    >
+                      <span class="dashboard-category-icon-glyph">
+                        {% if subcategory.icon_path %}
+                          {% inline_static_svg subcategory.icon_path %}
+                        {% else %}
+                          <span class="dashboard-row-category-fallback">{{ subcategory.label|slice:":2"|upper }}</span>
+                        {% endif %}
+                      </span>
+                      <span class="dashboard-category-icon-label">{{ subcategory.label }}</span>
+                    </span>
                   {% endfor %}
                 </div>
               {% else %}
@@ -1706,25 +2722,69 @@
               <div class="upcoming-schedule-list">
                 {% for row in day.rows %}
                   <div
-                    class="upcoming-schedule-row"
-                    style="--upcoming-category-bg: {{ row.category_bg_color }}; --upcoming-category-text: {{ row.category_text_color }};"
+                    class="upcoming-schedule-row upcoming-v7-row"
+                    style="--upcoming-category-bg: {{ row.category_bg_color }}; --upcoming-category-text: {{ row.category_text_color }}; --upcoming-category-border: {{ row.category_border_color }};"
                   >
-                    <div class="upcoming-schedule-row-main">
-                      <span class="upcoming-schedule-row-name-pill">
-                        <span class="upcoming-schedule-row-name">{{ row.patient_name }}</span>
-                      </span>
-                      <div class="upcoming-schedule-row-diagnosis">{{ row.diagnosis }}</div>
-                      <div class="upcoming-schedule-row-tasks">{{ row.task_titles|join:', ' }}</div>
+                    <span class="dashboard-row-category-icon upcoming-v7-icon" aria-hidden="true"{% if row.category_icon_path %} data-category-icon-path="{{ row.category_icon_path }}"{% endif %}>
+                      {% if row.category_icon_path %}
+                        {% inline_static_svg row.category_icon_path %}
+                      {% else %}
+                        <span class="dashboard-row-category-fallback">{{ row.category_name|slice:":2"|upper }}</span>
+                      {% endif %}
+                    </span>
+                    <div class="upcoming-schedule-row-main upcoming-v7-main">
+                      <div class="upcoming-v7-title-line">
+                        <span class="upcoming-schedule-row-name upcoming-v7-name">{{ row.patient_name }}</span>
+                        {% if row.sex_age != "-" %}<span class="upcoming-v7-sex-age">{{ row.sex_age }}</span>{% endif %}
+                      </div>
+                      <div class="upcoming-v7-bottom">
+                        <span class="upcoming-schedule-row-diagnosis">{{ row.diagnosis }}</span>
+                        <span class="upcoming-v7-dot" aria-hidden="true"></span>
+                        <span class="upcoming-v7-task-chips">
+                          {% for task_title in row.task_titles %}
+                            <span class="upcoming-v7-task-chip">{{ task_title }}</span>
+                          {% endfor %}
+                        </span>
+                      </div>
                     </div>
-                    <div class="upcoming-schedule-row-meta">
+                    <div class="upcoming-schedule-row-meta upcoming-v7-meta">
                       <div class="dashboard-compact-detail-pills">
                         {% if row.subcategory_name %}
                           <span
-                            class="upcoming-schedule-row-category"
+                            class="upcoming-schedule-row-category dashboard-category-inline-icon"
+                            title="{{ row.subcategory_name }}"
+                            aria-label="{{ row.subcategory_name }}"
+                            {% if row.subcategory_icon_path %}data-subcategory-icon-path="{{ row.subcategory_icon_path }}"{% endif %}
                             style="background: {{ row.category_bg_color }}; color: {{ row.category_text_color }}; border: 1px solid color-mix(in srgb, {{ row.category_text_color }} 16%, var(--theme-shell-surface-bg));"
-                          >{{ row.subcategory_name }}</span>
+                          >
+                            <span class="dashboard-category-icon-glyph">
+                              {% if row.subcategory_icon_path %}
+                                {% inline_static_svg row.subcategory_icon_path %}
+                              {% else %}
+                                <span class="dashboard-row-category-fallback">{{ row.subcategory_name|slice:":2"|upper }}</span>
+                              {% endif %}
+                            </span>
+                            <span class="dashboard-category-icon-label">{{ row.subcategory_name }}</span>
+                          </span>
+                        {% else %}
+                          <span
+                            class="upcoming-schedule-row-category dashboard-category-inline-icon"
+                            title="{{ row.category_name }}"
+                            aria-label="{{ row.category_name }}"
+                            {% if row.category_icon_path %}data-category-icon-path="{{ row.category_icon_path }}"{% endif %}
+                            style="background: {{ row.category_bg_color }}; color: {{ row.category_text_color }}; border: 1px solid color-mix(in srgb, {{ row.category_text_color }} 16%, var(--theme-shell-surface-bg));"
+                          >
+                            <span class="dashboard-category-icon-glyph">
+                              {% if row.category_icon_path %}
+                                {% inline_static_svg row.category_icon_path %}
+                              {% else %}
+                                <span class="dashboard-row-category-fallback">{{ row.category_name|slice:":2"|upper }}</span>
+                              {% endif %}
+                            </span>
+                            <span class="dashboard-category-icon-label">{{ row.category_name }}</span>
+                          </span>
                         {% endif %}
-                        <a class="upcoming-schedule-open-link" href="{{ row.detail_url }}">Open case</a>
+                        <a class="upcoming-schedule-open-link dashboard-open-compact" href="{{ row.detail_url }}">Open</a>
                       </div>
                     </div>
                   </div>
@@ -1752,7 +2812,7 @@
         <div id="recent-case-list" class="dashboard-compact-list recent-case-list" data-recent-case-list>
           {% for case in recent_cases %}
             <article
-              class="dashboard-compact-row"
+              class="dashboard-compact-row dashboard-recent-row"
               data-recent-case-row
               data-case-id="{{ case.id }}"
               {% if forloop.counter > 10 %}hidden{% endif %}
@@ -1767,15 +2827,44 @@
                   aria-expanded="false"
                   aria-controls="recent-case-detail-{{ case.id }}"
                 >
-                  <div class="dashboard-compact-summary">
-                    <span class="dashboard-compact-name-pill">
-                      <span class="dashboard-compact-name" data-compact-name data-full-name="{{ case.name }}" data-short-name="{{ case.short_name }}">{{ case.name }}</span>
+                  <div class="dashboard-compact-summary dashboard-recent-summary">
+                    <span class="dashboard-recent-timeline dashboard-recent-timeline--{{ case.created_tone }}">
+                      <span class="dashboard-recent-time-badge dashboard-recent-time-badge--{{ case.created_tone }}">{{ case.created_badge_label }}</span>
+                      <span class="dashboard-recent-time-label">{{ case.created_badge_suffix }}</span>
                     </span>
-                    <span class="dashboard-compact-summary-meta">
-                      <span class="dashboard-compact-inline">{{ case.sex_age }}</span>
-                      <span class="dashboard-compact-separator" aria-hidden="true">|</span>
-                      <span class="dashboard-compact-inline">{{ case.created_at_short_display }}</span>
+                    <span class="dashboard-recent-body">
+                      <span class="dashboard-recent-main">
+                        <span class="dashboard-recent-name" data-compact-name data-full-name="{{ case.name }}" data-short-name="{{ case.short_name }}">{{ case.name }}</span>
+                        {% if case.sex_age != "-" %}<span class="dashboard-recent-sex-age">{{ case.sex_age }}</span>{% endif %}
+                        {% if case.subcategory_name %}
+                          <span class="dashboard-recent-category dashboard-category-inline-icon" title="{{ case.subcategory_name }}" aria-label="{{ case.subcategory_name }}"{% if case.subcategory_icon_path %} data-subcategory-icon-path="{{ case.subcategory_icon_path }}"{% endif %}>
+                            <span class="dashboard-category-icon-glyph">
+                              {% if case.subcategory_icon_path %}
+                                {% inline_static_svg case.subcategory_icon_path %}
+                              {% else %}
+                                <span class="dashboard-row-category-fallback">{{ case.subcategory_name|slice:":2"|upper }}</span>
+                              {% endif %}
+                            </span>
+                            <span class="dashboard-category-icon-label">{{ case.subcategory_name }}</span>
+                          </span>
+                        {% else %}
+                          <span class="dashboard-category-inline-icon dashboard-recent-category-icon" title="{{ case.category_name }}" aria-label="{{ case.category_name }}"{% if case.category_icon_path %} data-category-icon-path="{{ case.category_icon_path }}"{% endif %}>
+                            <span class="dashboard-category-icon-glyph">
+                              {% if case.category_icon_path %}
+                                {% inline_static_svg case.category_icon_path %}
+                              {% else %}
+                                <span class="dashboard-row-category-fallback">{{ case.category_name|slice:":2"|upper }}</span>
+                              {% endif %}
+                            </span>
+                            <span class="dashboard-category-icon-label">{{ case.category_name }}</span>
+                          </span>
+                        {% endif %}
+                      </span>
+                      <span class="dashboard-recent-meta">
+                        <span class="dashboard-recent-diagnosis">{{ case.diagnosis_short }}</span>
+                      </span>
                     </span>
+                    <span class="dashboard-recent-date">{{ case.created_date_label }}</span>
                   </div>
                 </button>
               </div>
@@ -1791,7 +2880,10 @@
 
     <section class="dashboard-module dashboard-module--overdue" data-dashboard-module="overdue" data-compact-module data-compact-limit="10">
       <div class="dashboard-module-header">
-        <h2 class="h6">Overdue</h2>
+        <div class="dashboard-module-title-group">
+          <h2 class="h6">Overdue</h2>
+          <span class="dashboard-module-count">{{ overdue_cards|length }} patient{{ overdue_cards|length|pluralize }}</span>
+        </div>
         {% if overdue_cards|length > 10 %}
           <button type="button" class="btn dashboard-module-expand" data-compact-expand>Expand</button>
         {% endif %}
@@ -1799,7 +2891,7 @@
       <div class="dashboard-module-body dashboard-module-body--compact">
         <div class="dashboard-compact-list">
         {% for card in overdue_cards %}
-          <article class="dashboard-compact-row" data-compact-row{% if forloop.counter > 10 %} hidden{% endif %} style="{% category_theme_style card.category_name theme_category_colors %}">
+          <article class="dashboard-compact-row dashboard-overdue-row" data-compact-row{% if forloop.counter > 10 %} hidden{% endif %} style="{% category_theme_style card.category_name theme_category_colors %}">
             <div class="dashboard-compact-row-top">
               <button
                 type="button"
@@ -1808,19 +2900,50 @@
                 aria-expanded="false"
                 aria-controls="overdue-card-detail-{{ forloop.counter }}"
               >
-                <div class="dashboard-compact-summary">
-                  <span class="dashboard-compact-name-pill">
-                    <span class="dashboard-compact-name" data-compact-name data-full-name="{{ card.patient_name }}" data-short-name="{{ card.short_name }}">{{ card.patient_name }}</span>
+                <div class="dashboard-compact-summary dashboard-overdue-summary">
+                  <span class="dashboard-overdue-urgency dashboard-overdue-urgency--{{ card.overdue_tone }}">
+                    <span class="dashboard-overdue-urgency-number">{{ card.days_overdue }}</span>
+                    <span class="dashboard-overdue-urgency-label">{{ card.overdue_day_unit }}</span>
                   </span>
-                  <span class="dashboard-compact-summary-meta">
-                    <span class="dashboard-compact-inline">{{ card.sex_age }}</span>
-                    <span class="dashboard-compact-separator" aria-hidden="true">|</span>
-                    <span class="dashboard-compact-inline">{{ card.due_date_display }}</span>
+                  <span class="dashboard-overdue-body">
+                    <span class="dashboard-overdue-main">
+                      <span class="dashboard-overdue-name" data-compact-name data-full-name="{{ card.patient_name }}" data-short-name="{{ card.short_name }}">{{ card.patient_name }}</span>
+                      {% if card.sex_age != "-" %}<span class="dashboard-overdue-sex-age">{{ card.sex_age }}</span>{% endif %}
+                      {% if card.subcategory_name %}
+                        <span class="dashboard-overdue-category dashboard-category-inline-icon" title="{{ card.subcategory_name }}" aria-label="{{ card.subcategory_name }}"{% if card.subcategory_icon_path %} data-subcategory-icon-path="{{ card.subcategory_icon_path }}"{% endif %}>
+                          <span class="dashboard-category-icon-glyph">
+                            {% if card.subcategory_icon_path %}
+                              {% inline_static_svg card.subcategory_icon_path %}
+                            {% else %}
+                              <span class="dashboard-row-category-fallback">{{ card.subcategory_name|slice:":2"|upper }}</span>
+                            {% endif %}
+                          </span>
+                          <span class="dashboard-category-icon-label">{{ card.subcategory_name }}</span>
+                        </span>
+                      {% else %}
+                        <span class="dashboard-category-inline-icon dashboard-overdue-category-icon" title="{{ card.category_name }}" aria-label="{{ card.category_name }}"{% if card.category_icon_path %} data-category-icon-path="{{ card.category_icon_path }}"{% endif %}>
+                          <span class="dashboard-category-icon-glyph">
+                            {% if card.category_icon_path %}
+                              {% inline_static_svg card.category_icon_path %}
+                            {% else %}
+                              <span class="dashboard-row-category-fallback">{{ card.category_name|slice:":2"|upper }}</span>
+                            {% endif %}
+                          </span>
+                          <span class="dashboard-category-icon-label">{{ card.category_name }}</span>
+                        </span>
+                      {% endif %}
+                    </span>
+                    <span class="dashboard-overdue-meta">
+                      <span class="dashboard-overdue-date">{{ card.overdue_due_label }}</span>
+                      <span class="dashboard-overdue-separator" aria-hidden="true">|</span>
+                      <span class="dashboard-overdue-task-text">{{ card.task_summary }}</span>
+                    </span>
                   </span>
                 </div>
               </button>
               {% if card.phone_number %}
-                <div class="dashboard-compact-call-group" data-call-reveal-scope>
+                <div class="dashboard-overdue-actions" data-call-reveal-scope>
+                  {% if card.high_risk %}<span class="dashboard-overdue-flag">High-risk</span>{% endif %}
                   <button
                     type="button"
                     class="dashboard-compact-call"
@@ -1835,14 +2958,39 @@
                   </div>
                 </div>
               {% else %}
-                <span class="dashboard-compact-call is-disabled">Call</span>
+                <div class="dashboard-overdue-actions">
+                  {% if card.high_risk %}<span class="dashboard-overdue-flag">High-risk</span>{% endif %}
+                  <span class="dashboard-compact-call is-disabled">Call</span>
+                </div>
               {% endif %}
             </div>
             <div id="overdue-card-detail-{{ forloop.counter }}" class="dashboard-compact-details{% if card.subcategory_name %} dashboard-compact-details--with-subcategory{% endif %}" data-compact-details hidden>
               <div class="dashboard-compact-detail-header">
                 <span class="dashboard-compact-detail-label">Overdue</span>
                 <div class="dashboard-compact-detail-pills">
-                  {% if card.subcategory_name %}<span class="dashboard-compact-subcategory">{{ card.subcategory_name }}</span>{% endif %}
+                  {% if card.subcategory_name %}
+                    <span class="dashboard-compact-subcategory dashboard-category-inline-icon" title="{{ card.subcategory_name }}" aria-label="{{ card.subcategory_name }}"{% if card.subcategory_icon_path %} data-subcategory-icon-path="{{ card.subcategory_icon_path }}"{% endif %}>
+                      <span class="dashboard-category-icon-glyph">
+                        {% if card.subcategory_icon_path %}
+                          {% inline_static_svg card.subcategory_icon_path %}
+                        {% else %}
+                          <span class="dashboard-row-category-fallback">{{ card.subcategory_name|slice:":2"|upper }}</span>
+                        {% endif %}
+                      </span>
+                      <span class="dashboard-category-icon-label">{{ card.subcategory_name }}</span>
+                    </span>
+                  {% else %}
+                    <span class="dashboard-category-inline-icon" title="{{ card.category_name }}" aria-label="{{ card.category_name }}"{% if card.category_icon_path %} data-category-icon-path="{{ card.category_icon_path }}"{% endif %}>
+                      <span class="dashboard-category-icon-glyph">
+                        {% if card.category_icon_path %}
+                          {% inline_static_svg card.category_icon_path %}
+                        {% else %}
+                          <span class="dashboard-row-category-fallback">{{ card.category_name|slice:":2"|upper }}</span>
+                        {% endif %}
+                      </span>
+                      <span class="dashboard-category-icon-label">{{ card.category_name }}</span>
+                    </span>
+                  {% endif %}
                   <a class="dashboard-compact-detail-pill-link" href="{{ card.detail_url }}" data-compact-action>Open case</a>
                 </div>
               </div>
@@ -1861,7 +3009,10 @@
 
     <section class="dashboard-module dashboard-module--awaiting mt-4" data-dashboard-module="awaiting" data-compact-module data-compact-limit="10">
       <div class="dashboard-module-header">
-        <h2 class="h6">Awaiting Reports</h2>
+        <div class="dashboard-module-title-group">
+          <h2 class="h6">Awaiting Reports</h2>
+          <span class="dashboard-module-count">{{ awaiting_rows|length }} pending</span>
+        </div>
         {% if awaiting_rows|length > 10 %}
           <button type="button" class="btn dashboard-module-expand" data-compact-expand>Expand</button>
         {% endif %}
@@ -1869,7 +3020,7 @@
       <div class="dashboard-module-body dashboard-module-body--compact">
         <div class="dashboard-compact-list">
         {% for row in awaiting_rows %}
-          <article class="dashboard-compact-row" data-compact-row{% if forloop.counter > 10 %} hidden{% endif %} style="{% category_theme_style row.category_name theme_category_colors %}">
+          <article class="dashboard-compact-row dashboard-awaiting-v7-row" data-compact-row{% if forloop.counter > 10 %} hidden{% endif %} style="{% category_theme_style row.category_name theme_category_colors %}">
             <div class="dashboard-compact-row-top">
               <button
                 type="button"
@@ -1878,23 +3029,82 @@
                 aria-expanded="false"
                 aria-controls="awaiting-row-detail-{{ forloop.counter }}"
               >
-                <div class="dashboard-compact-summary">
-                  <span class="dashboard-compact-name-pill">
-                    <span class="dashboard-compact-name" data-compact-name data-full-name="{{ row.patient_name }}" data-short-name="{{ row.short_name }}">{{ row.patient_name }}</span>
+                <div class="dashboard-compact-summary dashboard-awaiting-summary">
+                  <span class="dashboard-row-category-icon dashboard-awaiting-icon" aria-hidden="true"{% if row.category_icon_path %} data-category-icon-path="{{ row.category_icon_path }}"{% endif %}>
+                    {% if row.category_icon_path %}
+                      {% inline_static_svg row.category_icon_path %}
+                    {% else %}
+                      <span class="dashboard-row-category-fallback">{{ row.category_name|slice:":2"|upper }}</span>
+                    {% endif %}
                   </span>
-                  <span class="dashboard-compact-summary-meta">
-                    <span class="dashboard-compact-inline">{{ row.sex_age }}</span>
-                    <span class="dashboard-compact-separator" aria-hidden="true">|</span>
-                    <span class="dashboard-compact-inline">{{ row.report_detail }}</span>
+                  <span class="dashboard-awaiting-body">
+                    <span class="dashboard-awaiting-main">
+                      <span class="dashboard-awaiting-name" data-compact-name data-full-name="{{ row.patient_name }}" data-short-name="{{ row.short_name }}">{{ row.patient_name }}</span>
+                      {% if row.sex_age != "-" %}<span class="dashboard-awaiting-sex-age">{{ row.sex_age }}</span>{% endif %}
+                    </span>
+                    <span class="dashboard-awaiting-meta">
+                      <span class="dashboard-awaiting-report-tag dashboard-awaiting-report-tag--{{ row.report_tag_tone }}">{{ row.report_tag_label }}</span>
+                      <span class="dashboard-awaiting-dot" aria-hidden="true"></span>
+                      <span class="dashboard-awaiting-diagnosis">{{ row.diagnosis }}</span>
+                    </span>
+                  </span>
+                  <span class="dashboard-awaiting-meta-actions">
+                    <span class="dashboard-awaiting-wait">{{ row.waiting_label }}</span>
+                    {% if row.subcategory_name %}
+                      <span class="dashboard-awaiting-category dashboard-category-inline-icon" title="{{ row.subcategory_name }}" aria-label="{{ row.subcategory_name }}"{% if row.subcategory_icon_path %} data-subcategory-icon-path="{{ row.subcategory_icon_path }}"{% endif %}>
+                        <span class="dashboard-category-icon-glyph">
+                          {% if row.subcategory_icon_path %}
+                            {% inline_static_svg row.subcategory_icon_path %}
+                          {% else %}
+                            <span class="dashboard-row-category-fallback">{{ row.subcategory_name|slice:":2"|upper }}</span>
+                          {% endif %}
+                        </span>
+                        <span class="dashboard-category-icon-label">{{ row.subcategory_name }}</span>
+                      </span>
+                    {% else %}
+                      <span class="dashboard-category-inline-icon dashboard-awaiting-category-icon" title="{{ row.category_name }}" aria-label="{{ row.category_name }}"{% if row.category_icon_path %} data-category-icon-path="{{ row.category_icon_path }}"{% endif %}>
+                        <span class="dashboard-category-icon-glyph">
+                          {% if row.category_icon_path %}
+                            {% inline_static_svg row.category_icon_path %}
+                          {% else %}
+                            <span class="dashboard-row-category-fallback">{{ row.category_name|slice:":2"|upper }}</span>
+                          {% endif %}
+                        </span>
+                        <span class="dashboard-category-icon-label">{{ row.category_name }}</span>
+                      </span>
+                    {% endif %}
                   </span>
                 </div>
               </button>
+              <a class="dashboard-open-compact dashboard-awaiting-open" href="{{ row.detail_url }}" data-compact-action>Open</a>
             </div>
             <div id="awaiting-row-detail-{{ forloop.counter }}" class="dashboard-compact-details{% if row.subcategory_name %} dashboard-compact-details--with-subcategory{% endif %}" data-compact-details hidden>
               <div class="dashboard-compact-detail-header">
                 <span class="dashboard-compact-detail-label">Awaiting Report</span>
                 <div class="dashboard-compact-detail-pills">
-                  {% if row.subcategory_name %}<span class="dashboard-compact-subcategory">{{ row.subcategory_name }}</span>{% endif %}
+                  {% if row.subcategory_name %}
+                    <span class="dashboard-compact-subcategory dashboard-category-inline-icon" title="{{ row.subcategory_name }}" aria-label="{{ row.subcategory_name }}"{% if row.subcategory_icon_path %} data-subcategory-icon-path="{{ row.subcategory_icon_path }}"{% endif %}>
+                      <span class="dashboard-category-icon-glyph">
+                        {% if row.subcategory_icon_path %}
+                          {% inline_static_svg row.subcategory_icon_path %}
+                        {% else %}
+                          <span class="dashboard-row-category-fallback">{{ row.subcategory_name|slice:":2"|upper }}</span>
+                        {% endif %}
+                      </span>
+                      <span class="dashboard-category-icon-label">{{ row.subcategory_name }}</span>
+                    </span>
+                  {% else %}
+                    <span class="dashboard-category-inline-icon" title="{{ row.category_name }}" aria-label="{{ row.category_name }}"{% if row.category_icon_path %} data-category-icon-path="{{ row.category_icon_path }}"{% endif %}>
+                      <span class="dashboard-category-icon-glyph">
+                        {% if row.category_icon_path %}
+                          {% inline_static_svg row.category_icon_path %}
+                        {% else %}
+                          <span class="dashboard-row-category-fallback">{{ row.category_name|slice:":2"|upper }}</span>
+                        {% endif %}
+                      </span>
+                      <span class="dashboard-category-icon-label">{{ row.category_name }}</span>
+                    </span>
+                  {% endif %}
                   <a class="dashboard-compact-detail-pill-link" href="{{ row.detail_url }}" data-compact-action>Open case</a>
                 </div>
               </div>
@@ -2316,6 +3526,23 @@
     data-list-url="{% url 'patients:recent_cases' %}"
     data-update-url-template="{% url 'patients:recent_case_update' 0 %}"
   ></div>
+  <div id="dashboard-category-icon-templates" hidden>
+    <template data-dashboard-icon-template="patients/icons/categories/anc.svg">{% inline_static_svg "patients/icons/categories/anc.svg" %}</template>
+    <template data-dashboard-icon-template="patients/icons/categories/surgery.svg">{% inline_static_svg "patients/icons/categories/surgery.svg" %}</template>
+    <template data-dashboard-icon-template="patients/icons/categories/medicine.svg">{% inline_static_svg "patients/icons/categories/medicine.svg" %}</template>
+    <template data-dashboard-icon-template="patients/icons/subcategories/general_surgery.svg">{% inline_static_svg "patients/icons/subcategories/general_surgery.svg" %}</template>
+    <template data-dashboard-icon-template="patients/icons/subcategories/orthopedics.svg">{% inline_static_svg "patients/icons/subcategories/orthopedics.svg" %}</template>
+    <template data-dashboard-icon-template="patients/icons/subcategories/plastic_surgery.svg">{% inline_static_svg "patients/icons/subcategories/plastic_surgery.svg" %}</template>
+    <template data-dashboard-icon-template="patients/icons/subcategories/pediatric_surgery.svg">{% inline_static_svg "patients/icons/subcategories/pediatric_surgery.svg" %}</template>
+    <template data-dashboard-icon-template="patients/icons/subcategories/urology.svg">{% inline_static_svg "patients/icons/subcategories/urology.svg" %}</template>
+    <template data-dashboard-icon-template="patients/icons/subcategories/ent.svg">{% inline_static_svg "patients/icons/subcategories/ent.svg" %}</template>
+    <template data-dashboard-icon-template="patients/icons/subcategories/other_specialty.svg">{% inline_static_svg "patients/icons/subcategories/other_specialty.svg" %}</template>
+    <template data-dashboard-icon-template="patients/icons/subcategories/general_medicine.svg">{% inline_static_svg "patients/icons/subcategories/general_medicine.svg" %}</template>
+    <template data-dashboard-icon-template="patients/icons/subcategories/psychiatry.svg">{% inline_static_svg "patients/icons/subcategories/psychiatry.svg" %}</template>
+    <template data-dashboard-icon-template="patients/icons/subcategories/cardiology_echo.svg">{% inline_static_svg "patients/icons/subcategories/cardiology_echo.svg" %}</template>
+    <template data-dashboard-icon-template="patients/icons/subcategories/pediatric.svg">{% inline_static_svg "patients/icons/subcategories/pediatric.svg" %}</template>
+    <template data-dashboard-icon-template="patients/icons/subcategories/medical_oncology.svg">{% inline_static_svg "patients/icons/subcategories/medical_oncology.svg" %}</template>
+  </div>
 
   <script>
     (() => {
@@ -2325,6 +3552,12 @@
         const panelEl = document.querySelector("[data-recent-case-panel]");
         const rowList = document.querySelector("[data-recent-case-list]");
         const toggleButton = document.querySelector("[data-recent-case-toggle]");
+        const categoryIconTemplates = new Map(
+          Array.from(document.querySelectorAll("[data-dashboard-icon-template]")).map((template) => [
+            template.dataset.dashboardIconTemplate,
+            template.innerHTML.trim(),
+          ]),
+        );
         if (!payloadEl || !endpointsEl || !panelEl || !rowList || panelEl.dataset.recentCaseBound === "true") {
           return;
         }
@@ -2349,6 +3582,44 @@
             .replaceAll("'", "&#39;");
 
         const clampReplaceId = (template, id) => template.replace("/0/", `/${id}/`);
+
+        const renderInlineDashboardIcon = ({
+          label = "",
+          iconPath = "",
+          extraClass = "",
+          dataAttribute = "data-category-icon-path",
+        } = {}) => {
+          const iconMarkup = categoryIconTemplates.get(iconPath) || "";
+          const fallback = String(label).slice(0, 2).toUpperCase();
+          const iconPathAttribute = iconPath ? ` ${dataAttribute}="${escapeHtml(iconPath)}"` : "";
+          return `
+            <span class="dashboard-category-inline-icon ${extraClass}" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}"${iconPathAttribute}>
+              <span class="dashboard-category-icon-glyph">
+                ${iconMarkup || `<span class="dashboard-row-category-fallback">${escapeHtml(fallback)}</span>`}
+              </span>
+              <span class="dashboard-category-icon-label">${escapeHtml(label)}</span>
+            </span>
+          `;
+        };
+
+        const renderRecentContextIcon = (entry, extraClass = "") => {
+          if (entry.subcategory_name) {
+            return renderInlineDashboardIcon({
+              label: entry.subcategory_name,
+              iconPath: entry.subcategory_icon_path || "",
+              extraClass,
+              dataAttribute: "data-subcategory-icon-path",
+            });
+          }
+          if (entry.category_name) {
+            return renderInlineDashboardIcon({
+              label: entry.category_name,
+              iconPath: entry.category_icon_path || "",
+              extraClass,
+            });
+          }
+          return "";
+        };
 
         const getCookie = (name) => {
           const cookieValue = document.cookie
@@ -2429,9 +3700,10 @@
             <span class="dashboard-compact-detail-label">Notes</span>
             <div class="dashboard-compact-detail-pills">
               ${
-                entry.subcategory_name
-                  ? `<span class="dashboard-compact-subcategory">${escapeHtml(entry.subcategory_name)}</span>`
-                  : ""
+                renderRecentContextIcon(
+                  entry,
+                  entry.subcategory_name ? "dashboard-compact-subcategory" : "",
+                )
               }
               <a class="dashboard-compact-detail-pill-link" href="${escapeHtml(entry.detail_url)}" data-compact-action>Open case</a>
             </div>
@@ -2520,15 +3792,28 @@
           if (!detailEl || !summaryEl) {
             return;
           }
+          const recentTone = entry.created_tone || "older";
           summaryEl.innerHTML = `
-            <span class="dashboard-compact-name-pill">
-              <span class="dashboard-compact-name" data-compact-name data-full-name="${escapeHtml(entry.name)}" data-short-name="${escapeHtml(entry.short_name || entry.first_name || entry.name)}">${escapeHtml(entry.name)}</span>
+            <span class="dashboard-recent-timeline dashboard-recent-timeline--${escapeHtml(recentTone)}">
+              <span class="dashboard-recent-time-badge dashboard-recent-time-badge--${escapeHtml(recentTone)}">${escapeHtml(entry.created_badge_label || entry.created_at_short_display || entry.created_at_display)}</span>
+              <span class="dashboard-recent-time-label">${escapeHtml(entry.created_badge_suffix || "ago")}</span>
             </span>
-            <span class="dashboard-compact-summary-meta">
-              <span class="dashboard-compact-inline">${escapeHtml(entry.sex_age)}</span>
-              <span class="dashboard-compact-separator" aria-hidden="true">|</span>
-              <span class="dashboard-compact-inline">${escapeHtml(entry.created_at_short_display || entry.created_at_display)}</span>
+            <span class="dashboard-recent-body">
+              <span class="dashboard-recent-main">
+                <span class="dashboard-recent-name" data-compact-name data-full-name="${escapeHtml(entry.name)}" data-short-name="${escapeHtml(entry.short_name || entry.first_name || entry.name)}">${escapeHtml(entry.name)}</span>
+                ${entry.sex_age && entry.sex_age !== "-" ? `<span class="dashboard-recent-sex-age">${escapeHtml(entry.sex_age)}</span>` : ""}
+                ${
+                  renderRecentContextIcon(
+                    entry,
+                    entry.subcategory_name ? "dashboard-recent-category" : "dashboard-recent-category-icon",
+                  )
+                }
+              </span>
+              <span class="dashboard-recent-meta">
+                <span class="dashboard-recent-diagnosis">${escapeHtml(entry.diagnosis_short || entry.diagnosis || "")}</span>
+              </span>
             </span>
+            <span class="dashboard-recent-date">${escapeHtml(entry.created_date_label || entry.created_at_short_display || entry.created_at_display)}</span>
           `;
           detailEl.innerHTML = renderRecentDetail(entry, feedback);
           detailEl.classList.toggle("dashboard-compact-details--with-subcategory", Boolean(entry.subcategory_name));

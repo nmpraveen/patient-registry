@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.05.16.23.00
+- Updated the dashboard V7 patient rows so Today, Upcoming, Recently Added, Overdue, and Awaiting Reports use the existing category/subcategory SVG icons without adding new icon assets.
+- Kept the top dashboard stats strip as icon plus label for Today, Upcoming, Overdue, ANC, Surgery, and Medicine while making module category chips icon-only visually with accessible labels preserved.
+- Added dashboard payload fields and regression coverage for category/subcategory icon paths, readable Today call status labels, task-count labels, and V7 row rendering.
+
 ## 2026.04.02.23.19
 - Added `Master` as a patient prefix option across shared patient and case identity flows, with the stored value `MST` and matching full-name rendering.
 - Updated deterministic mock seeding so demo environments include a young boy with the `Master` salutation.

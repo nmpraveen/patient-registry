@@ -4,6 +4,7 @@ from django.contrib.auth import views as auth_views
 from django.contrib.staticfiles.urls import staticfiles_urlpatterns
 from django.urls import include, path
 from django.views.generic import RedirectView
+from drf_spectacular.views import SpectacularAPIView
 
 from patients.views import (
     DeviceAuthenticationOptionsView,
@@ -31,6 +32,8 @@ urlpatterns = [
         name="login_device_authenticate_verify",
     ),
     path("logout/", auth_views.LogoutView.as_view(), name="logout"),
+    path("api/schema/", SpectacularAPIView.as_view(), name="api_schema"),
+    path("api/", include("api.urls")),
     path("patients/", include("patients.urls")),
     path("", RedirectView.as_view(pattern_name="patients:dashboard", permanent=False)),
 ]

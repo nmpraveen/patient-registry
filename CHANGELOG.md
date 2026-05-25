@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.05.25.17.09
+- Added the MEDTRACK Android app source, including Compose login, lock, home, cases, calls, notifications, bottom navigation, reusable design-system components, local storage, sync, and emulator/device smoke scripts.
+- Added the mobile API surface for Android authentication, case worklists, case detail actions, call outcomes, notifications, write receipts, and push-token handling.
+- Expanded deterministic mock data, tests, and docs so local Test NNH environments can exercise the Android screens with multiple users, dates, tasks, categories, flags, and call states.
+
 ## 2026.05.16.23.00
 - Updated the dashboard V7 patient rows so Today, Upcoming, Recently Added, Overdue, and Awaiting Reports use the existing category/subcategory SVG icons without adding new icon assets.
 - Kept the top dashboard stats strip as icon plus label for Today, Upcoming, Overdue, ANC, Surgery, and Medicine while making module category chips icon-only visually with accessible labels preserved.

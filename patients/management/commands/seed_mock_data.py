@@ -4,6 +4,7 @@ import random
 import sys
 
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Group
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
@@ -30,12 +31,46 @@ from patients.models import (
     build_default_tasks,
     create_quick_entry_details_task,
     ensure_default_departments,
+    ensure_default_role_settings,
     generate_temporary_patient_uhid,
 )
 
 
 class Command(BaseCommand):
     help = "Seed mock MEDTRACK data (default 30 cases) for local demo/testing."
+
+    demo_staff_specs = {
+        "admin": {
+            "username": "demo_admin",
+            "role": "Admin",
+            "first_name": "Admin",
+            "last_name": "Demo",
+        },
+        "doctor": {
+            "username": "demo_doctor",
+            "role": "Doctor",
+            "first_name": "Doctor",
+            "last_name": "Demo",
+        },
+        "nurse": {
+            "username": "demo_nurse",
+            "role": "Nurse",
+            "first_name": "Nurse",
+            "last_name": "Demo",
+        },
+        "caller": {
+            "username": "demo_caller",
+            "role": "Caller",
+            "first_name": "Caller",
+            "last_name": "Demo",
+        },
+        "reception": {
+            "username": "demo_reception",
+            "role": "Reception",
+            "first_name": "Reception",
+            "last_name": "Demo",
+        },
+    }
 
     mock_profiles = [
         {"prefix": CasePrefix.MR, "first_name": "Karthik", "last_name": "Raman", "place": "Madurai", "gender": Gender.MALE, "blood_group": BloodGroup.O_POSITIVE, "date_of_birth": date(1989, 3, 11), "facility_code": "MDU"},
@@ -186,6 +221,48 @@ class Command(BaseCommand):
         if changed:
             patient.save()
         return patient
+
+    def _ensure_demo_staff_users(self, User):
+        ensure_default_role_settings()
+        role_groups = {
+            role_name: Group.objects.get_or_create(name=role_name)[0]
+            for role_name in {spec["role"] for spec in self.demo_staff_specs.values()}
+        }
+        staff_users = {}
+        existing_admin = User.objects.filter(username="admin").first()
+        for key, spec in self.demo_staff_specs.items():
+            username = "admin" if key == "admin" and existing_admin else spec["username"]
+            user, _ = User.objects.get_or_create(
+                username=username,
+                defaults={
+                    "first_name": spec["first_name"],
+                    "last_name": spec["last_name"],
+                    "email": f"{username}@example.test",
+                    "is_active": True,
+                },
+            )
+            changed_fields = []
+            desired_profile = {
+                "first_name": spec["first_name"],
+                "last_name": spec["last_name"],
+                "email": f"{username}@example.test",
+            }
+            for field_name in ["first_name", "last_name", "email"]:
+                desired_value = desired_profile[field_name]
+                if not getattr(user, field_name):
+                    setattr(user, field_name, desired_value)
+                    changed_fields.append(field_name)
+            if not user.is_active:
+                user.is_active = True
+                changed_fields.append("is_active")
+            if username != "admin":
+                user.set_password("pass")
+                changed_fields.append("password")
+            if changed_fields:
+                user.save(update_fields=list(dict.fromkeys(changed_fields)))
+            user.groups.add(role_groups[spec["role"]])
+            staff_users[key] = user
+        return staff_users
 
     def _patient_for_scenario(self, profile, index, today, demo_user, scenario):
         if scenario in {"anc_high_risk", "surgery_planned"}:
@@ -367,33 +444,99 @@ class Command(BaseCommand):
         )
         return Case.objects.create(**kwargs), scenario
 
-    def mutate_seeded_tasks(self, case, rng, today):
-        tasks = list(case.tasks.order_by("due_date", "id")[:4])
+    def mutate_seeded_tasks(self, case, rng, today, staff_users, case_index):
+        tasks = list(case.tasks.order_by("due_date", "id")[:5])
         if not tasks:
             return
-        tasks[0].due_date = today - timedelta(days=5)
-        tasks[0].status = TaskStatus.SCHEDULED
-        update_fields = ["due_date", "status", "completed_at", "updated_at"]
-        if tasks[0].task_type == TaskType.CUSTOM:
-            tasks[0].task_type = TaskType.VISIT
-            update_fields.append("task_type")
-        tasks[0].save(update_fields=update_fields)
-        if len(tasks) > 1:
-            tasks[1].due_date = today
-            tasks[1].status = TaskStatus.AWAITING_REPORTS
-            tasks[1].save(update_fields=["due_date", "status", "completed_at", "updated_at"])
-        if len(tasks) > 2:
-            tasks[2].due_date = today + timedelta(days=7)
-            tasks[2].status = TaskStatus.SCHEDULED
-            tasks[2].save(update_fields=["due_date", "status", "completed_at", "updated_at"])
-        if len(tasks) > 3:
-            tasks[3].due_date = today - timedelta(days=1)
-            tasks[3].status = TaskStatus.COMPLETED
-            tasks[3].save(update_fields=["due_date", "status", "completed_at", "updated_at"])
+        plans = [
+            [
+                (0, TaskStatus.SCHEDULED, "admin", TaskType.VISIT),
+                (0, TaskStatus.AWAITING_REPORTS, "caller", TaskType.LAB),
+                (3, TaskStatus.SCHEDULED, "nurse", TaskType.VISIT),
+                (-1, TaskStatus.COMPLETED, "doctor", TaskType.VISIT),
+                (9, TaskStatus.SCHEDULED, "admin", TaskType.PROCEDURE),
+            ],
+            [
+                (-5, TaskStatus.SCHEDULED, "doctor", TaskType.VISIT),
+                (1, TaskStatus.SCHEDULED, "nurse", TaskType.LAB),
+                (0, TaskStatus.AWAITING_REPORTS, "caller", TaskType.LAB),
+                (-2, TaskStatus.COMPLETED, "admin", TaskType.CALL),
+                (12, TaskStatus.SCHEDULED, "reception", TaskType.CUSTOM),
+            ],
+            [
+                (-3, TaskStatus.COMPLETED, "caller", TaskType.LAB),
+                (2, TaskStatus.SCHEDULED, "nurse", TaskType.VISIT),
+                (6, TaskStatus.SCHEDULED, "admin", TaskType.PROCEDURE),
+                (0, TaskStatus.AWAITING_REPORTS, "doctor", TaskType.LAB),
+                (14, TaskStatus.SCHEDULED, "doctor", TaskType.VISIT),
+            ],
+            [
+                (-4, TaskStatus.SCHEDULED, "admin", TaskType.VISIT),
+                (0, TaskStatus.AWAITING_REPORTS, "caller", TaskType.LAB),
+                (4, TaskStatus.SCHEDULED, "reception", TaskType.CUSTOM),
+                (-1, TaskStatus.COMPLETED, "nurse", TaskType.VISIT),
+                (10, TaskStatus.SCHEDULED, "doctor", TaskType.PROCEDURE),
+            ],
+            [
+                (0, TaskStatus.SCHEDULED, "admin", TaskType.VISIT),
+                (-7, TaskStatus.COMPLETED, "doctor", TaskType.LAB),
+                (5, TaskStatus.SCHEDULED, "caller", TaskType.CALL),
+                (0, TaskStatus.AWAITING_REPORTS, "nurse", TaskType.LAB),
+                (-2, TaskStatus.COMPLETED, "reception", TaskType.VISIT),
+            ],
+        ]
+        plan = plans[(case_index - 1) % len(plans)]
+        home_today_case = (case_index - 1) % len(plans) in {0, 4}
+        for task, (offset_days, status, user_key, task_type) in zip(tasks, plan):
+            task.due_date = today + timedelta(days=offset_days)
+            task.status = status
+            task.assigned_user = staff_users[user_key]
+            task.task_type = task_type
+            task.completed_at = (
+                timezone.now() - timedelta(days=max(abs(offset_days), 1))
+                if status == TaskStatus.COMPLETED
+                else None
+            )
+            task.save(update_fields=["due_date", "status", "assigned_user", "task_type", "completed_at", "updated_at"])
         for extra in case.tasks.exclude(id__in=[task.id for task in tasks]):
             if rng.random() < 0.2:
                 extra.status = TaskStatus.CANCELLED
+                extra.completed_at = None
                 extra.save(update_fields=["status", "completed_at", "updated_at"])
+            elif home_today_case and extra.due_date < today:
+                extra.status = TaskStatus.COMPLETED
+                extra.completed_at = timezone.now() - timedelta(days=max((today - extra.due_date).days, 1))
+                if extra.assigned_user_id is None:
+                    extra.assigned_user = staff_users[["admin", "doctor", "nurse", "caller", "reception"][(case_index + extra.id) % 5]]
+                extra.save(update_fields=["status", "assigned_user", "completed_at", "updated_at"])
+            elif extra.assigned_user_id is None:
+                extra.assigned_user = staff_users[["admin", "doctor", "nurse", "caller", "reception"][(case_index + extra.id) % 5]]
+                extra.save(update_fields=["assigned_user", "updated_at"])
+
+    def seed_mobile_notifications_for_case(self, case, today):
+        try:
+            from api.notifications import notify_case_red_flag, notify_task_overdue
+        except Exception:
+            return
+        for task in case.tasks.select_related("assigned_user").filter(
+            assigned_user__isnull=False,
+            status=TaskStatus.SCHEDULED,
+            due_date__lt=today,
+        ):
+            notify_task_overdue(task, as_of=today)
+        if case.has_risk_factors:
+            notify_case_red_flag(case)
+
+    def delete_mobile_notifications_for_cases(self, queryset, *, reset_all=False):
+        try:
+            from api.models import MobileNotification
+        except Exception:
+            return
+        if reset_all:
+            MobileNotification.objects.all().delete()
+            return
+        MobileNotification.objects.filter(task__case__in=queryset).delete()
+        MobileNotification.objects.filter(case__in=queryset).delete()
 
     def _require_reset_all_confirmation(self, yes_reset_all):
         if yes_reset_all:
@@ -575,8 +718,9 @@ class Command(BaseCommand):
                 updated_by=demo_user,
             )
 
-    def seed_calls_for_case(self, case, demo_user, scenario, rng):
+    def seed_calls_for_case(self, case, demo_user, scenario, rng, staff_users=None):
         task_choices = list(case.tasks.order_by("due_date", "id")[:3])
+        call_staff = (staff_users or {}).get("caller") or demo_user
         scenario_outcomes = {
             "anc_high_risk": [CallOutcome.CALL_BACK_LATER, CallOutcome.ANSWERED_CONFIRMED_VISIT],
             "anc_rch_missing": [CallOutcome.NO_ANSWER, CallOutcome.INVALID_NUMBER],
@@ -597,12 +741,12 @@ class Command(BaseCommand):
                 task=task,
                 outcome=outcome,
                 notes=f"Seeded {scenario} call attempt #{attempt}",
-                staff_user=demo_user,
+                staff_user=call_staff,
             )
             CaseActivityLog.objects.create(
                 case=case,
                 task=call_log.task,
-                user=demo_user,
+                user=call_staff,
                 event_type=ActivityEventType.CALL,
                 note=f"Call outcome logged: {call_log.get_outcome_display()}",
             )
@@ -627,6 +771,8 @@ class Command(BaseCommand):
 
         if reset_all:
             self._require_reset_all_confirmation(yes_reset_all)
+            all_cases = Case.objects.all()
+            self.delete_mobile_notifications_for_cases(all_cases, reset_all=True)
             CallLog.objects.all().delete()
             CaseActivityLog.objects.all().delete()
             Case.objects.all().delete()
@@ -634,6 +780,7 @@ class Command(BaseCommand):
         elif reset:
             seeded_cases = Case.objects.filter(metadata__source="seed_mock_data")
             seeded_patient_ids = {patient_id for patient_id in seeded_cases.values_list("patient_id", flat=True) if patient_id}
+            self.delete_mobile_notifications_for_cases(seeded_cases)
             CallLog.objects.filter(case__in=seeded_cases).delete()
             CaseActivityLog.objects.filter(case__in=seeded_cases).delete()
             seeded_cases.delete()
@@ -645,6 +792,7 @@ class Command(BaseCommand):
         if demo_user.has_usable_password():
             demo_user.set_unusable_password()
             demo_user.save(update_fields=["password"])
+        staff_users = self._ensure_demo_staff_users(User)
 
         today = timezone.localdate()
         rng = random.Random(20260226)
@@ -675,7 +823,7 @@ class Command(BaseCommand):
             if (case.metadata or {}).get("entry_mode") == "quick_entry":
                 details_task = create_quick_entry_details_task(case, demo_user, due_date=case.review_date)
             tasks = build_default_tasks(case, demo_user)
-            self.mutate_seeded_tasks(case, rng, today)
+            self.mutate_seeded_tasks(case, rng, today, staff_users, i)
             CaseActivityLog.objects.create(
                 case=case,
                 user=demo_user,
@@ -687,7 +835,8 @@ class Command(BaseCommand):
                 ),
             )
 
-            self.seed_calls_for_case(case, demo_user, scenario, rng)
+            self.seed_calls_for_case(case, demo_user, scenario, rng, staff_users)
+            self.seed_mobile_notifications_for_case(case, today)
             if include_vitals:
                 self.seed_vitals_for_case(case, demo_user, today, rng, profile_name)
             created += 1

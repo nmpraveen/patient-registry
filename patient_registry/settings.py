@@ -1,3 +1,4 @@
+from datetime import timedelta
 from pathlib import Path
 
 import environ
@@ -37,13 +38,19 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "corsheaders",
+    "rest_framework",
+    "rest_framework_simplejwt.token_blacklist",
+    "drf_spectacular",
     "patients",
+    "api.apps.ApiConfig",
 ]
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
+    "corsheaders.middleware.CorsMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
@@ -111,6 +118,35 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": (
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
+    ),
+    "DEFAULT_PERMISSION_CLASSES": (
+        "rest_framework.permissions.IsAuthenticated",
+    ),
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+}
+
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=15),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=30),
+    "ROTATE_REFRESH_TOKENS": False,
+    "BLACKLIST_AFTER_ROTATION": True,
+}
+
+SPECTACULAR_SETTINGS = {
+    "TITLE": "MEDTRACK Mobile API",
+    "DESCRIPTION": "Native Android companion API for MEDTRACK case follow-up workflows.",
+    "VERSION": "1.0.0",
+}
+
+CORS_ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in env("CORS_ALLOWED_ORIGINS", default="").split(",")
+    if origin.strip()
+]
+
 LOGIN_URL = "login"
 LOGIN_REDIRECT_URL = "patients:dashboard"
 LOGOUT_REDIRECT_URL = "login"
@@ -121,6 +157,9 @@ DEVICE_APPROVAL_TRUST_COOKIE_NAME = env("DEVICE_APPROVAL_TRUST_COOKIE_NAME", def
 DEVICE_APPROVAL_TRUST_COOKIE_AGE = env.int("DEVICE_APPROVAL_TRUST_COOKIE_AGE", default=315360000)
 WEBAUTHN_RP_ID = env("WEBAUTHN_RP_ID", default="")
 WEBAUTHN_RP_NAME = env("WEBAUTHN_RP_NAME", default="MEDTRACK")
+FCM_ENABLED = env.bool("FCM_ENABLED", default=False)
+FCM_CREDENTIALS_FILE = env("FCM_CREDENTIALS_FILE", default="")
+FCM_PROJECT_ID = env("FCM_PROJECT_ID", default="")
 
 # Deployment hardening toggles (set secure values in production environment).
 SECURE_SSL_REDIRECT = env.bool("SECURE_SSL_REDIRECT", default=False)

@@ -100,6 +100,8 @@ docker compose exec web python manage.py seed_mock_data --count 30 --reset
 - `--reset` clears only previously seeded mock cases (and linked call/activity logs) before seeding.
 - `--reset-all` clears all case/task/activity data before seeding and now requires confirmation.
 - `--yes-reset-all` skips the interactive `--reset-all` confirmation prompt (required in non-interactive runs, e.g. UI/automation).
+- The seed includes today, upcoming, overdue, awaiting-report, red-flag, quick-entry, call-log, notification, ANC, Surgery, and Medicine coverage for Android/UI demos.
+- Demo staff users are created with password `pass`: `demo_admin`, `demo_doctor`, `demo_nurse`, `demo_caller`, and `demo_reception`. On the local Test NNH server, existing `admin` is used for the Admin queue instead.
 
 ## Updating to latest version safely (with backup)
 

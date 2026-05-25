@@ -9571,6 +9571,55 @@ class SeedMockDataCommandTests(TestCase):
         self.assertTrue(Task.objects.filter(case=anc_high_risk, due_date__lt=timezone.localdate()).exists())
         self.assertTrue(Task.objects.filter(case=anc_high_risk, due_date__gt=timezone.localdate()).exists())
 
+        User = get_user_model()
+        expected_demo_users = {
+            "demo_admin": "Admin",
+            "demo_doctor": "Doctor",
+            "demo_nurse": "Nurse",
+            "demo_caller": "Caller",
+            "demo_reception": "Reception",
+        }
+        for username, role_name in expected_demo_users.items():
+            demo_staff = User.objects.get(username=username)
+            self.assertTrue(demo_staff.check_password("pass"))
+            self.assertTrue(demo_staff.groups.filter(name=role_name).exists())
+
+        today = timezone.localdate()
+        seeded_tasks = Task.objects.filter(case__metadata__source="seed_mock_data")
+        self.assertGreaterEqual(seeded_tasks.exclude(assigned_user__isnull=True).values("assigned_user").distinct().count(), 5)
+        self.assertTrue(
+            seeded_tasks.filter(
+                assigned_user__username="demo_admin",
+                status=TaskStatus.SCHEDULED,
+                due_date=today,
+            ).exists()
+        )
+        self.assertTrue(
+            seeded_tasks.filter(
+                assigned_user__username="demo_doctor",
+                status=TaskStatus.SCHEDULED,
+                due_date__lt=today,
+            ).exists()
+        )
+        self.assertTrue(
+            seeded_tasks.filter(
+                assigned_user__username="demo_nurse",
+                status=TaskStatus.SCHEDULED,
+                due_date__gt=today,
+            ).exists()
+        )
+        self.assertTrue(
+            seeded_tasks.filter(
+                assigned_user__username="demo_caller",
+                status=TaskStatus.AWAITING_REPORTS,
+            ).exists()
+        )
+
+        from api.models import MobileNotification
+
+        self.assertTrue(MobileNotification.objects.filter(user__username="demo_admin").exists())
+        self.assertTrue(MobileNotification.objects.filter(notification_type="overdue").exists())
+
         self.assertEqual(VitalEntry.objects.filter(case=anc_high_risk).count(), 6)
         self.assertTrue(CallLog.objects.filter(case=anc_high_risk, task__isnull=False).exists())
         self.assertTrue(CallLog.objects.filter(case=anc_high_risk, task__isnull=True).exists())

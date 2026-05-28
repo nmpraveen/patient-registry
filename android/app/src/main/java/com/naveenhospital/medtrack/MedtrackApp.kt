@@ -9,6 +9,7 @@ import androidx.biometric.BiometricPrompt
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,6 +30,7 @@ import androidx.fragment.app.FragmentActivity
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.HealthAndSafety
 import androidx.compose.material.icons.outlined.Home
@@ -68,6 +70,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -82,6 +85,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.paging.LoadState
 import androidx.paging.compose.collectAsLazyPagingItems
+import com.naveenhospital.medtrack.core.designsystem.R as DesignR
 import com.naveenhospital.medtrack.core.designsystem.MedtrackColors
 import com.naveenhospital.medtrack.core.designsystem.MedtrackCompactCard
 import com.naveenhospital.medtrack.core.designsystem.MedtrackIconBadge
@@ -440,6 +444,7 @@ fun MedtrackApp(
                 composable(Routes.HOME) {
                     val stats by container.medtrackRepository.stats.collectAsState()
                     val categoryOptions by container.medtrackRepository.categoryOptions.collectAsState()
+                    val vitalsThresholds by container.medtrackRepository.vitalsThresholds.collectAsState()
                     var selectedBucket by remember { mutableStateOf<String?>("today") }
                     var selectedScope by remember { mutableStateOf("me") }
                     var searchQuery by remember { mutableStateOf("") }
@@ -546,6 +551,8 @@ fun MedtrackApp(
                         runCatching { container.medtrackRepository.loadCachedCategoryOptions() }
                         runCatching { container.medtrackRepository.refreshCategoryOptions() }
                             .onFailure { error = it.message ?: "Unable to load filters" }
+                        runCatching { container.medtrackRepository.loadCachedVitalsThresholds() }
+                        runCatching { container.medtrackRepository.refreshVitalsThresholds() }
                     }
 
                     LaunchedEffect(pendingWriteCount) {
@@ -600,6 +607,7 @@ fun MedtrackApp(
                         categoryOptions = categoryOptions,
                         selectedCategories = selectedCategories,
                         selectedSubcategories = selectedSubcategories,
+                        vitalsThresholds = vitalsThresholds,
                         pendingWriteCount = pendingWriteCount,
                         isRefreshing = isRefreshing || pagedCases.loadState.refresh is LoadState.Loading,
                         isLoadingMore = pagedCases.loadState.append is LoadState.Loading,
@@ -1022,6 +1030,7 @@ fun MedtrackApp(
                     CallsScreen(
                         modifier = Modifier.fillMaxSize(),
                         cases = cases,
+                        callerName = currentUserDisplayName ?: "Staff",
                         isRefreshing = isRefreshing,
                         error = error,
                         actionMessage = actionMessage,
@@ -1340,6 +1349,9 @@ private fun QuickAddSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val pathways = categoryOptions.quickAddPathways()
+    var searchQuery by remember { mutableStateOf("") }
+    var selectedPathwayLabel by remember(pathways) { mutableStateOf(pathways.firstOrNull()?.label) }
+    val selectedPathway = pathways.firstOrNull { it.label == selectedPathwayLabel }
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -1372,57 +1384,81 @@ private fun QuickAddSheet(
                 MedtrackIconBadge(icon = Icons.Outlined.HealthAndSafety, tint = MedtrackColors.Primary)
             }
 
-            MedtrackCompactCard {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    MedtrackIconBadge(icon = Icons.Outlined.Search, tint = MedtrackColors.Primary)
-                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text("Find existing patient", fontWeight = FontWeight.Bold, color = MedtrackColors.Ink)
-                        Text("Uses the current case list and filters.", color = MedtrackColors.Muted, style = MaterialTheme.typography.bodySmall)
-                    }
-                }
-                Button(onClick = onOpenHomeSearch, modifier = Modifier.fillMaxWidth()) {
-                    Text("Search home")
-                }
-            }
+            QuickAddSearchBar(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                onSearch = onOpenHomeSearch,
+            )
 
-            MedtrackSectionTitle(title = "Pathways", trailing = "web-backed")
+            MedtrackSectionTitle(title = "Pathways")
             Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                pathways.chunked(2).forEach { rowPathways ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        rowPathways.forEach { pathway ->
-                            QuickAddPathway(
-                                label = pathway.label,
-                                color = pathway.color,
-                                modifier = Modifier.weight(1f),
-                            )
-                        }
-                        if (rowPathways.size == 1) {
-                            Spacer(modifier = Modifier.weight(1f))
-                        }
-                    }
+                pathways.forEach { pathway ->
+                    QuickAddPathway(
+                        pathway = pathway,
+                        selected = pathway.label == selectedPathwayLabel,
+                        onClick = { selectedPathwayLabel = pathway.label },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                 }
-            }
-
-            Surface(
-                shape = RoundedCornerShape(14.dp),
-                color = MedtrackColors.WarningSoft,
-                border = BorderStroke(1.dp, MedtrackColors.Warning.copy(alpha = 0.24f)),
-            ) {
-                Text(
-                    text = "New case entry is handled on the web for now.",
-                    color = MedtrackColors.Warning,
-                    style = MaterialTheme.typography.bodySmall,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(12.dp),
-                )
             }
 
             Button(
                 onClick = onOpenCases,
+                enabled = selectedPathway != null,
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(containerColor = MedtrackColors.Ink),
             ) {
-                Text("Open case list")
+                Text(selectedPathway?.let { "Continue - ${it.label}" } ?: "Continue")
+            }
+        }
+    }
+}
+
+@Composable
+private fun QuickAddSearchBar(
+    value: String,
+    onValueChange: (String) -> Unit,
+    onSearch: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(54.dp),
+        shape = RoundedCornerShape(18.dp),
+        color = MedtrackColors.Card,
+        border = BorderStroke(1.dp, MedtrackColors.Border),
+    ) {
+        Row(
+            modifier = Modifier.padding(start = 14.dp, end = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(9.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.Search,
+                contentDescription = null,
+                tint = MedtrackColors.Primary,
+                modifier = Modifier.size(20.dp),
+            )
+            Box(modifier = Modifier.weight(1f)) {
+                BasicTextField(
+                    value = value,
+                    onValueChange = onValueChange,
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = MedtrackColors.Ink),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (value.isBlank()) {
+                    Text(
+                        text = "Search patient, UHID, phone",
+                        color = MedtrackColors.Muted,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            TextButton(onClick = onSearch) {
+                Text("Search")
             }
         }
     }
@@ -1430,30 +1466,54 @@ private fun QuickAddSheet(
 
 @Composable
 private fun QuickAddPathway(
-    label: String,
-    color: Color,
+    pathway: QuickAddPathwaySpec,
+    selected: Boolean,
+    onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val color = pathway.color
     Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(14.dp),
-        color = color.copy(alpha = 0.11f),
-        border = BorderStroke(1.dp, color.copy(alpha = 0.22f)),
+        modifier = modifier.clickable(onClick = onClick),
+        shape = RoundedCornerShape(16.dp),
+        color = if (selected) color.copy(alpha = 0.14f) else MedtrackColors.Card,
+        border = BorderStroke(1.dp, if (selected) color.copy(alpha = 0.42f) else MedtrackColors.Border),
     ) {
-        Column(
-            modifier = Modifier.padding(10.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp),
+            horizontalArrangement = Arrangement.spacedBy(11.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            MedtrackIconBadge(icon = Icons.Outlined.Add, tint = color, modifier = Modifier.size(34.dp))
+            Surface(
+                modifier = Modifier.size(40.dp),
+                shape = RoundedCornerShape(12.dp),
+                color = color.copy(alpha = 0.14f),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        painter = painterResource(pathway.iconResId),
+                        contentDescription = null,
+                        tint = color,
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
+            }
             Text(
-                text = label,
-                color = color,
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold,
+                text = pathway.label,
+                color = if (selected) color else MedtrackColors.Ink,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.ExtraBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
             )
+            if (selected) {
+                Icon(
+                    imageVector = Icons.Outlined.CheckCircle,
+                    contentDescription = null,
+                    tint = color,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
         }
     }
 }
@@ -1578,32 +1638,38 @@ private fun ProfileScreen(
 private data class QuickAddPathwaySpec(
     val label: String,
     val color: Color,
+    val category: CaseCategory,
+    val iconResId: Int,
 )
 
 private fun List<CategoryFilterOption>.quickAddPathways(): List<QuickAddPathwaySpec> {
-    val fromServer = map { option ->
-        QuickAddPathwaySpec(
-            label = option.label,
-            color = categoryColor(option.label, option.category),
-        )
-    }
-    val pathways = if (fromServer.isNotEmpty()) fromServer else defaultQuickAddPathways()
-    return pathways.ensureCustomRehabPathway()
+    val supportedCategories = setOf(CaseCategory.ANC, CaseCategory.MEDICINE, CaseCategory.SURGERY)
+    val fromServer = filter { it.category in supportedCategories }
+        .distinctBy { it.category }
+        .map { option ->
+            QuickAddPathwaySpec(
+                label = option.label,
+                color = categoryColor(option.label, option.category),
+                category = option.category,
+                iconResId = option.category.quickAddIconResId(),
+            )
+        }
+    return if (fromServer.isNotEmpty()) fromServer else defaultQuickAddPathways()
 }
 
 private fun defaultQuickAddPathways(): List<QuickAddPathwaySpec> =
     listOf(
-        QuickAddPathwaySpec("ANC", MedtrackColors.Anc),
-        QuickAddPathwaySpec("Surgery", MedtrackColors.Surgery),
-        QuickAddPathwaySpec("Medicine", MedtrackColors.Medicine),
-        QuickAddPathwaySpec("Custom Rehab", MedtrackColors.CustomRehab),
+        QuickAddPathwaySpec("ANC", MedtrackColors.Anc, CaseCategory.ANC, CaseCategory.ANC.quickAddIconResId()),
+        QuickAddPathwaySpec("Surgery", MedtrackColors.Surgery, CaseCategory.SURGERY, CaseCategory.SURGERY.quickAddIconResId()),
+        QuickAddPathwaySpec("Medicine", MedtrackColors.Medicine, CaseCategory.MEDICINE, CaseCategory.MEDICINE.quickAddIconResId()),
     )
 
-private fun List<QuickAddPathwaySpec>.ensureCustomRehabPathway(): List<QuickAddPathwaySpec> =
-    if (any { it.label.isCustomRehabLabel() }) {
-        this
-    } else {
-        this + QuickAddPathwaySpec("Custom Rehab", MedtrackColors.CustomRehab)
+private fun CaseCategory.quickAddIconResId(): Int =
+    when (this) {
+        CaseCategory.ANC -> DesignR.drawable.ic_cat_anc
+        CaseCategory.SURGERY -> DesignR.drawable.ic_cat_surgery
+        CaseCategory.MEDICINE -> DesignR.drawable.ic_cat_medicine
+        CaseCategory.OTHER -> DesignR.drawable.ic_cat_medicine
     }
 
 private fun UserProfileDto?.roleLabel(): String =

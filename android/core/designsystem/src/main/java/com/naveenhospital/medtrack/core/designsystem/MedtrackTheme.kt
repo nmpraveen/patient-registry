@@ -27,36 +27,45 @@ private val MedtrackLightColorScheme = lightColorScheme(
     error = MedtrackColors.Danger,
 )
 
-private val RobotoFlexFontFamily by lazy {
-    FontFamily(Font(R.font.roboto_flex_variable))
+private val BricolageFontFamily by lazy {
+    FontFamily(Font(R.font.bricolage_grotesque_variable))
 }
 
-private fun medtrackTypography(): Typography =
-    Typography().withFontFamily(
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            RobotoFlexFontFamily
-        } else {
-            FontFamily.SansSerif
-        },
-    )
+private val InterFontFamily by lazy {
+    FontFamily(Font(R.font.inter_variable))
+}
 
-private fun Typography.withFontFamily(fontFamily: FontFamily): Typography =
+private fun medtrackTypography(): Typography {
+    val displayFamily = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        BricolageFontFamily
+    } else {
+        FontFamily.SansSerif
+    }
+    val bodyFamily = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        InterFontFamily
+    } else {
+        FontFamily.SansSerif
+    }
+    return Typography().withFontFamilies(displayFamily = displayFamily, bodyFamily = bodyFamily)
+}
+
+private fun Typography.withFontFamilies(displayFamily: FontFamily, bodyFamily: FontFamily): Typography =
     Typography(
-        displayLarge = displayLarge.copy(fontFamily = fontFamily),
-        displayMedium = displayMedium.copy(fontFamily = fontFamily),
-        displaySmall = displaySmall.copy(fontFamily = fontFamily),
-        headlineLarge = headlineLarge.copy(fontFamily = fontFamily),
-        headlineMedium = headlineMedium.copy(fontFamily = fontFamily),
-        headlineSmall = headlineSmall.copy(fontFamily = fontFamily),
-        titleLarge = titleLarge.copy(fontFamily = fontFamily),
-        titleMedium = titleMedium.copy(fontFamily = fontFamily),
-        titleSmall = titleSmall.copy(fontFamily = fontFamily),
-        bodyLarge = bodyLarge.copy(fontFamily = fontFamily),
-        bodyMedium = bodyMedium.copy(fontFamily = fontFamily),
-        bodySmall = bodySmall.copy(fontFamily = fontFamily),
-        labelLarge = labelLarge.copy(fontFamily = fontFamily),
-        labelMedium = labelMedium.copy(fontFamily = fontFamily),
-        labelSmall = labelSmall.copy(fontFamily = fontFamily),
+        displayLarge = displayLarge.copy(fontFamily = displayFamily),
+        displayMedium = displayMedium.copy(fontFamily = displayFamily),
+        displaySmall = displaySmall.copy(fontFamily = displayFamily),
+        headlineLarge = headlineLarge.copy(fontFamily = displayFamily),
+        headlineMedium = headlineMedium.copy(fontFamily = displayFamily),
+        headlineSmall = headlineSmall.copy(fontFamily = displayFamily),
+        titleLarge = titleLarge.copy(fontFamily = displayFamily),
+        titleMedium = titleMedium.copy(fontFamily = displayFamily),
+        titleSmall = titleSmall.copy(fontFamily = displayFamily),
+        bodyLarge = bodyLarge.copy(fontFamily = bodyFamily),
+        bodyMedium = bodyMedium.copy(fontFamily = bodyFamily),
+        bodySmall = bodySmall.copy(fontFamily = bodyFamily),
+        labelLarge = labelLarge.copy(fontFamily = bodyFamily),
+        labelMedium = labelMedium.copy(fontFamily = bodyFamily),
+        labelSmall = labelSmall.copy(fontFamily = bodyFamily),
     )
 
 @Composable

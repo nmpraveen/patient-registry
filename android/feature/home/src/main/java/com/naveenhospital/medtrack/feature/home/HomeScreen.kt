@@ -78,6 +78,7 @@ import com.naveenhospital.medtrack.core.domain.model.CategoryFilterOption
 import com.naveenhospital.medtrack.core.domain.model.InboxStats
 import com.naveenhospital.medtrack.core.domain.model.PatientCase
 import com.naveenhospital.medtrack.core.domain.model.SubcategoryFilterOption
+import com.naveenhospital.medtrack.core.domain.model.VitalsThresholdConfig
 import androidx.paging.compose.LazyPagingItems
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -159,6 +160,7 @@ fun HomeScreen(
     categoryOptions: List<CategoryFilterOption>,
     selectedCategories: Set<String>,
     selectedSubcategories: Set<String>,
+    vitalsThresholds: VitalsThresholdConfig?,
     pendingWriteCount: Int,
     isRefreshing: Boolean,
     isLoadingMore: Boolean,
@@ -276,6 +278,7 @@ fun HomeScreen(
                         patientCase = patientCase,
                         selectedBucket = selectedBucket,
                         expanded = expandedCaseId == patientCase.id,
+                        vitalsThresholds = vitalsThresholds,
                         onToggle = {
                             expandedCaseId = if (expandedCaseId == patientCase.id) null else patientCase.id
                         },
@@ -904,6 +907,7 @@ private fun PatientCard(
     patientCase: PatientCase,
     selectedBucket: String?,
     expanded: Boolean,
+    vitalsThresholds: VitalsThresholdConfig?,
     onToggle: () -> Unit,
     onCallPatient: () -> Unit,
     onMessagePatient: () -> Unit,
@@ -914,8 +918,8 @@ private fun PatientCard(
 ) {
     var dragOffset by rememberSaveable(patientCase.id) { mutableStateOf(0f) }
     val density = LocalDensity.current
-    val swipeThreshold = with(density) { 88.dp.toPx() }
-    val maxDrag = with(density) { 180.dp.toPx() }
+    val swipeThreshold = with(density) { 40.dp.toPx() }
+    val maxDrag = with(density) { 96.dp.toPx() }
     val railColor = patientCase.cardRailColor()
     var useShortName by rememberSaveable(patientCase.id) { mutableStateOf(false) }
     val displayName = if (useShortName) patientCase.compactDisplayName() else patientCase.patientName
@@ -925,17 +929,25 @@ private fun PatientCard(
         modifier = Modifier
             .fillMaxWidth()
             .pointerInput(patientCase.id) {
-                detectTapGestures(onTap = { onToggle() })
+                detectTapGestures(
+                    onTap = {
+                        if (dragOffset != 0f) {
+                            dragOffset = 0f
+                        } else {
+                            onToggle()
+                        }
+                    },
+                )
             }
             .pointerInput(patientCase.id, patientCase.phoneNumber, patientCase.nextTaskId, swipeThreshold, maxDrag) {
                 detectHorizontalDragGestures(
                     onDragCancel = { dragOffset = 0f },
                     onDragEnd = {
-                        when {
-                            dragOffset <= -swipeThreshold && patientCase.phoneNumber != null -> onCallPatient()
-                            dragOffset >= swipeThreshold && patientCase.nextTaskId != null -> onCompleteTask()
+                        dragOffset = when {
+                            dragOffset <= -swipeThreshold && patientCase.phoneNumber != null -> -maxDrag
+                            dragOffset >= swipeThreshold && patientCase.nextTaskId != null -> maxDrag
+                            else -> 0f
                         }
-                        dragOffset = 0f
                     },
                     onHorizontalDrag = { change, dragAmount ->
                         change.consume()
@@ -948,6 +960,14 @@ private fun PatientCard(
             dragOffset = dragOffset,
             canCall = patientCase.phoneNumber != null,
             canComplete = patientCase.nextTaskId != null,
+            onCallPatient = {
+                dragOffset = 0f
+                onCallPatient()
+            },
+            onCompleteTask = {
+                dragOffset = 0f
+                onCompleteTask()
+            },
         )
         Surface(
             modifier = Modifier
@@ -1075,8 +1095,10 @@ private fun PatientCard(
                         }
                     }
 
-                    patientCase.latestVitalSummary?.takeIf { it.isNotBlank() }?.let {
-                        VitalStrip(summary = it)
+                    if (expanded) {
+                        patientCase.latestVitalSummary?.takeIf { it.isNotBlank() }?.let {
+                            VitalStrip(summary = it, thresholds = vitalsThresholds)
+                        }
                     }
 
                     if (expanded) {
@@ -1244,61 +1266,151 @@ private fun String.compactDueLabel(): String {
 }
 
 @Composable
-private fun VitalStrip(summary: String) {
-    val metrics = summary.split("|").map { it.trim() }.filter { it.isNotBlank() }.take(4)
+private fun VitalStrip(summary: String, thresholds: VitalsThresholdConfig?) {
+    val metrics = summary.toVitalMetrics(thresholds)
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(9.dp),
-        color = MedtrackColors.Surface,
+        shape = RoundedCornerShape(14.dp),
+        color = MedtrackColors.SurfaceAlt.copy(alpha = 0.72f),
+        border = androidx.compose.foundation.BorderStroke(1.dp, MedtrackColors.Border.copy(alpha = 0.7f)),
     ) {
         Row(
             modifier = Modifier.padding(
-                horizontal = HomeUiScale.VitalPaddingHorizontal,
-                vertical = HomeUiScale.VitalPaddingVertical,
+                horizontal = 6.dp,
+                vertical = 6.dp,
             ),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            metrics.forEachIndexed { index, metric ->
-                val parts = metric.split(Regex("\\s+"), limit = 2)
+            metrics.forEach { metric ->
                 VitalMetric(
-                    label = parts.firstOrNull().orEmpty(),
-                    value = parts.getOrNull(1).orEmpty(),
+                    metric = metric,
                     modifier = Modifier.weight(1f),
                 )
-                if (index < metrics.lastIndex) {
-                    Box(
-                        modifier = Modifier
-                            .width(1.dp)
-                            .height(22.dp)
-                            .background(MedtrackColors.Border.copy(alpha = 0.55f)),
-                    )
-                }
             }
         }
     }
 }
 
 @Composable
-private fun VitalMetric(label: String, value: String, modifier: Modifier = Modifier) {
-    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(1.dp)) {
-        Text(
-            text = label.uppercase(Locale.getDefault()),
-            color = MedtrackColors.Muted,
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.Bold,
-            maxLines = 1,
-        )
-        Text(
-            text = value,
-            color = MedtrackColors.Ink,
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.Bold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+private fun VitalMetric(metric: VitalMetricDisplay, modifier: Modifier = Modifier) {
+    val color = metric.status.vitalStatusColor()
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(10.dp),
+        color = color.copy(alpha = if (metric.status == "na") 0.08f else 0.13f),
+        border = androidx.compose.foundation.BorderStroke(1.dp, color.copy(alpha = if (metric.status == "na") 0.12f else 0.24f)),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = HomeUiScale.VitalPaddingHorizontal, vertical = HomeUiScale.VitalPaddingVertical),
+            verticalArrangement = Arrangement.spacedBy(1.dp),
+        ) {
+            Text(
+                text = metric.label.uppercase(Locale.getDefault()),
+                color = MedtrackColors.Muted,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+            )
+            Text(
+                text = metric.value,
+                color = color,
+                style = MaterialTheme.typography.titleSmall.copy(fontSize = 14.sp),
+                fontWeight = FontWeight.ExtraBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
+
+private data class VitalMetricDisplay(
+    val label: String,
+    val value: String,
+    val status: String,
+)
+
+private fun String.toVitalMetrics(thresholds: VitalsThresholdConfig?): List<VitalMetricDisplay> =
+    split("|")
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+        .take(4)
+        .map { metric ->
+            val parts = metric.split(Regex("\\s+"), limit = 2)
+            val label = parts.firstOrNull().orEmpty()
+            val value = parts.getOrNull(1).orEmpty()
+            VitalMetricDisplay(label = label, value = value, status = label.vitalStatusFor(value, thresholds))
+        }
+
+private fun String.vitalStatusFor(value: String, thresholds: VitalsThresholdConfig?): String {
+    val normalized = trim().lowercase(Locale.US).replace(" ", "")
+    return when (normalized) {
+        "bp" -> {
+            val parts = value.split("/")
+            val systolic = parts.getOrNull(0)?.filter(Char::isDigit)?.toIntOrNull()
+            val diastolic = parts.getOrNull(1)?.filter(Char::isDigit)?.toIntOrNull()
+            thresholds?.evaluateBloodPressure(systolic, diastolic)?.status
+                ?: fallbackBloodPressureStatus(systolic, diastolic)
+        }
+        "pr", "pulse" -> {
+            val number = value.extractNumericValue()
+            thresholds?.evaluateMetric("pr", number)?.status ?: fallbackPulseStatus(number)
+        }
+        "spo2", "spo₂" -> {
+            val number = value.extractNumericValue()
+            thresholds?.evaluateMetric("spo2", number)?.status ?: fallbackSpo2Status(number)
+        }
+        "hb", "hgb", "hemoglobin" -> {
+            val number = value.extractNumericValue()
+            thresholds?.evaluateMetric("hemoglobin", number)?.status ?: fallbackHemoglobinStatus(number)
+        }
+        else -> "na"
+    }
+}
+
+private fun String.extractNumericValue(): Double? =
+    Regex("""-?\d+(\.\d+)?""").find(this)?.value?.toDoubleOrNull()
+
+private fun fallbackBloodPressureStatus(systolic: Int?, diastolic: Int?): String =
+    when {
+        systolic == null && diastolic == null -> "na"
+        systolic != null && systolic >= 140 || diastolic != null && diastolic >= 90 -> "red"
+        systolic != null && systolic >= 120 || diastolic != null && diastolic >= 80 -> "orange"
+        else -> "green"
+    }
+
+private fun fallbackPulseStatus(value: Double?): String =
+    when {
+        value == null -> "na"
+        value < 50.0 || value > 110.0 -> "red"
+        value < 60.0 || value > 100.0 -> "orange"
+        else -> "green"
+    }
+
+private fun fallbackSpo2Status(value: Double?): String =
+    when {
+        value == null -> "na"
+        value < 92.0 -> "red"
+        value < 96.0 -> "orange"
+        else -> "green"
+    }
+
+private fun fallbackHemoglobinStatus(value: Double?): String =
+    when {
+        value == null -> "na"
+        value < 10.0 -> "red"
+        value < 11.0 -> "orange"
+        else -> "green"
+    }
+
+private fun String.vitalStatusColor(): Color =
+    when (this) {
+        "green" -> MedtrackColors.Success
+        "orange" -> MedtrackColors.Warning
+        "red" -> MedtrackColors.Danger
+        "neutral" -> MedtrackColors.Primary
+        else -> MedtrackColors.Muted
+    }
 
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
@@ -1384,6 +1496,8 @@ private fun BoxScope.SwipeActionBackground(
     dragOffset: Float,
     canCall: Boolean,
     canComplete: Boolean,
+    onCallPatient: () -> Unit,
+    onCompleteTask: () -> Unit,
 ) {
     val isCall = dragOffset < 0f
     val isActive = dragOffset != 0f
@@ -1397,22 +1511,36 @@ private fun BoxScope.SwipeActionBackground(
     }
     val alignment = if (isCall) Alignment.CenterEnd else Alignment.CenterStart
     val label = if (isCall) "Call" else "Done"
+    val action = if (isCall) onCallPatient else onCompleteTask
 
     Box(
         modifier = Modifier
             .matchParentSize()
-            .background(color = color, shape = RoundedCornerShape(HomeUiScale.CardRadius))
-            .padding(horizontal = 18.dp),
+            .background(MedtrackColors.SurfaceAlt, shape = RoundedCornerShape(HomeUiScale.CardRadius))
+            .padding(horizontal = 8.dp, vertical = 7.dp),
         contentAlignment = alignment,
     ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                imageVector = if (isCall) Icons.Outlined.Phone else Icons.Outlined.CheckCircle,
-                contentDescription = null,
-                tint = Color.White,
-                modifier = Modifier.size(19.dp),
-            )
-            Text(text = label, color = Color.White, fontWeight = FontWeight.SemiBold)
+        Surface(
+            modifier = Modifier
+                .width(80.dp)
+                .height(88.dp)
+                .clickable(enabled = enabled, onClick = action),
+            shape = RoundedCornerShape(16.dp),
+            color = color,
+            shadowElevation = if (enabled) 2.dp else 0.dp,
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Icon(
+                    imageVector = if (isCall) Icons.Outlined.Phone else Icons.Outlined.CheckCircle,
+                    contentDescription = label,
+                    tint = Color.White,
+                    modifier = Modifier.size(19.dp),
+                )
+                Text(text = label, color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
+            }
         }
     }
 }

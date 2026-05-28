@@ -59,6 +59,7 @@ import java.util.Locale
 @Composable
 fun CallsScreen(
     cases: List<PatientCase>,
+    callerName: String,
     isRefreshing: Boolean,
     error: String?,
     actionMessage: String?,
@@ -81,7 +82,9 @@ fun CallsScreen(
     }
     val upNext = visibleCases.firstOrNull()
     val priorityCount = callableCases.count { it.isHighRisk }
-    val priorityProgress = if (callableCases.isEmpty()) 0f else priorityCount.toFloat() / callableCases.size.toFloat()
+    val remainingCount = visibleCases.size
+    val totalCount = callableCases.size
+    val remainingProgress = if (totalCount == 0) 0f else remainingCount.toFloat() / totalCount.toFloat()
 
     Column(
         modifier = modifier
@@ -112,8 +115,11 @@ fun CallsScreen(
 
         CallQueueHero(
             upNext = upNext,
-            priorityCount = priorityCount,
-            progress = priorityProgress,
+            callerName = callerName,
+            remainingCount = remainingCount,
+            totalCount = totalCount,
+            redCount = priorityCount,
+            progress = remainingProgress,
             onOpenCase = onOpenCase,
             onCallPatient = onCallPatient,
         )
@@ -151,7 +157,10 @@ fun CallsScreen(
 @Composable
 private fun CallQueueHero(
     upNext: PatientCase?,
-    priorityCount: Int,
+    callerName: String,
+    remainingCount: Int,
+    totalCount: Int,
+    redCount: Int,
     progress: Float,
     onOpenCase: (String) -> Unit,
     onCallPatient: (PatientCase) -> Unit,
@@ -170,7 +179,15 @@ private fun CallQueueHero(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp), modifier = Modifier.weight(1f)) {
-                    Text("Up next", color = MedtrackColors.Muted, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                    Text(
+                        text = "Caller - $callerName",
+                        color = MedtrackColors.Muted,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text("Up next", color = MedtrackColors.Primary, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                     Text(
                         text = upNext?.patientName ?: "No call selected",
                         color = MedtrackColors.Ink,
@@ -191,14 +208,21 @@ private fun CallQueueHero(
                     CircularProgressIndicator(
                         progress = { progress.coerceIn(0f, 1f) },
                         modifier = Modifier.size(70.dp),
-                        color = if (priorityCount > 0) MedtrackColors.Danger else MedtrackColors.Primary,
+                        color = MedtrackColors.Primary,
                         trackColor = MedtrackColors.SurfaceAlt,
                         strokeWidth = 7.dp,
                     )
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(priorityCount.toString(), color = MedtrackColors.Ink, fontWeight = FontWeight.Bold)
-                        Text("red", color = MedtrackColors.Muted, style = MaterialTheme.typography.labelSmall)
+                        Text(remainingCount.toString(), color = MedtrackColors.Ink, fontWeight = FontWeight.Bold)
+                        Text("left", color = MedtrackColors.Muted, style = MaterialTheme.typography.labelSmall)
                     }
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.fillMaxWidth()) {
+                MedtrackMiniPill(text = "$remainingCount of $totalCount left", color = MedtrackColors.Primary)
+                MedtrackMiniPill(text = "~${remainingCount * 3} min left", color = MedtrackColors.Warning)
+                if (redCount > 0) {
+                    MedtrackMiniPill(text = "$redCount red", color = MedtrackColors.Danger)
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {

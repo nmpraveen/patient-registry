@@ -674,6 +674,7 @@ private fun CaseEntity.toDomain(): PatientCase =
         place = place,
         phoneNumber = phoneNumber,
         category = category.toCategory(),
+        categoryLabel = category.ifBlank { category.toCategory().label },
         subcategoryValue = subcategoryValue,
         subcategoryLabel = subcategoryLabel,
         status = status.toStatus(),

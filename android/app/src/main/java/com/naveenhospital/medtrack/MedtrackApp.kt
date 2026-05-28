@@ -89,8 +89,11 @@ import com.naveenhospital.medtrack.core.designsystem.MedtrackMiniPill
 import com.naveenhospital.medtrack.core.designsystem.MedtrackTheme
 import com.naveenhospital.medtrack.core.designsystem.MedtrackPage
 import com.naveenhospital.medtrack.core.designsystem.MedtrackSectionTitle
+import com.naveenhospital.medtrack.core.data.sync.PendingWriteTypes
+import com.naveenhospital.medtrack.core.domain.model.CategoryFilterOption
 import com.naveenhospital.medtrack.core.domain.model.PatientCase
 import com.naveenhospital.medtrack.core.domain.model.CaseCategory
+import com.naveenhospital.medtrack.core.domain.model.SyncConflict
 import com.naveenhospital.medtrack.core.network.model.UserProfileDto
 import com.naveenhospital.medtrack.feature.auth.LockSetupScreen
 import com.naveenhospital.medtrack.feature.auth.LoginScreen
@@ -182,7 +185,10 @@ fun MedtrackApp(
     val syncConflicts by container.medtrackRepository.syncConflicts.collectAsState(initial = emptyList())
     val pendingWriteCount by container.medtrackRepository.pendingWriteCount.collectAsState(initial = 0)
     val shellNotifications by container.medtrackRepository.notifications.collectAsState(initial = emptyList())
+    val cachedCases by container.medtrackRepository.cases.collectAsState(initial = emptyList())
+    val shellCategoryOptions by container.medtrackRepository.categoryOptions.collectAsState(initial = emptyList())
     val snackbarHostState = remember { SnackbarHostState() }
+    var currentUserProfile by remember { mutableStateOf<UserProfileDto?>(null) }
     var currentUserDisplayName by remember { mutableStateOf<String?>(null) }
     var showQuickAddSheet by remember { mutableStateOf(false) }
     val currentRoute = currentDestination?.route
@@ -205,16 +211,29 @@ fun MedtrackApp(
         }
     }
 
+    fun setCurrentUser(profile: UserProfileDto) {
+        currentUserProfile = profile
+        currentUserDisplayName = profile.headerName()
+    }
+
     fun signOut() {
         scope.launch {
             val deviceToken = container.medtrackRepository.currentPushTokenForLogout()
             container.authRepository.logout(deviceToken = deviceToken)
+            currentUserProfile = null
             currentUserDisplayName = null
             navController.navigate(Routes.LOGIN) {
                 popUpTo(navController.graph.findStartDestination().id) {
                     inclusive = true
                 }
             }
+        }
+    }
+
+    LaunchedEffect(showQuickAddSheet) {
+        if (showQuickAddSheet && shellCategoryOptions.isEmpty()) {
+            runCatching { container.medtrackRepository.loadCachedCategoryOptions() }
+            runCatching { container.medtrackRepository.refreshCategoryOptions() }
         }
     }
 
@@ -319,7 +338,7 @@ fun MedtrackApp(
                     LoginScreen(
                         modifier = Modifier.fillMaxSize(),
                         onLogin = { username, password ->
-                            currentUserDisplayName = container.authRepository.login(username, password).headerName()
+                            setCurrentUser(container.authRepository.login(username, password))
                             val hasLock = container.lockStore.hasAnyLock()
                             val nextRoute = if (hasLock) Routes.HOME else Routes.LOCK_SETUP
                             if (hasLock) {
@@ -378,7 +397,7 @@ fun MedtrackApp(
                             }
                             return@UnlockScreen if (container.authRepository.restoreSession()) {
                                 runCatching {
-                                    currentUserDisplayName = container.authRepository.currentUser().headerName()
+                                    setCurrentUser(container.authRepository.currentUser())
                                 }
                                 onAuthenticated()
                                 navController.navigate(Routes.HOME) {
@@ -400,7 +419,7 @@ fun MedtrackApp(
                                     scope.launch {
                                         if (container.authRepository.restoreSession()) {
                                             runCatching {
-                                                currentUserDisplayName = container.authRepository.currentUser().headerName()
+                                                setCurrentUser(container.authRepository.currentUser())
                                             }
                                             onAuthenticated()
                                             navController.navigate(Routes.HOME) {
@@ -455,9 +474,9 @@ fun MedtrackApp(
                     val pagingAppendError = (pagedCases.loadState.append as? LoadState.Error)?.error?.message
 
                     LaunchedEffect(Unit) {
-                        if (currentUserDisplayName.isNullOrBlank()) {
+                        if (currentUserProfile == null) {
                             runCatching {
-                                currentUserDisplayName = container.authRepository.currentUser().headerName()
+                                setCurrentUser(container.authRepository.currentUser())
                             }
                         }
                     }
@@ -606,8 +625,8 @@ fun MedtrackApp(
                         },
                         onCategoryFilterSelected = { patientCase ->
                             val categoryValue = categoryOptions.firstOrNull {
-                                it.category == patientCase.category || it.label.equals(patientCase.category.label, ignoreCase = true)
-                            }?.value ?: patientCase.category.label
+                                it.label.equals(patientCase.categoryLabel, ignoreCase = true) || it.category == patientCase.category
+                            }?.value ?: patientCase.categoryLabel
                             val subcategoryValue = patientCase.subcategoryValue?.takeIf { it.isNotBlank() }
                             if (subcategoryValue == null) {
                                 selectedCategories = setOf(categoryValue)
@@ -1088,15 +1107,17 @@ fun MedtrackApp(
                 }
                 composable(Routes.ME) {
                     LaunchedEffect(Unit) {
-                        if (currentUserDisplayName.isNullOrBlank()) {
+                        if (currentUserProfile == null) {
                             runCatching {
-                                currentUserDisplayName = container.authRepository.currentUser().headerName()
+                                setCurrentUser(container.authRepository.currentUser())
                             }
                         }
                     }
                     ProfileScreen(
                         modifier = Modifier.fillMaxSize(),
                         displayName = currentUserDisplayName ?: "MEDTRACK user",
+                        roleLabel = currentUserProfile.roleLabel(),
+                        buildLabel = "MEDTRACK ${BuildConfig.VERSION_NAME} \u00B7 code ${BuildConfig.VERSION_CODE}",
                         pendingWriteCount = pendingWriteCount,
                         unreadNotificationCount = shellNotifications.count { !it.isRead },
                         onOpenNotifications = { navController.navigate(Routes.NOTIFICATIONS) },
@@ -1108,6 +1129,7 @@ fun MedtrackApp(
 
         if (showQuickAddSheet && showBottomNav) {
             QuickAddSheet(
+                categoryOptions = shellCategoryOptions,
                 onDismiss = { showQuickAddSheet = false },
                 onOpenCases = {
                     showQuickAddSheet = false
@@ -1123,12 +1145,38 @@ fun MedtrackApp(
         syncConflicts.firstOrNull()?.takeIf {
             currentDestination?.route !in setOf(Routes.LOGIN, Routes.LOCK_SETUP, Routes.UNLOCK)
         }?.let { conflict ->
+            val conflictCase = cachedCases.firstOrNull { it.id == conflict.caseId }
             AlertDialog(
                 onDismissRequest = {
                     scope.launch { container.medtrackRepository.dismissSyncConflict(conflict.clientWriteId) }
                 },
                 title = { Text("Sync conflict") },
-                text = { Text("Server version was kept for an offline change.") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            text = conflict.caseLabel(conflictCase),
+                            color = MedtrackColors.Ink,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Text(
+                            text = conflict.message.ifBlank { "Server version was kept for an offline change." },
+                            color = MedtrackColors.Muted,
+                        )
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MedtrackColors.WarningSoft,
+                            border = BorderStroke(1.dp, MedtrackColors.Warning.copy(alpha = 0.22f)),
+                        ) {
+                            Text(
+                                text = "${conflict.fieldLabel()}: ${conflict.localChangeLabel()} -> server kept",
+                                color = MedtrackColors.Warning,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(10.dp),
+                            )
+                        }
+                    }
+                },
                 confirmButton = {
                     TextButton(
                         onClick = {
@@ -1285,11 +1333,13 @@ private fun RowScope.BottomNavItem(
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
 private fun QuickAddSheet(
+    categoryOptions: List<CategoryFilterOption>,
     onDismiss: () -> Unit,
     onOpenCases: () -> Unit,
     onOpenHomeSearch: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val pathways = categoryOptions.quickAddPathways()
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -1336,10 +1386,21 @@ private fun QuickAddSheet(
             }
 
             MedtrackSectionTitle(title = "Pathways", trailing = "web-backed")
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                QuickAddPathway("ANC", CaseCategory.ANC, Modifier.weight(1f))
-                QuickAddPathway("Surgery", CaseCategory.SURGERY, Modifier.weight(1f))
-                QuickAddPathway("Medicine", CaseCategory.MEDICINE, Modifier.weight(1f))
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                pathways.chunked(2).forEach { rowPathways ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        rowPathways.forEach { pathway ->
+                            QuickAddPathway(
+                                label = pathway.label,
+                                color = pathway.color,
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                        if (rowPathways.size == 1) {
+                            Spacer(modifier = Modifier.weight(1f))
+                        }
+                    }
+                }
             }
 
             Surface(
@@ -1370,10 +1431,9 @@ private fun QuickAddSheet(
 @Composable
 private fun QuickAddPathway(
     label: String,
-    category: CaseCategory,
+    color: Color,
     modifier: Modifier = Modifier,
 ) {
-    val color = categoryColor(category)
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(14.dp),
@@ -1401,6 +1461,8 @@ private fun QuickAddPathway(
 @Composable
 private fun ProfileScreen(
     displayName: String,
+    roleLabel: String,
+    buildLabel: String,
     pendingWriteCount: Int,
     unreadNotificationCount: Int,
     onOpenNotifications: () -> Unit,
@@ -1488,6 +1550,19 @@ private fun ProfileScreen(
         }
 
         Spacer(modifier = Modifier.weight(1f))
+        Text(
+            text = buildLabel,
+            color = MedtrackColors.Muted,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.align(Alignment.CenterHorizontally),
+        )
+        Text(
+            text = roleLabel,
+            color = MedtrackColors.Muted,
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.align(Alignment.CenterHorizontally),
+        )
         Button(
             onClick = onSignOut,
             modifier = Modifier.fillMaxWidth(),
@@ -1500,6 +1575,65 @@ private fun ProfileScreen(
     }
 }
 
+private data class QuickAddPathwaySpec(
+    val label: String,
+    val color: Color,
+)
+
+private fun List<CategoryFilterOption>.quickAddPathways(): List<QuickAddPathwaySpec> {
+    val fromServer = map { option ->
+        QuickAddPathwaySpec(
+            label = option.label,
+            color = categoryColor(option.label, option.category),
+        )
+    }
+    val pathways = if (fromServer.isNotEmpty()) fromServer else defaultQuickAddPathways()
+    return pathways.ensureCustomRehabPathway()
+}
+
+private fun defaultQuickAddPathways(): List<QuickAddPathwaySpec> =
+    listOf(
+        QuickAddPathwaySpec("ANC", MedtrackColors.Anc),
+        QuickAddPathwaySpec("Surgery", MedtrackColors.Surgery),
+        QuickAddPathwaySpec("Medicine", MedtrackColors.Medicine),
+        QuickAddPathwaySpec("Custom Rehab", MedtrackColors.CustomRehab),
+    )
+
+private fun List<QuickAddPathwaySpec>.ensureCustomRehabPathway(): List<QuickAddPathwaySpec> =
+    if (any { it.label.isCustomRehabLabel() }) {
+        this
+    } else {
+        this + QuickAddPathwaySpec("Custom Rehab", MedtrackColors.CustomRehab)
+    }
+
+private fun UserProfileDto?.roleLabel(): String =
+    this?.roles
+        ?.filter { it.isNotBlank() }
+        ?.joinToString(" / ")
+        ?.takeIf { it.isNotBlank() }
+        ?: "Role unavailable"
+
+private fun SyncConflict.caseLabel(patientCase: PatientCase?): String =
+    patientCase?.patientName
+        ?: caseId?.takeIf { it.isNotBlank() }?.let { "Case $it" }
+        ?: "Unknown case"
+
+private fun SyncConflict.fieldLabel(): String =
+    when (writeType) {
+        PendingWriteTypes.TASK_COMPLETE -> "Task status"
+        PendingWriteTypes.CALL_OUTCOME -> "Call outcome"
+        PendingWriteTypes.VITALS_CREATE -> "Vitals"
+        else -> "Offline write"
+    }
+
+private fun SyncConflict.localChangeLabel(): String =
+    when (writeType) {
+        PendingWriteTypes.TASK_COMPLETE -> "local completed"
+        PendingWriteTypes.CALL_OUTCOME -> "local call note"
+        PendingWriteTypes.VITALS_CREATE -> "local vitals"
+        else -> "local change"
+    }
+
 private fun categoryColor(category: CaseCategory): Color =
     when (category) {
         CaseCategory.ANC -> MedtrackColors.Anc
@@ -1507,6 +1641,12 @@ private fun categoryColor(category: CaseCategory): Color =
         CaseCategory.MEDICINE -> MedtrackColors.Medicine
         CaseCategory.OTHER -> MedtrackColors.Primary
     }
+
+private fun categoryColor(label: String, category: CaseCategory): Color =
+    if (label.isCustomRehabLabel()) MedtrackColors.CustomRehab else categoryColor(category)
+
+private fun String.isCustomRehabLabel(): Boolean =
+    trim().replace("-", " ").contains("rehab", ignoreCase = true)
 
 private fun String.initials(): String {
     val parts = trim().split(Regex("\\s+")).filter { it.isNotBlank() }

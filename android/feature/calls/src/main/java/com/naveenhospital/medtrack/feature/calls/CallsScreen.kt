@@ -113,7 +113,6 @@ fun CallsScreen(
         CallQueueHero(
             upNext = upNext,
             priorityCount = priorityCount,
-            totalCount = callableCases.size,
             progress = priorityProgress,
             onOpenCase = onOpenCase,
             onCallPatient = onCallPatient,
@@ -153,7 +152,6 @@ fun CallsScreen(
 private fun CallQueueHero(
     upNext: PatientCase?,
     priorityCount: Int,
-    totalCount: Int,
     progress: Float,
     onOpenCase: (String) -> Unit,
     onCallPatient: (PatientCase) -> Unit,
@@ -225,7 +223,6 @@ private fun CallQueueHero(
                     Text("Open")
                 }
             }
-            MedtrackMiniPill(text = "$totalCount total callable", color = MedtrackColors.Primary)
         }
     }
 }
@@ -242,7 +239,7 @@ private fun QueueFilterChip(label: String, selected: Boolean, onClick: () -> Uni
             null
         },
         colors = FilterChipDefaults.filterChipColors(
-            selectedContainerColor = MedtrackColors.Ink,
+            selectedContainerColor = MedtrackColors.Primary,
             selectedLabelColor = Color.White,
             selectedLeadingIconColor = Color.White,
             containerColor = MedtrackColors.Card,
@@ -252,7 +249,7 @@ private fun QueueFilterChip(label: String, selected: Boolean, onClick: () -> Uni
             enabled = true,
             selected = selected,
             borderColor = MedtrackColors.Border,
-            selectedBorderColor = MedtrackColors.Ink,
+            selectedBorderColor = MedtrackColors.Primary,
         ),
     )
 }

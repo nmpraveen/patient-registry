@@ -23,6 +23,7 @@ data class PatientCase(
     val place: String? = null,
     val phoneNumber: String? = null,
     val category: CaseCategory,
+    val categoryLabel: String = category.label,
     val subcategoryValue: String? = null,
     val subcategoryLabel: String? = null,
     val status: CaseStatus,

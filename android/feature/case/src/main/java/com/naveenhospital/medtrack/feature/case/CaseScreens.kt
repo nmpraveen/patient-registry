@@ -14,6 +14,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -31,16 +34,18 @@ import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Favorite
 import androidx.compose.material.icons.outlined.Phone
 import androidx.compose.material.icons.outlined.Refresh
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -200,8 +205,6 @@ fun CaseDetailScreen(
                     item {
                         CaseHero(
                             patientCase = patientCase,
-                            onCallPatient = { onCallPatient(patientCase) },
-                            onMessagePatient = { onMessagePatient(patientCase) },
                         )
                     }
                     item {
@@ -269,7 +272,7 @@ fun CaseDetailScreen(
     }
 
     if (showVitalsDialog) {
-        VitalsEntryDialog(
+        VitalsEntrySheet(
             thresholds = vitalsThresholds,
             onDismiss = { showVitalsDialog = false },
             onSubmit = { input ->
@@ -284,10 +287,7 @@ fun CaseDetailScreen(
 @OptIn(ExperimentalLayoutApi::class)
 private fun CaseHero(
     patientCase: PatientCase,
-    onCallPatient: () -> Unit,
-    onMessagePatient: () -> Unit,
 ) {
-    val categoryColor = patientCase.category.color()
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
@@ -357,7 +357,7 @@ private fun CaseHero(
 
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                     HeroPill(patientCase.uhid)
-                    HeroPill(patientCase.category.label)
+                    HeroPill(patientCase.categoryLabel)
                     patientCase.subcategoryLabel?.takeIf { it.isNotBlank() }?.let { HeroPill(it) }
                     HeroPill(patientCase.status.label)
                 }
@@ -370,29 +370,6 @@ private fun CaseHero(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
-
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    Button(
-                        onClick = onCallPatient,
-                        enabled = !patientCase.phoneNumber.isNullOrBlank(),
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = MedtrackColors.Primary),
-                    ) {
-                        Icon(imageVector = Icons.Outlined.Phone, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(5.dp))
-                        Text("Call")
-                    }
-                    Button(
-                        onClick = onMessagePatient,
-                        enabled = !patientCase.phoneNumber.isNullOrBlank(),
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(containerColor = categoryColor.copy(alpha = 0.95f), contentColor = Color.White),
-                    ) {
-                        Icon(imageVector = Icons.AutoMirrored.Outlined.Chat, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(5.dp))
-                        Text("WhatsApp")
-                    }
-                }
             }
         }
     }
@@ -450,7 +427,7 @@ private fun CaseStickyActions(
             ) {
                 Icon(imageVector = Icons.AutoMirrored.Outlined.Chat, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(5.dp))
-                Text("WA")
+                Text("WhatsApp")
             }
             Button(
                 onClick = onAddVitals,
@@ -588,7 +565,7 @@ private fun CaseRow(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            MedtrackIconBadge(icon = Icons.AutoMirrored.Outlined.OpenInNew, tint = patientCase.category.color(), modifier = Modifier.size(36.dp))
+            MedtrackIconBadge(icon = Icons.AutoMirrored.Outlined.OpenInNew, tint = patientCase.categoryColor(), modifier = Modifier.size(36.dp))
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
                     text = patientCase.patientName,
@@ -605,7 +582,7 @@ private fun CaseRow(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            MedtrackMiniPill(text = patientCase.category.label, color = patientCase.category.color())
+            MedtrackMiniPill(text = patientCase.categoryLabel, color = patientCase.categoryColor())
         }
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
             patientCase.nextTaskDueDate?.let {
@@ -646,6 +623,13 @@ private fun CaseCategory.color(): Color =
         CaseCategory.OTHER -> MedtrackColors.Primary
     }
 
+private fun PatientCase.categoryColor(): Color =
+    if (categoryLabel.trim().replace("-", " ").contains("rehab", ignoreCase = true)) {
+        MedtrackColors.CustomRehab
+    } else {
+        category.color()
+    }
+
 private fun PatientTask.statusColor(): Color =
     when (status.uppercase()) {
         "COMPLETED" -> MedtrackColors.Success
@@ -675,7 +659,8 @@ data class VitalsEntryInput(
 )
 
 @Composable
-private fun VitalsEntryDialog(
+@OptIn(ExperimentalMaterial3Api::class)
+private fun VitalsEntrySheet(
     thresholds: VitalsThresholdConfig?,
     onDismiss: () -> Unit,
     onSubmit: (VitalsEntryInput) -> Unit,
@@ -688,12 +673,33 @@ private fun VitalsEntryDialog(
     var hemoglobin by rememberSaveable { mutableStateOf("") }
     val hasAnyMetric = listOf(systolic, diastolic, pulse, spo2, weight, hemoglobin).any { it.isNotBlank() }
     val hasPartialBloodPressure = systolic.isNotBlank() xor diastolic.isNotBlank()
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    AlertDialog(
+    ModalBottomSheet(
+        sheetState = sheetState,
         onDismissRequest = onDismiss,
-        title = { Text("Add vitals") },
-        text = {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        containerColor = MedtrackColors.Surface,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .imePadding()
+                .navigationBarsPadding()
+                .padding(start = 16.dp, end = 16.dp, bottom = 22.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = "Add vitals",
+                color = MedtrackColors.Ink,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+            )
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 420.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 item {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                         OutlinedTextField(
@@ -765,30 +771,33 @@ private fun VitalsEntryDialog(
                     )
                 }
             }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = {
-                    onSubmit(
-                        VitalsEntryInput(
-                            bpSystolic = systolic.toIntOrNull(),
-                            bpDiastolic = diastolic.toIntOrNull(),
-                            pulse = pulse.toIntOrNull(),
-                            spo2 = spo2.toIntOrNull(),
-                            weightKg = weight.takeIf { it.isNotBlank() },
-                            hemoglobin = hemoglobin.takeIf { it.isNotBlank() },
-                        ),
-                    )
-                },
-                enabled = hasAnyMetric && !hasPartialBloodPressure,
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("Save")
+                TextButton(onClick = onDismiss, modifier = Modifier.weight(1f)) {
+                    Text("Cancel")
+                }
+                Button(
+                    onClick = {
+                        onSubmit(
+                            VitalsEntryInput(
+                                bpSystolic = systolic.toIntOrNull(),
+                                bpDiastolic = diastolic.toIntOrNull(),
+                                pulse = pulse.toIntOrNull(),
+                                spo2 = spo2.toIntOrNull(),
+                                weightKg = weight.takeIf { it.isNotBlank() },
+                                hemoglobin = hemoglobin.takeIf { it.isNotBlank() },
+                            ),
+                        )
+                    },
+                    enabled = hasAnyMetric && !hasPartialBloodPressure,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("Save")
+                }
             }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
-        },
-    )
+        }
+    }
 }

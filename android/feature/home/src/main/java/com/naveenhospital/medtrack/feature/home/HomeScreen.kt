@@ -118,7 +118,7 @@ private object HomeUiScale {
     val BucketCountPaddingVertical = 2.dp
 
     val CardRadius = 18.dp
-    val CardRailWidth = 5.dp
+    val CardRailWidth = 7.dp
     val CardHorizontalPadding = 8.dp
     val CardVerticalPadding = 9.dp
     val CardExpandedVerticalPadding = 10.dp
@@ -250,11 +250,20 @@ fun HomeScreen(
                             color = MedtrackColors.Card,
                             border = androidx.compose.foundation.BorderStroke(1.dp, MedtrackColors.Border),
                         ) {
-                            Text(
-                                text = "No patients in this view",
-                                color = MedtrackColors.Muted,
+                            Column(
                                 modifier = Modifier.padding(12.dp),
-                            )
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                Text(
+                                    text = if (searchQuery.isBlank()) "No patients in this view" else "No matching patients",
+                                    color = MedtrackColors.Muted,
+                                )
+                                if (searchQuery.isNotBlank()) {
+                                    TextButton(onClick = { onSearchChanged("") }) {
+                                        Text("Clear search")
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -547,7 +556,7 @@ private fun ListHeader(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = "${bucketHeader(selectedBucket)} - $itemCount PATIENTS",
+            text = "${bucketHeader(selectedBucket)} \u2022 $itemCount ${patientNoun(itemCount).uppercase(Locale.getDefault())}",
             style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.Bold,
             color = MedtrackColors.Muted,
@@ -570,6 +579,9 @@ private fun bucketHeader(bucket: String?): String =
         else -> "ALL"
     }
 
+private fun patientNoun(count: Int): String =
+    if (count == 1) "patient" else "patients"
+
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
 private fun RiskReasonsSheet(
@@ -591,7 +603,28 @@ private fun RiskReasonsSheet(
             )
             patientCase.highRiskReasons.ifEmpty { listOf("Server marked this case as red.") }
                 .forEach { reason ->
-                    Text(text = reason)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(9.dp),
+                        verticalAlignment = Alignment.Top,
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .padding(top = 7.dp)
+                                .size(8.dp)
+                                .background(MedtrackColors.Danger, RoundedCornerShape(50)),
+                        )
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Text(text = reason, color = MedtrackColors.Ink)
+                            MedtrackStatusPill(
+                                text = patientCase.riskReasonSource(),
+                                color = if (patientCase.category == CaseCategory.ANC) MedtrackColors.Danger else MedtrackColors.Warning,
+                            )
+                        }
+                    }
                 }
             TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) {
                 Text("Close")
@@ -613,11 +646,12 @@ private fun ActiveFilterChips(
     val subcategoryOptions = categoryOptions.flatMap { it.subcategories }
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         selectedCategories.forEach { value ->
-            val label = categoryOptions.firstOrNull { it.value == value }?.label ?: value
+            val option = categoryOptions.firstOrNull { it.value == value }
+            val label = option?.label ?: value
             FilterChip(
                 selected = true,
                 onClick = { onFiltersApplied(selectedCategories - value, selectedSubcategories) },
-                colors = pulseFilterChipColors(),
+                colors = pulseFilterChipColors(option?.let(::categoryOptionColor) ?: MedtrackColors.Primary),
                 label = { Text(label) },
             )
         }
@@ -692,7 +726,7 @@ private fun CategoryFilterSheet(
                                 draftSubcategories = draftSubcategories.filter { it in allowed }
                             }
                         },
-                        colors = pulseFilterChipColors(),
+                        colors = pulseFilterChipColors(categoryOptionColor(option)),
                         label = { Text(option.label) },
                     )
                 }
@@ -764,12 +798,16 @@ private fun ScopeChips(
 }
 
 @Composable
-private fun pulseFilterChipColors() = FilterChipDefaults.filterChipColors(
+private fun pulseFilterChipColors(accent: Color = MedtrackColors.Primary) = FilterChipDefaults.filterChipColors(
     containerColor = MedtrackColors.Card,
     labelColor = MedtrackColors.Ink,
-    selectedContainerColor = MedtrackColors.Primary.copy(alpha = 0.12f),
-    selectedLabelColor = MedtrackColors.Primary,
+    selectedContainerColor = accent,
+    selectedLabelColor = Color.White,
+    selectedLeadingIconColor = Color.White,
 )
+
+private fun categoryOptionColor(option: CategoryFilterOption): Color =
+    if (option.label.isCustomRehabLabel()) MedtrackColors.CustomRehab else option.category.color()
 
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
@@ -779,10 +817,13 @@ private fun BucketChips(
     onBucketSelected: (String?) -> Unit,
 ) {
     Row(
-        modifier = Modifier.horizontalScroll(rememberScrollState()),
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(HomeUiScale.BucketGap),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        Spacer(modifier = Modifier.width(2.dp))
         listOf(
             BucketFilter("today", "Today", stats.today, MedtrackColors.Primary),
             BucketFilter("upcoming", "Upcoming", stats.upcoming, MedtrackColors.Primary),
@@ -798,6 +839,7 @@ private fun BucketChips(
                 accent = filter.accent,
             )
         }
+        Spacer(modifier = Modifier.width(2.dp))
     }
 }
 
@@ -940,7 +982,7 @@ private fun PatientCard(
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         CategoryIcon(
-                            category = patientCase.category,
+                            color = patientCase.categoryColor(),
                             iconResId = patientCase.iconResId(),
                             modifier = Modifier.clickable(onClick = onCategoryFilter),
                         )
@@ -973,7 +1015,7 @@ private fun PatientCard(
                                         modifier = Modifier.fillMaxWidth(),
                                     ) {
                                         if (expanded) {
-                                            CompactStatusPill(text = patientCase.category.label, color = patientCase.category.color())
+                                            CompactStatusPill(text = patientCase.categoryLabel, color = patientCase.categoryColor())
                                         }
                                         Text(
                                             text = patientCase.summaryLine(),
@@ -1033,6 +1075,10 @@ private fun PatientCard(
                         }
                     }
 
+                    patientCase.latestVitalSummary?.takeIf { it.isNotBlank() }?.let {
+                        VitalStrip(summary = it)
+                    }
+
                     if (expanded) {
                         patientCase.caseMetaLine()?.let {
                             Text(
@@ -1043,9 +1089,6 @@ private fun PatientCard(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
-                        }
-                        patientCase.latestVitalSummary?.takeIf { it.isNotBlank() }?.let {
-                            VitalStrip(summary = it)
                         }
                         TaskChipRow(patientCase = patientCase)
                         Row(horizontalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.fillMaxWidth()) {
@@ -1059,7 +1102,7 @@ private fun PatientCard(
                                 contentColor = Color.White,
                             )
                             PatientActionButton(
-                                label = "WA",
+                                label = "WhatsApp",
                                 icon = Icons.AutoMirrored.Outlined.Chat,
                                 onClick = onMessagePatient,
                                 modifier = Modifier.width(48.dp),
@@ -1375,17 +1418,17 @@ private fun BoxScope.SwipeActionBackground(
 }
 
 @Composable
-private fun CategoryIcon(category: CaseCategory, iconResId: Int, modifier: Modifier = Modifier) {
+private fun CategoryIcon(color: Color, iconResId: Int, modifier: Modifier = Modifier) {
     Surface(
         modifier = modifier.size(HomeUiScale.CategoryIconSize),
         shape = RoundedCornerShape(HomeUiScale.CategoryIconRadius),
-        color = category.color().copy(alpha = 0.13f),
+        color = color.copy(alpha = 0.13f),
     ) {
         Row(horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
             Icon(
                 painter = painterResource(iconResId),
                 contentDescription = null,
-                tint = category.color(),
+                tint = color,
                 modifier = Modifier.size(HomeUiScale.CategoryGlyphSize),
             )
         }
@@ -1416,7 +1459,7 @@ private fun PatientCase.caseMetaLine(): String? =
     ).joinToString(" \u2022 ").takeIf { it.isNotBlank() }
 
 private fun PatientCase.summaryLine(): String =
-    diagnosis.takeIf { it.isNotBlank() } ?: category.label
+    diagnosis.takeIf { it.isNotBlank() } ?: categoryLabel
 
 private fun PatientCase.compactDisplayName(): String {
     val parts = patientName.trim().split(Regex("\\s+")).filter { it.isNotBlank() }
@@ -1453,7 +1496,10 @@ private fun PatientCase.primaryStateColor(): Color =
     }
 
 private fun PatientCase.cardRailColor(): Color =
-    if (isHighRisk) MedtrackColors.Danger else category.color()
+    if (isHighRisk) MedtrackColors.Danger else categoryColor()
+
+private fun PatientCase.categoryColor(): Color =
+    if (categoryLabel.isCustomRehabLabel()) MedtrackColors.CustomRehab else category.color()
 
 private fun CaseCategory.color(): Color =
     when (this) {
@@ -1462,6 +1508,12 @@ private fun CaseCategory.color(): Color =
         CaseCategory.MEDICINE -> MedtrackColors.Medicine
         CaseCategory.OTHER -> MedtrackColors.Primary
     }
+
+private fun PatientCase.riskReasonSource(): String =
+    if (category == CaseCategory.ANC) "from ANC reason set" else "manually flagged"
+
+private fun String.isCustomRehabLabel(): Boolean =
+    trim().replace("-", " ").contains("rehab", ignoreCase = true)
 
 private fun PatientCase.iconResId(): Int =
     subcategoryValue?.let { subcategoryIconResId(it) } ?: category.iconResId()

@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
@@ -21,6 +22,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.naveenhospital.medtrack.core.designsystem.MedtrackColors
@@ -65,6 +67,12 @@ fun CallOutcomeSheet(
                     FilterChip(
                         selected = selectedOutcome == outcome,
                         onClick = { selectedOutcome = outcome },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = MedtrackColors.Primary,
+                            selectedLabelColor = Color.White,
+                            containerColor = MedtrackColors.Card,
+                            labelColor = MedtrackColors.Ink,
+                        ),
                         label = { Text(label) },
                     )
                 }

@@ -97,6 +97,7 @@ import com.naveenhospital.medtrack.core.data.sync.PendingWriteTypes
 import com.naveenhospital.medtrack.core.domain.model.CategoryFilterOption
 import com.naveenhospital.medtrack.core.domain.model.PatientCase
 import com.naveenhospital.medtrack.core.domain.model.CaseCategory
+import com.naveenhospital.medtrack.core.domain.model.NotificationItem
 import com.naveenhospital.medtrack.core.domain.model.SyncConflict
 import com.naveenhospital.medtrack.core.network.model.UserProfileDto
 import com.naveenhospital.medtrack.feature.auth.LockSetupScreen
@@ -104,10 +105,12 @@ import com.naveenhospital.medtrack.feature.auth.LoginScreen
 import com.naveenhospital.medtrack.feature.auth.UnlockScreen
 import com.naveenhospital.medtrack.feature.calls.CallOutcomeSheet
 import com.naveenhospital.medtrack.feature.calls.CallsScreen
+import com.naveenhospital.medtrack.feature.cases.CaseCreationScreen
 import com.naveenhospital.medtrack.feature.cases.CaseDetailScreen
 import com.naveenhospital.medtrack.feature.cases.CaseListScreen
 import com.naveenhospital.medtrack.feature.cases.VitalsEntryInput
 import com.naveenhospital.medtrack.feature.home.HomeScreen
+import com.naveenhospital.medtrack.feature.notifications.AlertDetailScreen
 import com.naveenhospital.medtrack.feature.notifications.NotificationsScreen
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -125,11 +128,15 @@ private object Routes {
     const val HOME = "home"
     const val CASES = "cases"
     const val CASE_DETAIL = "cases/{caseId}"
+    const val CREATE_CASE = "create_case/{category}/{label}"
     const val CALLS = "calls"
     const val NOTIFICATIONS = "notifications"
+    const val ALERT_DETAIL = "alerts/{notificationId}"
     const val ME = "me"
 
     fun caseDetail(caseId: String): String = "cases/$caseId"
+    fun createCase(category: CaseCategory, label: String): String = "create_case/${category.name}/${Uri.encode(label)}"
+    fun alertDetail(notificationId: String): String = "alerts/${Uri.encode(notificationId)}"
 }
 
 private data class BottomDestination(
@@ -263,7 +270,7 @@ fun MedtrackApp(
 
     LaunchedEffect(container) {
         startDestination = if (container.authRepository.hasRefreshToken()) {
-            if (container.lockStore.hasAnyLock()) Routes.UNLOCK else Routes.LOCK_SETUP
+            if (container.lockStore.hasAnyLock()) Routes.UNLOCK else Routes.LOGIN
         } else {
             Routes.LOGIN
         }
@@ -352,12 +359,8 @@ fun MedtrackApp(
                         modifier = Modifier.fillMaxSize(),
                         onLogin = { username, password ->
                             setCurrentUser(container.authRepository.login(username, password))
-                            val hasLock = container.lockStore.hasAnyLock()
-                            val nextRoute = if (hasLock) Routes.HOME else Routes.LOCK_SETUP
-                            if (hasLock) {
-                                onAuthenticated()
-                            }
-                            navController.navigate(nextRoute) {
+                            onAuthenticated()
+                            navController.navigate(Routes.HOME) {
                                 popUpTo(Routes.LOGIN) { inclusive = true }
                             }
                         },
@@ -447,6 +450,14 @@ fun MedtrackApp(
                                 },
                                 onError = { biometricMessage = it },
                             )
+                        },
+                        onUsePasswordLogin = {
+                            biometricMessage = null
+                            currentUserProfile = null
+                            currentUserDisplayName = null
+                            navController.navigate(Routes.LOGIN) {
+                                popUpTo(Routes.UNLOCK) { inclusive = true }
+                            }
                         },
                     )
                 }
@@ -951,6 +962,33 @@ fun MedtrackApp(
                         )
                     }
                 }
+                composable(Routes.CREATE_CASE) { entry ->
+                    val category = runCatching {
+                        CaseCategory.valueOf(entry.arguments?.getString("category").orEmpty())
+                    }.getOrDefault(CaseCategory.ANC)
+                    val label = Uri.decode(entry.arguments?.getString("label") ?: category.label)
+
+                    CaseCreationScreen(
+                        modifier = Modifier.fillMaxSize(),
+                        pathwayLabel = label,
+                        category = category,
+                        onBack = { navController.popBackStack() },
+                        onDraftSaved = { patientName ->
+                            scope.launch {
+                                snackbarHostState.showSnackbar("Draft saved for $patientName")
+                            }
+                        },
+                        onCreated = { patientName ->
+                            scope.launch {
+                                snackbarHostState.showSnackbar("Mock case created for $patientName")
+                            }
+                            navController.navigate(Routes.HOME) {
+                                popUpTo(Routes.HOME) { inclusive = false }
+                                launchSingleTop = true
+                            }
+                        },
+                    )
+                }
                 composable(Routes.CALLS) {
                     val cases by container.medtrackRepository.cases.collectAsState(initial = emptyList())
                     var isRefreshing by remember { mutableStateOf(false) }
@@ -1122,12 +1160,39 @@ fun MedtrackApp(
                         error = error,
                         onRefresh = { refreshNotifications() },
                         onOpenNotification = { item ->
-                            item.caseId?.let { caseId ->
-                                scope.launch {
-                                    runCatching { container.medtrackRepository.markNotificationRead(item.id) }
-                                    navController.navigate(Routes.caseDetail(caseId))
-                                }
+                            scope.launch {
+                                runCatching { container.medtrackRepository.markNotificationRead(item.id) }
+                                navController.navigate(Routes.alertDetail(item.id))
                             }
+                        },
+                    )
+                }
+                composable(Routes.ALERT_DETAIL) { entry ->
+                    val notificationId = Uri.decode(entry.arguments?.getString("notificationId").orEmpty())
+                    val notifications by container.medtrackRepository.notifications.collectAsState(initial = emptyList())
+                    val cases by container.medtrackRepository.cases.collectAsState(initial = emptyList())
+                    val notification = notifications.firstOrNull { it.id == notificationId }
+                    val patientCase = notification?.resolvePatientCase(cases)
+
+                    LaunchedEffect(notification?.caseId, patientCase?.id) {
+                        val caseId = notification?.caseId?.takeIf { it.isNotBlank() }
+                        if (caseId != null && patientCase == null) {
+                            runCatching { container.medtrackRepository.refreshCaseDetail(caseId) }
+                        }
+                    }
+
+                    AlertDetailScreen(
+                        modifier = Modifier.fillMaxSize(),
+                        notification = notification,
+                        patientCase = patientCase,
+                        onBack = { navController.popBackStack() },
+                        onCallPatient = { selectedCase ->
+                            if (!openDialer(context, selectedCase)) {
+                                scope.launch { snackbarHostState.showSnackbar("No phone number on file") }
+                            }
+                        },
+                        onOpenCase = { caseId ->
+                            navController.navigate(Routes.caseDetail(caseId))
                         },
                     )
                 }
@@ -1157,9 +1222,9 @@ fun MedtrackApp(
             QuickAddSheet(
                 categoryOptions = shellCategoryOptions,
                 onDismiss = { showQuickAddSheet = false },
-                onOpenCases = {
+                onCreateCase = { pathway ->
                     showQuickAddSheet = false
-                    navigateTopLevel(Routes.CASES)
+                    navController.navigate(Routes.createCase(pathway.category, pathway.label))
                 },
                 onOpenHomeSearch = {
                     showQuickAddSheet = false
@@ -1361,7 +1426,7 @@ private fun RowScope.BottomNavItem(
 private fun QuickAddSheet(
     categoryOptions: List<CategoryFilterOption>,
     onDismiss: () -> Unit,
-    onOpenCases: () -> Unit,
+    onCreateCase: (QuickAddPathwaySpec) -> Unit,
     onOpenHomeSearch: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -1393,7 +1458,7 @@ private fun QuickAddSheet(
                         fontWeight = FontWeight.Bold,
                     )
                     Text(
-                        text = "Search first, then create from web intake.",
+                        text = "Search patient first, or start a native mock case.",
                         color = MedtrackColors.Muted,
                         style = MaterialTheme.typography.bodySmall,
                     )
@@ -1409,23 +1474,30 @@ private fun QuickAddSheet(
 
             MedtrackSectionTitle(title = "Pathways")
             Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                pathways.forEach { pathway ->
-                    QuickAddPathway(
-                        pathway = pathway,
-                        selected = pathway.label == selectedPathwayLabel,
-                        onClick = { selectedPathwayLabel = pathway.label },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                pathways.chunked(2).forEach { rowPathways ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        rowPathways.forEach { pathway ->
+                            QuickAddPathway(
+                                pathway = pathway,
+                                selected = pathway.label == selectedPathwayLabel,
+                                onClick = { selectedPathwayLabel = pathway.label },
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                        if (rowPathways.size == 1) {
+                            Spacer(modifier = Modifier.weight(1f))
+                        }
+                    }
                 }
             }
 
             Button(
-                onClick = onOpenCases,
+                onClick = { selectedPathway?.let(onCreateCase) },
                 enabled = selectedPathway != null,
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(containerColor = MedtrackColors.Ink),
             ) {
-                Text(selectedPathway?.let { "Continue - ${it.label}" } ?: "Continue")
+                Text(selectedPathway?.let { "Continue \u00B7 ${it.label}" } ?: "Continue")
             }
         }
     }
@@ -1495,40 +1567,50 @@ private fun QuickAddPathway(
         color = if (selected) color.copy(alpha = 0.14f) else MedtrackColors.Card,
         border = BorderStroke(1.dp, if (selected) color.copy(alpha = 0.42f) else MedtrackColors.Border),
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp),
-            horizontalArrangement = Arrangement.spacedBy(11.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Surface(
-                modifier = Modifier.size(40.dp),
-                shape = RoundedCornerShape(12.dp),
-                color = color.copy(alpha = 0.14f),
+        Box(modifier = Modifier.padding(12.dp)) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(9.dp),
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        painter = painterResource(pathway.iconResId),
-                        contentDescription = null,
-                        tint = color,
-                        modifier = Modifier.size(24.dp),
+                Surface(
+                    modifier = Modifier.size(42.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    color = color.copy(alpha = 0.14f),
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            painter = painterResource(pathway.iconResId),
+                            contentDescription = null,
+                            tint = color,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        text = pathway.label,
+                        color = if (selected) color else MedtrackColors.Ink,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.ExtraBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = pathway.description,
+                        color = MedtrackColors.Muted,
+                        style = MaterialTheme.typography.labelMedium,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }
-            Text(
-                text = pathway.label,
-                color = if (selected) color else MedtrackColors.Ink,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.ExtraBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
             if (selected) {
                 Icon(
                     imageVector = Icons.Outlined.CheckCircle,
                     contentDescription = null,
                     tint = color,
-                    modifier = Modifier.size(22.dp),
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .size(21.dp),
                 )
             }
         }
@@ -1657,36 +1739,57 @@ private data class QuickAddPathwaySpec(
     val color: Color,
     val category: CaseCategory,
     val iconResId: Int,
+    val description: String,
 )
 
 private fun List<CategoryFilterOption>.quickAddPathways(): List<QuickAddPathwaySpec> {
-    val supportedCategories = setOf(CaseCategory.ANC, CaseCategory.MEDICINE, CaseCategory.SURGERY)
+    val supportedCategories = setOf(CaseCategory.ANC, CaseCategory.MEDICINE, CaseCategory.SURGERY, CaseCategory.OTHER)
     val fromServer = filter { it.category in supportedCategories }
-        .distinctBy { it.category }
+        .distinctBy { if (it.label.isCustomRehabLabel()) "rehab" else it.category.name }
         .map { option ->
             QuickAddPathwaySpec(
-                label = option.label,
+                label = option.label.quickAddDisplayLabel(),
                 color = categoryColor(option.label, option.category),
                 category = option.category,
-                iconResId = option.category.quickAddIconResId(),
+                iconResId = option.category.quickAddIconResId(option.label),
+                description = option.quickAddDescription(),
             )
         }
-    return if (fromServer.isNotEmpty()) fromServer else defaultQuickAddPathways()
+    val byKey = (fromServer + defaultQuickAddPathways())
+        .distinctBy { if (it.label.isCustomRehabLabel()) "rehab" else it.category.name }
+        .associateBy { if (it.label.isCustomRehabLabel()) "rehab" else it.category.name }
+    return listOfNotNull(
+        byKey[CaseCategory.ANC.name],
+        byKey[CaseCategory.MEDICINE.name],
+        byKey[CaseCategory.SURGERY.name],
+        byKey["rehab"],
+    )
 }
 
 private fun defaultQuickAddPathways(): List<QuickAddPathwaySpec> =
     listOf(
-        QuickAddPathwaySpec("ANC", MedtrackColors.Anc, CaseCategory.ANC, CaseCategory.ANC.quickAddIconResId()),
-        QuickAddPathwaySpec("Surgery", MedtrackColors.Surgery, CaseCategory.SURGERY, CaseCategory.SURGERY.quickAddIconResId()),
-        QuickAddPathwaySpec("Medicine", MedtrackColors.Medicine, CaseCategory.MEDICINE, CaseCategory.MEDICINE.quickAddIconResId()),
+        QuickAddPathwaySpec("ANC", MedtrackColors.Anc, CaseCategory.ANC, CaseCategory.ANC.quickAddIconResId("ANC"), "Antenatal follow-up"),
+        QuickAddPathwaySpec("Medicine", MedtrackColors.Medicine, CaseCategory.MEDICINE, CaseCategory.MEDICINE.quickAddIconResId("Medicine"), "General medicine"),
+        QuickAddPathwaySpec("Surgery", MedtrackColors.Surgery, CaseCategory.SURGERY, CaseCategory.SURGERY.quickAddIconResId("Surgery"), "Pre/post-op review"),
+        QuickAddPathwaySpec("Rehab", MedtrackColors.CustomRehab, CaseCategory.OTHER, CaseCategory.OTHER.quickAddIconResId("Rehab"), "Custom rehab"),
     )
 
-private fun CaseCategory.quickAddIconResId(): Int =
-    when (this) {
-        CaseCategory.ANC -> DesignR.drawable.ic_cat_anc
-        CaseCategory.SURGERY -> DesignR.drawable.ic_cat_surgery
-        CaseCategory.MEDICINE -> DesignR.drawable.ic_cat_medicine
-        CaseCategory.OTHER -> DesignR.drawable.ic_cat_medicine
+private fun CaseCategory.quickAddIconResId(label: String): Int =
+    when {
+        label.isCustomRehabLabel() -> DesignR.drawable.ic_cat_rehab
+        this == CaseCategory.ANC -> DesignR.drawable.ic_cat_anc
+        this == CaseCategory.SURGERY -> DesignR.drawable.ic_cat_surgery
+        this == CaseCategory.MEDICINE -> DesignR.drawable.ic_cat_medicine
+        else -> DesignR.drawable.ic_cat_medicine
+    }
+
+private fun CategoryFilterOption.quickAddDescription(): String =
+    when {
+        label.isCustomRehabLabel() -> "Custom rehab"
+        category == CaseCategory.ANC -> "Antenatal follow-up"
+        category == CaseCategory.SURGERY -> "Pre/post-op review"
+        category == CaseCategory.MEDICINE -> "General medicine"
+        else -> "Custom pathway"
     }
 
 private fun UserProfileDto?.roleLabel(): String =
@@ -1729,7 +1832,29 @@ private fun categoryColor(label: String, category: CaseCategory): Color =
     if (label.isCustomRehabLabel()) MedtrackColors.CustomRehab else categoryColor(category)
 
 private fun String.isCustomRehabLabel(): Boolean =
-    trim().replace("-", " ").contains("rehab", ignoreCase = true)
+    trim().replace("-", " ").let {
+        it.contains("rehab", ignoreCase = true) || it.contains("physio", ignoreCase = true)
+    }
+
+private fun String.quickAddDisplayLabel(): String =
+    if (isCustomRehabLabel()) "Rehab" else this
+
+private fun NotificationItem.resolvePatientCase(cases: List<PatientCase>): PatientCase? {
+    val exactCaseId = caseId?.trim()?.takeIf { it.isNotBlank() }
+    if (exactCaseId != null) {
+        cases.firstOrNull { it.id == exactCaseId }?.let { return it }
+    }
+
+    val bodyPatientName = body.substringBefore(":").trim().takeIf { it.isNotBlank() && it != body.trim() }
+    if (bodyPatientName != null) {
+        cases.firstOrNull { it.patientName.equals(bodyPatientName, ignoreCase = true) }?.let { return it }
+    }
+
+    return cases.firstOrNull { patientCase ->
+        body.contains(patientCase.patientName, ignoreCase = true) ||
+            title.contains(patientCase.patientName, ignoreCase = true)
+    }
+}
 
 private fun String.initials(): String {
     val parts = trim().split(Regex("\\s+")).filter { it.isNotBlank() }

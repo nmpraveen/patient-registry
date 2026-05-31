@@ -44,6 +44,7 @@ fun UnlockScreen(
     biometricMessage: String?,
     onPatternUnlock: suspend (List<Int>) -> String?,
     onBiometricUnlock: () -> Unit,
+    onUsePasswordLogin: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var pattern by rememberSaveable { mutableStateOf(emptyList<Int>()) }
@@ -145,6 +146,15 @@ fun UnlockScreen(
                         Icon(imageVector = Icons.Outlined.Fingerprint, contentDescription = null)
                         Text("Use biometric")
                     }
+                }
+
+                OutlinedButton(
+                    onClick = onUsePasswordLogin,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp),
+                ) {
+                    Text("Use password login")
                 }
             }
         }

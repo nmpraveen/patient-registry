@@ -16,7 +16,7 @@ Before coding:
 - Identify the exact files you will touch, then propose a short plan plus acceptance checks.
 - Ask targeted questions if requirements affect permissions, PHI exposure, migrations, or data retention.
 
-Local Codex setup on this Mac:
+Local Codex setup on this machine:
 - The checked-out `main` branch should stay aligned with GitHub. A few extra local-only helper files are intentionally present in this working copy and should remain local-only unless the user explicitly asks to push them.
 - When the user says `push to GitHub`, interpret that as committing and pushing the current changes to `main` directly.
 - Do not create feature branches or open pull requests unless the user explicitly asks for a branch-based or PR-based workflow.
@@ -24,6 +24,24 @@ Local Codex setup on this Mac:
 - Purpose of those local-only files: improve Playwright reliability for Codex in this repo and keep the local Test NNH server able to recreate the demo superuser with username `admin` and password `pass`.
 - Local generated directories such as `.venv/`, `node_modules/`, and `staticfiles/` are also intentional and should not be treated as repo changes.
 - Do not ask to recreate or remove this local-only setup unless the user explicitly wants that. If needed, the preserved local-only snapshot branch is `local/dev-tools`.
+
+Local Test NNH server:
+- Prefer the local-only Test NNH server at `http://localhost:8000` for demos and quick verification.
+- Read `local-dev/TEST_NNH_SERVER.md` before changing local server behavior.
+- From the repo root, use `.\local-dev\test-nnh-up.ps1` to start or reuse it, `.\local-dev\test-nnh-status.ps1` to inspect it, and `.\local-dev\test-nnh-stop.ps1` to stop it.
+- Use `.\local-dev\test-nnh-health.ps1` for read-only local health checks: port `8000`, Compose state, `/api/schema/`, and Local Server Dashboard discovery.
+- Log in with username `admin` and password `pass`.
+- Before starting a local server, check whether the intended port is free with `Get-NetTCPConnection -State Listen -LocalPort <port> -ErrorAction SilentlyContinue`.
+- After starting or reusing the server, verify that the Local Server Dashboard sees it at `http://127.0.0.1:3899/api/snapshot` when practical.
+- Do not spin up a separate demo server or reinstall dependencies unless `requirements.txt` or `Dockerfile` changed and the image needs rebuilding.
+- Do not leave hidden server processes running at the end of a task unless the user asked to keep them running or the server is the requested deliverable.
+
+Android emulator workflow:
+- For quick manual Android starts, prefer the healthy `MarkUS_Local` AVD before trying `MarkUS_Latest_API37`.
+- Keep the Android debug API base URL at `http://10.0.2.2:8000/` for emulator runs against Test NNH.
+- If `MarkUS_Latest_API37` is attached in `adb devices` but screenshots are black, `dumpsys activity users` shows `RUNNING_LOCKED`, or SystemUI/NotificationShade remains focused, stop troubleshooting the APK and switch to `MarkUS_Local`.
+- If `adb shell am start ...MainActivity` says the activity does not exist, confirm with `adb shell dumpsys package com.naveenhospital.medtrack`; when the package declares `.MainActivity`, treat the launch failure as an emulator lock/profile state issue, not a build issue.
+- After login, the first-run secure unlock screen is expected. Set the smoke-test pattern using top-left, top-middle, top-right, then middle-right dots; deny the Android notification permission prompt unless notification behavior is the task.
 
 Implementation:
 - Prefer existing patterns over new abstractions.
@@ -53,3 +71,7 @@ Output expectations:
 - `patients/models.py`: Case, Task, RoleSetting, scheduling rules
 - `patients/views.py` and `templates/patients/`: UI flows and permission enforcement
 - `scripts/backup.sh` and `scripts/restore.sh`: upgrade safety workflow
+
+## Documentation Upkeep
+
+At the end of any substantial implementation, explicitly ask Codex to update `PROJECT_STATE.md`, `RUNBOOK.md`, and `ROADMAP.md` so status, commands, generated outputs, risks, and next actions stay current.

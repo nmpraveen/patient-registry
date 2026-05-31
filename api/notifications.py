@@ -26,6 +26,7 @@ def create_mobile_notification(
     payload = {
         "type": notification_type,
         "case_id": case.pk if case else None,
+        "phone_number": getattr(case, "phone_number", "") if case else "",
         "task_id": task.pk if task else None,
         **(payload or {}),
     }

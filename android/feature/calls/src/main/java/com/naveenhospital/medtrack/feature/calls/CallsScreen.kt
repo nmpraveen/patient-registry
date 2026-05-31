@@ -84,7 +84,8 @@ fun CallsScreen(
     val priorityCount = callableCases.count { it.isHighRisk }
     val remainingCount = visibleCases.size
     val totalCount = callableCases.size
-    val remainingProgress = if (totalCount == 0) 0f else remainingCount.toFloat() / totalCount.toFloat()
+    val doneCount = (totalCount - remainingCount).coerceAtLeast(0)
+    val doneProgress = if (totalCount == 0) 0f else doneCount.toFloat() / totalCount.toFloat()
 
     Column(
         modifier = modifier
@@ -116,10 +117,11 @@ fun CallsScreen(
         CallQueueHero(
             upNext = upNext,
             callerName = callerName,
+            doneCount = doneCount,
             remainingCount = remainingCount,
             totalCount = totalCount,
             redCount = priorityCount,
-            progress = remainingProgress,
+            progress = doneProgress,
             onOpenCase = onOpenCase,
             onCallPatient = onCallPatient,
         )
@@ -158,6 +160,7 @@ fun CallsScreen(
 private fun CallQueueHero(
     upNext: PatientCase?,
     callerName: String,
+    doneCount: Int,
     remainingCount: Int,
     totalCount: Int,
     redCount: Int,
@@ -213,13 +216,13 @@ private fun CallQueueHero(
                         strokeWidth = 7.dp,
                     )
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(remainingCount.toString(), color = MedtrackColors.Ink, fontWeight = FontWeight.Bold)
-                        Text("left", color = MedtrackColors.Muted, style = MaterialTheme.typography.labelSmall)
+                        Text(doneCount.toString(), color = MedtrackColors.Ink, fontWeight = FontWeight.Bold)
+                        Text("done", color = MedtrackColors.Muted, style = MaterialTheme.typography.labelSmall)
                     }
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.fillMaxWidth()) {
-                MedtrackMiniPill(text = "$remainingCount of $totalCount left", color = MedtrackColors.Primary)
+                MedtrackMiniPill(text = "$doneCount of $totalCount done", color = MedtrackColors.Primary)
                 MedtrackMiniPill(text = "~${remainingCount * 3} min left", color = MedtrackColors.Warning)
                 if (redCount > 0) {
                     MedtrackMiniPill(text = "$redCount red", color = MedtrackColors.Danger)
@@ -287,13 +290,22 @@ private fun CallQueueRow(
 ) {
     MedtrackCompactCard(
         modifier = Modifier.clickable(onClick = onOpenCase),
-        borderColor = if (patientCase.isHighRisk) MedtrackColors.Danger.copy(alpha = 0.45f) else MedtrackColors.Border,
+        borderColor = MedtrackColors.Border,
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(9.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            Box(
+                modifier = Modifier
+                    .width(4.dp)
+                    .height(42.dp)
+                    .background(
+                        if (patientCase.isHighRisk) MedtrackColors.Danger else MedtrackColors.Primary.copy(alpha = 0.24f),
+                        RoundedCornerShape(50),
+                    ),
+            )
             MedtrackIconBadge(icon = Icons.Outlined.Phone, tint = if (patientCase.isHighRisk) MedtrackColors.Danger else MedtrackColors.Primary)
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(patientCase.patientName, color = MedtrackColors.Ink, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)

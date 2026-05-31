@@ -115,7 +115,7 @@ fun LoginScreen(
                             scope.launch {
                                 isLoading = true
                                 error = null
-                                runCatching { onLogin(username.trim(), password) }
+                                runCatching { onLogin(username.trim(), password.trim()) }
                                     .onFailure { error = it.message ?: "Login failed" }
                                 isLoading = false
                             }

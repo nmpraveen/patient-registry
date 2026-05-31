@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.05.31.14.57
+- Polished MEDTRACK Android v1 surfaces across login, home/worklist, cases, case detail, calls, notifications, alert detail, profile, quick add, and mock case creation so the app uses a consistent Compose theme.
+- Added the Android alert-detail route, call-outcome phone context, Custom Rehab styling support, and a native mock case creation flow for local clinic workflow review.
+- Captured a local Test NNH screenshot handoff package at `output/android-claude-handoff-final-20260531-105420/` and kept Firebase, physical-device, field-test, lock-flow, and create-case persistence gates explicit as remaining work.
+
 ## 2026.05.31.02.34
 - Changed the mobile case-list default so Admin, Doctor, and Superuser/root sessions see all visible cases instead of only tasks assigned to themselves.
 - Updated the Android worklist client and background sync defaults so elevated mobile users request the `assigned_to=all` scope while non-elevated roles remain on assigned-to-me by default.

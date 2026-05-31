@@ -2,6 +2,7 @@ package com.naveenhospital.medtrack.core.push
 
 import android.app.PendingIntent
 import android.content.Intent
+import android.net.Uri
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.google.firebase.messaging.FirebaseMessagingService
@@ -30,6 +31,7 @@ class MedtrackFirebaseMessagingService : FirebaseMessagingService() {
         val body = message.notification?.body ?: message.data["body"] ?: "New update"
         val type = message.data["type"] ?: message.data["notification_type"]
         val caseId = message.data["case_id"] ?: message.data["caseId"]
+        val phoneNumber = message.data["phone_number"] ?: message.data["phoneNumber"]
         val channelId = MedtrackPush.channelForType(type)
         val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
             ?.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
@@ -39,6 +41,21 @@ class MedtrackFirebaseMessagingService : FirebaseMessagingService() {
             PendingIntent.getActivity(
                 this,
                 (message.messageId ?: caseId ?: "$title-$body").hashCode(),
+                it,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+        }
+        val callIntent = phoneNumber
+            ?.takeIf { it.isNotBlank() }
+            ?.let { number ->
+                Intent(Intent.ACTION_DIAL).apply {
+                    data = Uri.parse("tel:${number.filter { char -> char.isDigit() || char == '+' }}")
+                }
+            }
+        val callPendingIntent = callIntent?.let {
+            PendingIntent.getActivity(
+                this,
+                ("call-${message.messageId ?: caseId ?: phoneNumber}").hashCode(),
                 it,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )
@@ -54,6 +71,12 @@ class MedtrackFirebaseMessagingService : FirebaseMessagingService() {
             .apply {
                 if (pendingIntent != null) {
                     setContentIntent(pendingIntent)
+                }
+                if (callPendingIntent != null) {
+                    addAction(android.R.drawable.ic_menu_call, "Call patient", callPendingIntent)
+                }
+                if (pendingIntent != null && caseId?.isNotBlank() == true) {
+                    addAction(android.R.drawable.ic_menu_view, "Open case", pendingIntent)
                 }
             }
             .build()

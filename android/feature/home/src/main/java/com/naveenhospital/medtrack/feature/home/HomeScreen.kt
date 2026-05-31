@@ -32,6 +32,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Chat
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.Event
 import androidx.compose.material.icons.outlined.Flag
 import androidx.compose.material.icons.outlined.FilterList
 import androidx.compose.material.icons.outlined.Notifications
@@ -57,6 +58,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
@@ -564,11 +566,19 @@ private fun ListHeader(
             fontWeight = FontWeight.Bold,
             color = MedtrackColors.Muted,
         )
-        Text(
-            text = "by time",
-            style = MaterialTheme.typography.labelSmall,
-            color = MedtrackColors.Muted,
-        )
+        Surface(
+            shape = RoundedCornerShape(50),
+            color = MedtrackColors.Card,
+            border = androidx.compose.foundation.BorderStroke(1.dp, MedtrackColors.Border.copy(alpha = 0.78f)),
+        ) {
+            Text(
+                text = "by time \u25BE",
+                style = MaterialTheme.typography.labelSmall,
+                color = MedtrackColors.Muted,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+            )
+        }
     }
 }
 
@@ -819,30 +829,43 @@ private fun BucketChips(
     selectedBucket: String?,
     onBucketSelected: (String?) -> Unit,
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(HomeUiScale.BucketGap),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Spacer(modifier = Modifier.width(2.dp))
-        listOf(
-            BucketFilter("today", "Today", stats.today, MedtrackColors.Primary),
-            BucketFilter("upcoming", "Upcoming", stats.upcoming, MedtrackColors.Primary),
-            BucketFilter("overdue", "Overdue", stats.overdue, MedtrackColors.Danger),
-            BucketFilter("awaiting", "Awaiting", stats.awaiting, MedtrackColors.Warning),
-            BucketFilter("red", "Red", stats.red, MedtrackColors.Danger),
-        ).forEach { filter ->
-            BucketFilterChip(
-                selected = selectedBucket == filter.key,
-                onClick = { onBucketSelected(if (selectedBucket == filter.key) null else filter.key) },
-                label = filter.label,
-                count = filter.count,
-                accent = filter.accent,
-            )
+    Box(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(HomeUiScale.BucketGap),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Spacer(modifier = Modifier.width(2.dp))
+            listOf(
+                BucketFilter("today", "Today", stats.today, MedtrackColors.Primary),
+                BucketFilter("upcoming", "Upcoming", stats.upcoming, MedtrackColors.Primary),
+                BucketFilter("overdue", "Overdue", stats.overdue, MedtrackColors.Danger),
+                BucketFilter("awaiting", "Awaiting", stats.awaiting, MedtrackColors.Warning),
+                BucketFilter("red", "Red", stats.red, MedtrackColors.Danger),
+            ).forEach { filter ->
+                BucketFilterChip(
+                    selected = selectedBucket == filter.key,
+                    onClick = { onBucketSelected(if (selectedBucket == filter.key) null else filter.key) },
+                    label = filter.label,
+                    count = filter.count,
+                    accent = filter.accent,
+                )
+            }
+            Spacer(modifier = Modifier.width(34.dp))
         }
-        Spacer(modifier = Modifier.width(2.dp))
+        Box(
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .width(34.dp)
+                .height(HomeUiScale.BucketHeight)
+                .background(
+                    Brush.horizontalGradient(
+                        listOf(Color.Transparent, MedtrackColors.Surface),
+                    ),
+                ),
+        )
     }
 }
 
@@ -1068,7 +1091,7 @@ private fun PatientCard(
                                         dueLabel?.let {
                                             DueChip(
                                                 text = it,
-                                                highRisk = patientCase.isHighRisk,
+                                                highRisk = false,
                                             )
                                         }
                                     }
@@ -1111,6 +1134,9 @@ private fun PatientCard(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
+                        }
+                        if (patientCase.isHighRisk) {
+                            RiskReasonsInlineChip(patientCase = patientCase, onClick = onRiskClick)
                         }
                         TaskChipRow(patientCase = patientCase)
                         Row(horizontalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.fillMaxWidth()) {
@@ -1156,6 +1182,43 @@ private fun PatientCard(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun RiskReasonsInlineChip(
+    patientCase: PatientCase,
+    onClick: () -> Unit,
+) {
+    val count = patientCase.highRiskReasons.count { it.isNotBlank() }.takeIf { it > 0 } ?: 1
+    val reason = if (count == 1) "1 risk reason" else "$count risk reasons"
+    Surface(
+        modifier = Modifier.clickable(onClick = onClick),
+        shape = RoundedCornerShape(13.dp),
+        color = MedtrackColors.Danger.copy(alpha = 0.08f),
+        border = androidx.compose.foundation.BorderStroke(1.dp, MedtrackColors.Danger.copy(alpha = 0.18f)),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+            horizontalArrangement = Arrangement.spacedBy(7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.Flag,
+                contentDescription = null,
+                tint = MedtrackColors.Danger,
+                modifier = Modifier.size(15.dp),
+            )
+            Text(
+                text = reason,
+                color = MedtrackColors.Danger,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.ExtraBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
         }
     }
 }
@@ -1320,6 +1383,16 @@ private fun VitalMetric(metric: VitalMetricDisplay, modifier: Modifier = Modifie
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            if (metric.unit.isNotBlank()) {
+                Text(
+                    text = metric.unit,
+                    color = MedtrackColors.Muted,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }
@@ -1327,20 +1400,46 @@ private fun VitalMetric(metric: VitalMetricDisplay, modifier: Modifier = Modifie
 private data class VitalMetricDisplay(
     val label: String,
     val value: String,
+    val unit: String,
     val status: String,
 )
 
-private fun String.toVitalMetrics(thresholds: VitalsThresholdConfig?): List<VitalMetricDisplay> =
-    split("|")
+private fun String.toVitalMetrics(thresholds: VitalsThresholdConfig?): List<VitalMetricDisplay> {
+    val values = split("|")
         .map { it.trim() }
         .filter { it.isNotBlank() }
-        .take(4)
-        .map { metric ->
+        .mapNotNull { metric ->
             val parts = metric.split(Regex("\\s+"), limit = 2)
-            val label = parts.firstOrNull().orEmpty()
+            val label = parts.firstOrNull().orEmpty().normalizedVitalKey()
             val value = parts.getOrNull(1).orEmpty()
-            VitalMetricDisplay(label = label, value = value, status = label.vitalStatusFor(value, thresholds))
+            label.takeIf { it.isNotBlank() }?.let { it to value }
         }
+        .toMap()
+
+    fun metric(label: String, key: String, unit: String): VitalMetricDisplay {
+        val value = values[key]?.takeIf { it.isNotBlank() } ?: "\u2014"
+        val status = if (value == "\u2014") "na" else key.vitalStatusFor(value, thresholds)
+        return VitalMetricDisplay(label = label, value = value, unit = unit, status = status)
+    }
+
+    return listOf(
+        metric("BP", "bp", "mmHg"),
+        metric("Pulse", "pulse", "bpm"),
+        metric("SpO2", "spo2", "%"),
+        metric("Hb", "hemoglobin", "g/dL"),
+    )
+}
+
+private fun String.normalizedVitalKey(): String {
+    val normalized = trim().lowercase(Locale.US).replace(" ", "")
+    return when {
+        normalized == "bp" || normalized.contains("bloodpressure") -> "bp"
+        normalized == "pr" || normalized == "pulse" -> "pulse"
+        normalized.startsWith("spo") -> "spo2"
+        normalized == "hb" || normalized == "hgb" || normalized.contains("hemoglobin") -> "hemoglobin"
+        else -> ""
+    }
+}
 
 private fun String.vitalStatusFor(value: String, thresholds: VitalsThresholdConfig?): String {
     val normalized = trim().lowercase(Locale.US).replace(" ", "")
@@ -1415,35 +1514,39 @@ private fun String.vitalStatusColor(): Color =
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
 private fun TaskChipRow(patientCase: PatientCase) {
-    val chips = listOfNotNull(patientCase.nextTaskTitle?.takeIf { it.isNotBlank() })
-        .ifEmpty { listOf("No open task") }
-    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-        Text(
-            text = "TASKS \u2022 ${if (patientCase.nextTaskTitle.isNullOrBlank()) 0 else 1}",
-            color = MedtrackColors.Muted,
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.Bold,
-        )
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            chips.forEach { label ->
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = MedtrackColors.Surface,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, MedtrackColors.Border.copy(alpha = 0.62f)),
-                ) {
-                    Text(
-                        text = label,
-                        color = MedtrackColors.Ink,
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(
-                            horizontal = HomeUiScale.TaskChipPaddingHorizontal,
-                            vertical = HomeUiScale.TaskChipPaddingVertical,
-                        ),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
+    val taskTitle = patientCase.nextTaskTitle?.takeIf { it.isNotBlank() }
+    Surface(
+        shape = RoundedCornerShape(13.dp),
+        color = MedtrackColors.Surface,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MedtrackColors.Border.copy(alpha = 0.68f)),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.Event,
+                contentDescription = null,
+                tint = if (taskTitle == null) MedtrackColors.Muted else MedtrackColors.Primary,
+                modifier = Modifier.size(17.dp),
+            )
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                Text(
+                    text = if (taskTitle == null) "0 open tasks" else "1 open task",
+                    color = MedtrackColors.Muted,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.ExtraBold,
+                    maxLines = 1,
+                )
+                Text(
+                    text = taskTitle ?: "No open task",
+                    color = if (taskTitle == null) MedtrackColors.Muted else MedtrackColors.Ink,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
     }

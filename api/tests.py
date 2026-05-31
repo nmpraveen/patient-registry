@@ -644,6 +644,7 @@ class MobileApiTests(APITestCase):
         )
         self.assertEqual(notifications.count(), 1)
         self.assertEqual(notifications.get().payload["case_id"], self.case.id)
+        self.assertEqual(notifications.get().payload["phone_number"], self.case.phone_number)
 
     def test_task_reassignment_notifies_new_assignee(self):
         new_user = get_user_model().objects.create_user(username="new-assignee", password="pass")
@@ -691,6 +692,7 @@ class MobileApiTests(APITestCase):
         )
         self.assertEqual(notifications.count(), 1)
         self.assertEqual(notifications.get().payload["channel"], "red_flags")
+        self.assertEqual(notifications.get().payload["phone_number"], "9876543211")
 
     def test_overdue_management_command_creates_deduped_notifications(self):
         overdue_task = Task.objects.create(

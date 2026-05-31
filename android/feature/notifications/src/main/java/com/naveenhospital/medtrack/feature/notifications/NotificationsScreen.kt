@@ -51,7 +51,13 @@ fun NotificationsScreen(
 ) {
     val unreadCount = notifications.count { !it.isRead }
     val criticalCount = notifications.count { !it.isRead && it.type in setOf("red_flag", "overdue") }
-    val grouped = notifications.groupBy { it.groupLabel() }
+    val grouped = notifications
+        .sortedWith(
+            compareBy<NotificationItem> { it.groupPriority() }
+                .thenBy { if (it.isRead) 1 else 0 }
+                .thenByDescending { it.createdAt },
+        )
+        .groupBy { it.groupLabel() }
 
     Column(
         modifier = modifier
@@ -168,7 +174,7 @@ private fun NotificationRow(
                     if (item.caseId != null) {
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
                             Icon(imageVector = Icons.AutoMirrored.Outlined.OpenInNew, contentDescription = null, tint = MedtrackColors.Primary, modifier = Modifier.size(14.dp))
-                            Text("Open case", color = MedtrackColors.Primary, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                            Text("Open alert", color = MedtrackColors.Primary, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -184,6 +190,13 @@ private fun NotificationItem.groupLabel(): String =
         else -> "Updates"
     }
 
+private fun NotificationItem.groupPriority(): Int =
+    when (type) {
+        "red_flag", "overdue" -> 0
+        "assignment" -> 1
+        else -> 2
+    }
+
 private fun NotificationItem.typeLabel(): String =
     when (type) {
         "red_flag" -> "Red"
@@ -195,7 +208,7 @@ private fun NotificationItem.typeLabel(): String =
 private fun NotificationItem.typeColor(): Color =
     when (type) {
         "red_flag" -> MedtrackColors.Danger
-        "overdue" -> MedtrackColors.Warning
+        "overdue" -> MedtrackColors.Danger
         "assignment" -> MedtrackColors.Primary
         else -> MedtrackColors.Muted
     }

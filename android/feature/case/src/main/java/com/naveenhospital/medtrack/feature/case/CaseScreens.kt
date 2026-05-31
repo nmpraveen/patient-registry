@@ -56,6 +56,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.naveenhospital.medtrack.core.designsystem.MedtrackCard
@@ -169,7 +170,7 @@ fun CaseDetailScreen(
                 color = MedtrackColors.Ink,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
-                maxLines = 1,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
@@ -207,20 +208,45 @@ fun CaseDetailScreen(
                             patientCase = patientCase,
                         )
                     }
+                    val latestVitalsSummary = vitals.firstOrNull()?.summary?.takeIf { it.isNotBlank() }
+                        ?: patientCase.latestVitalSummary?.takeIf { it.isNotBlank() }
+                    if (latestVitalsSummary != null) {
+                        item {
+                            LatestVitalsStrip(
+                                summary = latestVitalsSummary,
+                                recordedAt = vitals.firstOrNull()?.recordedAt,
+                            )
+                        }
+                    }
                     item {
                         MedtrackSectionTitle(
                             title = "Tasks",
                             trailing = "${tasks.count { it.isActionable() }} open",
                         )
                     }
-                    item {
-                        MedtrackCompactCard {
-                            if (tasks.isEmpty()) {
+                    val overdueTasks = tasks.filter { it.taskGroup() == TaskGroup.OVERDUE }
+                    val upcomingTasks = tasks.filter { it.taskGroup() == TaskGroup.UPCOMING }
+                    val doneTasks = tasks.filter { it.taskGroup() == TaskGroup.DONE }
+                    if (tasks.isEmpty()) {
+                        item {
+                            MedtrackCompactCard {
                                 Text(text = "No tasks recorded", color = MedtrackColors.Muted)
-                            } else {
-                                tasks.forEach { task ->
-                                    TaskRow(task = task, onCompleteTask = onCompleteTask)
-                                }
+                            }
+                        }
+                    } else {
+                        if (overdueTasks.isNotEmpty()) {
+                            item {
+                                TaskSectionCard(title = "Overdue", tasks = overdueTasks, onCompleteTask = onCompleteTask)
+                            }
+                        }
+                        if (upcomingTasks.isNotEmpty()) {
+                            item {
+                                TaskSectionCard(title = "Upcoming", tasks = upcomingTasks, onCompleteTask = onCompleteTask)
+                            }
+                        }
+                        if (doneTasks.isNotEmpty()) {
+                            item {
+                                TaskSectionCard(title = "Done", tasks = doneTasks, onCompleteTask = onCompleteTask)
                             }
                         }
                     }
@@ -273,6 +299,7 @@ fun CaseDetailScreen(
 
     if (showVitalsDialog) {
         VitalsEntrySheet(
+            patientCase = patientCase,
             thresholds = vitalsThresholds,
             onDismiss = { showVitalsDialog = false },
             onSubmit = { input ->
@@ -417,7 +444,7 @@ private fun CaseStickyActions(
             ) {
                 Icon(imageVector = Icons.Outlined.Phone, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(5.dp))
-                Text("Call")
+                Text("Call", maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Button(
                 onClick = onMessagePatient,
@@ -427,7 +454,7 @@ private fun CaseStickyActions(
             ) {
                 Icon(imageVector = Icons.AutoMirrored.Outlined.Chat, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(5.dp))
-                Text("WhatsApp")
+                Text("WhatsApp", maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Button(
                 onClick = onAddVitals,
@@ -436,8 +463,67 @@ private fun CaseStickyActions(
             ) {
                 Icon(imageVector = Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(5.dp))
-                Text("Vitals")
+                Text("Vitals", maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
+        }
+    }
+}
+
+@Composable
+private fun LatestVitalsStrip(
+    summary: String,
+    recordedAt: String?,
+) {
+    val metrics = summary.latestVitalPairs()
+    MedtrackCompactCard {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Latest vitals", color = MedtrackColors.Ink, fontWeight = FontWeight.Bold)
+            recordedAt?.takeIf { it.isNotBlank() }?.let {
+                Text(it.take(10), color = MedtrackColors.Muted, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+            metrics.forEach { metric ->
+                Surface(
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp),
+                    color = MedtrackColors.Surface,
+                    border = BorderStroke(1.dp, MedtrackColors.Border.copy(alpha = 0.62f)),
+                ) {
+                    Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(metric.label, color = MedtrackColors.Muted, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.ExtraBold)
+                        Text(metric.value, color = MedtrackColors.Ink, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (metric.unit.isNotBlank()) {
+                            Text(metric.unit, color = MedtrackColors.Muted, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TaskSectionCard(
+    title: String,
+    tasks: List<PatientTask>,
+    onCompleteTask: (PatientTask) -> Unit,
+) {
+    MedtrackCompactCard {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(title, color = MedtrackColors.Ink, fontWeight = FontWeight.Bold)
+            MedtrackMiniPill(text = tasks.size.toString(), color = if (title == "Overdue") MedtrackColors.Danger else MedtrackColors.Primary)
+        }
+        tasks.forEach { task ->
+            TaskRow(task = task, onCompleteTask = onCompleteTask)
         }
     }
 }
@@ -447,6 +533,7 @@ private fun TaskRow(
     task: PatientTask,
     onCompleteTask: (PatientTask) -> Unit,
 ) {
+    val actionable = task.isActionable()
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(13.dp),
@@ -462,10 +549,11 @@ private fun TaskRow(
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
                     text = task.title,
-                    color = MedtrackColors.Ink,
+                    color = if (actionable) MedtrackColors.Ink else MedtrackColors.Muted,
                     fontWeight = FontWeight.Bold,
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
+                    textDecoration = if (actionable) TextDecoration.None else TextDecoration.LineThrough,
                 )
                 Text(
                     text = task.dueDate ?: "No due date",
@@ -476,16 +564,20 @@ private fun TaskRow(
                 )
             }
             MedtrackMiniPill(text = task.statusLabel, color = task.statusColor())
-            if (task.isActionable()) {
-                Button(
-                    onClick = { onCompleteTask(task) },
-                    modifier = Modifier.height(34.dp),
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 5.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = MedtrackColors.Ink),
-                ) {
-                    Icon(imageVector = Icons.Outlined.CheckCircle, contentDescription = null, modifier = Modifier.size(15.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Done")
+            Surface(
+                modifier = Modifier
+                    .size(34.dp)
+                    .clickable(enabled = actionable) {
+                        onCompleteTask(task)
+                    },
+                shape = RoundedCornerShape(50),
+                color = if (actionable) MedtrackColors.Card else MedtrackColors.Success.copy(alpha = 0.12f),
+                border = BorderStroke(1.5.dp, if (actionable) MedtrackColors.Border else MedtrackColors.Success.copy(alpha = 0.32f)),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    if (!actionable) {
+                        Icon(imageVector = Icons.Outlined.CheckCircle, contentDescription = null, tint = MedtrackColors.Success, modifier = Modifier.size(19.dp))
+                    }
                 }
             }
         }
@@ -632,6 +724,7 @@ private fun PatientCase.categoryColor(): Color =
 
 private fun PatientTask.statusColor(): Color =
     when (status.uppercase()) {
+        "OVERDUE" -> MedtrackColors.Danger
         "COMPLETED" -> MedtrackColors.Success
         "AWAITING_REPORTS" -> MedtrackColors.Warning
         "CANCELLED" -> MedtrackColors.Muted
@@ -640,6 +733,65 @@ private fun PatientTask.statusColor(): Color =
 
 private fun PatientTask.isActionable(): Boolean =
     canComplete && status.uppercase() !in setOf("COMPLETED", "CANCELLED")
+
+private enum class TaskGroup {
+    OVERDUE,
+    UPCOMING,
+    DONE,
+}
+
+private fun PatientTask.taskGroup(): TaskGroup {
+    val normalizedStatus = status.uppercase()
+    return when {
+        normalizedStatus in setOf("COMPLETED", "CANCELLED") -> TaskGroup.DONE
+        normalizedStatus == "OVERDUE" || statusLabel.contains("overdue", ignoreCase = true) -> TaskGroup.OVERDUE
+        !isActionable() -> TaskGroup.DONE
+        else -> TaskGroup.UPCOMING
+    }
+}
+
+private data class LatestVitalMetric(
+    val label: String,
+    val value: String,
+    val unit: String,
+)
+
+private fun String.latestVitalPairs(): List<LatestVitalMetric> {
+    val values = split("|")
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+        .mapNotNull { metric ->
+            val parts = metric.split(Regex("\\s+"), limit = 2)
+            val label = parts.firstOrNull().orEmpty().trim()
+            val value = parts.getOrNull(1).orEmpty().trim()
+            label.takeIf { it.isNotBlank() }?.let { it to value.ifBlank { "\u2014" } }
+        }
+        .toMap()
+    fun find(label: String, unit: String, vararg aliases: String): LatestVitalMetric {
+        val value = aliases.firstNotNullOfOrNull { alias ->
+            values.entries.firstOrNull { it.key.equals(alias, ignoreCase = true) }?.value
+        } ?: "\u2014"
+        return LatestVitalMetric(
+            label = label,
+            value = value,
+            unit = if (value == "\u2014") "" else unit,
+        )
+    }
+    return listOf(
+        find("BP", "mmHg", "BP"),
+        find("Pulse", "bpm", "PR", "Pulse"),
+        find("SpO2", "%", "SpO2", "SpO\u2082"),
+        find("Hb", "g/dL", "Hb", "Hgb", "Hemoglobin"),
+    )
+}
+
+private fun String.compactPatientName(): String =
+    trim()
+        .split(Regex("\\s+"))
+        .filter { it.isNotBlank() }
+        .take(2)
+        .joinToString(" ")
+        .ifBlank { this }
 
 private fun VitalStatusResult.statusColor(): Color =
     when (status) {
@@ -661,6 +813,7 @@ data class VitalsEntryInput(
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
 private fun VitalsEntrySheet(
+    patientCase: PatientCase?,
     thresholds: VitalsThresholdConfig?,
     onDismiss: () -> Unit,
     onSubmit: (VitalsEntryInput) -> Unit,
@@ -688,12 +841,37 @@ private fun VitalsEntrySheet(
                 .padding(start = 16.dp, end = 16.dp, bottom = 22.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(
-                text = "Add vitals",
-                color = MedtrackColors.Ink,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top,
+            ) {
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = "Add vitals",
+                        color = MedtrackColors.Ink,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        text = "Normal · SBP <140 / DBP <90 · SpO2 >=95 · Hb >=11",
+                        color = MedtrackColors.Muted,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+                patientCase?.let {
+                    Text(
+                        text = "${it.patientName.compactPatientName()} · ${it.categoryLabel}",
+                        modifier = Modifier.width(142.dp),
+                        color = MedtrackColors.InkSoft,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -701,36 +879,53 @@ private fun VitalsEntrySheet(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 item {
+                    Text(
+                        text = "BLOOD PRESSURE",
+                        color = MedtrackColors.Ink,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.ExtraBold,
+                    )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                         OutlinedTextField(
                             value = systolic,
                             onValueChange = { systolic = it.filter(Char::isDigit) },
-                            label = { Text("SBP") },
+                            label = { Text("SBP mmHg") },
                             modifier = Modifier.weight(1f),
                             singleLine = true,
                         )
                         OutlinedTextField(
                             value = diastolic,
                             onValueChange = { diastolic = it.filter(Char::isDigit) },
-                            label = { Text("DBP") },
+                            label = { Text("DBP mmHg") },
                             modifier = Modifier.weight(1f),
                             singleLine = true,
                         )
                     }
+                    Text(
+                        text = "Enter both values. Normal screen target is below 140/90.",
+                        color = MedtrackColors.Muted,
+                        style = MaterialTheme.typography.labelSmall,
+                    )
                 }
                 item {
+                    Text(
+                        text = "OTHER VITALS",
+                        color = MedtrackColors.Ink,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.ExtraBold,
+                    )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                         OutlinedTextField(
                             value = pulse,
                             onValueChange = { pulse = it.filter(Char::isDigit) },
-                            label = { Text("Pulse") },
+                            label = { Text("Pulse bpm") },
                             modifier = Modifier.weight(1f),
                             singleLine = true,
                         )
                         OutlinedTextField(
                             value = spo2,
                             onValueChange = { spo2 = it.filter(Char::isDigit) },
-                            label = { Text("SpO2") },
+                            label = { Text("SpO2 %") },
                             modifier = Modifier.weight(1f),
                             singleLine = true,
                         )
@@ -741,14 +936,14 @@ private fun VitalsEntrySheet(
                         OutlinedTextField(
                             value = weight,
                             onValueChange = { weight = it.filter { char -> char.isDigit() || char == '.' } },
-                            label = { Text("Weight") },
+                            label = { Text("Weight kg") },
                             modifier = Modifier.weight(1f),
                             singleLine = true,
                         )
                         OutlinedTextField(
                             value = hemoglobin,
                             onValueChange = { hemoglobin = it.filter { char -> char.isDigit() || char == '.' } },
-                            label = { Text("Hgb") },
+                            label = { Text("Hb g/dL") },
                             modifier = Modifier.weight(1f),
                             singleLine = true,
                         )

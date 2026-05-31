@@ -27,22 +27,18 @@ private val MedtrackLightColorScheme = lightColorScheme(
     error = MedtrackColors.Danger,
 )
 
-private val BricolageFontFamily by lazy {
-    FontFamily(Font(R.font.bricolage_grotesque_variable))
-}
-
-private val InterFontFamily by lazy {
-    FontFamily(Font(R.font.inter_variable))
+private val ManropeFontFamily by lazy {
+    FontFamily(Font(R.font.manrope_variable))
 }
 
 private fun medtrackTypography(): Typography {
     val displayFamily = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-        BricolageFontFamily
+        ManropeFontFamily
     } else {
         FontFamily.SansSerif
     }
     val bodyFamily = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-        InterFontFamily
+        ManropeFontFamily
     } else {
         FontFamily.SansSerif
     }

@@ -80,6 +80,18 @@ For the repeatable smoke path, run this from the repo root:
 
 The script starts or reuses the local Test NNH backend, verifies Local Server Dashboard discovery, builds and installs the debug APK, drives login/pattern/home, checks biometric availability messaging, checks the V2a inbox/card interactions, opens case detail, adds a vital reading, opens the notification inbox, simulates a notification-tap deep link into case detail, saves screenshots/XML plus summary JSON under `output/android-emulator-smoke-*`, and cleans up only the server/emulator/dashboard processes it started.
 
+For fast manual "start the app and log in" tasks, prefer the `MarkUS_Local` AVD. It boots to a usable launcher more reliably on this Windows machine:
+
+```powershell
+& "$env:LOCALAPPDATA\Android\Sdk\emulator\emulator.exe" -avd MarkUS_Local -gpu swiftshader_indirect
+adb wait-for-device
+adb shell svc power stayon true
+adb shell input keyevent 224
+adb shell wm dismiss-keyguard
+```
+
+If `MarkUS_Latest_API37` is attached but `dumpsys activity users` shows `RUNNING_LOCKED`, screenshots are black, or `mCurrentFocus` stays on `NotificationShade`, do not keep debugging the APK. Kill that emulator and use `MarkUS_Local` for the manual login path. `MarkUS_Latest_API37` is still useful for the dedicated biometric smoke because that script manages enrolled fingerprint state.
+
 Use the offline gate when validating Phase 5 behavior:
 
 ```powershell
@@ -135,11 +147,25 @@ adb shell monkey -p com.naveenhospital.medtrack 1
 
 Gradle writes Android build outputs to `%USERPROFILE%\.codex\build\medtrack-android` by default so Dropbox does not convert generated `.class` files into placeholder reparse points. Set `MEDTRACK_ANDROID_BUILD_DIR` before running Gradle if you need a different local build-output path.
 
-If no emulator is running, start the AVD first:
+If no emulator is running for manual testing, start `MarkUS_Local` first:
 
 ```powershell
-& "$env:LOCALAPPDATA\Android\Sdk\emulator\emulator.exe" -avd MarkUS_Latest_API37
+& "$env:LOCALAPPDATA\Android\Sdk\emulator\emulator.exe" -avd MarkUS_Local -gpu swiftshader_indirect
 ```
+
+Then unlock, install, and launch explicitly:
+
+```powershell
+adb wait-for-device
+adb shell svc power stayon true
+adb shell input keyevent 224
+adb shell wm dismiss-keyguard
+adb install -r $apk
+adb shell pm clear com.naveenhospital.medtrack
+adb shell am start -W -n com.naveenhospital.medtrack/.MainActivity
+```
+
+Sign in with `admin` / `pass`. On first run after `pm clear`, set the secure pattern with top-left, top-middle, top-right, then middle-right dots; tap Save, Continue, and deny the Android notification permission unless the test needs notifications.
 
 For this local emulator path, keep the default `http://10.0.2.2:8000/` API base URL. Do not use `10.0.2.2` for shared APKs or handoff builds.
 

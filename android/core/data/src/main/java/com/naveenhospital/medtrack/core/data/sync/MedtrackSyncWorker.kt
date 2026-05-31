@@ -89,12 +89,12 @@ class MedtrackSyncWorker(
         val defaultCaseListKey = caseListCacheKey(
             bucket = "today",
             query = null,
-            assignedTo = "me",
+            assignedTo = null,
             categories = emptyList(),
             subcategories = emptyList(),
         )
         if (database.shouldRefresh(defaultCaseListKey, now)) {
-            val response = api.listCases(bucket = "today", assignedTo = "me", page = 1)
+            val response = api.listCases(bucket = "today", page = 1)
             database.withTransaction {
                 database.caseDao().clearCases()
                 database.caseDao().upsertCases(response.results.map { it.toEntityForSync() })

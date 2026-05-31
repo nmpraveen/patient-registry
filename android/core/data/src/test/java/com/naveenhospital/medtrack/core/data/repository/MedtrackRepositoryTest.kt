@@ -17,6 +17,7 @@ import com.naveenhospital.medtrack.core.network.model.CallWriteResponseDto
 import com.naveenhospital.medtrack.core.network.model.CaseCategoryDto
 import com.naveenhospital.medtrack.core.network.model.CaseDetailDto
 import com.naveenhospital.medtrack.core.network.model.CaseListResponseDto
+import com.naveenhospital.medtrack.core.network.model.CaseStatsDto
 import com.naveenhospital.medtrack.core.network.model.CaseSummaryDto
 import com.naveenhospital.medtrack.core.network.model.CaseSubcategoryDto
 import com.naveenhospital.medtrack.core.network.model.CategoriesResponseDto
@@ -39,6 +40,7 @@ import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -89,6 +91,16 @@ class MedtrackRepositoryTest {
         assertEquals(CaseCategory.ANC, cached.single().category)
         assertEquals("anc_high_risk", cached.single().subcategories.single().value)
         assertEquals("High-risk ANC", cached.single().subcategories.single().label)
+    }
+
+    @Test
+    fun refreshCasesUsesServerDefaultAssignmentScopeWhenOmitted() = runTest {
+        val api = FakeMedtrackApi()
+        val repository = MedtrackRepository(api = api, database = database)
+
+        repository.refreshCases()
+
+        assertNull(api.lastListCasesAssignedTo)
     }
 
     @Test
@@ -385,6 +397,13 @@ class MedtrackRepositoryTest {
 
 private class FakeMedtrackApi(
     private val categoriesResponse: CategoriesResponseDto = CategoriesResponseDto(emptyList()),
+    private val caseListResponse: CaseListResponseDto = CaseListResponseDto(
+        count = 0,
+        next = null,
+        previous = null,
+        stats = CaseStatsDto(today = 0, upcoming = 0, overdue = 0, awaiting = 0, red = 0),
+        results = emptyList(),
+    ),
     private val categoriesError: Throwable? = null,
     private val registerPushError: Throwable? = null,
     private val notificationReadError: Throwable? = null,
@@ -399,6 +418,8 @@ private class FakeMedtrackApi(
     var lastLogCallCaseId: String? = null
         private set
     var lastLogCallRequest: LogCallRequestDto? = null
+        private set
+    var lastListCasesAssignedTo: String? = null
         private set
 
     override suspend fun categories(): CategoriesResponseDto {
@@ -418,7 +439,10 @@ private class FakeMedtrackApi(
         subcategories: List<String>?,
         query: String?,
         page: Int?,
-    ): CaseListResponseDto = unused()
+    ): CaseListResponseDto {
+        lastListCasesAssignedTo = assignedTo
+        return caseListResponse
+    }
 
     override suspend fun caseDetail(caseId: String): CaseDetailDto = unused()
     override suspend fun completeTask(taskId: String, request: ClientWriteRequestDto): TaskWriteResponseDto {

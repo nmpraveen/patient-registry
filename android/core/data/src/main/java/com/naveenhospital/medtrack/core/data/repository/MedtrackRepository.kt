@@ -94,7 +94,7 @@ class MedtrackRepository(
     fun pagedCases(
         bucket: String? = "today",
         query: String? = null,
-        assignedTo: String? = "me",
+        assignedTo: String? = null,
         categories: List<String> = emptyList(),
         subcategories: List<String> = emptyList(),
     ): Flow<PagingData<PatientCase>> {
@@ -145,7 +145,7 @@ class MedtrackRepository(
     suspend fun refreshCases(
         bucket: String? = "today",
         query: String? = null,
-        assignedTo: String? = "me",
+        assignedTo: String? = null,
         categories: List<String> = emptyList(),
         subcategories: List<String> = emptyList(),
     ) {
@@ -173,7 +173,7 @@ class MedtrackRepository(
     suspend fun loadNextCases(
         bucket: String? = "today",
         query: String? = null,
-        assignedTo: String? = "me",
+        assignedTo: String? = null,
         categories: List<String> = emptyList(),
         subcategories: List<String> = emptyList(),
     ) {

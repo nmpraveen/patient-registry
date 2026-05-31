@@ -170,6 +170,15 @@ private data class BiometricStatus(
 
 private fun UserProfileDto.headerName(): String = displayName.ifBlank { username }
 
+private fun UserProfileDto?.mobileDefaultCaseScope(): String {
+    val canSeeAllByDefault = this?.roles.orEmpty().any { role ->
+        role.equals("Admin", ignoreCase = true) ||
+            role.equals("Doctor", ignoreCase = true) ||
+            role.equals("Superuser", ignoreCase = true)
+    }
+    return if (canSeeAllByDefault) "all" else "me"
+}
+
 @Composable
 fun MedtrackApp(
     container: MedtrackAppContainer,
@@ -446,7 +455,10 @@ fun MedtrackApp(
                     val categoryOptions by container.medtrackRepository.categoryOptions.collectAsState()
                     val vitalsThresholds by container.medtrackRepository.vitalsThresholds.collectAsState()
                     var selectedBucket by remember { mutableStateOf<String?>("today") }
-                    var selectedScope by remember { mutableStateOf("me") }
+                    val defaultCaseScope = currentUserProfile.mobileDefaultCaseScope()
+                    var selectedScope by remember(currentUserProfile?.id, defaultCaseScope) {
+                        mutableStateOf(defaultCaseScope)
+                    }
                     var searchQuery by remember { mutableStateOf("") }
                     var selectedCategories by remember { mutableStateOf<Set<String>>(emptySet()) }
                     var selectedSubcategories by remember { mutableStateOf<Set<String>>(emptySet()) }
@@ -754,6 +766,7 @@ fun MedtrackApp(
                     var callOutcomeCase by remember(caseId) { mutableStateOf<PatientCase?>(null) }
                     var callOutcomeAttemptedAt by remember(caseId) { mutableStateOf<String?>(null) }
                     val patientCase = cachedCase ?: cases.firstOrNull { it.id == caseId }
+                    val defaultCaseScope = currentUserProfile.mobileDefaultCaseScope()
 
                     fun refreshCaseDetail() {
                         if (caseId.isBlank()) return
@@ -783,7 +796,9 @@ fun MedtrackApp(
                                 caseActionMessage = result.message
                                 if (!result.queued) {
                                     refreshCaseDetail()
-                                    runCatching { container.medtrackRepository.refreshCases() }
+                                    runCatching {
+                                        container.medtrackRepository.refreshCases(assignedTo = defaultCaseScope)
+                                    }
                                 }
                             }.onFailure {
                                 caseActionMessage = it.message ?: "Call logging failed"
@@ -879,7 +894,9 @@ fun MedtrackApp(
                                     caseActionMessage = result.message
                                     if (!result.queued) {
                                         refreshCaseDetail()
-                                        runCatching { container.medtrackRepository.refreshCases() }
+                                        runCatching {
+                                            container.medtrackRepository.refreshCases(assignedTo = defaultCaseScope)
+                                        }
                                     }
                                 }.onFailure {
                                     caseActionMessage = it.message ?: "Vitals save failed"

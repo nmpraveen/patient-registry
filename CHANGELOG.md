@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.05.31.02.34
+- Changed the mobile case-list default so Admin, Doctor, and Superuser/root sessions see all visible cases instead of only tasks assigned to themselves.
+- Updated the Android worklist client and background sync defaults so elevated mobile users request the `assigned_to=all` scope while non-elevated roles remain on assigned-to-me by default.
+- Added regression coverage for elevated and non-elevated mobile worklist defaults, plus a repository test that preserves the server-default assignment scope when Android omits the parameter.
+
 ## 2026.05.25.17.09
 - Added the MEDTRACK Android app source, including Compose login, lock, home, cases, calls, notifications, bottom navigation, reusable design-system components, local storage, sync, and emulator/device smoke scripts.
 - Added the mobile API surface for Android authentication, case worklists, case detail actions, call outcomes, notifications, write receipts, and push-token handling.

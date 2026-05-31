@@ -137,6 +137,88 @@ class MobileApiTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["results"][0]["uhid"], "UH-API-1")
 
+    def test_case_list_defaults_to_all_scope_for_doctor(self):
+        doctor = get_user_model().objects.create_user(username="doctor-mobile", password="pass")
+        RoleSetting.objects.update_or_create(role_name="Doctor", defaults={"can_task_edit": True})
+        doctor_group, _ = Group.objects.get_or_create(name="Doctor")
+        doctor.groups.add(doctor_group)
+        unassigned_case = Case.objects.create(
+            uhid="UH-API-UNASSIGNED-DOCTOR",
+            first_name="Unassigned",
+            last_name="Doctor",
+            patient_name="Unassigned Doctor",
+            gender="F",
+            age=30,
+            phone_number="9876543215",
+            category=self.anc,
+            diagnosis="Unassigned doctor review",
+            created_by=self.user,
+        )
+        Task.objects.create(
+            case=unassigned_case,
+            title="Unassigned doctor task",
+            due_date=timezone.localdate(),
+            created_by=self.user,
+        )
+        self.client.force_authenticate(doctor)
+
+        response = self.client.get(reverse("api:case_list"), {"bucket": "today"})
+
+        self.assertEqual(response.status_code, 200)
+        uhids = {row["uhid"] for row in response.json()["results"]}
+        self.assertIn("UH-API-UNASSIGNED-DOCTOR", uhids)
+
+    def test_case_list_defaults_to_me_scope_for_non_doctor_role(self):
+        mobile_user = get_user_model().objects.create_user(username="staff-mobile", password="pass")
+        RoleSetting.objects.update_or_create(role_name="Mobile Staff", defaults={"can_task_edit": True})
+        staff_group, _ = Group.objects.get_or_create(name="Mobile Staff")
+        mobile_user.groups.add(staff_group)
+        assigned_case = Case.objects.create(
+            uhid="UH-API-ASSIGNED-STAFF",
+            first_name="Assigned",
+            last_name="Staff",
+            patient_name="Assigned Staff",
+            gender="F",
+            age=31,
+            phone_number="9876543216",
+            category=self.anc,
+            diagnosis="Assigned staff review",
+            created_by=self.user,
+        )
+        Task.objects.create(
+            case=assigned_case,
+            title="Assigned staff task",
+            due_date=timezone.localdate(),
+            assigned_user=mobile_user,
+            created_by=self.user,
+        )
+        unassigned_case = Case.objects.create(
+            uhid="UH-API-UNASSIGNED-STAFF",
+            first_name="Unassigned",
+            last_name="Staff",
+            patient_name="Unassigned Staff",
+            gender="F",
+            age=32,
+            phone_number="9876543217",
+            category=self.anc,
+            diagnosis="Unassigned staff review",
+            created_by=self.user,
+        )
+        Task.objects.create(
+            case=unassigned_case,
+            title="Unassigned staff task",
+            due_date=timezone.localdate(),
+            created_by=self.user,
+        )
+        self.client.force_authenticate(mobile_user)
+
+        response = self.client.get(reverse("api:case_list"), {"bucket": "today"})
+
+        self.assertEqual(response.status_code, 200)
+        uhids = {row["uhid"] for row in response.json()["results"]}
+        self.assertIn("UH-API-ASSIGNED-STAFF", uhids)
+        self.assertNotIn("UH-API-UNASSIGNED-STAFF", uhids)
+
     def test_logout_returns_json_contract_for_android_client(self):
         refresh = RefreshToken.for_user(self.user)
 

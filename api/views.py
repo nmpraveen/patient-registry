@@ -40,6 +40,7 @@ from patients.views import (
     can_access_case_data,
     create_case_activity,
     has_capability,
+    is_doctor_admin,
 )
 
 from .models import MobileDeviceToken, MobileNotification, MobileWriteReceipt
@@ -136,9 +137,13 @@ def _case_search_query(raw_query):
     )
 
 
+def _default_assigned_to_scope(user):
+    return "all" if is_doctor_admin(user) else "me"
+
+
 def _apply_scope_filters(queryset, request, *, include_bucket=True):
     today = timezone.localdate()
-    assigned_to = request.GET.get("assigned_to", "me").strip()
+    assigned_to = request.GET.get("assigned_to", _default_assigned_to_scope(request.user)).strip()
     if assigned_to == "me":
         queryset = queryset.filter(tasks__assigned_user=request.user)
     elif assigned_to not in {"all", ""}:

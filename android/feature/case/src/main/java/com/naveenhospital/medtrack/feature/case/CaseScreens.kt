@@ -447,7 +447,7 @@ private fun CaseHero(
                                 color = MedtrackColors.Ink,
                                 style = MaterialTheme.typography.titleMedium.copy(fontSize = 19.sp),
                                 fontWeight = FontWeight.ExtraBold,
-                                maxLines = 1,
+                                maxLines = 2,
                                 overflow = TextOverflow.Ellipsis,
                             )
                             Text(
@@ -455,7 +455,7 @@ private fun CaseHero(
                                 color = MedtrackColors.Muted,
                                 style = MaterialTheme.typography.bodySmall.copy(fontFamily = MedtrackType.Mono),
                                 fontWeight = FontWeight.Medium,
-                                maxLines = 1,
+                                maxLines = 2,
                                 overflow = TextOverflow.Ellipsis,
                             )
                         }
@@ -476,7 +476,7 @@ private fun CaseHero(
                     color = MedtrackColors.InkSoft,
                     style = MaterialTheme.typography.labelLarge.copy(fontSize = 14.sp),
                     fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
+                    maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
@@ -1026,7 +1026,7 @@ private fun CaseRow(
                                 color = MedtrackColors.Ink,
                                 style = MaterialTheme.typography.titleSmall.copy(fontSize = 15.5.sp),
                                 fontWeight = FontWeight.ExtraBold,
-                                maxLines = 1,
+                                maxLines = 2,
                                 overflow = TextOverflow.Ellipsis,
                             )
                             Text(
@@ -1034,7 +1034,7 @@ private fun CaseRow(
                                 color = MedtrackColors.Faint,
                                 style = MaterialTheme.typography.labelSmall.copy(fontFamily = MedtrackType.Mono, fontSize = 11.5.sp),
                                 fontWeight = FontWeight.Medium,
-                                maxLines = 1,
+                                maxLines = 2,
                                 overflow = TextOverflow.Ellipsis,
                             )
                             Text(
@@ -1042,7 +1042,7 @@ private fun CaseRow(
                                 color = MedtrackColors.Muted,
                                 style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.5.sp),
                                 fontWeight = FontWeight.SemiBold,
-                                maxLines = 1,
+                                maxLines = 2,
                                 overflow = TextOverflow.Ellipsis,
                             )
                         }

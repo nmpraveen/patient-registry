@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MEDTRACK · P0 Before / After</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  /* ── Canonical tokens (from tokens.source.json) ───────────────────── */
+  :root{
+    --mt-blue:#2563EB; --mt-blue-dk:#1D4ED8; --mt-blue-dp:#1E3A8A; --mt-blue-50:#EFF4FF; --mt-blue-100:#DCE7FF;
+    --mt-ink:#0F172A; --mt-slate:#334155; --mt-muted:#64748B; --mt-faint:#94A3B8;
+    --mt-surface:#F4F6FA; --mt-card:#FFF; --mt-line:#E7ECF3; --mt-line-soft:#EFF2F7; --mt-navy:#101828;
+    --mt-red:#DC2626; --mt-red-bg:#FCEBEB; --mt-red-line:#F6D2D2; --mt-green:#16A34A; --mt-green-bg:#E8F6EE;
+    --mt-cat-anc:#0E9A6C; --mt-cat-anc-bg:#E7F6F0; --mt-cat-med:#5B53D6; --mt-cat-med-bg:#ECEBFB;
+    --mt-cat-sur:#C77A12; --mt-cat-sur-bg:#FAF0E0;
+    --mt-shadow-row:0 1px 2px rgba(15,23,42,.04);
+    --mt-shadow-fab:0 12px 22px rgba(37,99,235,.40);
+    --font:'Manrope',system-ui,-apple-system,sans-serif;
+    --mono:'Geist Mono',ui-monospace,monospace;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:#e7ecf3;color:var(--mt-ink);font-family:var(--font);padding:34px 22px 60px;}
+  h1{font-size:26px;font-weight:800;letter-spacing:-0.4px;margin:0 0 4px;}
+  .lede{color:var(--mt-muted);font-size:15px;font-weight:500;max-width:760px;line-height:1.5;margin:0 0 4px;}
+  .kicker{font-family:var(--mono);font-size:12px;font-weight:600;color:var(--mt-blue);text-transform:uppercase;letter-spacing:1px;margin:0 0 10px;}
+  .wrap{max-width:1180px;margin:0 auto;}
+
+  /* ── Phone shell ──────────────────────────────────────────────────── */
+  .stage{display:flex;gap:46px;flex-wrap:wrap;justify-content:center;margin:30px 0 10px;}
+  .col{display:flex;flex-direction:column;align-items:center;gap:14px;}
+  .tag{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:800;letter-spacing:.3px;padding:6px 14px;border-radius:999px;}
+  .tag.b{background:#fff;color:var(--mt-slate);border:1px solid #cdd6e4;}
+  .tag.a{background:var(--mt-blue);color:#fff;}
+  .phone{width:344px;height:746px;border-radius:34px;border:9px solid #d8dce3;background:var(--mt-surface);
+    overflow:hidden;display:flex;flex-direction:column;position:relative;box-shadow:0 28px 70px rgba(15,23,42,.22);}
+  .statusbar{height:34px;display:flex;align-items:center;justify-content:space-between;padding:0 20px;flex-shrink:0;}
+  .statusbar .t{font-size:13px;font-weight:700;}
+  .statusbar .sys{display:flex;gap:6px;color:var(--mt-ink);}
+  .scroll{flex:1;min-height:0;overflow:hidden;padding:2px 16px 10px;}
+  svg{display:block;flex:none;}
+
+  /* ── Header ───────────────────────────────────────────────────────── */
+  .head{display:flex;align-items:center;gap:11px;margin:6px 2px 12px;}
+  .avatar{width:44px;height:44px;border-radius:13px;background:var(--mt-blue);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;letter-spacing:.4px;flex:none;}
+  .eyebrow{color:var(--mt-muted);} /* before */
+  .head .greeting{color:var(--mt-ink);}
+
+  /* search */
+  .search{display:flex;align-items:center;gap:10px;background:var(--mt-card);border:1px solid var(--mt-line);padding:11px 13px;}
+  .search .ph{flex:1;color:var(--mt-faint);}
+
+  /* buckets */
+  .buckets{display:flex;gap:8px;margin-top:11px;overflow:hidden;}
+  .bk{display:inline-flex;align-items:center;gap:7px;padding:8px 13px;background:var(--mt-card);border:1px solid var(--mt-line);flex:none;}
+  .bk .lab{font-weight:700;color:var(--mt-slate);}
+  .bk .ct{min-width:20px;height:20px;padding:0 5px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;}
+  .bk.on{background:var(--mt-blue);border-color:var(--mt-blue);}
+  .bk.on .lab{color:#fff;}
+  .bk.on .ct{background:rgba(255,255,255,.25);color:#fff;}
+  .bk .ct{background:var(--mt-blue-100);color:var(--mt-blue);}
+  .bk.red .ct{background:var(--mt-red-bg);color:var(--mt-red);}
+
+  /* list header (eyebrow row) */
+  .lh{display:flex;align-items:baseline;justify-content:space-between;margin:14px 2px 9px;}
+  .lh .sort{display:flex;align-items:center;gap:4px;color:var(--mt-slate);font-size:13px;font-weight:700;}
+
+  /* patient card */
+  .pcard{display:flex;background:var(--mt-card);border:1px solid var(--mt-line);overflow:hidden;margin-bottom:9px;}
+  .rail{width:4px;flex:none;}
+  .pin{flex:1;min-width:0;padding:13px 14px 13px 13px;display:flex;gap:12px;align-items:center;}
+  .ctile{width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;flex:none;}
+  .pname{font-weight:800;color:var(--mt-ink);line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .pdiag{color:var(--mt-muted);font-weight:600;margin-top:3px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .pmeta{flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:9px;}
+  .sexage{color:var(--mt-faint);font-weight:700;white-space:nowrap;}
+  .flag{display:inline-flex;align-items:center;gap:4px;}
+  .flag .n{color:var(--mt-red);font-weight:800;}
+  .due{display:inline-flex;font-weight:700;padding:4px 10px;border-radius:999px;margin-top:8px;}
+
+  /* bottom nav */
+  .nav{flex-shrink:0;position:relative;background:var(--mt-card);border-top:1px solid var(--mt-line-soft);
+    padding:9px 14px 12px;display:grid;grid-template-columns:repeat(5,1fr);align-items:end;}
+  .ni{display:flex;flex-direction:column;align-items:center;gap:4px;position:relative;}
+  .ni .lab{font-size:12px;}
+  .ni.on .lab{color:var(--mt-blue);font-weight:700;}
+  .ni .lab{color:var(--mt-faint);font-weight:600;}
+  .fabwrap{display:flex;justify-content:center;}
+  .fab{width:58px;height:58px;border-radius:20px;display:flex;align-items:center;justify-content:center;}
+  .badge{position:absolute;top:-7px;right:-10px;min-width:16px;height:16px;padding:0 4px;border-radius:999px;background:var(--mt-red);color:#fff;font-size:9.5px;font-weight:800;display:flex;align-items:center;justify-content:center;border:1.5px solid #fff;line-height:1;}
+
+  /* annotation markers */
+  .mk{position:absolute;width:22px;height:22px;border-radius:999px;background:var(--mt-ink);color:#fff;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,.3);z-index:5;}
+  .after .mk{background:var(--mt-blue);}
+
+  /* ════════ BEFORE styling (current app) ════════ */
+  .before .search{border-radius:14px;}
+  .before .bk{border-radius:18px;}                 /* near-pill, not full */
+  .before .pcard{border-radius:16px;box-shadow:none;}/* flat */
+  .before .eyebrow{font-size:11.5px;font-weight:700;letter-spacing:0;text-transform:uppercase;color:var(--mt-muted);}
+  .before .greeting{font-size:20px;font-weight:800;letter-spacing:0;}
+  .before .lh .ttl{font-size:11px;font-weight:700;letter-spacing:0;color:var(--mt-muted);text-transform:uppercase;}
+  .before .pname{font-size:16px;letter-spacing:0;}
+  .before .pdiag{font-size:13.5px;}
+  .before .sexage{font-size:12.5px;}
+  .before .search .ph{font-size:15px;font-weight:500;}
+  .before .bk .lab{font-size:13px;}
+  .before .due{font-size:11px;color:var(--mt-muted);background:#fff;border:1px solid var(--mt-line);} /* faint outline DueChip */
+  .before .fab{background:linear-gradient(90deg,#2563EB,#4F46E5);box-shadow:0 6px 14px rgba(79,70,229,.34);} /* blue→indigo */
+  .before .ni .lab{color:var(--mt-muted);} /* inactive muted */
+
+  /* ════════ AFTER styling (P0 applied) ════════ */
+  .after .search{border-radius:14px;box-shadow:var(--mt-shadow-row);}
+  .after .bk{border-radius:999px;}                  /* full pill (radius token) */
+  .after .pcard{border-radius:16px;box-shadow:var(--mt-shadow-row);} /* elevation token */
+  .after .eyebrow{font-size:12.5px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:var(--mt-faint);}
+  .after .greeting{font-size:21px;font-weight:800;letter-spacing:-0.3px;}
+  .after .lh .ttl{font-size:12.5px;font-weight:800;letter-spacing:.6px;color:var(--mt-faint);text-transform:uppercase;}
+  .after .pname{font-size:16px;letter-spacing:-0.2px;}
+  .after .pdiag{font-size:13.5px;}
+  .after .sexage{font-size:12.5px;}
+  .after .search .ph{font-size:15px;font-weight:500;}
+  .after .bk .lab{font-size:14.5px;}
+  .after .due{font-size:12px;color:var(--mt-blue);background:var(--mt-blue-50);}      /* solid-tint DuePill */
+  .after .due.od{color:var(--mt-red);background:var(--mt-red-bg);}
+  .after .fab{background:linear-gradient(150deg,#2563EB 0%,#1D4ED8 60%,#1E3A8A 100%);box-shadow:var(--mt-shadow-fab);} /* 3-stop blue */
+  .after .ni .lab{color:var(--mt-faint);} /* inactive faint */
+
+  /* ── legend ───────────────────────────────────────────────────────── */
+  .legend{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin:40px auto 0;max-width:1100px;}
+  .lc{background:#fff;border:1px solid var(--mt-line);border-radius:16px;padding:18px 18px 20px;box-shadow:var(--mt-shadow-row);}
+  .lc .num{width:26px;height:26px;border-radius:999px;background:var(--mt-blue);color:#fff;font-weight:800;font-size:13px;display:flex;align-items:center;justify-content:center;margin-bottom:10px;}
+  .lc h3{margin:0 0 6px;font-size:16px;font-weight:800;}
+  .lc p{margin:0;color:var(--mt-muted);font-size:13.5px;font-weight:500;line-height:1.5;}
+  .lc .ba{display:flex;gap:8px;margin-top:12px;font-family:var(--mono);font-size:11.5px;}
+  .lc .ba span{flex:1;padding:7px 9px;border-radius:9px;line-height:1.35;}
+  .lc .ba .bb{background:#f1f4f8;color:var(--mt-slate);}
+  .lc .ba .aa{background:var(--mt-blue-50);color:var(--mt-blue-dk);}
+
+  /* ── type scale table ─────────────────────────────────────────────── */
+  .sec-h{max-width:1100px;margin:48px auto 6px;font-size:19px;font-weight:800;}
+  .sec-s{max-width:1100px;margin:0 auto 16px;color:var(--mt-muted);font-size:14px;font-weight:500;}
+  .typetbl{max-width:1100px;margin:0 auto;background:#fff;border:1px solid var(--mt-line);border-radius:16px;overflow:hidden;box-shadow:var(--mt-shadow-row);}
+  .trow{display:grid;grid-template-columns:160px 1fr 1fr;align-items:center;border-bottom:1px solid var(--mt-line-soft);}
+  .trow:last-child{border-bottom:none;}
+  .trow.h{background:var(--mt-surface);}
+  .trow.h>div{font-family:var(--mono);font-size:11.5px;font-weight:600;color:var(--mt-muted);text-transform:uppercase;letter-spacing:.6px;padding:11px 18px;}
+  .trow .role{font-family:var(--mono);font-size:11.5px;color:var(--mt-muted);padding:16px 18px;line-height:1.4;}
+  .trow .cell{padding:14px 18px;border-left:1px solid var(--mt-line-soft);}
+  .trow .cell.bcell{color:var(--mt-slate);}
+  .spec{font-family:var(--mono);font-size:10.5px;color:var(--mt-faint);margin-top:5px;}
+
+  .fab-closeups{display:flex;gap:30px;justify-content:center;flex-wrap:wrap;margin:18px auto 0;}
+  .fcz{display:flex;flex-direction:column;align-items:center;gap:10px;}
+  .fcz .big{width:86px;height:86px;border-radius:26px;display:flex;align-items:center;justify-content:center;}
+  .fcz .cap{font-size:12.5px;font-weight:700;color:var(--mt-slate);}
+  .fcz .cap small{display:block;font-family:var(--mono);font-size:10.5px;color:var(--mt-faint);font-weight:500;margin-top:3px;}
+  .note{max-width:1100px;margin:34px auto 0;background:#fff;border:1px solid var(--mt-line);border-left:4px solid var(--mt-blue);border-radius:12px;padding:14px 18px;color:var(--mt-slate);font-size:13.5px;line-height:1.55;}
+  .note b{color:var(--mt-ink);}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p class="kicker">MEDTRACK · Android · P0 foundation</p>
+  <h1>P0 — Before / After</h1>
+  <p class="lede">The same Home worklist rendered with today's build (left) and with the three P0 foundation changes applied (right): the design-system <b>type scale</b>, <b>elevation &amp; radius tokens</b>, and the corrected <b>blue FAB gradient</b>. Content is identical — only the foundation differs. Numbered markers map to the cards below.</p>
+
+  <div class="stage">
+    <!-- ════════════ BEFORE ════════════ -->
+    <div class="col">
+      <span class="tag b">● Before · current build</span>
+      <div class="phone before">
+        <div class="statusbar"><span class="t">3:34</span><span class="sys" id="sys-b"></span></div>
+        <div class="scroll">
+          <div class="head">
+            <div class="avatar">AD</div>
+            <div style="flex:1;min-width:0;">
+              <div class="eyebrow">Mon · 01 Jun</div>
+              <div class="greeting">Hi Admin Demo.</div>
+            </div>
+          </div>
+          <div class="search"><span class="ic" data-i="search"></span><span class="ph">Search patient, UHID, phone</span><span class="ic" data-i="tune"></span></div>
+          <div class="buckets">
+            <span class="bk on"><span class="lab">Today</span><span class="ct">3</span></span>
+            <span class="bk"><span class="lab">Upcoming</span><span class="ct">7</span></span>
+            <span class="bk red"><span class="lab">Overdue</span><span class="ct">2</span></span>
+            <span class="bk"><span class="lab">Awaiting</span></span>
+          </div>
+          <div class="lh" style="position:relative;">
+            <span class="mk" style="left:-30px;top:-2px;">1</span>
+            <span class="ttl">Today · 3 patients</span>
+            <span class="sort">By time <span class="ic" data-i="chev"></span></span>
+          </div>
+
+          <div class="pcard" style="position:relative;">
+            <span class="mk" style="right:-12px;top:-9px;">3</span>
+            <div class="rail" style="background:var(--mt-red);"></div>
+            <div class="pin">
+              <div class="ctile" style="background:var(--mt-cat-anc-bg);color:var(--mt-cat-anc);"><span class="ic" data-i="heart"></span></div>
+              <div style="flex:1;min-width:0;">
+                <div class="pname">Mrs. Anitha B.</div>
+                <div class="pdiag">Gestational hypertension</div>
+                <span class="due">Due today</span>
+              </div>
+              <div class="pmeta"><span class="sexage">F · 32</span><span class="flag"><span class="ic" data-i="flag"></span><span class="n">2</span></span></div>
+            </div>
+          </div>
+
+          <div class="pcard">
+            <div class="rail" style="background:var(--mt-red);"></div>
+            <div class="pin">
+              <div class="ctile" style="background:var(--mt-cat-sur-bg);color:var(--mt-cat-sur);"><span class="ic" data-i="scissors"></span></div>
+              <div style="flex:1;min-width:0;">
+                <div class="pname">Mrs. Meena Rajendran</div>
+                <div class="pdiag">Chronic cholecystitis</div>
+                <span class="due">Due today</span>
+              </div>
+              <div class="pmeta"><span class="sexage">F · 33</span><span class="flag"><span class="ic" data-i="flag"></span><span class="n">2</span></span></div>
+            </div>
+          </div>
+
+          <div class="pcard">
+            <div class="rail" style="background:var(--mt-red);"></div>
+            <div class="pin">
+              <div class="ctile" style="background:var(--mt-cat-med-bg);color:var(--mt-cat-med);"><span class="ic" data-i="thermo"></span></div>
+              <div style="flex:1;min-width:0;">
+                <div class="pname">Mr. Pradeep</div>
+                <div class="pdiag">Quick entry pending full surgica…</div>
+                <span class="due">Due today</span>
+              </div>
+              <div class="pmeta"><span class="sexage">M · 35</span><span class="flag"><span class="ic" data-i="flag"></span><span class="n">1</span></span></div>
+            </div>
+          </div>
+        </div>
+        <div class="nav">
+          <div class="ni on"><span class="ic" data-i="home"></span><span class="lab">Home</span></div>
+          <div class="ni"><span class="ic" data-i="folder"></span><span class="lab">Cases</span></div>
+          <div class="fabwrap" style="position:relative;">
+            <span class="mk" style="right:34px;top:-30px;">2</span>
+            <div class="fab"><span class="ic" data-i="add"></span></div>
+          </div>
+          <div class="ni"><span class="ic" data-i="call"></span><span class="lab">Calls</span></div>
+          <div class="ni"><span class="ic" data-i="person"></span><span class="lab">Me</span><span class="badge">10</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════════════ AFTER ════════════ -->
+    <div class="col">
+      <span class="tag a">● After · P0 applied</span>
+      <div class="phone after">
+        <div class="statusbar"><span class="t">3:34</span><span class="sys" id="sys-a"></span></div>
+        <div class="scroll">
+          <div class="head">
+            <div class="avatar">AD</div>
+            <div style="flex:1;min-width:0;">
+              <div class="eyebrow">Mon · 01 Jun</div>
+              <div class="greeting">Hi Admin Demo.</div>
+            </div>
+          </div>
+          <div class="search"><span class="ic" data-i="search"></span><span class="ph">Search patient, UHID, phone</span><span class="ic" data-i="tune"></span></div>
+          <div class="buckets">
+            <span class="bk on"><span class="lab">Today</span><span class="ct">3</span></span>
+            <span class="bk"><span class="lab">Upcoming</span><span class="ct">7</span></span>
+            <span class="bk red"><span class="lab">Overdue</span><span class="ct">2</span></span>
+            <span class="bk"><span class="lab">Awaiting</span></span>
+          </div>
+          <div class="lh" style="position:relative;">
+            <span class="mk" style="left:-30px;top:-2px;">1</span>
+            <span class="ttl">Today · 3 patients</span>
+            <span class="sort">By time <span class="ic" data-i="chev"></span></span>
+          </div>
+
+          <div class="pcard" style="position:relative;">
+            <span class="mk" style="right:-12px;top:-9px;">3</span>
+            <div class="rail" style="background:var(--mt-red);"></div>
+            <div class="pin">
+              <div class="ctile" style="background:var(--mt-cat-anc-bg);color:var(--mt-cat-anc);"><span class="ic" data-i="heart"></span></div>
+              <div style="flex:1;min-width:0;">
+                <div class="pname">Mrs. Anitha B.</div>
+                <div class="pdiag">Gestational hypertension</div>
+                <span class="due">Due today</span>
+              </div>
+              <div class="pmeta"><span class="sexage">F · 32</span><span class="flag"><span class="ic" data-i="flag"></span><span class="n">2</span></span></div>
+            </div>
+          </div>
+
+          <div class="pcard">
+            <div class="rail" style="background:var(--mt-red);"></div>
+            <div class="pin">
+              <div class="ctile" style="background:var(--mt-cat-sur-bg);color:var(--mt-cat-sur);"><span class="ic" data-i="scissors"></span></div>
+              <div style="flex:1;min-width:0;">
+                <div class="pname">Mrs. Meena Rajendran</div>
+                <div class="pdiag">Chronic cholecystitis</div>
+                <span class="due">Due today</span>
+              </div>
+              <div class="pmeta"><span class="sexage">F · 33</span><span class="flag"><span class="ic" data-i="flag"></span><span class="n">2</span></span></div>
+            </div>
+          </div>
+
+          <div class="pcard">
+            <div class="rail" style="background:var(--mt-red);"></div>
+            <div class="pin">
+              <div class="ctile" style="background:var(--mt-cat-med-bg);color:var(--mt-cat-med);"><span class="ic" data-i="thermo"></span></div>
+              <div style="flex:1;min-width:0;">
+                <div class="pname">Mr. Pradeep</div>
+                <div class="pdiag">Quick entry pending full surgica…</div>
+                <span class="due">Due today</span>
+              </div>
+              <div class="pmeta"><span class="sexage">M · 35</span><span class="flag"><span class="ic" data-i="flag"></span><span class="n">1</span></span></div>
+            </div>
+          </div>
+        </div>
+        <div class="nav">
+          <div class="ni on"><span class="ic" data-i="home"></span><span class="lab">Home</span></div>
+          <div class="ni"><span class="ic" data-i="folder"></span><span class="lab">Cases</span></div>
+          <div class="fabwrap" style="position:relative;">
+            <span class="mk" style="right:34px;top:-30px;">2</span>
+            <div class="fab"><span class="ic" data-i="add"></span></div>
+          </div>
+          <div class="ni"><span class="ic" data-i="call"></span><span class="lab">Calls</span></div>
+          <div class="ni"><span class="ic" data-i="person"></span><span class="lab">Me</span><span class="badge">10</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── legend ── -->
+  <div class="legend">
+    <div class="lc">
+      <div class="num">1</div>
+      <h3>Type scale → MaterialTheme</h3>
+      <p>One named scale (display/title/card-name/body/sub/eyebrow/status) replaces ad-hoc <code>.copy(fontSize=…)</code> calls. Eyebrows gain size + tracking + the faint colour; headings get tight tracking; body floors at 13sp.</p>
+      <div class="ba"><span class="bb">before · eyebrow 11.5 / muted / no track</span><span class="aa">after · eyebrow 12.5 / 800 / faint / +0.6</span></div>
+    </div>
+    <div class="lc">
+      <div class="num">2</div>
+      <h3>FAB gradient = all-blue</h3>
+      <p>The hardcoded <code>#4F46E5</code> indigo literal is removed. The FAB becomes the 3-stop blue gradient <code>Primary → PrimaryDark → PrimaryDeep</code> with the <code>shadow-fab</code> token — so it reads as one brand blue, not blue-to-violet.</p>
+      <div class="ba"><span class="bb">before · #2563EB → #4F46E5</span><span class="aa">after · #2563EB → #1D4ED8 → #1E3A8A</span></div>
+    </div>
+    <div class="lc">
+      <div class="num">3</div>
+      <h3>Elevation &amp; radius tokens</h3>
+      <p>List cards get the subtle <code>shadow-row</code> (they're flat today); bucket chips snap to the full-pill radius token; the base card radius normalises to 16. Spacing/radius/elevation now come from tokens, not magic numbers.</p>
+      <div class="ba"><span class="bb">before · flat · chip r18</span><span class="aa">after · shadow-row · chip r999</span></div>
+    </div>
+  </div>
+
+  <!-- ── type scale detail ── -->
+  <div class="sec-h">Type scale — the clearest part of the change</div>
+  <div class="sec-s">Today the theme only swaps the font to Manrope and each screen sets its own sizes. P0 encodes this single scale once; the per-call overrides go away.</div>
+  <div class="typetbl">
+    <div class="trow h"><div>Role</div><div>Before — ad-hoc</div><div>After — DS scale</div></div>
+    <div class="trow">
+      <div class="role">Screen title</div>
+      <div class="cell bcell"><div style="font-size:24px;font-weight:700;">Cases</div><div class="spec">~24px · 700 · default tracking</div></div>
+      <div class="cell"><div style="font-size:21px;font-weight:800;letter-spacing:-0.4px;">Cases</div><div class="spec">21px · 800 · −0.02em</div></div>
+    </div>
+    <div class="trow">
+      <div class="role">Home greeting</div>
+      <div class="cell bcell"><div style="font-size:20px;font-weight:800;">Hi Admin Demo.</div><div class="spec">20px · 800 · 0</div></div>
+      <div class="cell"><div style="font-size:21px;font-weight:800;letter-spacing:-0.3px;">Hi Admin Demo.</div><div class="spec">21px · 800 · −0.3px</div></div>
+    </div>
+    <div class="trow">
+      <div class="role">Card name</div>
+      <div class="cell bcell"><div style="font-size:16px;font-weight:800;">Vignesh Narayanan</div><div class="spec">16px · 800 · 0</div></div>
+      <div class="cell"><div style="font-size:16px;font-weight:800;letter-spacing:-0.2px;">Vignesh Narayanan</div><div class="spec">16px · 800 · −0.2px</div></div>
+    </div>
+    <div class="trow">
+      <div class="role">Diagnosis / sub</div>
+      <div class="cell bcell"><div style="font-size:13.5px;font-weight:600;color:var(--mt-muted);">Gestational hypertension</div><div class="spec">13.5px · 600 · muted</div></div>
+      <div class="cell"><div style="font-size:13.5px;font-weight:600;color:var(--mt-muted);">Gestational hypertension</div><div class="spec">13.5px · 600 · muted (same — now tokenised)</div></div>
+    </div>
+    <div class="trow">
+      <div class="role">Eyebrow</div>
+      <div class="cell bcell"><div style="font-size:11px;font-weight:700;color:var(--mt-muted);text-transform:uppercase;">Today · 3 patients</div><div class="spec">~11px · 700 · muted · no tracking</div></div>
+      <div class="cell"><div style="font-size:12.5px;font-weight:800;color:var(--mt-faint);text-transform:uppercase;letter-spacing:.6px;">Today · 3 patients</div><div class="spec">12.5px · 800 · faint · +0.6</div></div>
+    </div>
+    <div class="trow">
+      <div class="role">Status / pill</div>
+      <div class="cell bcell"><span style="font-size:11px;font-weight:700;color:var(--mt-muted);background:#fff;border:1px solid var(--mt-line);padding:4px 10px;border-radius:999px;">Due today</span><div class="spec">faint outline DueChip</div></div>
+      <div class="cell"><span style="font-size:13px;font-weight:700;color:var(--mt-blue);background:var(--mt-blue-50);padding:4px 10px;border-radius:999px;">Due today</span><div class="spec">13px · 700 · solid-tint DuePill</div></div>
+    </div>
+  </div>
+
+  <!-- ── FAB closeup ── -->
+  <div class="sec-h">FAB gradient — close up</div>
+  <div class="sec-s">Same shape, corrected colour. The violet end-stop is replaced by the deep brand blue.</div>
+  <div class="fab-closeups">
+    <div class="fcz">
+      <div class="big" style="background:linear-gradient(90deg,#2563EB,#4F46E5);box-shadow:0 10px 20px rgba(79,70,229,.4);"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></div>
+      <div class="cap">Before<small>#2563EB → #4F46E5 (indigo)</small></div>
+    </div>
+    <div class="fcz">
+      <div class="big" style="background:linear-gradient(150deg,#2563EB 0%,#1D4ED8 60%,#1E3A8A 100%);box-shadow:var(--mt-shadow-fab);"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></div>
+      <div class="cap">After<small>#2563EB → #1D4ED8 → #1E3A8A</small></div>
+    </div>
+  </div>
+
+  <div class="note"><b>Scope note:</b> P0 is foundation only — it does <b>not</b> add the header notification bell, wrap long names, change the category glyph artwork, or float the FAB above the bar. Those are later migration steps (Home/Cases/icons/nav). This page deliberately keeps the content identical so the foundational shift is the only thing you see.</div>
+</div>
+
+<script>
+  const ICON = {
+    search:'<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>',
+    tune:'<line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/><circle cx="9" cy="6" r="2.2" fill="#fff"/><circle cx="15" cy="12" r="2.2" fill="#fff"/><circle cx="8" cy="18" r="2.2" fill="#fff"/>',
+    chev:'<polyline points="6 9 12 15 18 9"/>',
+    flag:'<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/>',
+    heart:'<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>',
+    thermo:'<path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/>',
+    scissors:'<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/>',
+    home:'<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>',
+    folder:'<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>',
+    call:'<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>',
+    person:'<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+    add:'<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
+    wifi:'<path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/>',
+    sig:'<line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>',
+    batt:'<rect x="1" y="6" width="18" height="12" rx="2"/><line x1="23" y1="11" x2="23" y2="13"/>',
+  };
+  const NAVI = {home:1,folder:1,call:1,person:1};
+  document.querySelectorAll('.ic').forEach(el=>{
+    const k = el.dataset.i, body = ICON[k]||'';
+    let size = 20, sw = 2, fill='none', stroke='currentColor';
+    if(k==='add'){size=30;sw=2.4;stroke='#fff';}
+    if(['heart','thermo','scissors'].includes(k)){size=24;}
+    if(['home','folder','call','person'].includes(k)){size=24;}
+    if(k==='flag'){size=17;}
+    if(k==='chev'){size=16;}
+    el.innerHTML = '<svg width="'+size+'" height="'+size+'" viewBox="0 0 24 24" fill="'+fill+'" stroke="'+stroke+'" stroke-width="'+sw+'" stroke-linecap="round" stroke-linejoin="round">'+body+'</svg>';
+  });
+  // active nav fill (after) / tint (both)
+  document.querySelectorAll('.ni').forEach(ni=>{
+    const on = ni.classList.contains('on');
+    const svg = ni.querySelector('svg');
+    if(svg){ svg.setAttribute('stroke', on ? '#2563EB' : '#94A3B8'); }
+  });
+  document.querySelectorAll('.before .ni:not(.on) svg').forEach(s=>s.setAttribute('stroke','#64748B'));
+  // statusbar icons
+  [['sys-b','#0F172A'],['sys-a','#0F172A']].forEach(([id,c])=>{
+    const host=document.getElementById(id); if(!host)return;
+    host.innerHTML = ['wifi','sig','batt'].map(k=>'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="'+c+'" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'+ICON[k]+'</svg>').join('');
+  });
+</script>
+</body>
+</html>

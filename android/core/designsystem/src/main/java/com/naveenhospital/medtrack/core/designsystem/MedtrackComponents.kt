@@ -65,10 +65,10 @@ fun MedtrackCard(
 ) {
     Surface(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(8.dp),
-        color = MaterialTheme.colorScheme.surface,
+        shape = MedtrackRadius.CardShape,
+        color = MedtrackColors.Card,
         border = BorderStroke(1.dp, MedtrackColors.Border),
-        tonalElevation = 1.dp,
+        shadowElevation = MedtrackElevation.Row,
     ) {
         Column(
             modifier = Modifier.padding(14.dp),
@@ -163,7 +163,7 @@ fun MedtrackCategoryTile(
                 painter = painterResource(iconResId),
                 contentDescription = contentDescription,
                 tint = tint,
-                modifier = Modifier.size(size * 0.48f),
+                modifier = Modifier.size(size * 0.56f),
             )
         }
     }
@@ -415,6 +415,56 @@ fun MedtrackStatusPill(
             color = color,
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.SemiBold,
+        )
+    }
+}
+
+/** Human due-state tones for [MedtrackDuePill]. */
+enum class MedtrackDueTone { Today, Overdue, Upcoming, Awaiting }
+
+/**
+ * A calm, solid-tint due/state pill — "Due today", "Overdue 2 days".
+ * One canonical pill so due labels read the same everywhere.
+ */
+@Composable
+fun MedtrackDuePill(
+    text: String,
+    tone: MedtrackDueTone,
+    modifier: Modifier = Modifier,
+) {
+    val color: Color
+    val background: Color
+    when (tone) {
+        MedtrackDueTone.Today -> {
+            color = MedtrackColors.Primary
+            background = MedtrackColors.PrimarySoft
+        }
+        MedtrackDueTone.Overdue -> {
+            color = MedtrackColors.Danger
+            background = MedtrackColors.DangerSoft
+        }
+        MedtrackDueTone.Awaiting -> {
+            color = MedtrackColors.Warning
+            background = MedtrackColors.WarningSoft
+        }
+        MedtrackDueTone.Upcoming -> {
+            color = MedtrackColors.Muted
+            background = MedtrackColors.SurfaceAlt
+        }
+    }
+    Surface(
+        modifier = modifier,
+        shape = MedtrackRadius.PillShape,
+        color = background,
+    ) {
+        Text(
+            text = text,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+            color = color,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }

@@ -9,6 +9,7 @@ import com.naveenhospital.medtrack.core.data.local.TaskEntity
 import com.naveenhospital.medtrack.core.data.sync.PendingWriteJson
 import com.naveenhospital.medtrack.core.data.sync.PendingWriteTypes
 import com.naveenhospital.medtrack.core.domain.model.CaseCategory
+import com.naveenhospital.medtrack.core.domain.model.NotificationPayload
 import com.naveenhospital.medtrack.core.network.api.MedtrackApi
 import com.naveenhospital.medtrack.core.network.model.ApiMessageDto
 import com.naveenhospital.medtrack.core.network.model.AuthSessionDto
@@ -24,6 +25,7 @@ import com.naveenhospital.medtrack.core.network.model.CategoriesResponseDto
 import com.naveenhospital.medtrack.core.network.model.ClientWriteRequestDto
 import com.naveenhospital.medtrack.core.network.model.LogCallRequestDto
 import com.naveenhospital.medtrack.core.network.model.LoginRequestDto
+import com.naveenhospital.medtrack.core.network.model.NotificationDto
 import com.naveenhospital.medtrack.core.network.model.NotificationsResponseDto
 import com.naveenhospital.medtrack.core.network.model.RefreshTokenRequestDto
 import com.naveenhospital.medtrack.core.network.model.RegisterPushTokenRequestDto
@@ -37,6 +39,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.ResponseBody.Companion.toResponseBody
+import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -101,6 +104,39 @@ class MedtrackRepositoryTest {
         repository.refreshCases()
 
         assertNull(api.lastListCasesAssignedTo)
+    }
+
+    @Test
+    fun refreshNotificationsPreservesPayloadJsonAndParsedDomainPayload() = runTest {
+        val api = FakeMedtrackApi(
+            notificationsResponse = NotificationsResponseDto(
+                count = 1,
+                next = null,
+                previous = null,
+                results = listOf(
+                    NotificationDto(
+                        id = 5543,
+                        type = "red_flag",
+                        title = "Red flag patient",
+                        body = "Ms. Harini Sivakumar: High risk",
+                        caseId = 6364,
+                        taskId = null,
+                        payload = mapOf("channel" to "red_flags", "reasons" to listOf("High risk")),
+                        readAt = null,
+                        createdAt = "2026-06-01T10:00:00Z",
+                    ),
+                ),
+            ),
+        )
+        val repository = MedtrackRepository(api = api, database = database)
+
+        repository.refreshNotifications()
+
+        val entity = database.notificationDao().observeNotifications().first().single()
+        val storedJson = JSONObject(entity.payloadJson)
+        assertEquals("High risk", storedJson.getJSONArray("reasons").getString(0))
+        val item = repository.notifications.first().single()
+        assertEquals(NotificationPayload.RedFlag(listOf("High risk")), item.payload)
     }
 
     @Test
@@ -404,6 +440,12 @@ private class FakeMedtrackApi(
         stats = CaseStatsDto(today = 0, upcoming = 0, overdue = 0, awaiting = 0, red = 0),
         results = emptyList(),
     ),
+    private val notificationsResponse: NotificationsResponseDto = NotificationsResponseDto(
+        count = 0,
+        next = null,
+        previous = null,
+        results = emptyList(),
+    ),
     private val categoriesError: Throwable? = null,
     private val registerPushError: Throwable? = null,
     private val notificationReadError: Throwable? = null,
@@ -489,7 +531,8 @@ private class FakeMedtrackApi(
         )
     }
     override suspend fun vitalsThresholds(): VitalsThresholdsDto = unused()
-    override suspend fun notifications(type: String?, unreadOnly: Boolean?, page: Int?): NotificationsResponseDto = unused()
+    override suspend fun notifications(type: String?, unreadOnly: Boolean?, page: Int?): NotificationsResponseDto =
+        notificationsResponse
     override suspend fun markNotificationRead(notificationId: String): ApiMessageDto {
         notificationReadCalls += 1
         notificationReadError?.let { throw it }

@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.06.01.16.35
+- Preserved Android notification event payloads from the API through Room and domain models so alert detail screens can explain why a notification fired from event-time data.
+- Replaced alert-detail fired-reason inference from latest case vitals with type-specific payload rendering for red flags, overdue tasks, assignments, and explicit vitals alerts.
+- Added Room migration/schema coverage plus data and notification reasoning tests to guard valid JSON storage, empty/malformed payload handling, and no-vitals regression cases.
+
 ## 2026.06.01.15.38
 - Continued the MEDTRACK Android design-matching pass across case detail, notifications, alert detail, calls, red-flag reason sheets, add-vitals sheets, and login/testing surfaces.
 - Added compact Android design-system refinements for white cards, softer rails, typography, date labels, notification rows, case-detail vitals/tasks, call queue surfaces, and temporary debug auto-login for UI review.

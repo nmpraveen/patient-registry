@@ -172,6 +172,7 @@ data class NotificationDto(
     val body: String,
     @Json(name = "case_id") val caseId: Long?,
     @Json(name = "task_id") val taskId: Long?,
+    val payload: Map<String, Any?>? = null,
     @Json(name = "read_at") val readAt: String?,
     @Json(name = "created_at") val createdAt: String,
 )

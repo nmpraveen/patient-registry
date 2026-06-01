@@ -9,4 +9,5 @@ data class NotificationItem(
     val taskId: String?,
     val createdAt: String,
     val isRead: Boolean,
+    val payload: NotificationPayload = NotificationPayload.None,
 )

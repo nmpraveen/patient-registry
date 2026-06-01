@@ -15,6 +15,8 @@ import com.naveenhospital.medtrack.core.data.local.CacheMetadataEntity
 import com.naveenhospital.medtrack.core.data.local.CategoryOptionsEntity
 import com.naveenhospital.medtrack.core.data.local.MedtrackDatabase
 import com.naveenhospital.medtrack.core.data.local.NotificationEntity
+import com.naveenhospital.medtrack.core.data.notification.notificationPayloadToJson
+import com.naveenhospital.medtrack.core.data.notification.parseNotificationPayload
 import com.naveenhospital.medtrack.core.data.local.PendingWriteEntity
 import com.naveenhospital.medtrack.core.data.local.PushTokenEntity
 import com.naveenhospital.medtrack.core.data.local.SyncConflictEntity
@@ -788,6 +790,7 @@ private fun NotificationDto.toEntity(): NotificationEntity =
         taskId = taskId?.toString(),
         createdAt = createdAt,
         isRead = readAt != null,
+        payloadJson = notificationPayloadToJson(payload),
     )
 
 private fun NotificationEntity.toDomain(): NotificationItem =
@@ -800,6 +803,7 @@ private fun NotificationEntity.toDomain(): NotificationItem =
         taskId = taskId,
         createdAt = createdAt,
         isRead = isRead,
+        payload = parseNotificationPayload(type = type, payloadJson = payloadJson),
     )
 
 private fun SyncConflictEntity.toDomain(): SyncConflict =

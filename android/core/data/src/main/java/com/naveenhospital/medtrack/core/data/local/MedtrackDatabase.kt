@@ -21,7 +21,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         SyncConflictEntity::class,
         CacheMetadataEntity::class,
     ],
-    version = 8,
+    version = 9,
     exportSchema = true,
 )
 abstract class MedtrackDatabase : RoomDatabase() {
@@ -56,6 +56,7 @@ abstract class MedtrackDatabase : RoomDatabase() {
                         MIGRATION_5_6,
                         MIGRATION_6_7,
                         MIGRATION_7_8,
+                        MIGRATION_8_9,
                     )
                     .build()
                     .also { INSTANCE = it }
@@ -177,6 +178,12 @@ abstract class MedtrackDatabase : RoomDatabase() {
                     )
                     """.trimIndent(),
                 )
+            }
+        }
+
+        private val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE notifications ADD COLUMN payloadJson TEXT NOT NULL DEFAULT '{}'")
             }
         }
     }

@@ -1,5 +1,6 @@
 package com.naveenhospital.medtrack.core.data.local
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
@@ -88,6 +89,8 @@ data class NotificationEntity(
     val taskId: String?,
     val createdAt: String,
     val isRead: Boolean,
+    @ColumnInfo(name = "payloadJson", defaultValue = "'{}'")
+    val payloadJson: String = "{}",
 )
 
 @Entity(tableName = "push_tokens")

@@ -25,6 +25,7 @@ import com.naveenhospital.medtrack.core.data.local.SyncConflictEntity
 import com.naveenhospital.medtrack.core.data.local.TaskEntity
 import com.naveenhospital.medtrack.core.data.local.VitalEntity
 import com.naveenhospital.medtrack.core.data.local.VitalsThresholdEntity
+import com.naveenhospital.medtrack.core.data.notification.notificationPayloadToJson
 import com.naveenhospital.medtrack.core.data.repository.CACHE_KEY_CATEGORY_OPTIONS
 import com.naveenhospital.medtrack.core.data.repository.CACHE_KEY_NOTIFICATIONS
 import com.naveenhospital.medtrack.core.data.repository.CACHE_KEY_VITALS_THRESHOLDS
@@ -422,6 +423,7 @@ private fun NotificationDto.toEntityForSync(): NotificationEntity =
         taskId = taskId?.toString(),
         createdAt = createdAt,
         isRead = readAt != null,
+        payloadJson = notificationPayloadToJson(payload),
     )
 
 private fun VitalDto.summary(): String {

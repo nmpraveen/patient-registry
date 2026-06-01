@@ -98,7 +98,7 @@ fun AlertDetailScreen(
         ) {
                 AlertHero(notification = notification, patientCase = patientCase)
             PatientContextCard(patientCase = patientCase)
-            BreachedThresholdsCard(notification = notification, patientCase = patientCase)
+            WhyThisFiredCard(notification = notification)
         }
 
         Surface(
@@ -147,8 +147,8 @@ fun AlertDetailScreen(
 @Composable
 private fun AlertHero(notification: NotificationItem?, patientCase: PatientCase?) {
     val color = notification?.alertColor() ?: MedtrackColors.Muted
-    val title = notification?.alertHeadline(patientCase) ?: "Alert unavailable"
-    val body = notification?.alertSummary(patientCase, title) ?: "This alert could not be found in the local inbox cache."
+    val title = notification?.alertHeadline() ?: "Alert unavailable"
+    val body = notification?.alertSummary() ?: "This alert could not be found in the local inbox cache."
     val eyebrow = listOfNotNull(
         notification?.typeLabel()?.uppercase(),
         patientCase?.categoryLabel?.uppercase()?.takeIf { it.isNotBlank() },
@@ -239,75 +239,29 @@ private fun PatientContextCard(patientCase: PatientCase?) {
 }
 
 @Composable
-private fun BreachedThresholdsCard(notification: NotificationItem?, patientCase: PatientCase?) {
-    val color = notification?.alertColor() ?: MedtrackColors.Muted
-    val metricRows = patientCase?.latestVitalSummary.toAlertMetricRows()
-    val rows = breachRows(notification = notification, patientCase = patientCase)
+private fun WhyThisFiredCard(notification: NotificationItem?) {
+    val rows = notification?.whyThisFiredRows().orEmpty()
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        val count = metricRows.size.takeIf { it > 0 } ?: rows.size.takeIf { it > 0 }
+        val count = rows.size.takeIf { it > 0 }
         MedtrackSectionEyebrow(title = "Why this fired", trailing = count?.toString())
         MedtrackCompactCard {
-            if (metricRows.isNotEmpty()) {
-                metricRows.forEach { row ->
-                    AlertMetricRow(row = row)
-                }
-            } else {
-                if (rows.isEmpty()) {
-                    Text(
-                        text = "This notification does not include structured fired-reason details on this device.",
-                        color = MedtrackColors.Muted,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-                rows.forEach { row ->
-                    AlertReasonRow(text = row, color = color)
-                }
+            if (rows.isEmpty()) {
+                Text(
+                    text = "This notification does not include structured fired-reason details on this device.",
+                    color = MedtrackColors.Muted,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            rows.forEach { row ->
+                AlertReasonRow(row = row)
             }
         }
     }
 }
 
 @Composable
-private fun AlertMetricRow(row: AlertMetricDisplay) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 4.dp, vertical = 7.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = row.label,
-            color = MedtrackColors.Ink,
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.ExtraBold,
-            modifier = Modifier.width(38.dp),
-        )
-        Text(
-            text = row.value,
-            color = row.color,
-            style = MaterialTheme.typography.bodySmall,
-            fontWeight = FontWeight.ExtraBold,
-            modifier = Modifier.weight(1f),
-        )
-        Text(
-            text = row.threshold,
-            color = MedtrackColors.Faint,
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.Bold,
-            maxLines = 1,
-        )
-        Text(
-            text = row.symbol,
-            color = row.color,
-            style = MaterialTheme.typography.bodySmall,
-            fontWeight = FontWeight.ExtraBold,
-        )
-    }
-}
-
-@Composable
-private fun AlertReasonRow(text: String, color: Color) {
+private fun AlertReasonRow(row: WhyThisFiredRow) {
+    val color = row.tone.reasonColor()
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
@@ -324,11 +278,33 @@ private fun AlertReasonRow(text: String, color: Color) {
                     .size(7.dp)
                     .background(color, RoundedCornerShape(50)),
             )
-            Text(text, color = MedtrackColors.Ink, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-            Text("active", color = color, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+            Text(
+                row.label,
+                color = MedtrackColors.Faint,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.ExtraBold,
+                maxLines = 1,
+            )
+            Text(
+                row.value,
+                color = MedtrackColors.Ink,
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f),
+            )
         }
     }
 }
+
+@Composable
+private fun AlertReasonTone.reasonColor(): Color =
+    when (this) {
+        AlertReasonTone.Danger -> MedtrackColors.Danger
+        AlertReasonTone.Warning -> MedtrackColors.Warning
+        AlertReasonTone.Primary -> MedtrackColors.Primary
+        AlertReasonTone.Success -> MedtrackColors.Success
+        AlertReasonTone.Muted -> MedtrackColors.Muted
+    }
 
 @Composable
 private fun AlertHeaderIconButton(onClick: () -> Unit) {
@@ -344,59 +320,6 @@ private fun AlertHeaderIconButton(onClick: () -> Unit) {
         Box(contentAlignment = Alignment.Center) {
             Icon(imageVector = Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back", tint = MedtrackColors.Ink, modifier = Modifier.size(20.dp))
         }
-    }
-}
-
-private fun breachRows(notification: NotificationItem?, patientCase: PatientCase?): List<String> {
-    val riskRows = patientCase?.highRiskReasons.orEmpty().filter { it.isNotBlank() }
-    if (riskRows.isNotEmpty()) return riskRows.take(3)
-    val body = notification?.body?.takeIf { it.isNotBlank() }
-    val latestVitals = patientCase?.latestVitalSummary?.takeIf { it.isNotBlank() }
-    return listOfNotNull(
-        body,
-        latestVitals?.let { "Latest vitals: $it" },
-    ).take(3)
-}
-
-private fun NotificationItem.alertHeadline(patientCase: PatientCase?): String {
-    val displayTitle = displayTitle()
-    val bodyText = displayBody(displayTitle)
-    val metric = patientCase?.latestVitalSummary.toAlertMetricRows().firstOrNull { it.alerting }
-    return when {
-        metric?.plainHeadline != null -> metric.plainHeadline
-        bodyText.plainRiskHeadline() != null -> bodyText.plainRiskHeadline()!!
-        bodyText.isNotBlank() && !bodyText.isLikelyPatientLead() -> bodyText.take(54)
-        !title.isGenericNotificationTitle() -> title
-        patientCase?.highRiskReasons?.firstOrNull { it.isNotBlank() } != null -> patientCase.highRiskReasons.first { it.isNotBlank() }
-        else -> typeLabel()
-    }
-}
-
-private fun NotificationItem.alertSummary(patientCase: PatientCase?, headline: String): String {
-    val timestamp = createdAt.takeIf { it.isNotBlank() }?.let { medtrackTimestampLabel(it) ?: it }
-    val metric = patientCase?.latestVitalSummary.toAlertMetricRows().firstOrNull { it.alerting }
-    return when {
-        metric != null -> {
-            listOfNotNull(
-                "${metric.value} logged${timestamp?.let { " $it" }.orEmpty()} ${metric.summaryVerb} ${metric.threshold.lowercase()} threshold.",
-                patientCase?.diagnosis?.takeIf { it.isNotBlank() }?.let { "Context: $it." },
-            ).joinToString(" ")
-        }
-        type == "red_flag" && patientCase != null -> {
-            val context = patientCase.diagnosis.takeIf { it.isNotBlank() } ?: patientCase.categoryLabel
-            val opening = if (headline.endsWith(" active", ignoreCase = true)) {
-                "$headline for this case."
-            } else {
-                "$headline is active for this case."
-            }
-            listOfNotNull(
-                opening,
-                context.takeIf { it.isNotBlank() }?.let { "Context: $it." },
-                timestamp?.let { "Logged $it." },
-            ).joinToString(" ")
-        }
-        timestamp != null -> "$headline logged $timestamp."
-        else -> displayBody(displayTitle()).ifBlank { title }
     }
 }
 
@@ -427,10 +350,10 @@ private fun PatientCase.alertCategoryColor(): Color =
     }
 
 private fun NotificationItem.isCritical(): Boolean =
-    type == "red_flag"
+    normalizedType() == "red_flag"
 
 private fun NotificationItem.alertColor(): Color =
-    when (type) {
+    when (normalizedType()) {
         "red_flag" -> MedtrackColors.Danger
         "overdue" -> MedtrackColors.Warning
         "assignment" -> MedtrackColors.Primary
@@ -438,124 +361,9 @@ private fun NotificationItem.alertColor(): Color =
     }
 
 private fun NotificationItem.typeLabel(): String =
-    when (type) {
+    when (normalizedType()) {
         "red_flag" -> "Red flag"
         "overdue" -> "Overdue"
         "assignment" -> "Assigned"
         else -> "Info"
     }
-
-private fun NotificationItem.displayTitle(): String {
-    val bodyLead = body.substringBefore(":").trim()
-    return when {
-        bodyLead.isLikelyPatientLead() -> bodyLead
-        title.isGenericNotificationTitle() && body.isNotBlank() -> body.take(54)
-        else -> title
-    }
-}
-
-private fun NotificationItem.displayBody(titleForRow: String): String {
-    val afterLead = if (body.startsWith("$titleForRow:", ignoreCase = true)) {
-        body.substringAfter(":").trim()
-    } else {
-        body.trim()
-    }
-    return afterLead.ifBlank { title }
-}
-
-private fun String.isGenericNotificationTitle(): Boolean =
-    equals("Red flag patient", ignoreCase = true) ||
-        equals("Task overdue", ignoreCase = true) ||
-        equals("New assignment", ignoreCase = true)
-
-private fun String.isLikelyPatientLead(): Boolean =
-    length in 3..64 &&
-        contains(Regex("[A-Za-z]")) &&
-        split(Regex("\\s+")).size <= 5
-
-private fun String.plainRiskHeadline(): String? {
-    val normalized = trim().lowercase()
-    return when {
-        normalized == "shtn" || normalized.contains("hypertension") || normalized.contains("pih") -> "Blood pressure high"
-        normalized.contains("anemia") -> "Hemoglobin low"
-        normalized.contains("thyroid") -> "Thyroid risk active"
-        normalized.contains("smoking") -> "Smoking risk active"
-        normalized == "high risk" -> "High-risk case"
-        else -> null
-    }
-}
-
-private data class AlertMetricDisplay(
-    val label: String,
-    val value: String,
-    val threshold: String,
-    val alerting: Boolean,
-    val plainHeadline: String?,
-    val summaryVerb: String,
-) {
-    val color: Color = if (alerting) MedtrackColors.Danger else MedtrackColors.Success
-    val symbol: String = if (alerting) "↑" else "✓"
-}
-
-private fun String?.toAlertMetricRows(): List<AlertMetricDisplay> {
-    val summary = this?.takeIf { it.isNotBlank() } ?: return emptyList()
-    val rows = mutableListOf<AlertMetricDisplay>()
-    Regex("""BP\s+(\d{2,3})/(\d{2,3})""", RegexOption.IGNORE_CASE).find(summary)?.let { match ->
-        val systolic = match.groupValues[1].toIntOrNull()
-        val diastolic = match.groupValues[2].toIntOrNull()
-        systolic?.let {
-            rows += AlertMetricDisplay(
-                label = "SBP",
-                value = "$it mmHg",
-                threshold = "thresh ≥140",
-                alerting = it >= 140,
-                plainHeadline = if (it >= 140) "Blood pressure high" else null,
-                summaryVerb = if (it >= 140) "exceeds" else "is within",
-            )
-        }
-        diastolic?.let {
-            rows += AlertMetricDisplay(
-                label = "DBP",
-                value = "$it mmHg",
-                threshold = "thresh ≥90",
-                alerting = it >= 90,
-                plainHeadline = if (it >= 90) "Blood pressure high" else null,
-                summaryVerb = if (it >= 90) "exceeds" else "is within",
-            )
-        }
-    }
-    Regex("""(?:PR|Pulse)\s+(\d{2,3})""", RegexOption.IGNORE_CASE).find(summary)?.groupValues?.getOrNull(1)?.toIntOrNull()?.let {
-        rows += AlertMetricDisplay(
-            label = "PR",
-            value = "$it bpm",
-            threshold = "range 60-100",
-            alerting = it < 60 || it > 100,
-            plainHeadline = if (it < 60 || it > 100) "Pulse out of range" else null,
-            summaryVerb = if (it < 60 || it > 100) "is outside" else "is within",
-        )
-    }
-    Regex("""SpO2\s+(\d{2,3})""", RegexOption.IGNORE_CASE).find(summary)?.groupValues?.getOrNull(1)?.toIntOrNull()?.let {
-        rows += AlertMetricDisplay(
-            label = "SpO2",
-            value = "$it%",
-            threshold = "thresh ≥95",
-            alerting = it < 95,
-            plainHeadline = if (it < 95) "Oxygen saturation low" else null,
-            summaryVerb = if (it < 95) "is below" else "meets",
-        )
-    }
-    Regex("""Hb\s+(\d+(?:\.\d+)?)""", RegexOption.IGNORE_CASE).find(summary)?.groupValues?.getOrNull(1)?.toDoubleOrNull()?.let {
-        rows += AlertMetricDisplay(
-            label = "Hb",
-            value = "${it.trimMetric()} g/dL",
-            threshold = "thresh ≥11",
-            alerting = it < 11.0,
-            plainHeadline = if (it < 11.0) "Hemoglobin low" else null,
-            summaryVerb = if (it < 11.0) "is below" else "meets",
-        )
-    }
-    return rows.take(4)
-}
-
-private fun Double.trimMetric(): String =
-    if (this % 1.0 == 0.0) toInt().toString() else toString()

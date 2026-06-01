@@ -1,7 +1,9 @@
 package com.naveenhospital.medtrack.core.designsystem
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -11,7 +13,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Flag
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -21,8 +26,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 @Composable
@@ -79,16 +86,148 @@ fun MedtrackCompactCard(
 ) {
     Surface(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        color = MedtrackColors.Card,
+        shape = RoundedCornerShape(16.dp),
+        color = Color.White,
         border = BorderStroke(1.dp, borderColor),
-        tonalElevation = 1.dp,
+        tonalElevation = 0.dp,
     ) {
         Column(
             modifier = Modifier.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(7.dp),
             content = content,
         )
+    }
+}
+
+data class MedtrackCategoryVisual(
+    val tint: Color,
+    val soft: Color,
+    val iconResId: Int,
+)
+
+fun medtrackCategoryVisual(
+    categoryName: String?,
+    label: String?,
+): MedtrackCategoryVisual {
+    val key = listOfNotNull(categoryName, label)
+        .joinToString(" ")
+        .trim()
+        .lowercase()
+    return when {
+        key.contains("rehab") -> MedtrackCategoryVisual(
+            tint = MedtrackColors.CustomRehab,
+            soft = MedtrackColors.CustomRehabSoft,
+            iconResId = R.drawable.ic_cat_rehab,
+        )
+        key.contains("anc") -> MedtrackCategoryVisual(
+            tint = MedtrackColors.Anc,
+            soft = MedtrackColors.AncSoft,
+            iconResId = R.drawable.ic_cat_anc,
+        )
+        key.contains("surgery") || key.contains("surgical") -> MedtrackCategoryVisual(
+            tint = MedtrackColors.Surgery,
+            soft = MedtrackColors.SurgerySoft,
+            iconResId = R.drawable.ic_cat_surgery,
+        )
+        key.contains("medicine") || key.contains("medical") -> MedtrackCategoryVisual(
+            tint = MedtrackColors.Medicine,
+            soft = MedtrackColors.MedicineSoft,
+            iconResId = R.drawable.ic_cat_medicine,
+        )
+        else -> MedtrackCategoryVisual(
+            tint = MedtrackColors.Primary,
+            soft = MedtrackColors.PrimarySoft,
+            iconResId = R.drawable.ic_cat_medicine,
+        )
+    }
+}
+
+@Composable
+fun MedtrackCategoryTile(
+    iconResId: Int,
+    tint: Color,
+    modifier: Modifier = Modifier,
+    softColor: Color = tint.copy(alpha = 0.12f),
+    size: Dp = 46.dp,
+    radius: Dp = 13.dp,
+    contentDescription: String? = null,
+) {
+    Surface(
+        modifier = modifier.size(size),
+        shape = RoundedCornerShape(radius),
+        color = softColor,
+        border = BorderStroke(1.dp, tint.copy(alpha = 0.16f)),
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                painter = painterResource(iconResId),
+                contentDescription = contentDescription,
+                tint = tint,
+                modifier = Modifier.size(size * 0.48f),
+            )
+        }
+    }
+}
+
+@Composable
+fun MedtrackCategoryChip(
+    text: String,
+    tint: Color,
+    modifier: Modifier = Modifier,
+    softColor: Color = tint.copy(alpha = 0.12f),
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(50),
+        color = softColor,
+        border = BorderStroke(1.dp, tint.copy(alpha = 0.2f)),
+    ) {
+        Text(
+            text = text,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+            color = tint,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+fun MedtrackRiskFlag(
+    count: Int?,
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null,
+) {
+    val actualModifier = if (onClick == null) modifier else modifier.clickable(onClick = onClick)
+    Surface(
+        modifier = actualModifier.widthIn(min = 38.dp),
+        shape = RoundedCornerShape(50),
+        color = MedtrackColors.DangerSoft,
+        border = BorderStroke(1.dp, MedtrackColors.DangerLine),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = if (count == null) 9.dp else 8.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.Flag,
+                contentDescription = "Red flag",
+                tint = MedtrackColors.Danger,
+                modifier = Modifier.size(16.dp),
+            )
+            count?.let {
+                Text(
+                    text = it.coerceAtLeast(1).toString(),
+                    color = MedtrackColors.Danger,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.ExtraBold,
+                    maxLines = 1,
+                )
+            }
+        }
     }
 }
 
@@ -101,6 +240,57 @@ fun MedtrackMetricCard(
     MedtrackCard(modifier = modifier) {
         Text(text = value, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         Text(text = label, style = MaterialTheme.typography.bodyMedium, color = MedtrackColors.Muted)
+    }
+}
+
+@Composable
+fun MedtrackStatCard(
+    label: String,
+    value: String,
+    color: Color,
+    modifier: Modifier = Modifier,
+    icon: ImageVector? = null,
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(16.dp),
+        color = MedtrackColors.Card,
+        border = BorderStroke(1.dp, MedtrackColors.Border),
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(7.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = value,
+                    color = color,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.ExtraBold,
+                    maxLines = 1,
+                )
+                icon?.let {
+                    Icon(
+                        imageVector = it,
+                        contentDescription = null,
+                        tint = color,
+                        modifier = Modifier.size(19.dp),
+                    )
+                }
+            }
+            Text(
+                text = label,
+                color = MedtrackColors.Muted,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 
@@ -125,6 +315,34 @@ fun MedtrackMiniPill(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
+    }
+}
+
+@Composable
+fun MedtrackSectionEyebrow(
+    title: String,
+    trailing: String? = null,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = title.uppercase(),
+            color = MedtrackColors.Muted,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.ExtraBold,
+        )
+        trailing?.let {
+            Text(
+                text = it,
+                color = MedtrackColors.Faint,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+            )
+        }
     }
 }
 

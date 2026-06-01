@@ -5,9 +5,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontVariation
+import androidx.compose.ui.text.font.FontWeight
 
 private val MedtrackLightColorScheme = lightColorScheme(
     primary = MedtrackColors.Primary,
@@ -28,7 +31,33 @@ private val MedtrackLightColorScheme = lightColorScheme(
 )
 
 private val ManropeFontFamily by lazy {
-    FontFamily(Font(R.font.manrope_variable))
+    FontFamily(
+        manropeFont(FontWeight.Normal, 400),
+        manropeFont(FontWeight.Medium, 500),
+        manropeFont(FontWeight.SemiBold, 600),
+        manropeFont(FontWeight.Bold, 700),
+        manropeFont(FontWeight.ExtraBold, 800),
+    )
+}
+
+@OptIn(ExperimentalTextApi::class)
+private fun manropeFont(weight: FontWeight, axisWeight: Int): Font =
+    Font(
+        R.font.manrope_variable,
+        weight = weight,
+        variationSettings = FontVariation.Settings(FontVariation.weight(axisWeight)),
+    )
+
+object MedtrackType {
+    val Mono: FontFamily by lazy {
+        FontFamily(
+            Font(R.font.geist_mono, weight = FontWeight.Normal),
+            Font(R.font.geist_mono, weight = FontWeight.Medium),
+            Font(R.font.geist_mono, weight = FontWeight.SemiBold),
+            Font(R.font.geist_mono, weight = FontWeight.Bold),
+            Font(R.font.geist_mono, weight = FontWeight.ExtraBold),
+        )
+    }
 }
 
 private fun medtrackTypography(): Typography {

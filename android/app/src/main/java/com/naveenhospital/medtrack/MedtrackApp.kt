@@ -31,14 +31,17 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.ChevronRight
+import androidx.compose.material.icons.outlined.CloudDone
+import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.HealthAndSafety
 import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.Logout
+import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Phone
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -87,9 +90,7 @@ import androidx.paging.LoadState
 import androidx.paging.compose.collectAsLazyPagingItems
 import com.naveenhospital.medtrack.core.designsystem.R as DesignR
 import com.naveenhospital.medtrack.core.designsystem.MedtrackColors
-import com.naveenhospital.medtrack.core.designsystem.MedtrackCompactCard
 import com.naveenhospital.medtrack.core.designsystem.MedtrackIconBadge
-import com.naveenhospital.medtrack.core.designsystem.MedtrackMiniPill
 import com.naveenhospital.medtrack.core.designsystem.MedtrackTheme
 import com.naveenhospital.medtrack.core.designsystem.MedtrackPage
 import com.naveenhospital.medtrack.core.designsystem.MedtrackSectionTitle
@@ -120,6 +121,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private const val IDLE_RELOCK_MILLIS = 15 * 60 * 1000L
+private const val UI_REVIEW_AUTO_LOGIN = true
+private const val UI_REVIEW_USERNAME = "admin"
+private const val UI_REVIEW_PASSWORD = "pass"
+
+private val uiReviewAutoLoginEnabled: Boolean
+    get() = BuildConfig.DEBUG && UI_REVIEW_AUTO_LOGIN
 
 private object Routes {
     const val LOGIN = "login"
@@ -157,14 +164,14 @@ private object BottomNavScale {
     val BarHeight = 74.dp
     val BarHorizontalPadding = 18.dp
     val CenterSpacerWidth = 72.dp
-    val CenterButtonSize = 56.dp
-    val CenterButtonRadius = 18.dp
+    val CenterButtonSize = 60.dp
+    val CenterButtonRadius = 20.dp
     val CenterButtonYOffset = 8.dp
-    val CenterIconSize = 29.dp
+    val CenterIconSize = 32.dp
     val ItemPaddingTop = 8.dp
     val ItemPaddingBottom = 7.dp
-    val ItemIconBoxSize = 30.dp
-    val ItemIconSize = 23.dp
+    val ItemIconBoxSize = 32.dp
+    val ItemIconSize = 25.dp
     val ItemBadgeSize = 7.dp
     val ItemLabelGap = 3.dp
     val ItemLabelText = 12.sp
@@ -216,6 +223,7 @@ fun MedtrackApp(
     val showBottomNav = currentRoute in bottomRoutes || currentRoute == Routes.NOTIFICATIONS
 
     fun shouldRelock(): Boolean {
+        if (uiReviewAutoLoginEnabled) return false
         return currentRoute !in setOf(Routes.LOGIN, Routes.LOCK_SETUP, Routes.UNLOCK) &&
             container.authRepository.hasRefreshToken() &&
             container.lockStore.hasAnyLock()
@@ -238,6 +246,17 @@ fun MedtrackApp(
 
     fun signOut() {
         scope.launch {
+            if (uiReviewAutoLoginEnabled) {
+                runCatching {
+                    setCurrentUser(container.authRepository.login(UI_REVIEW_USERNAME, UI_REVIEW_PASSWORD))
+                }
+                navController.navigate(Routes.HOME) {
+                    popUpTo(navController.graph.findStartDestination().id) {
+                        inclusive = true
+                    }
+                }
+                return@launch
+            }
             val deviceToken = container.medtrackRepository.currentPushTokenForLogout()
             container.authRepository.logout(deviceToken = deviceToken)
             currentUserProfile = null
@@ -269,6 +288,14 @@ fun MedtrackApp(
     }
 
     LaunchedEffect(container) {
+        if (uiReviewAutoLoginEnabled) {
+            runCatching {
+                setCurrentUser(container.authRepository.login(UI_REVIEW_USERNAME, UI_REVIEW_PASSWORD))
+                onAuthenticated()
+            }
+            startDestination = Routes.HOME
+            return@LaunchedEffect
+        }
         startDestination = if (container.authRepository.hasRefreshToken()) {
             if (container.lockStore.hasAnyLock()) Routes.UNLOCK else Routes.LOGIN
         } else {
@@ -699,7 +726,6 @@ fun MedtrackApp(
                                 launchSingleTop = true
                             }
                         },
-                        onOpenNotifications = { navController.navigate(Routes.NOTIFICATIONS) },
                         onSignOut = { signOut() },
                     )
 
@@ -730,6 +756,11 @@ fun MedtrackApp(
                     val cases by container.medtrackRepository.cases.collectAsState(initial = emptyList())
                     var isRefreshing by remember { mutableStateOf(false) }
                     var error by remember { mutableStateOf<String?>(null) }
+                    var dialedCase by remember { mutableStateOf<PatientCase?>(null) }
+                    var dialerStartedAt by remember { mutableStateOf<Long?>(null) }
+                    var leftForDialer by remember { mutableStateOf(false) }
+                    var callOutcomeCase by remember { mutableStateOf<PatientCase?>(null) }
+                    var callOutcomeAttemptedAt by remember { mutableStateOf<String?>(null) }
 
                     fun refreshCaseList() {
                         scope.launch {
@@ -747,8 +778,58 @@ fun MedtrackApp(
                         }
                     }
 
+                    fun submitCasesCallOutcome(patientCase: PatientCase, outcome: String, note: String?, attemptedAt: String?) {
+                        scope.launch {
+                            runCatching {
+                                container.medtrackRepository.logCallOutcome(
+                                    caseId = patientCase.id,
+                                    taskId = patientCase.nextTaskId,
+                                    outcome = outcome,
+                                    note = note,
+                                    attemptedAt = attemptedAt,
+                                )
+                            }.onSuccess { result ->
+                                refreshCaseList()
+                                snackbarHostState.showSnackbar(result.message)
+                            }.onFailure {
+                                snackbarHostState.showSnackbar(it.message ?: "Call logging failed")
+                            }
+                        }
+                    }
+
                     LaunchedEffect(Unit) {
                         refreshCaseList()
+                    }
+
+                    DisposableEffect(lifecycleOwner, dialedCase) {
+                        val observer = LifecycleEventObserver { _, event ->
+                            when (event) {
+                                Lifecycle.Event.ON_STOP -> {
+                                    if (dialedCase != null) {
+                                        leftForDialer = true
+                                    }
+                                }
+                                Lifecycle.Event.ON_START -> {
+                                    val startedAt = dialerStartedAt
+                                    val returnedFromDialer = dialedCase != null &&
+                                        leftForDialer &&
+                                        startedAt != null &&
+                                        System.currentTimeMillis() - startedAt > 300L
+                                    if (returnedFromDialer) {
+                                        callOutcomeCase = dialedCase
+                                        callOutcomeAttemptedAt = startedAt?.let(::utcTimestampFromMillis)
+                                        dialedCase = null
+                                        dialerStartedAt = null
+                                        leftForDialer = false
+                                    }
+                                }
+                                else -> Unit
+                            }
+                        }
+                        lifecycleOwner.lifecycle.addObserver(observer)
+                        onDispose {
+                            lifecycleOwner.lifecycle.removeObserver(observer)
+                        }
                     }
 
                     CaseListScreen(
@@ -757,8 +838,46 @@ fun MedtrackApp(
                         isRefreshing = isRefreshing,
                         error = error,
                         onRefresh = { refreshCaseList() },
+                        onCallPatient = { patientCase ->
+                            if (patientCase.phoneNumber.isNullOrBlank()) {
+                                scope.launch { snackbarHostState.showSnackbar("No phone number on file") }
+                            } else {
+                                dialedCase = patientCase
+                                dialerStartedAt = System.currentTimeMillis()
+                                leftForDialer = false
+                                if (!openDialer(context, patientCase)) {
+                                    dialedCase = null
+                                    dialerStartedAt = null
+                                    callOutcomeAttemptedAt = null
+                                    scope.launch { snackbarHostState.showSnackbar("Unable to open dialer") }
+                                }
+                            }
+                        },
                         onOpenCase = { caseId -> navController.navigate(Routes.caseDetail(caseId)) },
                     )
+
+                    callOutcomeCase?.let { patientCase ->
+                        CallOutcomeSheet(
+                            patientName = patientCase.patientName,
+                            onOutcome = { outcome, note ->
+                                val attemptedAt = callOutcomeAttemptedAt
+                                callOutcomeCase = null
+                                callOutcomeAttemptedAt = null
+                                submitCasesCallOutcome(patientCase, outcome, note, attemptedAt)
+                            },
+                            onAttempted = {
+                                val attemptedAt = callOutcomeAttemptedAt
+                                callOutcomeCase = null
+                                callOutcomeAttemptedAt = null
+                                submitCasesCallOutcome(
+                                    patientCase = patientCase,
+                                    outcome = "attempted",
+                                    note = "Mobile dialer opened; outcome was not confirmed.",
+                                    attemptedAt = attemptedAt,
+                                )
+                            },
+                        )
+                    }
                 }
                 composable(Routes.CASE_DETAIL) { entry ->
                     val cases by container.medtrackRepository.cases.collectAsState(initial = emptyList())
@@ -1085,7 +1204,6 @@ fun MedtrackApp(
                     CallsScreen(
                         modifier = Modifier.fillMaxSize(),
                         cases = cases,
-                        callerName = currentUserDisplayName ?: "Staff",
                         isRefreshing = isRefreshing,
                         error = error,
                         actionMessage = actionMessage,
@@ -1332,7 +1450,7 @@ private fun MedtrackBottomBar(
                     destination = bottomDestinations[3],
                     currentRoute = currentRoute,
                     onNavigate = onNavigate,
-                    badge = unreadCount.takeIf { it > 0 }?.coerceAtMost(9)?.toString(),
+                    badge = unreadCount.takeIf { it > 0 }?.coerceAtMost(99)?.toString(),
                 )
             }
         }
@@ -1401,12 +1519,23 @@ private fun RowScope.BottomNavItem(
                     tint = color,
                 )
                 badge?.let {
-                    Box(
+                    Surface(
                         modifier = Modifier
                             .align(Alignment.TopEnd)
-                            .size(BottomNavScale.ItemBadgeSize)
-                            .background(MedtrackColors.Danger, CircleShape),
-                    )
+                            .offset(x = 5.dp, y = (-5).dp),
+                        shape = CircleShape,
+                        color = MedtrackColors.Danger,
+                        border = BorderStroke(1.5.dp, MedtrackColors.Card),
+                    ) {
+                        Text(
+                            text = it,
+                            color = Color.White,
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                            fontWeight = FontWeight.ExtraBold,
+                            maxLines = 1,
+                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
+                        )
+                    }
                 }
             }
             Spacer(modifier = Modifier.height(BottomNavScale.ItemLabelGap))
@@ -1437,7 +1566,7 @@ private fun QuickAddSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        containerColor = MedtrackColors.Surface,
+        containerColor = Color.White,
     ) {
         Column(
             modifier = Modifier
@@ -1632,28 +1761,29 @@ private fun ProfileScreen(
         modifier = modifier
             .background(MedtrackColors.Surface)
             .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(24.dp),
+            shape = RoundedCornerShape(20.dp),
             color = Color.Transparent,
+            shadowElevation = 8.dp,
         ) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(
                         Brush.linearGradient(
-                            listOf(MedtrackColors.PrimaryDark, MedtrackColors.Primary),
+                            listOf(MedtrackColors.Primary, MedtrackColors.PrimaryDark, MedtrackColors.PrimaryDeep),
                         ),
                     )
-                    .padding(16.dp),
+                    .padding(18.dp),
             ) {
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Surface(shape = CircleShape, color = Color.White.copy(alpha = 0.18f), modifier = Modifier.size(54.dp)) {
+                    Surface(shape = RoundedCornerShape(16.dp), color = Color.White.copy(alpha = 0.18f), modifier = Modifier.size(54.dp)) {
                         Box(contentAlignment = Alignment.Center) {
                             Text(
                                 text = displayName.initials(),
@@ -1673,63 +1803,145 @@ private fun ProfileScreen(
                             overflow = TextOverflow.Ellipsis,
                         )
                         Text(
-                            text = "MEDTRACK mobile session",
+                            text = "$roleLabel · MEDTRACK mobile",
                             color = Color.White.copy(alpha = 0.82f),
                             style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.SemiBold,
                         )
                     }
                 }
             }
         }
 
-        MedtrackCompactCard {
-            MedtrackSectionTitle(title = "Today")
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                MedtrackMiniPill(
-                    text = "$pendingWriteCount pending sync",
-                    color = if (pendingWriteCount > 0) MedtrackColors.Warning else MedtrackColors.Success,
-                )
-                MedtrackMiniPill(
-                    text = "$unreadNotificationCount unread alerts",
-                    color = if (unreadNotificationCount > 0) MedtrackColors.Danger else MedtrackColors.Muted,
-                )
-            }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            ProfileStatCard(
+                label = "Pending sync",
+                value = pendingWriteCount.toString(),
+                color = if (pendingWriteCount > 0) MedtrackColors.Warning else MedtrackColors.Success,
+                background = if (pendingWriteCount > 0) MedtrackColors.WarningSoft else MedtrackColors.SuccessSoft,
+                icon = Icons.Outlined.CloudDone,
+                modifier = Modifier.weight(1f),
+            )
+            ProfileStatCard(
+                label = "Unread alerts",
+                value = unreadNotificationCount.toString(),
+                color = if (unreadNotificationCount > 0) MedtrackColors.Danger else MedtrackColors.Muted,
+                background = if (unreadNotificationCount > 0) MedtrackColors.DangerSoft else MedtrackColors.SurfaceAlt,
+                icon = Icons.Outlined.ErrorOutline,
+                modifier = Modifier.weight(1f),
+            )
         }
 
-        MedtrackCompactCard(
-            modifier = Modifier.clickable(onClick = onOpenNotifications),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                MedtrackIconBadge(icon = Icons.Outlined.Sync, tint = MedtrackColors.Primary)
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text("Notifications and sync", fontWeight = FontWeight.Bold, color = MedtrackColors.Ink)
-                    Text("View alerts and queued mobile work.", color = MedtrackColors.Muted, style = MaterialTheme.typography.bodySmall)
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.weight(1f))
         Text(
-            text = buildLabel,
-            color = MedtrackColors.Muted,
-            style = MaterialTheme.typography.labelMedium,
+            text = "SETTINGS",
+            color = MedtrackColors.Faint,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.ExtraBold,
+            letterSpacing = 0.5.sp,
+            modifier = Modifier.padding(start = 2.dp),
+        )
+        ProfileSettingRow(onClick = onOpenNotifications)
+
+        Button(
+            onClick = onSignOut,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp),
+            shape = RoundedCornerShape(15.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = MedtrackColors.Ink),
+        ) {
+            Icon(imageVector = Icons.Outlined.Lock, contentDescription = null, modifier = Modifier.size(19.dp))
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Sign out", fontWeight = FontWeight.ExtraBold)
+        }
+        Text(
+            text = buildLabel.replace("code", "build"),
+            color = MedtrackColors.Faint,
+            style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.SemiBold,
             modifier = Modifier.align(Alignment.CenterHorizontally),
         )
-        Text(
-            text = roleLabel,
-            color = MedtrackColors.Muted,
-            style = MaterialTheme.typography.labelSmall,
-            modifier = Modifier.align(Alignment.CenterHorizontally),
-        )
-        Button(
-            onClick = onSignOut,
-            modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(containerColor = MedtrackColors.Ink),
+    }
+}
+
+@Composable
+private fun ProfileStatCard(
+    label: String,
+    value: String,
+    color: Color,
+    background: Color,
+    icon: ImageVector,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(16.dp),
+        color = MedtrackColors.Card,
+        border = BorderStroke(1.dp, MedtrackColors.Border),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(9.dp),
         ) {
-            Icon(imageVector = Icons.Outlined.Logout, contentDescription = null)
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("Sign out")
+            Surface(shape = RoundedCornerShape(10.dp), color = background, modifier = Modifier.size(34.dp)) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(imageVector = icon, contentDescription = null, tint = color, modifier = Modifier.size(18.dp))
+                }
+            }
+            Text(
+                text = value,
+                color = MedtrackColors.Ink,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.ExtraBold,
+                maxLines = 1,
+            )
+            Text(
+                text = label,
+                color = MedtrackColors.Muted,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ProfileSettingRow(onClick: () -> Unit) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(16.dp),
+        color = MedtrackColors.Card,
+        border = BorderStroke(1.dp, MedtrackColors.Border),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 13.dp),
+            horizontalArrangement = Arrangement.spacedBy(13.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box {
+                Surface(shape = RoundedCornerShape(11.dp), color = MedtrackColors.PrimarySoft, modifier = Modifier.size(38.dp)) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(imageVector = Icons.Outlined.Refresh, contentDescription = null, tint = MedtrackColors.Primary, modifier = Modifier.size(19.dp))
+                    }
+                }
+                Surface(
+                    modifier = Modifier
+                        .size(9.dp)
+                        .align(Alignment.TopEnd)
+                        .offset(x = 2.dp, y = (-2).dp),
+                    shape = CircleShape,
+                    color = MedtrackColors.Danger,
+                    border = BorderStroke(1.5.dp, MedtrackColors.Card),
+                ) {}
+            }
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("Notifications & sync", fontWeight = FontWeight.Bold, color = MedtrackColors.Ink, maxLines = 1)
+                Text("Alerts and queued mobile work", color = MedtrackColors.Muted, style = MaterialTheme.typography.bodySmall, maxLines = 1)
+            }
+            Icon(imageVector = Icons.Outlined.ChevronRight, contentDescription = null, tint = MedtrackColors.Faint, modifier = Modifier.size(20.dp))
         }
     }
 }

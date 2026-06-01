@@ -34,10 +34,10 @@ import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Event
 import androidx.compose.material.icons.outlined.Flag
-import androidx.compose.material.icons.outlined.FilterList
-import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.Phone
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -62,7 +62,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -72,8 +71,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.naveenhospital.medtrack.core.designsystem.R as DesignR
 import com.naveenhospital.medtrack.core.designsystem.MedtrackColors
+import com.naveenhospital.medtrack.core.designsystem.MedtrackCategoryTile
 import com.naveenhospital.medtrack.core.designsystem.MedtrackPullRefreshBox
+import com.naveenhospital.medtrack.core.designsystem.MedtrackRiskFlag
 import com.naveenhospital.medtrack.core.designsystem.MedtrackStatusPill
+import com.naveenhospital.medtrack.core.designsystem.medtrackShortDateLabel
 import com.naveenhospital.medtrack.core.domain.model.CaseCategory
 import com.naveenhospital.medtrack.core.domain.model.CaseStatus
 import com.naveenhospital.medtrack.core.domain.model.CategoryFilterOption
@@ -88,29 +90,29 @@ import java.util.Locale
 import kotlin.math.roundToInt
 
 private object HomeUiScale {
-    val ScreenHorizontalPadding = 8.dp
-    val ScreenVerticalPadding = 6.dp
-    val SectionGap = 6.dp
+    val ScreenHorizontalPadding = 18.dp
+    val ScreenVerticalPadding = 4.dp
+    val SectionGap = 10.dp
     val ListCardGap = 8.dp
     val ListBottomPadding = 104.dp
 
-    val HeaderAvatarSize = 40.dp
+    val HeaderAvatarSize = 44.dp
     val HeaderButtonSize = 40.dp
-    val HeaderButtonRadius = 12.dp
+    val HeaderButtonRadius = 13.dp
     val HeaderIconSize = 18.dp
     val HeaderDotSize = 7.dp
-    val HeaderDateText = 11.sp
-    val HeaderGreetingText = 16.sp
+    val HeaderDateText = 11.5.sp
+    val HeaderGreetingText = 20.sp
 
-    val SearchHeight = 43.dp
+    val SearchHeight = 44.dp
     val SearchRadius = 14.dp
-    val SearchHorizontalPaddingStart = 10.dp
-    val SearchHorizontalPaddingEnd = 5.dp
-    val SearchGap = 7.dp
-    val SearchIconSize = 18.dp
-    val SearchFilterButtonSize = 34.dp
+    val SearchHorizontalPaddingStart = 14.dp
+    val SearchHorizontalPaddingEnd = 14.dp
+    val SearchGap = 10.dp
+    val SearchIconSize = 20.dp
+    val SearchFilterButtonSize = 28.dp
     val SearchFilterButtonRadius = 10.dp
-    val SearchText = 12.sp
+    val SearchText = 15.sp
 
     val BucketGap = 8.dp
     val BucketHeight = 37.dp
@@ -120,28 +122,28 @@ private object HomeUiScale {
     val BucketCountPaddingHorizontal = 6.dp
     val BucketCountPaddingVertical = 2.dp
 
-    val CardRadius = 18.dp
-    val CardRailWidth = 7.dp
-    val CardHorizontalPadding = 8.dp
-    val CardVerticalPadding = 9.dp
+    val CardRadius = 16.dp
+    val CardRailWidth = 4.dp
+    val CardHorizontalPadding = 13.dp
+    val CardVerticalPadding = 13.dp
     val CardExpandedVerticalPadding = 10.dp
     val CardCollapsedGap = 6.dp
     val CardExpandedGap = 8.dp
-    val CardHeaderGap = 10.dp
+    val CardHeaderGap = 12.dp
     val CardTextGap = 4.dp
-    val CardNameText = 14.sp
-    val CardSummaryText = 12.sp
-    val CardMetaText = 12.sp
+    val CardNameText = 16.sp
+    val CardSummaryText = 13.5.sp
+    val CardMetaText = 12.5.sp
 
-    val CategoryIconSize = 46.dp
-    val CategoryIconRadius = 14.dp
-    val CategoryGlyphSize = 26.dp
+    val CategoryIconSize = 44.dp
+    val CategoryIconRadius = 12.dp
+    val CategoryGlyphSize = 24.dp
     val StatusPillPaddingHorizontal = 8.dp
     val StatusPillPaddingVertical = 2.dp
     val DuePillPaddingHorizontal = 6.dp
     val DuePillPaddingVertical = 2.dp
-    val RiskFlagSize = 28.dp
-    val RiskFlagIconSize = 16.dp
+    val RiskFlagSize = 24.dp
+    val RiskFlagIconSize = 17.dp
 
     val VitalPaddingHorizontal = 9.dp
     val VitalPaddingVertical = 5.dp
@@ -179,7 +181,6 @@ fun HomeScreen(
     onMessagePatient: (PatientCase) -> Unit,
     onCompleteTask: (PatientCase) -> Unit,
     onOpenCase: (PatientCase) -> Unit,
-    onOpenNotifications: () -> Unit,
     onSignOut: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -197,7 +198,6 @@ fun HomeScreen(
     ) {
         V2aHeader(
             userDisplayName = userDisplayName,
-            onOpenNotifications = onOpenNotifications,
             onAccount = { showSignOutDialog = true },
         )
 
@@ -316,6 +316,7 @@ fun HomeScreen(
         RiskReasonsSheet(
             patientCase = patientCase,
             onDismiss = { riskCase = null },
+            onCallPatient = { onCallPatient(patientCase) },
         )
     }
 
@@ -361,7 +362,6 @@ fun HomeScreen(
 @Composable
 private fun V2aHeader(
     userDisplayName: String?,
-    onOpenNotifications: () -> Unit,
     onAccount: () -> Unit,
 ) {
     val greetingName = headerDisplayName(userDisplayName)
@@ -391,29 +391,14 @@ private fun V2aHeader(
                 text = todayStampV2(),
                 color = MedtrackColors.Muted,
                 style = MaterialTheme.typography.labelSmall.copy(fontSize = HomeUiScale.HeaderDateText),
-                fontWeight = FontWeight.Bold,
+                fontWeight = FontWeight.ExtraBold,
             )
             Text(
                 text = "Hi $greetingName.",
                 color = MedtrackColors.Ink,
                 style = MaterialTheme.typography.titleMedium.copy(fontSize = HomeUiScale.HeaderGreetingText),
-                fontWeight = FontWeight.Bold,
+                fontWeight = FontWeight.ExtraBold,
             )
-        }
-        HeaderIconButton(onClick = onOpenNotifications) {
-            Box {
-                Icon(
-                    imageVector = Icons.Outlined.Notifications,
-                    contentDescription = "Alerts",
-                    modifier = Modifier.size(HomeUiScale.HeaderIconSize),
-                )
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .size(HomeUiScale.HeaderDotSize)
-                        .background(MedtrackColors.Danger, RoundedCornerShape(50)),
-                )
-            }
         }
     }
 }
@@ -529,22 +514,18 @@ private fun SearchFilterBar(
                     innerTextField()
                 },
             )
-            Surface(
-                modifier = Modifier.size(HomeUiScale.SearchFilterButtonSize),
-                shape = RoundedCornerShape(HomeUiScale.SearchFilterButtonRadius),
-                color = MedtrackColors.Surface,
+            Box(
+                modifier = Modifier
+                    .size(HomeUiScale.SearchFilterButtonSize)
+                    .clickable(onClick = onFilterClick),
+                contentAlignment = Alignment.Center,
             ) {
-                Box(
-                    modifier = Modifier.clickable(onClick = onFilterClick),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.FilterList,
-                        contentDescription = "Filters",
-                        tint = MedtrackColors.Ink,
-                        modifier = Modifier.size(HomeUiScale.SearchIconSize),
-                    )
-                }
+                Icon(
+                    imageVector = Icons.Outlined.Tune,
+                    contentDescription = "Filters",
+                    tint = MedtrackColors.Ink,
+                    modifier = Modifier.size(HomeUiScale.SearchIconSize),
+                )
             }
         }
     }
@@ -571,13 +552,24 @@ private fun ListHeader(
             color = MedtrackColors.Card,
             border = androidx.compose.foundation.BorderStroke(1.dp, MedtrackColors.Border.copy(alpha = 0.78f)),
         ) {
-            Text(
-                text = "by time \u25BE",
-                style = MaterialTheme.typography.labelSmall,
-                color = MedtrackColors.Muted,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-            )
+            Row(
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "By time",
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 13.sp),
+                    color = MedtrackColors.InkSoft,
+                    fontWeight = FontWeight.Bold,
+                )
+                Icon(
+                    imageVector = Icons.Outlined.ExpandMore,
+                    contentDescription = null,
+                    tint = MedtrackColors.InkSoft,
+                    modifier = Modifier.size(16.dp),
+                )
+            }
         }
     }
 }
@@ -600,47 +592,126 @@ private fun patientNoun(count: Int): String =
 private fun RiskReasonsSheet(
     patientCase: PatientCase,
     onDismiss: () -> Unit,
+    onCallPatient: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    ModalBottomSheet(sheetState = sheetState, onDismissRequest = onDismiss) {
+    ModalBottomSheet(
+        sheetState = sheetState,
+        onDismissRequest = onDismiss,
+        containerColor = Color.White,
+    ) {
+        val reasons = patientCase.highRiskReasons.ifEmpty { listOf("Server marked this case as red.") }
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(start = 16.dp, end = 16.dp, bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(
-                text = "Risk reasons",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
-            patientCase.highRiskReasons.ifEmpty { listOf("Server marked this case as red.") }
-                .forEach { reason ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(9.dp),
-                        verticalAlignment = Alignment.Top,
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top,
+            ) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MedtrackColors.Danger.copy(alpha = 0.08f),
+                        modifier = Modifier.size(38.dp),
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .padding(top = 7.dp)
-                                .size(8.dp)
-                                .background(MedtrackColors.Danger, RoundedCornerShape(50)),
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(imageVector = Icons.Outlined.Flag, contentDescription = null, tint = MedtrackColors.Danger, modifier = Modifier.size(21.dp))
+                        }
+                    }
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            text = "Why flagged",
+                            color = MedtrackColors.Ink,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
                         )
-                        Column(
-                            modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        Text(
+                            text = "${patientCase.patientName} · ${reasons.size} ${if (reasons.size == 1) "risk reason" else "risk reasons"}",
+                            color = MedtrackColors.InkSoft,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+            Text(
+                text = patientCase.riskReasonSource().uppercase(),
+                color = if (patientCase.category == CaseCategory.ANC) MedtrackColors.Anc else MedtrackColors.Warning,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.ExtraBold,
+            )
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+                color = Color.White,
+                border = androidx.compose.foundation.BorderStroke(1.dp, MedtrackColors.Border.copy(alpha = 0.72f)),
+            ) {
+                Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
+                    reasons.forEach { reason ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(9.dp),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Text(text = reason, color = MedtrackColors.Ink)
-                            MedtrackStatusPill(
-                                text = patientCase.riskReasonSource(),
-                                color = if (patientCase.category == CaseCategory.ANC) MedtrackColors.Danger else MedtrackColors.Warning,
+                            Box(
+                                modifier = Modifier
+                                    .size(7.dp)
+                                    .background(MedtrackColors.Danger, RoundedCornerShape(50)),
                             )
+                            Text(
+                                text = reason,
+                                color = MedtrackColors.Ink,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.weight(1f),
+                            )
+                            MedtrackStatusPill(text = "High", color = MedtrackColors.Danger)
                         }
                     }
                 }
-            TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) {
-                Text("Close")
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Surface(
+                    modifier = Modifier
+                        .weight(0.75f)
+                        .height(46.dp)
+                        .clickable(onClick = onDismiss),
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color.White,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MedtrackColors.Border),
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text("Close", color = MedtrackColors.Ink, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+                Button(
+                    onClick = onCallPatient,
+                    enabled = !patientCase.phoneNumber.isNullOrBlank(),
+                    modifier = Modifier
+                        .weight(1.6f)
+                        .height(46.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = MedtrackColors.Success),
+                ) {
+                    Icon(imageVector = Icons.Outlined.Phone, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(5.dp))
+                    Text("Call patient")
+                }
             }
         }
     }
@@ -703,7 +774,11 @@ private fun CategoryFilterSheet(
         .flatMap { it.subcategories }
     val visibleSubcategoryValues = visibleSubcategories.map { it.value }.toSet()
 
-    ModalBottomSheet(sheetState = sheetState, onDismissRequest = onDismiss) {
+    ModalBottomSheet(
+        sheetState = sheetState,
+        onDismissRequest = onDismiss,
+        containerColor = Color.White,
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1043,7 +1118,7 @@ private fun PatientCard(
                                         text = displayName,
                                         color = MedtrackColors.Ink,
                                         style = MaterialTheme.typography.titleSmall.copy(fontSize = HomeUiScale.CardNameText),
-                                        fontWeight = FontWeight.Bold,
+                                        fontWeight = FontWeight.ExtraBold,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                         onTextLayout = { result ->
@@ -1064,6 +1139,7 @@ private fun PatientCard(
                                             text = patientCase.summaryLine(),
                                             color = MedtrackColors.Muted,
                                             style = MaterialTheme.typography.bodySmall.copy(fontSize = HomeUiScale.CardSummaryText),
+                                            fontWeight = FontWeight.SemiBold,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis,
                                             modifier = Modifier.weight(1f),
@@ -1096,7 +1172,7 @@ private fun PatientCard(
                                         }
                                     }
                                     if (patientCase.isHighRisk) {
-                                        RiskFlagIcon(onClick = onRiskClick)
+                                        RiskFlagIcon(count = patientCase.riskReasonCount(), onClick = onRiskClick)
                                     }
                                 }
                             }
@@ -1134,9 +1210,6 @@ private fun PatientCard(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
-                        }
-                        if (patientCase.isHighRisk) {
-                            RiskReasonsInlineChip(patientCase = patientCase, onClick = onRiskClick)
                         }
                         TaskChipRow(patientCase = patientCase)
                         Row(horizontalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.fillMaxWidth()) {
@@ -1256,7 +1329,7 @@ private fun PatientStatePill(
     onRiskClick: () -> Unit,
 ) {
     if (patientCase.isHighRisk) {
-        RiskFlagIcon(onClick = onRiskClick)
+        RiskFlagIcon(count = patientCase.riskReasonCount(), onClick = onRiskClick)
         return
     }
 
@@ -1267,21 +1340,27 @@ private fun PatientStatePill(
 }
 
 @Composable
-private fun RiskFlagIcon(onClick: () -> Unit) {
-    Surface(
+private fun RiskFlagIcon(count: Int?, onClick: () -> Unit) {
+    Row(
         modifier = Modifier
-            .size(HomeUiScale.RiskFlagSize)
+            .height(HomeUiScale.RiskFlagSize)
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(50),
-        color = MedtrackColors.Danger.copy(alpha = 0.1f),
-        border = androidx.compose.foundation.BorderStroke(1.dp, MedtrackColors.Danger.copy(alpha = 0.24f)),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(contentAlignment = Alignment.Center) {
-            Icon(
-                imageVector = Icons.Outlined.Flag,
-                contentDescription = "Red flag",
-                tint = MedtrackColors.Danger,
-                modifier = Modifier.size(HomeUiScale.RiskFlagIconSize),
+        Icon(
+            imageVector = Icons.Outlined.Flag,
+            contentDescription = "Red flag",
+            tint = MedtrackColors.Danger,
+            modifier = Modifier.size(HomeUiScale.RiskFlagIconSize),
+        )
+        count?.let {
+            Text(
+                text = it.coerceAtLeast(1).toString(),
+                color = MedtrackColors.Danger,
+                style = MaterialTheme.typography.labelMedium.copy(fontSize = 13.5.sp),
+                fontWeight = FontWeight.ExtraBold,
+                maxLines = 1,
             )
         }
     }
@@ -1312,20 +1391,7 @@ private fun DueChip(text: String, highRisk: Boolean) {
 
 private fun String.compactDueLabel(): String {
     val value = trim()
-    Regex("""^\d{4}-\d{2}-\d{2}[T ](\d{2}:\d{2})""")
-        .find(value)
-        ?.groupValues
-        ?.getOrNull(1)
-        ?.let { return it }
-
-    return runCatching {
-        val parsed = SimpleDateFormat("yyyy-MM-dd", Locale.US).parse(value)
-        parsed?.let {
-            SimpleDateFormat("dd MMM", Locale.getDefault())
-                .format(it)
-                .uppercase(Locale.getDefault())
-        }
-    }.getOrNull() ?: value
+    return medtrackShortDateLabel(value) ?: value
 }
 
 @Composable
@@ -1650,20 +1716,13 @@ private fun BoxScope.SwipeActionBackground(
 
 @Composable
 private fun CategoryIcon(color: Color, iconResId: Int, modifier: Modifier = Modifier) {
-    Surface(
-        modifier = modifier.size(HomeUiScale.CategoryIconSize),
-        shape = RoundedCornerShape(HomeUiScale.CategoryIconRadius),
-        color = color.copy(alpha = 0.13f),
-    ) {
-        Row(horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                painter = painterResource(iconResId),
-                contentDescription = null,
-                tint = color,
-                modifier = Modifier.size(HomeUiScale.CategoryGlyphSize),
-            )
-        }
-    }
+    MedtrackCategoryTile(
+        iconResId = iconResId,
+        tint = color,
+        modifier = modifier,
+        size = HomeUiScale.CategoryIconSize,
+        radius = HomeUiScale.CategoryIconRadius,
+    )
 }
 
 private fun PatientCase.demographicsLine(): String =
@@ -1710,6 +1769,9 @@ private fun PatientCase.worklistDueLabel(selectedBucket: String?, expanded: Bool
         else -> null
     }
 }
+
+private fun PatientCase.riskReasonCount(): Int =
+    highRiskReasons.count { it.isNotBlank() }.coerceAtLeast(1)
 
 private fun PatientCase.primaryStateLabel(): String =
     if (isHighRisk) "RED FLAG" else status.label.uppercase(Locale.getDefault())

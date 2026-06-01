@@ -22,7 +22,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Chat
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
-import androidx.compose.material.icons.outlined.FilterList
 import androidx.compose.material.icons.outlined.Phone
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.Button
@@ -31,7 +30,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -46,12 +44,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.naveenhospital.medtrack.core.designsystem.MedtrackCategoryTile
 import com.naveenhospital.medtrack.core.designsystem.MedtrackColors
 import com.naveenhospital.medtrack.core.designsystem.MedtrackCompactCard
-import com.naveenhospital.medtrack.core.designsystem.MedtrackIconBadge
 import com.naveenhospital.medtrack.core.designsystem.MedtrackMiniPill
-import com.naveenhospital.medtrack.core.designsystem.MedtrackSectionTitle
+import com.naveenhospital.medtrack.core.designsystem.MedtrackSectionEyebrow
+import com.naveenhospital.medtrack.core.designsystem.medtrackCategoryVisual
+import com.naveenhospital.medtrack.core.designsystem.medtrackShortDateLabel
 import com.naveenhospital.medtrack.core.domain.model.PatientCase
+import java.util.Calendar
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -59,7 +60,6 @@ import java.util.Locale
 @Composable
 fun CallsScreen(
     cases: List<PatientCase>,
-    callerName: String,
     isRefreshing: Boolean,
     error: String?,
     actionMessage: String?,
@@ -100,12 +100,10 @@ fun CallsScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text("Call queue", color = MedtrackColors.Ink, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                Text("${callableCases.size} callable cases", color = MedtrackColors.Muted, style = MaterialTheme.typography.labelMedium)
+                Text("Call queue", color = MedtrackColors.Ink, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
+                Text("${callableCases.size} callable cases today", color = MedtrackColors.Muted, style = MaterialTheme.typography.labelSmall)
             }
-            IconButton(onClick = onRefresh) {
-                Icon(imageVector = Icons.Outlined.Refresh, contentDescription = "Refresh")
-            }
+            CallsHeaderIconButton(onClick = onRefresh)
         }
 
         error?.let { Text(text = it, color = MedtrackColors.Danger) }
@@ -116,7 +114,6 @@ fun CallsScreen(
 
         CallQueueHero(
             upNext = upNext,
-            callerName = callerName,
             doneCount = doneCount,
             remainingCount = remainingCount,
             totalCount = totalCount,
@@ -132,7 +129,7 @@ fun CallsScreen(
             QueueFilterChip("All", filter == "all", { filter = "all" })
         }
 
-        MedtrackSectionTitle(title = "Next calls", trailing = "${visibleCases.size} shown")
+        MedtrackSectionEyebrow(title = "Next calls", trailing = "${visibleCases.size} shown")
 
         if (visibleCases.isEmpty() && !isRefreshing) {
             MedtrackCompactCard {
@@ -159,7 +156,6 @@ fun CallsScreen(
 @Composable
 private fun CallQueueHero(
     upNext: PatientCase?,
-    callerName: String,
     doneCount: Int,
     remainingCount: Int,
     totalCount: Int,
@@ -170,27 +166,19 @@ private fun CallQueueHero(
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
-        color = MedtrackColors.Card,
+        shape = RoundedCornerShape(18.dp),
+        color = Color.White,
         border = BorderStroke(1.dp, MedtrackColors.Border),
         shadowElevation = 2.dp,
     ) {
-        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp), modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Caller - $callerName",
-                        color = MedtrackColors.Muted,
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text("Up next", color = MedtrackColors.Primary, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                    MedtrackMiniPill(text = "UP NEXT", color = MedtrackColors.Primary)
                     Text(
                         text = upNext?.patientName ?: "No call selected",
                         color = MedtrackColors.Ink,
@@ -217,15 +205,14 @@ private fun CallQueueHero(
                     )
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(doneCount.toString(), color = MedtrackColors.Ink, fontWeight = FontWeight.Bold)
-                        Text("done", color = MedtrackColors.Muted, style = MaterialTheme.typography.labelSmall)
+                        Text("of $totalCount done", color = MedtrackColors.Muted, style = MaterialTheme.typography.labelSmall)
                     }
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.fillMaxWidth()) {
-                MedtrackMiniPill(text = "$doneCount of $totalCount done", color = MedtrackColors.Primary)
                 MedtrackMiniPill(text = "~${remainingCount * 3} min left", color = MedtrackColors.Warning)
                 if (redCount > 0) {
-                    MedtrackMiniPill(text = "$redCount red", color = MedtrackColors.Danger)
+                    MedtrackMiniPill(text = "$redCount red flags", color = MedtrackColors.Danger)
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
@@ -255,21 +242,34 @@ private fun CallQueueHero(
 }
 
 @Composable
+private fun CallsHeaderIconButton(onClick: () -> Unit) {
+    Surface(
+        modifier = Modifier
+            .size(42.dp)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(12.dp),
+        color = Color.White,
+        border = BorderStroke(1.dp, MedtrackColors.Border),
+        tonalElevation = 0.dp,
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(imageVector = Icons.Outlined.Refresh, contentDescription = "Refresh", tint = MedtrackColors.Ink, modifier = Modifier.size(20.dp))
+        }
+    }
+}
+
+@Composable
 private fun QueueFilterChip(label: String, selected: Boolean, onClick: () -> Unit) {
     FilterChip(
         selected = selected,
         onClick = onClick,
         label = { Text(label, fontWeight = FontWeight.SemiBold) },
-        leadingIcon = if (selected) {
-            { Icon(imageVector = Icons.Outlined.FilterList, contentDescription = null, modifier = Modifier.size(15.dp)) }
-        } else {
-            null
-        },
+        leadingIcon = null,
         colors = FilterChipDefaults.filterChipColors(
             selectedContainerColor = MedtrackColors.Primary,
             selectedLabelColor = Color.White,
             selectedLeadingIconColor = Color.White,
-            containerColor = MedtrackColors.Card,
+            containerColor = Color.White,
             labelColor = MedtrackColors.Ink,
         ),
         border = FilterChipDefaults.filterChipBorder(
@@ -288,6 +288,7 @@ private fun CallQueueRow(
     onCallPatient: () -> Unit,
     onMessagePatient: () -> Unit,
 ) {
+    val visual = medtrackCategoryVisual(patientCase.category.name, patientCase.categoryLabel)
     MedtrackCompactCard(
         modifier = Modifier.clickable(onClick = onOpenCase),
         borderColor = MedtrackColors.Border,
@@ -306,13 +307,18 @@ private fun CallQueueRow(
                         RoundedCornerShape(50),
                     ),
             )
-            MedtrackIconBadge(icon = Icons.Outlined.Phone, tint = if (patientCase.isHighRisk) MedtrackColors.Danger else MedtrackColors.Primary)
+            MedtrackCategoryTile(
+                iconResId = visual.iconResId,
+                tint = visual.tint,
+                softColor = visual.soft,
+                size = 42.dp,
+            )
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(patientCase.patientName, color = MedtrackColors.Ink, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(patientCase.identityLine(), color = MedtrackColors.Muted, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(patientCase.patientName, color = MedtrackColors.Ink, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(patientCase.callIdentityLine(), color = MedtrackColors.Muted, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             patientCase.nextTaskDueDate?.takeIf { it.isNotBlank() }?.let {
-                MedtrackMiniPill(text = it.take(10), color = if (patientCase.isHighRisk) MedtrackColors.Danger else MedtrackColors.Primary)
+                MedtrackMiniPill(text = callDueLabel(it), color = if (patientCase.isHighRisk) MedtrackColors.Danger else MedtrackColors.Primary)
             }
         }
         Text(
@@ -347,8 +353,33 @@ private fun CallQueueRow(
     }
 }
 
-private fun PatientCase.identityLine(): String =
-    listOfNotNull(uhid, age?.let { "${it}y" }, sexLabel, place).filter { it.isNotBlank() }.joinToString(" - ")
+private fun PatientCase.callIdentityLine(): String =
+    listOfNotNull(
+        uhid,
+        sexLabel?.trim()?.takeIf { it.isNotBlank() }?.take(1)?.uppercase(Locale.US),
+        age?.let { it.toString() },
+    ).filter { it.isNotBlank() }.joinToString(" · ")
+
+private fun callDueLabel(value: String): String {
+    val parsed = runCatching {
+        SimpleDateFormat("yyyy-MM-dd", Locale.US).apply { isLenient = false }.parse(value)
+    }.getOrNull() ?: return medtrackShortDateLabel(value) ?: value
+    val today = Calendar.getInstance()
+    val due = Calendar.getInstance().apply { time = parsed }
+    val delta = due.dayNumber() - today.dayNumber()
+    return when {
+        delta == 0 -> "Due today"
+        delta == 1 -> "Due tomorrow"
+        delta < 0 -> {
+            val days = -delta
+            "Overdue $days ${if (days == 1) "day" else "days"}"
+        }
+        else -> medtrackShortDateLabel(value) ?: value
+    }
+}
+
+private fun Calendar.dayNumber(): Int =
+    get(Calendar.YEAR) * 366 + get(Calendar.DAY_OF_YEAR)
 
 private fun todayToken(): String =
     SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())

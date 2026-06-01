@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.06.01.15.38
+- Continued the MEDTRACK Android design-matching pass across case detail, notifications, alert detail, calls, red-flag reason sheets, add-vitals sheets, and login/testing surfaces.
+- Added compact Android design-system refinements for white cards, softer rails, typography, date labels, notification rows, case-detail vitals/tasks, call queue surfaces, and temporary debug auto-login for UI review.
+- Preserved local Test NNH/emulator review flow while leaving alert-detail fired-reason payload wiring as the next logic fix to resolve before final acceptance.
+
 ## 2026.05.31.14.57
 - Polished MEDTRACK Android v1 surfaces across login, home/worklist, cases, case detail, calls, notifications, alert detail, profile, quick add, and mock case creation so the app uses a consistent Compose theme.
 - Added the Android alert-detail route, call-outcome phone context, Custom Rehab styling support, and a native mock case creation flow for local clinic workflow review.

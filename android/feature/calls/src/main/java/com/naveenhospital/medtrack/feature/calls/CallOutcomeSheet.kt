@@ -48,6 +48,7 @@ fun CallOutcomeSheet(
     ModalBottomSheet(
         sheetState = sheetState,
         onDismissRequest = onAttempted,
+        containerColor = Color.White,
     ) {
         Column(
             modifier = Modifier

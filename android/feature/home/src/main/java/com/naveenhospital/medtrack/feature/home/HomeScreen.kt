@@ -72,7 +72,10 @@ import androidx.compose.ui.unit.sp
 import com.naveenhospital.medtrack.core.designsystem.R as DesignR
 import com.naveenhospital.medtrack.core.designsystem.MedtrackColors
 import com.naveenhospital.medtrack.core.designsystem.MedtrackCategoryTile
+import com.naveenhospital.medtrack.core.designsystem.MedtrackDuePill
+import com.naveenhospital.medtrack.core.designsystem.MedtrackDueTone
 import com.naveenhospital.medtrack.core.designsystem.MedtrackPullRefreshBox
+import com.naveenhospital.medtrack.core.designsystem.MedtrackRadius
 import com.naveenhospital.medtrack.core.designsystem.MedtrackRiskFlag
 import com.naveenhospital.medtrack.core.designsystem.MedtrackStatusPill
 import com.naveenhospital.medtrack.core.designsystem.medtrackShortDateLabel
@@ -918,7 +921,6 @@ private fun BucketChips(
                 BucketFilter("upcoming", "Upcoming", stats.upcoming, MedtrackColors.Primary),
                 BucketFilter("overdue", "Overdue", stats.overdue, MedtrackColors.Danger),
                 BucketFilter("awaiting", "Awaiting", stats.awaiting, MedtrackColors.Warning),
-                BucketFilter("red", "Red", stats.red, MedtrackColors.Danger),
             ).forEach { filter ->
                 BucketFilterChip(
                     selected = selectedBucket == filter.key,
@@ -960,7 +962,7 @@ private fun BucketFilterChip(
     onClick: () -> Unit,
 ) {
     Surface(
-        shape = RoundedCornerShape(18.dp),
+        shape = MedtrackRadius.PillShape,
         color = if (selected) accent else MedtrackColors.Card,
         border = if (selected) null else androidx.compose.foundation.BorderStroke(1.dp, MedtrackColors.Border.copy(alpha = 0.78f)),
         modifier = Modifier
@@ -1019,8 +1021,7 @@ private fun PatientCard(
     val swipeThreshold = with(density) { 40.dp.toPx() }
     val maxDrag = with(density) { 96.dp.toPx() }
     val railColor = patientCase.cardRailColor()
-    var useShortName by rememberSaveable(patientCase.id) { mutableStateOf(false) }
-    val displayName = if (useShortName) patientCase.compactDisplayName() else patientCase.patientName
+    val displayName = patientCase.patientName
     val dueLabel = patientCase.worklistDueLabel(selectedBucket = selectedBucket, expanded = expanded)
 
     Box(
@@ -1119,13 +1120,8 @@ private fun PatientCard(
                                         color = MedtrackColors.Ink,
                                         style = MaterialTheme.typography.titleSmall.copy(fontSize = HomeUiScale.CardNameText),
                                         fontWeight = FontWeight.ExtraBold,
-                                        maxLines = 1,
+                                        maxLines = 2,
                                         overflow = TextOverflow.Ellipsis,
-                                        onTextLayout = { result ->
-                                            if (result.hasVisualOverflow && !useShortName) {
-                                                useShortName = true
-                                            }
-                                        },
                                     )
                                     Row(
                                         horizontalArrangement = Arrangement.spacedBy(7.dp),
@@ -1140,7 +1136,7 @@ private fun PatientCard(
                                             color = MedtrackColors.Muted,
                                             style = MaterialTheme.typography.bodySmall.copy(fontSize = HomeUiScale.CardSummaryText),
                                             fontWeight = FontWeight.SemiBold,
-                                            maxLines = 1,
+                                            maxLines = 2,
                                             overflow = TextOverflow.Ellipsis,
                                             modifier = Modifier.weight(1f),
                                         )
@@ -1368,25 +1364,13 @@ private fun RiskFlagIcon(count: Int?, onClick: () -> Unit) {
 
 @Composable
 private fun DueChip(text: String, highRisk: Boolean) {
-    val color = if (highRisk) MedtrackColors.Danger else MedtrackColors.Muted
-    Surface(
-        shape = RoundedCornerShape(9.dp),
-        color = color.copy(alpha = 0.08f),
-        border = androidx.compose.foundation.BorderStroke(1.dp, color.copy(alpha = 0.14f)),
-    ) {
-        Text(
-            text = text,
-            color = color,
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(
-                horizontal = HomeUiScale.DuePillPaddingHorizontal,
-                vertical = HomeUiScale.DuePillPaddingVertical,
-            ),
-            maxLines = 1,
-            softWrap = false,
-        )
+    val tone = when {
+        highRisk || text.contains("overdue", ignoreCase = true) -> MedtrackDueTone.Overdue
+        text.contains("today", ignoreCase = true) -> MedtrackDueTone.Today
+        text.contains("await", ignoreCase = true) -> MedtrackDueTone.Awaiting
+        else -> MedtrackDueTone.Upcoming
     }
+    MedtrackDuePill(text = text, tone = tone)
 }
 
 private fun String.compactDueLabel(): String {

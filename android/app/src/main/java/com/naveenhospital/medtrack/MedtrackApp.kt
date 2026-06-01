@@ -29,6 +29,10 @@ import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.ChevronRight
@@ -90,6 +94,7 @@ import androidx.paging.LoadState
 import androidx.paging.compose.collectAsLazyPagingItems
 import com.naveenhospital.medtrack.core.designsystem.R as DesignR
 import com.naveenhospital.medtrack.core.designsystem.MedtrackColors
+import com.naveenhospital.medtrack.core.designsystem.MedtrackElevation
 import com.naveenhospital.medtrack.core.designsystem.MedtrackIconBadge
 import com.naveenhospital.medtrack.core.designsystem.MedtrackTheme
 import com.naveenhospital.medtrack.core.designsystem.MedtrackPage
@@ -150,23 +155,25 @@ private data class BottomDestination(
     val route: String,
     val label: String,
     val icon: ImageVector,
+    val selectedIcon: ImageVector,
 )
 
 private val bottomDestinations = listOf(
-    BottomDestination(Routes.HOME, "Home", Icons.Outlined.Home),
-    BottomDestination(Routes.CASES, "Cases", Icons.Outlined.Folder),
-    BottomDestination(Routes.CALLS, "Calls", Icons.Outlined.Phone),
-    BottomDestination(Routes.ME, "Me", Icons.Outlined.Person),
+    BottomDestination(Routes.HOME, "Home", Icons.Outlined.Home, Icons.Filled.Home),
+    BottomDestination(Routes.CASES, "Cases", Icons.Outlined.Folder, Icons.Filled.Folder),
+    BottomDestination(Routes.CALLS, "Calls", Icons.Outlined.Phone, Icons.Filled.Phone),
+    BottomDestination(Routes.ME, "Me", Icons.Outlined.Person, Icons.Filled.Person),
 )
 
 private object BottomNavScale {
-    val ShellHeight = 88.dp
-    val BarHeight = 74.dp
+    val ShellHeight = 98.dp
+    val BarHeight = 68.dp
     val BarHorizontalPadding = 18.dp
     val CenterSpacerWidth = 72.dp
     val CenterButtonSize = 60.dp
     val CenterButtonRadius = 20.dp
-    val CenterButtonYOffset = 8.dp
+    // Negative-ish placement so the FAB floats above the bar rather than nesting in it.
+    val CenterButtonYOffset = 0.dp
     val CenterIconSize = 32.dp
     val ItemPaddingTop = 8.dp
     val ItemPaddingBottom = 7.dp
@@ -1461,14 +1468,18 @@ private fun MedtrackBottomBar(
                 .size(BottomNavScale.CenterButtonSize),
             shape = RoundedCornerShape(BottomNavScale.CenterButtonRadius),
             color = Color.Transparent,
-            shadowElevation = 12.dp,
+            shadowElevation = MedtrackElevation.Fab,
         ) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(
-                        brush = Brush.horizontalGradient(
-                            listOf(MedtrackColors.Primary, Color(0xFF4F46E5)),
+                        brush = Brush.linearGradient(
+                            listOf(
+                                MedtrackColors.Primary,
+                                MedtrackColors.PrimaryDark,
+                                MedtrackColors.PrimaryDeep,
+                            ),
                         ),
                         shape = RoundedCornerShape(BottomNavScale.CenterButtonRadius),
                     )
@@ -1494,7 +1505,7 @@ private fun RowScope.BottomNavItem(
     badge: String? = null,
 ) {
     val selected = currentRoute == destination.route
-    val color = if (selected) MedtrackColors.Primary else MedtrackColors.Muted
+    val color = if (selected) MedtrackColors.Primary else MedtrackColors.Faint
 
     Box(
         modifier = Modifier
@@ -1513,7 +1524,7 @@ private fun RowScope.BottomNavItem(
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
-                    imageVector = destination.icon,
+                    imageVector = if (selected) destination.selectedIcon else destination.icon,
                     contentDescription = destination.label,
                     modifier = Modifier.size(BottomNavScale.ItemIconSize),
                     tint = color,

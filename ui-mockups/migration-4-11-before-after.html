@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MEDTRACK · Migration 4–11 Before / After</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --mt-blue:#2563EB; --mt-blue-dk:#1D4ED8; --mt-blue-dp:#1E3A8A; --mt-blue-50:#EFF4FF; --mt-blue-100:#DCE7FF;
+    --mt-ink:#0F172A; --mt-slate:#334155; --mt-muted:#64748B; --mt-faint:#94A3B8;
+    --mt-surface:#F4F6FA; --mt-card:#FFF; --mt-line:#E7ECF3; --mt-line-soft:#EFF2F7; --mt-navy:#101828;
+    --mt-red:#DC2626; --mt-red-bg:#FCEBEB; --mt-red-line:#F6D2D2; --mt-green:#16A34A; --mt-green-bg:#E8F6EE;
+    --mt-vok:#0E9A6C; --mt-vok-bg:#E7F6F0; --mt-vhi:#C77A12; --mt-vhi-bg:#FBF1E0; --mt-vcr:#DC2626; --mt-vcr-bg:#FCEBEB;
+    /* category — AFTER (DS) backgrounds */
+    --anc:#0E9A6C; --anc-bg:#E7F6F0; --med:#5B53D6; --med-bg:#ECEBFB; --sur:#C77A12; --sur-bg:#FAF0E0; --rehab:#0E7490; --rehab-bg:#E2F2F6;
+    /* category — BEFORE backgrounds (current app) */
+    --med-bg-b:#EDEBFF; --sur-bg-b:#FBF1E0; --rehab-bg-b:#E3F4F7;
+    --shadow-row:0 1px 2px rgba(15,23,42,.04);
+    --shadow-card:0 6px 20px rgba(15,23,42,.08);
+    --shadow-fab:0 12px 22px rgba(37,99,235,.40);
+    --font:'Manrope',system-ui,-apple-system,sans-serif;
+    --mono:'Geist Mono',ui-monospace,monospace;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:#e7ecf3;color:var(--mt-ink);font-family:var(--font);padding:34px 22px 70px;}
+  .wrap{max-width:1180px;margin:0 auto;}
+  .kicker{font-family:var(--mono);font-size:12px;font-weight:600;color:var(--mt-blue);text-transform:uppercase;letter-spacing:1px;margin:0 0 10px;}
+  h1{font-size:27px;font-weight:800;letter-spacing:-0.5px;margin:0 0 6px;}
+  .lede{color:var(--mt-muted);font-size:15px;font-weight:500;max-width:780px;line-height:1.5;margin:0;}
+
+  /* section block */
+  .block{margin:34px 0 0;background:#fff;border:1px solid var(--mt-line);border-radius:20px;overflow:hidden;box-shadow:var(--shadow-row);}
+  .bhead{display:flex;align-items:flex-start;gap:14px;padding:18px 22px 16px;border-bottom:1px solid var(--mt-line-soft);}
+  .bnum{width:34px;height:34px;border-radius:11px;background:var(--mt-blue);color:#fff;font-weight:800;font-size:16px;display:flex;align-items:center;justify-content:center;flex:none;}
+  .bhead h2{margin:0 0 3px;font-size:18px;font-weight:800;letter-spacing:-0.2px;}
+  .bhead p{margin:0;color:var(--mt-muted);font-size:13.5px;font-weight:500;line-height:1.5;}
+  .bhead .pill{margin-left:auto;flex:none;font-family:var(--mono);font-size:10.5px;font-weight:600;padding:5px 10px;border-radius:999px;background:var(--mt-blue-50);color:var(--mt-blue-dk);white-space:nowrap;}
+  .bhead .pill.done{background:var(--mt-green-bg);color:var(--mt-green);}
+
+  .cmp{display:grid;grid-template-columns:1fr 1fr;gap:0;}
+  .side{padding:22px;min-width:0;}
+  .side:first-child{border-right:1px dashed var(--mt-line);background:#fbfcfe;}
+  .stag{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:800;letter-spacing:.4px;padding:4px 11px;border-radius:999px;margin-bottom:16px;}
+  .stag.b{background:#eef1f6;color:var(--mt-slate);}
+  .stag.a{background:var(--mt-blue);color:#fff;}
+  .stag .dot{width:7px;height:7px;border-radius:50%;background:currentColor;}
+  .cap{font-family:var(--mono);font-size:11px;color:var(--mt-faint);margin-top:12px;line-height:1.5;}
+
+  svg{display:block;}
+  .ic{display:inline-flex;}
+
+  /* category glyph via mask (real shipped artwork, tintable) */
+  .glyph{display:inline-block;background:currentColor;-webkit-mask-position:center;mask-position:center;-webkit-mask-size:contain;mask-size:contain;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;}
+  .ctile{border-radius:13px;display:flex;align-items:center;justify-content:center;flex:none;}
+
+  /* generic chip / pill */
+  .pillx{display:inline-flex;align-items:center;font-weight:700;border-radius:999px;white-space:nowrap;}
+
+  /* mini phone-width frame for screen bits */
+  .frame{width:330px;background:var(--mt-surface);border:1px solid var(--mt-line);border-radius:20px;padding:14px;}
+
+  /* patient row */
+  .prow{display:flex;background:var(--mt-card);border:1px solid var(--mt-line);overflow:hidden;border-radius:16px;}
+  .rail{width:4px;flex:none;background:var(--mt-red);}
+  .pin{flex:1;min-width:0;padding:13px 14px 13px 13px;display:flex;gap:12px;align-items:center;}
+  .pname{font-weight:800;color:var(--mt-ink);line-height:1.25;font-size:16px;}
+  .pdiag{color:var(--mt-muted);font-weight:600;margin-top:3px;line-height:1.3;font-size:13.5px;}
+  .uhid{font-family:var(--mono);font-size:11.5px;color:var(--mt-faint);font-weight:500;margin-top:3px;}
+  .pmeta{flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:9px;align-self:center;}
+  .sexage{color:var(--mt-faint);font-weight:700;font-size:12.5px;white-space:nowrap;}
+  .flag{display:inline-flex;align-items:center;gap:4px;}
+  .flag .n{color:var(--mt-red);font-weight:800;font-size:13.5px;}
+  .clip{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+
+  /* vitals strip */
+  .vstrip{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;}
+  .vbox{border-radius:12px;padding:9px 8px 10px;}
+  .vk{display:flex;align-items:center;gap:4px;font-size:10.5px;font-weight:800;letter-spacing:.3px;text-transform:uppercase;}
+  .vk .d{width:6px;height:6px;border-radius:3px;}
+  .vv{margin-top:4px;font-size:17px;font-weight:800;color:var(--mt-ink);letter-spacing:-0.4px;line-height:1;}
+  .vu{font-size:10px;font-weight:600;color:var(--mt-faint);margin-top:2px;}
+  .vadd{margin-top:5px;font-size:12.5px;font-weight:700;color:var(--mt-blue);display:flex;align-items:center;gap:3px;}
+
+  /* nav */
+  .navx{background:var(--mt-card);border:1px solid var(--mt-line);border-radius:16px;padding:9px 14px 12px;display:grid;grid-template-columns:repeat(5,1fr);align-items:end;position:relative;overflow:visible;}
+  .ni{display:flex;flex-direction:column;align-items:center;gap:4px;position:relative;}
+  .ni .lab{font-size:12px;font-weight:600;}
+  .fabwrap{display:flex;justify-content:center;position:relative;}
+  .fab{width:56px;height:56px;border-radius:20px;display:flex;align-items:center;justify-content:center;background:linear-gradient(150deg,#2563EB 0%,#1D4ED8 60%,#1E3A8A 100%);}
+  .fab.b{background:linear-gradient(90deg,#2563EB,#4F46E5);}
+  .badge{position:absolute;top:-7px;right:-10px;min-width:16px;height:16px;padding:0 4px;border-radius:999px;background:var(--mt-red);color:#fff;font-size:9.5px;font-weight:800;display:flex;align-items:center;justify-content:center;border:1.5px solid #fff;line-height:1;}
+
+  /* header strip */
+  .hd{display:flex;align-items:center;gap:11px;}
+  .avatar{width:44px;height:44px;border-radius:13px;background:var(--mt-blue);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;flex:none;}
+  .eyeb{font-size:12px;font-weight:800;letter-spacing:.5px;color:var(--mt-faint);text-transform:uppercase;}
+  .greet{font-size:21px;font-weight:800;letter-spacing:-0.3px;margin-top:1px;}
+  .bell{width:44px;height:44px;border-radius:13px;background:var(--mt-card);border:1px solid var(--mt-line);display:flex;align-items:center;justify-content:center;position:relative;flex:none;}
+  .bell .rd{position:absolute;top:9px;right:10px;width:9px;height:9px;border-radius:50%;background:var(--mt-red);border:1.5px solid #fff;}
+
+  /* subcat grid */
+  .subgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;}
+  .subcell{display:flex;flex-direction:column;align-items:center;gap:7px;}
+  .subbox{width:46px;height:46px;border-radius:12px;background:var(--mt-line-soft);display:flex;align-items:center;justify-content:center;}
+  .subcell span{font-family:var(--mono);font-size:9.5px;color:var(--mt-muted);text-align:center;line-height:1.2;}
+
+  /* bucket chips */
+  .bkrow{display:flex;gap:8px;flex-wrap:wrap;}
+  .bk{display:inline-flex;align-items:center;gap:7px;padding:8px 13px;background:var(--mt-card);border:1px solid var(--mt-line);}
+  .bk .lab{font-weight:700;font-size:14px;color:var(--mt-slate);}
+  .bk .ct{min-width:20px;height:20px;padding:0 5px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;background:var(--mt-blue-100);color:var(--mt-blue);}
+  .bk.on{background:var(--mt-blue);border-color:var(--mt-blue);}
+  .bk.on .lab{color:#fff;}.bk.on .ct{background:rgba(255,255,255,.25);color:#fff;}
+  .bk.red .ct{background:var(--mt-red-bg);color:var(--mt-red);}
+  .bk.r18{border-radius:18px;}.bk.r999{border-radius:999px;}
+
+  .filterchip{display:inline-flex;align-items:center;gap:6px;padding:7px 13px;border-radius:999px;font-size:13px;font-weight:700;background:var(--mt-card);border:1px solid var(--mt-line);color:var(--mt-slate);}
+  .filterchip.on{background:var(--mt-blue);color:#fff;border-color:var(--mt-blue);}
+
+  .legend{font-size:12px;color:var(--mt-slate);background:var(--mt-blue-50);border-radius:10px;padding:10px 12px;margin-top:14px;line-height:1.5;font-weight:500;}
+  .legend b{color:var(--mt-blue-dk);}
+  .arrow{color:var(--mt-faint);font-weight:800;margin:0 6px;}
+  .note{margin:38px 0 0;background:#fff;border:1px solid var(--mt-line);border-left:4px solid var(--mt-blue);border-radius:12px;padding:15px 18px;color:var(--mt-slate);font-size:13.5px;line-height:1.6;}
+  .note b{color:var(--mt-ink);}
+  code{font-family:var(--mono);font-size:.92em;background:#f1f4f8;padding:1px 5px;border-radius:5px;color:var(--mt-slate);}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p class="kicker">MEDTRACK · Android · Migration steps 4–11</p>
+  <h1>Before / After — the rest of the system</h1>
+  <p class="lede">P0 was the foundation (tokens, type, FAB colour). These are the screen-level changes that make the app match the design system. Each block shows today's build on the left and the design-system target on the right. Category glyphs use the real shipped artwork from <code>icons/</code>.</p>
+
+  <!-- ════════ 4 · Category & icon system ════════ -->
+  <div class="block">
+    <div class="bhead">
+      <div class="bnum">4</div>
+      <div><h2>Category glyph set + subcategory icons</h2><p>Adopt the new Feather-style category glyphs, render them larger (56% of the tile vs 48%), and add 12 specialty subcategory glyphs the app doesn't have today.</p></div>
+      <span class="pill">new artwork</span>
+    </div>
+    <div class="cmp">
+      <div class="side">
+        <span class="stag b"><span class="dot"></span>Before</span>
+        <div style="display:flex;gap:14px;">
+          <div class="ctile" style="width:56px;height:56px;background:var(--anc-bg);"><span class="glyph gl-anc" style="width:48%;height:48%;color:var(--anc);opacity:.55;"></span></div>
+          <div class="ctile" style="width:56px;height:56px;background:var(--med-bg-b);"><span class="glyph gl-medicine" style="width:48%;height:48%;color:var(--med);opacity:.55;"></span></div>
+          <div class="ctile" style="width:56px;height:56px;background:var(--sur-bg-b);"><span class="glyph gl-surgery" style="width:48%;height:48%;color:var(--sur);opacity:.55;"></span></div>
+        </div>
+        <div class="cap">Small, low-contrast glyph · only 4 category icons · every Medicine / Surgery case shows the same generic glyph.</div>
+        <div style="margin-top:16px;display:flex;gap:10px;">
+          <div class="subbox"><span class="glyph gl-medicine" style="width:52%;height:52%;color:var(--mt-faint);"></span></div>
+          <div class="subbox"><span class="glyph gl-medicine" style="width:52%;height:52%;color:var(--mt-faint);"></span></div>
+          <div class="subbox"><span class="glyph gl-medicine" style="width:52%;height:52%;color:var(--mt-faint);"></span></div>
+        </div>
+        <div class="cap">No subcategory differentiation — Cardiology, Oncology, Psychiatry all look identical.</div>
+      </div>
+      <div class="side">
+        <span class="stag a"><span class="dot"></span>After</span>
+        <div style="display:flex;gap:14px;">
+          <div class="ctile" style="width:56px;height:56px;background:var(--anc-bg);"><span class="glyph gl-anc" style="width:56%;height:56%;color:var(--anc);"></span></div>
+          <div class="ctile" style="width:56px;height:56px;background:var(--med-bg);"><span class="glyph gl-medicine" style="width:56%;height:56%;color:var(--med);"></span></div>
+          <div class="ctile" style="width:56px;height:56px;background:var(--sur-bg);"><span class="glyph gl-surgery" style="width:56%;height:56%;color:var(--sur);"></span></div>
+        </div>
+        <div class="cap">Crisp 2px stroke set · tinted in the category hue · 56% of the tile.</div>
+        <div class="subgrid" style="margin-top:16px;" id="subgrid"></div>
+        <div class="cap">12 specialty glyphs — the tile shows the subcategory when a case has one.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════ 5 · Category soft backgrounds ════════ -->
+  <div class="block">
+    <div class="bhead">
+      <div class="bnum">5</div>
+      <div><h2>Category tint backgrounds → tokens</h2><p>The base category hues already match the system. Only the soft tile backgrounds drift slightly — snap them to the token values. (Subtle on purpose.)</p></div>
+      <span class="pill done">hues already ✓</span>
+    </div>
+    <div class="cmp">
+      <div class="side">
+        <span class="stag b"><span class="dot"></span>Before</span>
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          <div class="swrow" data-l="Medicine soft" data-h="#EDEBFF" data-bg="var(--med-bg-b)"></div>
+          <div class="swrow" data-l="Surgery soft" data-h="#FBF1E0" data-bg="var(--sur-bg-b)"></div>
+          <div class="swrow" data-l="Rehab soft" data-h="#E3F4F7" data-bg="var(--rehab-bg-b)"></div>
+        </div>
+      </div>
+      <div class="side">
+        <span class="stag a"><span class="dot"></span>After</span>
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          <div class="swrow" data-l="Medicine soft" data-h="#ECEBFB" data-bg="var(--med-bg)"></div>
+          <div class="swrow" data-l="Surgery soft" data-h="#FAF0E0" data-bg="var(--sur-bg)"></div>
+          <div class="swrow" data-l="Rehab soft" data-h="#E2F2F6" data-bg="var(--rehab-bg)"></div>
+        </div>
+        <div class="legend">Base hues <code>#5B53D6</code> / <code>#C77A12</code> / <code>#0E7490</code> are already correct in <code>MedtrackColors.kt</code> — this is a tint-only refresh.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════ 6 · Home notification bell ════════ -->
+  <div class="block">
+    <div class="bhead">
+      <div class="bnum">6</div>
+      <div><h2>Home header — notification bell</h2><p>The design-system Home header carries a bell with an unread badge. Today the only route to 10 unread alerts is Me → Notifications.</p></div>
+    </div>
+    <div class="cmp">
+      <div class="side">
+        <span class="stag b"><span class="dot"></span>Before</span>
+        <div class="frame">
+          <div class="hd">
+            <div class="avatar">AD</div>
+            <div style="flex:1;min-width:0;"><div class="eyeb">Mon · 01 Jun</div><div class="greet">Hi Admin Demo.</div></div>
+          </div>
+        </div>
+        <div class="cap">No alerts entry point on Home.</div>
+      </div>
+      <div class="side">
+        <span class="stag a"><span class="dot"></span>After</span>
+        <div class="frame">
+          <div class="hd">
+            <div class="avatar">AD</div>
+            <div style="flex:1;min-width:0;"><div class="eyeb">Mon · 01 Jun</div><div class="greet">Hi Admin Demo.</div></div>
+            <div class="bell"><span class="ic" data-i="notifications" data-c="#334155"></span><span class="rd"></span></div>
+          </div>
+        </div>
+        <div class="cap">44dp bell + red unread dot → opens Notifications.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════ 7 · One risk signal + DuePill ════════ -->
+  <div class="block">
+    <div class="bhead">
+      <div class="bnum">7</div>
+      <div><h2>One risk signal + human DuePill</h2><p>Risk = the coloured rail + a single counted flag. Drop duplicate red dates, red card outlines, and flag-in-a-circle. Replace the faint outline due-chip with a solid-tint DuePill.</p></div>
+    </div>
+    <div class="cmp">
+      <div class="side">
+        <span class="stag b"><span class="dot"></span>Before</span>
+        <div class="prow" style="border:2px solid var(--mt-red);border-radius:16px;">
+          <div class="rail"></div>
+          <div class="pin">
+            <div class="ctile" style="width:44px;height:44px;border-radius:12px;background:var(--anc-bg);"><span class="glyph gl-anc" style="width:48%;height:48%;color:var(--anc);opacity:.6;"></span></div>
+            <div style="flex:1;min-width:0;">
+              <div class="pname">Mrs. Anitha B.</div>
+              <div class="pdiag">Gestational hypertension</div>
+              <span class="pillx" style="margin-top:8px;font-size:11px;color:var(--mt-red);background:#fff;border:1px solid var(--mt-line);padding:4px 10px;">Due today</span>
+            </div>
+            <div class="pmeta">
+              <span class="sexage" style="color:var(--mt-red);">F · 32</span>
+              <span style="width:24px;height:24px;border-radius:999px;background:var(--mt-red-bg);display:flex;align-items:center;justify-content:center;"><span class="ic" data-i="flag" data-c="#DC2626" data-s="14"></span></span>
+            </div>
+          </div>
+        </div>
+        <div class="legend" style="background:var(--mt-red-bg);"><b style="color:var(--mt-red);">Risk shouted 3×:</b> red outline + red date text + flag-in-a-circle. Hard to scan.</div>
+      </div>
+      <div class="side">
+        <span class="stag a"><span class="dot"></span>After</span>
+        <div class="prow">
+          <div class="rail"></div>
+          <div class="pin">
+            <div class="ctile" style="width:44px;height:44px;border-radius:12px;background:var(--anc-bg);"><span class="glyph gl-anc" style="width:56%;height:56%;color:var(--anc);"></span></div>
+            <div style="flex:1;min-width:0;">
+              <div class="pname">Mrs. Anitha B.</div>
+              <div class="pdiag">Gestational hypertension</div>
+              <span class="pillx" style="margin-top:8px;font-size:12px;color:var(--mt-blue);background:var(--mt-blue-50);padding:4px 10px;">Due today</span>
+            </div>
+            <div class="pmeta">
+              <span class="sexage">F · 32</span>
+              <span class="flag"><span class="ic" data-i="flag" data-c="#DC2626" data-s="17" data-fill="1"></span><span class="n">2</span></span>
+            </div>
+          </div>
+        </div>
+        <div class="legend"><b>One signal:</b> the rail carries risk · the counted flag opens the reasons sheet · the due label is a calm blue pill.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════ 8 · Wrapping vs truncation ════════ -->
+  <div class="block">
+    <div class="bhead">
+      <div class="bnum">8</div>
+      <div><h2>Nothing truncated — wrap, don't clip</h2><p>Names, diagnoses and identifiers read in full. Today long names collapse to initials and lines end in “…”. Density should come from hierarchy, not clipping.</p></div>
+    </div>
+    <div class="cmp">
+      <div class="side">
+        <span class="stag b"><span class="dot"></span>Before</span>
+        <div class="prow">
+          <div class="rail"></div>
+          <div class="pin">
+            <div class="ctile" style="width:44px;height:44px;border-radius:12px;background:var(--anc-bg);"><span class="glyph gl-anc" style="width:48%;height:48%;color:var(--anc);opacity:.6;"></span></div>
+            <div style="flex:1;min-width:0;">
+              <div class="pname clip">Mrs. Anitha B.</div>
+              <div class="uhid clip">TN-CGP-260030 · 28y · Female · Cheng…</div>
+              <div class="pdiag clip">Quick entry pending full surgica…</div>
+            </div>
+            <div class="pmeta"><span class="sexage">F · 28</span></div>
+          </div>
+        </div>
+        <div class="cap">Name abbreviated · UHID and diagnosis cut with “…”.</div>
+      </div>
+      <div class="side">
+        <span class="stag a"><span class="dot"></span>After</span>
+        <div class="prow">
+          <div class="rail"></div>
+          <div class="pin" style="align-items:flex-start;">
+            <div class="ctile" style="width:44px;height:44px;border-radius:12px;background:var(--anc-bg);margin-top:2px;"><span class="glyph gl-anc" style="width:56%;height:56%;color:var(--anc);"></span></div>
+            <div style="flex:1;min-width:0;">
+              <div class="pname" style="line-height:1.25;">Mrs. Anitha Balasubramaniam</div>
+              <div class="uhid" style="white-space:normal;">TN-CGP-260030 · 28y · Female · Chengalpattu</div>
+              <div class="pdiag" style="white-space:normal;">Quick entry pending full surgical workup</div>
+            </div>
+            <div class="pmeta"><span class="sexage">F · 28</span></div>
+          </div>
+        </div>
+        <div class="cap">Full name wraps · identifier in mono · diagnosis reads in full.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════ 9 · Vitals + Add ════════ -->
+  <div class="block">
+    <div class="bhead">
+      <div class="bnum">9</div>
+      <div><h2>Vitals — “+ Add” instead of a bare “—”</h2><p>A missing vital becomes a dashed, tappable “+ Add” tile; present vitals carry their clinical-state colour. Also: collapse the three “Add vitals” entry points on the detail screen down to one.</p></div>
+    </div>
+    <div class="cmp">
+      <div class="side">
+        <span class="stag b"><span class="dot"></span>Before</span>
+        <div class="vstrip">
+          <div class="vbox" style="background:var(--mt-surface);"><div class="vk" style="color:var(--mt-muted);">BP</div><div class="vv">123/78</div><div class="vu">mmHg</div></div>
+          <div class="vbox" style="background:var(--mt-surface);"><div class="vk" style="color:var(--mt-muted);">Pulse</div><div class="vv">82</div><div class="vu">bpm</div></div>
+          <div class="vbox" style="background:var(--mt-surface);"><div class="vk" style="color:var(--mt-muted);">SpO₂</div><div class="vv">99</div><div class="vu">%</div></div>
+          <div class="vbox" style="background:var(--mt-surface);"><div class="vk" style="color:var(--mt-muted);">Hb</div><div class="vv" style="color:var(--mt-faint);">—</div><div class="vu">g/dL</div></div>
+        </div>
+        <div class="cap">Uniform grey · missing Hb is a dead “—” · no state colour.</div>
+      </div>
+      <div class="side">
+        <span class="stag a"><span class="dot"></span>After</span>
+        <div class="vstrip">
+          <div class="vbox" style="background:var(--mt-vcr-bg);"><div class="vk" style="color:var(--mt-vcr);"><span class="d" style="background:var(--mt-vcr);"></span>BP</div><div class="vv">150/96</div><div class="vu">mmHg</div></div>
+          <div class="vbox" style="background:var(--mt-vok-bg);"><div class="vk" style="color:var(--mt-vok);"><span class="d" style="background:var(--mt-vok);"></span>Pulse</div><div class="vv">82</div><div class="vu">bpm</div></div>
+          <div class="vbox" style="background:var(--mt-vok-bg);"><div class="vk" style="color:var(--mt-vok);"><span class="d" style="background:var(--mt-vok);"></span>SpO₂</div><div class="vv">99</div><div class="vu">%</div></div>
+          <div class="vbox" style="background:var(--mt-surface);border:1px dashed var(--mt-line);"><div class="vk" style="color:var(--mt-faint);">Hb</div><div class="vadd"><span class="ic" data-i="add" data-c="#2563EB" data-s="13"></span>Add</div></div>
+        </div>
+        <div class="legend"><b>State colour per tile</b> — red BP reads instantly · the empty Hb is a tappable dashed “+ Add”.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════ 10 · Nav: float FAB + active fill ════════ -->
+  <div class="block">
+    <div class="bhead">
+      <div class="bnum">10</div>
+      <div><h2>Bottom nav — float the FAB, fill the active tab</h2><p>Raise the quick-add FAB so it floats above the bar (it sits nested in the bar today), fill the active tab icon, and snap the bucket chips to the full-pill radius.</p></div>
+    </div>
+    <div class="cmp">
+      <div class="side">
+        <span class="stag b"><span class="dot"></span>Before</span>
+        <div class="navx" style="margin-top:6px;">
+          <div class="ni"><span class="ic" data-i="home" data-c="#2563EB" data-s="24"></span><span class="lab" style="color:var(--mt-blue);font-weight:700;">Home</span></div>
+          <div class="ni"><span class="ic" data-i="folder_open" data-c="#64748B" data-s="24"></span><span class="lab" style="color:var(--mt-muted);">Cases</span></div>
+          <div class="fabwrap"><div class="fab b" style="margin-top:6px;"><span class="ic" data-i="add" data-c="#fff" data-s="30"></span></div></div>
+          <div class="ni"><span class="ic" data-i="call" data-c="#64748B" data-s="24"></span><span class="lab" style="color:var(--mt-muted);">Calls</span></div>
+          <div class="ni"><span class="ic" data-i="person" data-c="#64748B" data-s="24"></span><span class="lab" style="color:var(--mt-muted);">Me</span><span class="badge">10</span></div>
+        </div>
+        <div style="margin-top:18px;"><div class="bkrow">
+          <span class="bk r18 on"><span class="lab">Today</span><span class="ct">3</span></span>
+          <span class="bk r18"><span class="lab">Upcoming</span><span class="ct">7</span></span>
+        </div></div>
+        <div class="cap">FAB nested low in the bar · inactive icons mid-grey · chips r18 (not full pill).</div>
+      </div>
+      <div class="side">
+        <span class="stag a"><span class="dot"></span>After</span>
+        <div class="navx" style="margin-top:34px;">
+          <div class="ni"><span class="ic" data-i="home" data-c="#2563EB" data-s="24" data-fill="1"></span><span class="lab" style="color:var(--mt-blue);font-weight:700;">Home</span></div>
+          <div class="ni"><span class="ic" data-i="folder_open" data-c="#94A3B8" data-s="24"></span><span class="lab" style="color:var(--mt-faint);">Cases</span></div>
+          <div class="fabwrap"><div class="fab" style="position:absolute;top:-34px;box-shadow:var(--shadow-fab);"><span class="ic" data-i="add" data-c="#fff" data-s="30"></span></div></div>
+          <div class="ni"><span class="ic" data-i="call" data-c="#94A3B8" data-s="24"></span><span class="lab" style="color:var(--mt-faint);">Calls</span></div>
+          <div class="ni"><span class="ic" data-i="person" data-c="#94A3B8" data-s="24"></span><span class="lab" style="color:var(--mt-faint);">Me</span><span class="badge">10</span></div>
+        </div>
+        <div style="margin-top:18px;"><div class="bkrow">
+          <span class="bk r999 on"><span class="lab">Today</span><span class="ct">3</span></span>
+          <span class="bk r999"><span class="lab">Upcoming</span><span class="ct">7</span></span>
+        </div></div>
+        <div class="cap">FAB floats above the bar (shadow-fab) · active Home filled · chips full pill.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════ 11 · Red bucket reconcile ════════ -->
+  <div class="block">
+    <div class="bhead">
+      <div class="bnum">11</div>
+      <div><h2>Worklist scopes — 4 buckets, not 5</h2><p>The system defines four scopes (Today / Upcoming / Overdue / Awaiting). “Red” is prototype-only; fold red-flag filtering into the Cases “Red flag” filter so the worklist stays clean.</p></div>
+    </div>
+    <div class="cmp">
+      <div class="side">
+        <span class="stag b"><span class="dot"></span>Before</span>
+        <div class="bkrow">
+          <span class="bk r999 on"><span class="lab">Today</span><span class="ct">3</span></span>
+          <span class="bk r999"><span class="lab">Upcoming</span><span class="ct">7</span></span>
+          <span class="bk r999 red"><span class="lab">Overdue</span><span class="ct">2</span></span>
+          <span class="bk r999"><span class="lab">Awaiting</span></span>
+          <span class="bk r999 red"><span class="lab">Red</span><span class="ct">8</span></span>
+        </div>
+        <div class="cap">5 scopes — “Red” overlaps Overdue and the Cases filter.</div>
+      </div>
+      <div class="side">
+        <span class="stag a"><span class="dot"></span>After</span>
+        <div class="bkrow">
+          <span class="bk r999 on"><span class="lab">Today</span><span class="ct">3</span></span>
+          <span class="bk r999"><span class="lab">Upcoming</span><span class="ct">7</span></span>
+          <span class="bk r999 red"><span class="lab">Overdue</span><span class="ct">2</span></span>
+          <span class="bk r999"><span class="lab">Awaiting</span></span>
+        </div>
+        <div class="legend">Red-flag lives on Cases as a filter: <span class="filterchip">Red flag <b style="color:var(--mt-faint);font-weight:800;">8</b></span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="note"><b>How to read this:</b> left = the app as built today (from the emulator screenshots), right = the design-system target. Items <b>5</b> (hues) and parts of <b>9</b> (the “+ Add” tile + mono UHID) are already partly in the codebase — they're shown for completeness. Glyphs are the real shipped SVGs tinted via CSS; everything else uses the canonical tokens. Manrope loads from Google Fonts (needs internet for the exact face).</div>
+</div>
+
+<script>
+  // category glyph masks (real shipped artwork)
+  const BASE = 'ds-icons/';
+  function mask(el, url){ el.style.webkitMaskImage='url('+url+')'; el.style.maskImage='url('+url+')'; }
+  document.querySelectorAll('.gl-anc').forEach(e=>mask(e, BASE+'categories/anc.svg'));
+  document.querySelectorAll('.gl-medicine').forEach(e=>mask(e, BASE+'categories/medicine.svg'));
+  document.querySelectorAll('.gl-surgery').forEach(e=>mask(e, BASE+'categories/surgery.svg'));
+
+  // subcategory grid
+  const SUBS = ['cardiology_echo','ent','general_surgery','medical_oncology','orthopedics','pediatric','plastic_surgery','psychiatry'];
+  const LABEL = {cardiology_echo:'Cardiology',ent:'ENT',general_surgery:'Gen. surgery',medical_oncology:'Oncology',orthopedics:'Orthopedics',pediatric:'Pediatric',plastic_surgery:'Plastic',psychiatry:'Psychiatry'};
+  const sg = document.getElementById('subgrid');
+  if(sg){ sg.innerHTML = SUBS.map(s=>'<div class="subcell"><div class="subbox"><span class="glyph" style="width:56%;height:56%;color:var(--med);-webkit-mask:url('+BASE+'subcategories/'+s+'.svg) center/contain no-repeat;mask:url('+BASE+'subcategories/'+s+'.svg) center/contain no-repeat;background:currentColor;"></span></div><span>'+LABEL[s]+'</span></div>').join(''); }
+
+  // swatch rows (item 5)
+  document.querySelectorAll('.swrow').forEach(r=>{
+    r.style.display='flex';r.style.alignItems='center';r.style.gap='12px';
+    r.innerHTML='<div style="width:64px;height:40px;border-radius:10px;border:1px solid #d9e0ea;background:'+r.dataset.bg+';flex:none;"></div>'
+      +'<div><div style="font-size:13px;font-weight:700;">'+r.dataset.l+'</div><div style="font-family:var(--mono);font-size:11.5px;color:var(--mt-faint);">'+r.dataset.h+'</div></div>';
+  });
+
+  // feather UI icons
+  const ICON={
+    notifications:'<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>',
+    flag:'<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/>',
+    add:'<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
+    home:'<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>',
+    folder_open:'<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>',
+    call:'<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>',
+    person:'<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+  };
+  document.querySelectorAll('.ic').forEach(el=>{
+    const k=el.dataset.i, c=el.dataset.c||'currentColor', s=+(el.dataset.s||22), fill=el.dataset.fill==='1';
+    el.innerHTML='<svg width="'+s+'" height="'+s+'" viewBox="0 0 24 24" fill="'+(fill?c:'none')+'" stroke="'+c+'" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'+(ICON[k]||'')+'</svg>';
+  });
+</script>
+</body>
+</html>

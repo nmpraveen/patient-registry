@@ -375,6 +375,7 @@ fun MedtrackApp(
                     MedtrackBottomBar(
                         currentRoute = if (currentRoute == Routes.NOTIFICATIONS) Routes.HOME else currentRoute,
                         unreadCount = shellNotifications.count { !it.isRead },
+                        canQuickAdd = currentUserProfile?.capabilities?.get("case_create") ?: true,
                         onNavigate = ::navigateTopLevel,
                         onQuickAdd = { showQuickAddSheet = true },
                     )
@@ -1097,18 +1098,16 @@ fun MedtrackApp(
                     CaseCreationScreen(
                         modifier = Modifier.fillMaxSize(),
                         pathwayLabel = label,
-                        category = category,
+                        initialCategory = category,
+                        loadMetadata = { container.medtrackRepository.loadCaseFormMetadata() },
+                        searchPatients = { query -> container.medtrackRepository.searchPatients(query) },
+                        submit = { input -> container.medtrackRepository.createCase(input) },
                         onBack = { navController.popBackStack() },
-                        onDraftSaved = { patientName ->
+                        onCreated = { caseId, message ->
                             scope.launch {
-                                snackbarHostState.showSnackbar("Draft saved for $patientName")
+                                snackbarHostState.showSnackbar(message)
                             }
-                        },
-                        onCreated = { patientName ->
-                            scope.launch {
-                                snackbarHostState.showSnackbar("Mock case created for $patientName")
-                            }
-                            navController.navigate(Routes.HOME) {
+                            navController.navigate(Routes.caseDetail(caseId.toString())) {
                                 popUpTo(Routes.HOME) { inclusive = false }
                                 launchSingleTop = true
                             }
@@ -1425,6 +1424,7 @@ fun MedtrackApp(
 private fun MedtrackBottomBar(
     currentRoute: String?,
     unreadCount: Int,
+    canQuickAdd: Boolean,
     onNavigate: (String) -> Unit,
     onQuickAdd: () -> Unit,
 ) {
@@ -1461,37 +1461,39 @@ private fun MedtrackBottomBar(
                 )
             }
         }
-        Surface(
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .offset(y = BottomNavScale.CenterButtonYOffset)
-                .size(BottomNavScale.CenterButtonSize),
-            shape = RoundedCornerShape(BottomNavScale.CenterButtonRadius),
-            color = Color.Transparent,
-            shadowElevation = MedtrackElevation.Fab,
-        ) {
-            Box(
+        if (canQuickAdd) {
+            Surface(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        brush = Brush.linearGradient(
-                            listOf(
-                                MedtrackColors.Primary,
-                                MedtrackColors.PrimaryDark,
-                                MedtrackColors.PrimaryDeep,
-                            ),
-                        ),
-                        shape = RoundedCornerShape(BottomNavScale.CenterButtonRadius),
-                    )
-                    .clickable(onClick = onQuickAdd),
-                contentAlignment = Alignment.Center,
+                    .align(Alignment.TopCenter)
+                    .offset(y = BottomNavScale.CenterButtonYOffset)
+                    .size(BottomNavScale.CenterButtonSize),
+                shape = RoundedCornerShape(BottomNavScale.CenterButtonRadius),
+                color = Color.Transparent,
+                shadowElevation = MedtrackElevation.Fab,
             ) {
-                Icon(
-                    imageVector = Icons.Outlined.Add,
-                    contentDescription = "Quick add",
-                    modifier = Modifier.size(BottomNavScale.CenterIconSize),
-                    tint = Color.White,
-                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            brush = Brush.linearGradient(
+                                listOf(
+                                    MedtrackColors.Primary,
+                                    MedtrackColors.PrimaryDark,
+                                    MedtrackColors.PrimaryDeep,
+                                ),
+                            ),
+                            shape = RoundedCornerShape(BottomNavScale.CenterButtonRadius),
+                        )
+                        .clickable(onClick = onQuickAdd),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Add,
+                        contentDescription = "Quick add",
+                        modifier = Modifier.size(BottomNavScale.CenterIconSize),
+                        tint = Color.White,
+                    )
+                }
             }
         }
     }
@@ -1572,8 +1574,6 @@ private fun QuickAddSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val pathways = categoryOptions.quickAddPathways()
     var searchQuery by remember { mutableStateOf("") }
-    var selectedPathwayLabel by remember(pathways) { mutableStateOf(pathways.firstOrNull()?.label) }
-    val selectedPathway = pathways.firstOrNull { it.label == selectedPathwayLabel }
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -1598,7 +1598,7 @@ private fun QuickAddSheet(
                         fontWeight = FontWeight.Bold,
                     )
                     Text(
-                        text = "Search patient first, or start a native mock case.",
+                        text = "Search for a patient, or start a new case.",
                         color = MedtrackColors.Muted,
                         style = MaterialTheme.typography.bodySmall,
                     )
@@ -1612,32 +1612,15 @@ private fun QuickAddSheet(
                 onSearch = onOpenHomeSearch,
             )
 
-            MedtrackSectionTitle(title = "Pathways")
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                pathways.chunked(2).forEach { rowPathways ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        rowPathways.forEach { pathway ->
-                            QuickAddPathway(
-                                pathway = pathway,
-                                selected = pathway.label == selectedPathwayLabel,
-                                onClick = { selectedPathwayLabel = pathway.label },
-                                modifier = Modifier.weight(1f),
-                            )
-                        }
-                        if (rowPathways.size == 1) {
-                            Spacer(modifier = Modifier.weight(1f))
-                        }
-                    }
+            MedtrackSectionTitle(title = "Start a new case")
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                pathways.forEach { pathway ->
+                    QuickAddPathway(
+                        pathway = pathway,
+                        onClick = { onCreateCase(pathway) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                 }
-            }
-
-            Button(
-                onClick = { selectedPathway?.let(onCreateCase) },
-                enabled = selectedPathway != null,
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = MedtrackColors.Ink),
-            ) {
-                Text(selectedPathway?.let { "Continue \u00B7 ${it.label}" } ?: "Continue")
             }
         }
     }
@@ -1696,7 +1679,6 @@ private fun QuickAddSearchBar(
 @Composable
 private fun QuickAddPathway(
     pathway: QuickAddPathwaySpec,
-    selected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -1704,55 +1686,54 @@ private fun QuickAddPathway(
     Surface(
         modifier = modifier.clickable(onClick = onClick),
         shape = RoundedCornerShape(16.dp),
-        color = if (selected) color.copy(alpha = 0.14f) else MedtrackColors.Card,
-        border = BorderStroke(1.dp, if (selected) color.copy(alpha = 0.42f) else MedtrackColors.Border),
+        color = MedtrackColors.Card,
+        border = BorderStroke(1.dp, MedtrackColors.Border),
     ) {
-        Box(modifier = Modifier.padding(12.dp)) {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(9.dp),
+        Row(
+            modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Surface(
+                modifier = Modifier.size(46.dp),
+                shape = RoundedCornerShape(13.dp),
+                color = color.copy(alpha = 0.14f),
             ) {
-                Surface(
-                    modifier = Modifier.size(42.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    color = color.copy(alpha = 0.14f),
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            painter = painterResource(pathway.iconResId),
-                            contentDescription = null,
-                            tint = color,
-                            modifier = Modifier.size(24.dp),
-                        )
-                    }
-                }
-                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(
-                        text = pathway.label,
-                        color = if (selected) color else MedtrackColors.Ink,
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.ExtraBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        text = pathway.description,
-                        color = MedtrackColors.Muted,
-                        style = MaterialTheme.typography.labelMedium,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        painter = painterResource(pathway.iconResId),
+                        contentDescription = null,
+                        tint = color,
+                        modifier = Modifier.size(24.dp),
                     )
                 }
             }
-            if (selected) {
-                Icon(
-                    imageVector = Icons.Outlined.CheckCircle,
-                    contentDescription = null,
-                    tint = color,
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .size(21.dp),
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(
+                    text = pathway.label,
+                    color = MedtrackColors.Ink,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.ExtraBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = pathway.description,
+                    color = MedtrackColors.Muted,
+                    style = MaterialTheme.typography.labelMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
+            Icon(
+                imageVector = Icons.Outlined.ChevronRight,
+                contentDescription = null,
+                tint = color,
+                modifier = Modifier.size(22.dp),
+            )
         }
     }
 }

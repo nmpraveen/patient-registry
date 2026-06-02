@@ -3,10 +3,14 @@ package com.naveenhospital.medtrack.core.network.api
 import com.naveenhospital.medtrack.core.network.model.ApiMessageDto
 import com.naveenhospital.medtrack.core.network.model.CategoriesResponseDto
 import com.naveenhospital.medtrack.core.network.model.AuthSessionDto
+import com.naveenhospital.medtrack.core.network.model.CaseCreateResponseDto
 import com.naveenhospital.medtrack.core.network.model.CaseDetailDto
+import com.naveenhospital.medtrack.core.network.model.CaseFormMetadataDto
 import com.naveenhospital.medtrack.core.network.model.CaseListResponseDto
 import com.naveenhospital.medtrack.core.network.model.ClientWriteRequestDto
+import com.naveenhospital.medtrack.core.network.model.CreateCaseRequestDto
 import com.naveenhospital.medtrack.core.network.model.LogCallRequestDto
+import com.naveenhospital.medtrack.core.network.model.PatientSearchResponseDto
 import com.naveenhospital.medtrack.core.network.model.LoginRequestDto
 import com.naveenhospital.medtrack.core.network.model.NotificationsResponseDto
 import com.naveenhospital.medtrack.core.network.model.RefreshTokenRequestDto
@@ -45,6 +49,18 @@ interface MedtrackApi {
         @Query("q") query: String? = null,
         @Query("page") page: Int? = null,
     ): CaseListResponseDto
+
+    @POST("api/cases/")
+    suspend fun createCase(@Body request: CreateCaseRequestDto): CaseCreateResponseDto
+
+    @GET("api/patients/")
+    suspend fun searchPatients(
+        @Query("q") query: String? = null,
+        @Query("page") page: Int? = null,
+    ): PatientSearchResponseDto
+
+    @GET("api/metadata/case-form/")
+    suspend fun caseFormMetadata(): CaseFormMetadataDto
 
     @GET("api/cases/{caseId}/")
     suspend fun caseDetail(@Path("caseId") caseId: String): CaseDetailDto

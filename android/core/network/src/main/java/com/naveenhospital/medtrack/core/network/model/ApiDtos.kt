@@ -191,3 +191,100 @@ data class CategoriesResponseDto(
 data class ApiMessageDto(
     val message: String? = null,
 )
+
+data class ChoiceDto(
+    val value: String,
+    val label: String,
+)
+
+data class CaseFormMetadataDto(
+    @Json(name = "can_create") val canCreate: Boolean = false,
+    val categories: List<CaseCategoryDto> = emptyList(),
+    val prefixes: List<ChoiceDto> = emptyList(),
+    @Json(name = "blood_groups") val bloodGroups: List<ChoiceDto> = emptyList(),
+    val genders: List<ChoiceDto> = emptyList(),
+    @Json(name = "ncd_flags") val ncdFlags: List<ChoiceDto> = emptyList(),
+    @Json(name = "anc_high_risk_reasons") val ancHighRiskReasons: List<ChoiceDto> = emptyList(),
+    @Json(name = "surgical_pathways") val surgicalPathways: List<ChoiceDto> = emptyList(),
+    @Json(name = "review_frequencies") val reviewFrequencies: List<ChoiceDto> = emptyList(),
+)
+
+data class PatientSearchResponseDto(
+    val count: Int = 0,
+    val next: String? = null,
+    val previous: String? = null,
+    val results: List<PatientLookupDto> = emptyList(),
+)
+
+data class PatientLookupDto(
+    val id: Long,
+    val uhid: String,
+    val name: String?,
+    val prefix: String?,
+    @Json(name = "first_name") val firstName: String?,
+    @Json(name = "last_name") val lastName: String?,
+    val gender: String?,
+    @Json(name = "gender_label") val genderLabel: String?,
+    @Json(name = "blood_group") val bloodGroup: String?,
+    @Json(name = "date_of_birth") val dateOfBirth: String?,
+    val age: Int?,
+    val place: String?,
+    @Json(name = "phone_number") val phoneNumber: String?,
+    @Json(name = "alternate_phone_number") val alternatePhoneNumber: String?,
+    @Json(name = "is_temporary_id") val isTemporaryId: Boolean = false,
+    @Json(name = "active_case_count") val activeCaseCount: Int? = null,
+    @Json(name = "total_case_count") val totalCaseCount: Int? = null,
+)
+
+data class CreateCaseRequestDto(
+    @Json(name = "patient_mode") val patientMode: String,
+    @Json(name = "selected_patient") val selectedPatient: Long? = null,
+    @Json(name = "use_temporary_uhid") val useTemporaryUhid: Boolean = false,
+    val uhid: String? = null,
+    val prefix: String? = null,
+    @Json(name = "first_name") val firstName: String? = null,
+    @Json(name = "last_name") val lastName: String? = null,
+    val gender: String? = null,
+    @Json(name = "blood_group") val bloodGroup: String? = null,
+    @Json(name = "date_of_birth") val dateOfBirth: String? = null,
+    val place: String? = null,
+    val age: Int? = null,
+    @Json(name = "phone_number") val phoneNumber: String? = null,
+    @Json(name = "alternate_phone_number") val alternatePhoneNumber: String? = null,
+    val category: Long,
+    val subcategory: String? = null,
+    val diagnosis: String? = null,
+    @Json(name = "referred_by") val referredBy: String? = null,
+    val notes: String? = null,
+    @Json(name = "high_risk") val highRisk: Boolean = false,
+    @Json(name = "ncd_flags") val ncdFlags: List<String> = emptyList(),
+    @Json(name = "anc_high_risk_reasons") val ancHighRiskReasons: List<String> = emptyList(),
+    @Json(name = "rch_number") val rchNumber: String? = null,
+    @Json(name = "rch_bypass") val rchBypass: Boolean = false,
+    val lmp: String? = null,
+    val edd: String? = null,
+    @Json(name = "usg_edd") val usgEdd: String? = null,
+    @Json(name = "surgical_pathway") val surgicalPathway: String? = null,
+    @Json(name = "surgery_done") val surgeryDone: Boolean = false,
+    @Json(name = "surgery_date") val surgeryDate: String? = null,
+    @Json(name = "review_frequency") val reviewFrequency: String? = null,
+    @Json(name = "review_date") val reviewDate: String? = null,
+    val gravida: Int? = null,
+    val para: Int? = null,
+    val abortions: Int? = null,
+    val living: Int? = null,
+    val ftnd: Int? = null,
+    val lscs: Int? = null,
+    @Json(name = "client_write_id") val clientWriteId: String,
+)
+
+data class CaseCreateResponseDto(
+    val message: String,
+    @Json(name = "case_id") val caseId: Long,
+    val case: CaseSummaryDto,
+)
+
+data class CaseCreateErrorDto(
+    val message: String? = null,
+    val errors: Map<String, List<String>> = emptyMap(),
+)

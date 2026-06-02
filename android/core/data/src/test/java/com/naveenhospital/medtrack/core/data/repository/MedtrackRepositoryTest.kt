@@ -487,6 +487,9 @@ private class FakeMedtrackApi(
     }
 
     override suspend fun caseDetail(caseId: String): CaseDetailDto = unused()
+    override suspend fun createCase(request: com.naveenhospital.medtrack.core.network.model.CreateCaseRequestDto): com.naveenhospital.medtrack.core.network.model.CaseCreateResponseDto = unused()
+    override suspend fun searchPatients(query: String?, page: Int?): com.naveenhospital.medtrack.core.network.model.PatientSearchResponseDto = unused()
+    override suspend fun caseFormMetadata(): com.naveenhospital.medtrack.core.network.model.CaseFormMetadataDto = unused()
     override suspend fun completeTask(taskId: String, request: ClientWriteRequestDto): TaskWriteResponseDto {
         completeTaskError?.let { throw it }
         return TaskWriteResponseDto(

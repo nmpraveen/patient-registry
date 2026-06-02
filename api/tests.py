@@ -776,3 +776,274 @@ class FakeFirebaseMessaging:
             self.notification = notification
             self.data = data
             self.android = android
+
+
+class MobileCaseCreateTests(APITestCase):
+    def setUp(self):
+        from patients.models import Patient, ensure_default_departments
+
+        ensure_default_departments()
+        self.Patient = Patient
+        self.admin = get_user_model().objects.create_superuser(
+            username="create-admin",
+            email="create-admin@example.com",
+            password="pass",
+        )
+        self.client.force_authenticate(self.admin)
+        self.anc = DepartmentConfig.objects.get(name="ANC")
+        self.surgery = DepartmentConfig.objects.get(name="Surgery")
+        self.medicine = DepartmentConfig.objects.get(name="Medicine")
+
+    def _post_create(self, payload):
+        return self.client.post(reverse("api:case_list"), payload, format="json")
+
+    def test_create_new_anc_case_seeds_tasks_and_rch_reminder(self):
+        payload = {
+            "patient_mode": "new",
+            "use_temporary_uhid": True,
+            "prefix": "MRS",
+            "first_name": "Keerthana",
+            "last_name": "Manikandan",
+            "gender": "FEMALE",
+            "age": 27,
+            "phone_number": "9876500000",
+            "category": self.anc.id,
+            "diagnosis": "Antenatal follow-up",
+            "high_risk": False,
+            "rch_bypass": True,
+            "lmp": (timezone.localdate() - timedelta(days=60)).isoformat(),
+            "edd": (timezone.localdate() + timedelta(days=220)).isoformat(),
+            "gravida": 1,
+            "para": 0,
+            "abortions": 0,
+            "living": 0,
+            "client_write_id": "anc-create-1",
+        }
+
+        response = self._post_create(payload)
+
+        self.assertEqual(response.status_code, 201, response.content)
+        body = response.json()
+        case_id = body["case_id"]
+        case = Case.objects.get(pk=case_id)
+        self.assertEqual(case.category_id, self.anc.id)
+        self.assertEqual(case.first_name, "Keerthana")
+        self.assertTrue(case.patient.is_temporary_id)
+        self.assertTrue(case.uhid.startswith("TMP-"))
+        self.assertGreaterEqual(case.tasks.count(), 1)
+        self.assertTrue(case.tasks.filter(title="Update RCH Number").exists())
+
+    def test_create_new_surgery_case_with_subcategory_and_pathway(self):
+        surgery_date = (timezone.localdate() + timedelta(days=20)).isoformat()
+        payload = {
+            "patient_mode": "new",
+            "use_temporary_uhid": True,
+            "prefix": "MR",
+            "first_name": "Arun",
+            "last_name": "Kumar",
+            "gender": "MALE",
+            "age": 45,
+            "phone_number": "9876500001",
+            "category": self.surgery.id,
+            "subcategory": "GENERAL_SURGERY",
+            "diagnosis": "Hernia",
+            "surgical_pathway": "PLANNED_SURGERY",
+            "surgery_date": surgery_date,
+            "client_write_id": "surgery-create-1",
+        }
+
+        response = self._post_create(payload)
+
+        self.assertEqual(response.status_code, 201, response.content)
+        case = Case.objects.get(pk=response.json()["case_id"])
+        self.assertEqual(case.subcategory, "GENERAL_SURGERY")
+        self.assertEqual(case.surgical_pathway, "PLANNED_SURGERY")
+        self.assertGreaterEqual(case.tasks.count(), 1)
+
+    def test_create_new_medicine_case_with_review(self):
+        review_date = (timezone.localdate() + timedelta(days=30)).isoformat()
+        payload = {
+            "patient_mode": "new",
+            "use_temporary_uhid": True,
+            "prefix": "MR",
+            "first_name": "Suresh",
+            "last_name": "Raina",
+            "gender": "MALE",
+            "age": 60,
+            "phone_number": "9876500002",
+            "category": self.medicine.id,
+            "subcategory": "GENERAL_MEDICINE",
+            "diagnosis": "T2DM review",
+            "review_frequency": "MONTHLY",
+            "review_date": review_date,
+            "client_write_id": "medicine-create-1",
+        }
+
+        response = self._post_create(payload)
+
+        self.assertEqual(response.status_code, 201, response.content)
+        case = Case.objects.get(pk=response.json()["case_id"])
+        self.assertEqual(case.review_frequency, "MONTHLY")
+        self.assertIsNotNone(case.review_date)
+
+    def test_create_existing_patient_case_reuses_patient(self):
+        first = self._post_create(
+            {
+                "patient_mode": "new",
+                "use_temporary_uhid": True,
+                "prefix": "MR",
+                "first_name": "Vikram",
+                "last_name": "Singh",
+                "gender": "MALE",
+                "age": 50,
+                "phone_number": "9876500003",
+                "category": self.medicine.id,
+                "subcategory": "GENERAL_MEDICINE",
+                "diagnosis": "HTN",
+                "review_date": (timezone.localdate() + timedelta(days=30)).isoformat(),
+                "client_write_id": "existing-1",
+            }
+        )
+        self.assertEqual(first.status_code, 201, first.content)
+        patient = Case.objects.get(pk=first.json()["case_id"]).patient
+
+        second = self._post_create(
+            {
+                "patient_mode": "existing",
+                "selected_patient": patient.id,
+                "category": self.surgery.id,
+                "subcategory": "ORTHOPEDICS",
+                "diagnosis": "Knee",
+                "surgical_pathway": "SURVEILLANCE",
+                "review_date": (timezone.localdate() + timedelta(days=15)).isoformat(),
+                "client_write_id": "existing-2",
+            }
+        )
+
+        self.assertEqual(second.status_code, 201, second.content)
+        new_case = Case.objects.get(pk=second.json()["case_id"])
+        self.assertEqual(new_case.patient_id, patient.id)
+        self.assertEqual(self.Patient.objects.filter(pk=patient.id).count(), 1)
+
+    def test_create_validation_error_returns_field_errors(self):
+        response = self._post_create(
+            {
+                "patient_mode": "new",
+                "category": self.anc.id,
+                "client_write_id": "bad-1",
+            }
+        )
+
+        self.assertEqual(response.status_code, 400)
+        errors = response.json()["errors"]
+        self.assertIn("first_name", errors)
+
+    def test_create_is_idempotent_on_client_write_id(self):
+        payload = {
+            "patient_mode": "new",
+            "use_temporary_uhid": True,
+            "prefix": "MRS",
+            "first_name": "Divya",
+            "last_name": "Nair",
+            "gender": "FEMALE",
+            "age": 30,
+            "phone_number": "9876500004",
+            "category": self.anc.id,
+            "diagnosis": "ANC",
+            "rch_bypass": True,
+            "lmp": (timezone.localdate() - timedelta(days=60)).isoformat(),
+            "edd": (timezone.localdate() + timedelta(days=220)).isoformat(),
+            "gravida": 1,
+            "para": 0,
+            "abortions": 0,
+            "living": 0,
+            "client_write_id": "idem-1",
+        }
+
+        first = self._post_create(payload)
+        second = self._post_create(payload)
+
+        self.assertEqual(first.status_code, 201, first.content)
+        self.assertEqual(second.status_code, 201, second.content)
+        self.assertEqual(first.json()["case_id"], second.json()["case_id"])
+        self.assertEqual(Case.objects.filter(first_name="Divya").count(), 1)
+
+    def test_create_denied_without_case_create_capability(self):
+        group = Group.objects.create(name="ReadOnlyRole")
+        RoleSetting.objects.create(role_name="ReadOnlyRole", can_note_add=True, can_case_create=False)
+        viewer = get_user_model().objects.create_user(username="viewer", password="pass")
+        viewer.groups.add(group)
+        client = APIClient()
+        client.force_authenticate(viewer)
+
+        response = client.post(
+            reverse("api:case_list"),
+            {
+                "patient_mode": "new",
+                "use_temporary_uhid": True,
+                "prefix": "MR",
+                "first_name": "No",
+                "last_name": "Access",
+                "gender": "MALE",
+                "age": 40,
+                "phone_number": "9876500005",
+                "category": self.medicine.id,
+                "subcategory": "GENERAL_MEDICINE",
+                "diagnosis": "x",
+                "review_date": (timezone.localdate() + timedelta(days=30)).isoformat(),
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_patient_search_finds_created_patient(self):
+        self._post_create(
+            {
+                "patient_mode": "new",
+                "use_temporary_uhid": True,
+                "prefix": "MRS",
+                "first_name": "Lakshmi",
+                "last_name": "Devi",
+                "gender": "FEMALE",
+                "age": 33,
+                "phone_number": "9876512345",
+                "category": self.anc.id,
+                "diagnosis": "ANC",
+                "rch_bypass": True,
+                "lmp": (timezone.localdate() - timedelta(days=60)).isoformat(),
+                "edd": (timezone.localdate() + timedelta(days=220)).isoformat(),
+                "gravida": 1,
+                "para": 0,
+                "abortions": 0,
+                "living": 0,
+                "client_write_id": "search-seed",
+            }
+        )
+
+        response = self.client.get(reverse("api:patient_search"), {"q": "Lakshmi"})
+
+        self.assertEqual(response.status_code, 200)
+        results = response.json()["results"]
+        self.assertTrue(any(row["first_name"] == "Lakshmi" for row in results))
+
+    def test_case_form_metadata_returns_choice_lists(self):
+        response = self.client.get(reverse("api:case_form_metadata"))
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body["can_create"])
+        for key in [
+            "categories",
+            "prefixes",
+            "blood_groups",
+            "genders",
+            "ncd_flags",
+            "anc_high_risk_reasons",
+            "surgical_pathways",
+            "review_frequencies",
+        ]:
+            self.assertIn(key, body)
+            self.assertTrue(body[key])
+        self.assertIn("value", body["prefixes"][0])
+        self.assertIn("label", body["prefixes"][0])

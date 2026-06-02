@@ -1,4 +1,5 @@
 import json
+from datetime import timedelta
 
 from django.core.serializers.json import DjangoJSONEncoder
 from django.db import transaction
@@ -14,18 +15,30 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from patients.models import (
     ActivityEventType,
+    AncHighRiskReason,
+    BloodGroup,
     CallLog,
     Case,
     CaseActivityLog,
+    CasePrefix,
     CaseStatus,
     DepartmentConfig,
+    Gender,
+    NonCommunicableDisease,
+    Patient,
+    ReviewFrequency,
+    SurgicalPathway,
     Task,
     TaskStatus,
     VitalEntry,
+    build_default_tasks,
     case_subcategory_choices_for_category_name,
+    ensure_rch_reminder_task,
+    frequency_to_days,
 )
 from patients.theme import build_theme_category_colors, resolve_category_theme
 from patients.vitals_thresholds import vitals_thresholds_payload
+from patients.forms import CaseForm
 from patients.views import (
     CASE_CATEGORY_GROUP_FILTERS,
     _blood_pressure_display,
@@ -35,6 +48,7 @@ from patients.views import (
     _dashboard_category_icon_path,
     _dashboard_subcategory_icon_path,
     _display_user_name,
+    _patient_search_queryset,
     _visible_case_queryset,
     _visible_task_queryset,
     can_access_case_data,
@@ -47,6 +61,7 @@ from .models import MobileDeviceToken, MobileNotification, MobileWriteReceipt
 from .permissions import HasMobileCaseAccess
 from .serializers import (
     CallOutcomeSerializer,
+    ClientWriteSerializer,
     DeviceTokenSerializer,
     LogoutSerializer,
     TaskCompleteSerializer,
@@ -351,6 +366,55 @@ class CaseListView(APIView):
             }
         )
 
+    def post(self, request):
+        if not has_capability(request.user, "case_create"):
+            return Response(
+                {"message": "You do not have permission to create cases."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        write_serializer = ClientWriteSerializer(data=request.data)
+        write_serializer.is_valid(raise_exception=True)
+
+        form = CaseForm(data=request.data)
+        form.actor = request.user
+        form.instance.created_by = request.user
+        if not form.is_valid():
+            return Response(
+                {"message": "Please fix the highlighted fields.", "errors": _form_errors(form)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        def apply_write():
+            with transaction.atomic():
+                case = form.save()
+                if case.review_frequency and not case.review_date:
+                    case.review_date = timezone.localdate() + timedelta(
+                        days=frequency_to_days(case.review_frequency)
+                    )
+                    case.save(update_fields=["review_date", "updated_at", "patient_name"])
+                created_tasks = build_default_tasks(case, request.user)
+                create_case_activity(
+                    case=case,
+                    user=request.user,
+                    event_type=ActivityEventType.SYSTEM,
+                    note=f"Case created from mobile with {len(created_tasks)} starter task(s)",
+                )
+                ensure_rch_reminder_task(case, request.user)
+            return {
+                "message": "Case created.",
+                "case_id": case.id,
+                "case": _mobile_case_payload(case, user=request.user),
+            }, status.HTTP_201_CREATED
+
+        return _idempotent_response(request, write_serializer, "case_create", apply_write)
+
+
+def _form_errors(form):
+    return {
+        field: [str(error) for error in errors]
+        for field, errors in form.errors.items()
+    }
+
 
 class CaseDetailView(APIView):
     permission_classes = [HasMobileCaseAccess]
@@ -604,30 +668,95 @@ class NotificationReadView(APIView):
         )
 
 
+def _category_metadata_payload():
+    categories = list(DepartmentConfig.objects.order_by("name"))
+    theme_category_colors = build_theme_category_colors(categories)
+    return [
+        {
+            "id": category.id,
+            "name": category.name,
+            "icon_path": _dashboard_category_icon_path(category.name),
+            "theme": resolve_category_theme(theme_category_colors, category),
+            "subcategories": [
+                {
+                    "value": value,
+                    "label": label,
+                    "icon_path": _dashboard_subcategory_icon_path(value),
+                }
+                for value, label in case_subcategory_choices_for_category_name(category.name)
+            ],
+        }
+        for category in categories
+    ]
+
+
+def _choice_payload(choices):
+    return [{"value": value, "label": str(label)} for value, label in choices]
+
+
 class CategoryMetadataView(APIView):
     permission_classes = [HasMobileCaseAccess]
 
     def get(self, request):
-        categories = list(DepartmentConfig.objects.order_by("name"))
-        theme_category_colors = build_theme_category_colors(categories)
+        return Response({"categories": _category_metadata_payload()})
+
+
+class CaseFormMetadataView(APIView):
+    """Everything the mobile case-creation wizard needs to render its menus."""
+
+    permission_classes = [HasMobileCaseAccess]
+
+    def get(self, request):
         return Response(
             {
-                "categories": [
-                    {
-                        "id": category.id,
-                        "name": category.name,
-                        "icon_path": _dashboard_category_icon_path(category.name),
-                        "theme": resolve_category_theme(theme_category_colors, category),
-                        "subcategories": [
-                            {
-                                "value": value,
-                                "label": label,
-                                "icon_path": _dashboard_subcategory_icon_path(value),
-                            }
-                            for value, label in case_subcategory_choices_for_category_name(category.name)
-                        ],
-                    }
-                    for category in categories
-                ]
+                "can_create": has_capability(request.user, "case_create"),
+                "categories": _category_metadata_payload(),
+                "prefixes": _choice_payload(CasePrefix.choices),
+                "blood_groups": _choice_payload(BloodGroup.choices),
+                "genders": _choice_payload(Gender.choices),
+                "ncd_flags": _choice_payload(NonCommunicableDisease.choices),
+                "anc_high_risk_reasons": _choice_payload(AncHighRiskReason.choices),
+                "surgical_pathways": _choice_payload(SurgicalPathway.choices),
+                "review_frequencies": _choice_payload(ReviewFrequency.choices),
+            }
+        )
+
+
+def _serialize_patient_row(patient):
+    return {
+        "id": patient.id,
+        "uhid": patient.uhid,
+        "name": patient.patient_name or patient.full_name,
+        "prefix": patient.prefix,
+        "first_name": patient.first_name,
+        "last_name": patient.last_name,
+        "gender": patient.gender,
+        "gender_label": patient.get_gender_display() if patient.gender else "",
+        "blood_group": patient.blood_group,
+        "date_of_birth": patient.date_of_birth.isoformat() if patient.date_of_birth else None,
+        "age": patient.age,
+        "place": patient.place,
+        "phone_number": patient.phone_number,
+        "alternate_phone_number": patient.alternate_phone_number,
+        "is_temporary_id": patient.is_temporary_id,
+        "active_case_count": getattr(patient, "active_case_count", None),
+        "total_case_count": getattr(patient, "total_case_count", None),
+    }
+
+
+class PatientSearchView(APIView):
+    permission_classes = [HasMobileCaseAccess]
+
+    def get(self, request):
+        query = request.GET.get("q", "").strip()
+        queryset = _patient_search_queryset(query)
+        paginator = MobilePagination()
+        page = paginator.paginate_queryset(queryset, request, view=self)
+        return Response(
+            {
+                "count": paginator.page.paginator.count,
+                "next": paginator.get_next_link(),
+                "previous": paginator.get_previous_link(),
+                "results": [_serialize_patient_row(patient) for patient in page],
             }
         )

@@ -4,6 +4,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from .views import (
     CallOutcomeView,
     CaseDetailView,
+    CaseFormMetadataView,
     CaseListView,
     CaseVitalsView,
     CategoryMetadataView,
@@ -12,6 +13,7 @@ from .views import (
     MeView,
     NotificationReadView,
     NotificationsView,
+    PatientSearchView,
     TaskCompleteView,
     VitalsThresholdsView,
 )
@@ -24,6 +26,7 @@ urlpatterns = [
     path("auth/logout/", LogoutView.as_view(), name="logout"),
     path("me/", MeView.as_view(), name="me"),
     path("cases/", CaseListView.as_view(), name="case_list"),
+    path("patients/", PatientSearchView.as_view(), name="patient_search"),
     path("cases/<int:pk>/", CaseDetailView.as_view(), name="case_detail"),
     path("cases/<int:pk>/call-outcome/", CallOutcomeView.as_view(), name="case_call_outcome"),
     path("cases/<int:pk>/vitals/", CaseVitalsView.as_view(), name="case_vitals"),
@@ -33,4 +36,5 @@ urlpatterns = [
     path("notifications/", NotificationsView.as_view(), name="notifications"),
     path("notifications/<int:pk>/read/", NotificationReadView.as_view(), name="notification_read"),
     path("metadata/categories/", CategoryMetadataView.as_view(), name="category_metadata"),
+    path("metadata/case-form/", CaseFormMetadataView.as_view(), name="case_form_metadata"),
 ]

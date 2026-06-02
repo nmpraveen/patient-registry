@@ -1143,6 +1143,65 @@ class MobileEditApiTests(APITestCase):
         )
         self.assertEqual(response.status_code, 403)
 
+    def test_case_patch_preserves_omitted_patient_fields(self):
+        from datetime import date
+
+        from patients.models import Patient
+
+        dob = date(1994, 5, 1)
+        patient = Patient.objects.create(
+            uhid="UH-DOB-1",
+            prefix="MRS",
+            first_name="Asha",
+            last_name="Verma",
+            gender="FEMALE",
+            date_of_birth=dob,
+            phone_number="9811100000",
+            alternate_phone_number="9000000001",
+            created_by=self.admin,
+        )
+        case = Case.objects.create(
+            uhid="UH-DOB-1",
+            patient=patient,
+            prefix="MRS",
+            first_name="Asha",
+            last_name="Verma",
+            patient_name="Asha Verma",
+            gender="FEMALE",
+            date_of_birth=dob,
+            phone_number="9811100000",
+            alternate_phone_number="9000000001",
+            category=self.medicine,
+            subcategory="GENERAL_MEDICINE",
+            diagnosis="Review",
+            review_date=timezone.localdate() + timedelta(days=10),
+            created_by=self.admin,
+        )
+        # Mobile-style payload: the wizard never sends date_of_birth / alternate_phone_number.
+        payload = {
+            "patient_mode": "existing",
+            "uhid": case.uhid,
+            "prefix": "MRS",
+            "first_name": "Asha",
+            "last_name": "Verma",
+            "gender": "FEMALE",
+            "age": 31,
+            "phone_number": "9811100000",
+            "category": self.medicine.id,
+            "subcategory": "GENERAL_MEDICINE",
+            "status": "ACTIVE",
+            "diagnosis": "Review updated",
+            "review_date": (timezone.localdate() + timedelta(days=20)).isoformat(),
+        }
+        response = self.client.patch(
+            reverse("api:case_detail", args=[case.id]), payload, format="json"
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        patient.refresh_from_db()
+        # Fields the mobile edit omitted must survive, not be wiped.
+        self.assertEqual(patient.date_of_birth, dob)
+        self.assertEqual(patient.alternate_phone_number, "9000000001")
+
     # --- Task metadata + create ---
     def test_task_form_metadata(self):
         response = self.client.get(reverse("api:task_form_metadata"))

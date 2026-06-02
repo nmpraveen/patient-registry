@@ -465,7 +465,15 @@ class CaseDetailView(APIView):
             _visible_case_queryset(Case.objects.select_related("category", "patient")), pk=pk
         )
         old_status = case.status
-        form = CaseForm(data=request.data, instance=case)
+        # The mobile wizard does not expose every patient identity field, so backfill the
+        # ones it omits from the existing record. Without this, a mobile edit would submit a
+        # full CaseForm without date_of_birth / alternate_phone_number and erase them.
+        data = request.data.copy()
+        if not data.get("date_of_birth") and case.date_of_birth:
+            data["date_of_birth"] = case.date_of_birth.isoformat()
+        if not data.get("alternate_phone_number") and case.alternate_phone_number:
+            data["alternate_phone_number"] = case.alternate_phone_number
+        form = CaseForm(data=data, instance=case)
         form.actor = request.user
         if not form.is_valid():
             return Response(

@@ -338,15 +338,11 @@ private fun PatientCase.identityLine(): String =
         .joinToString(" - ")
 
 private fun PatientCase.alertCategoryColor(): Color =
-    if (categoryLabel.contains("rehab", ignoreCase = true)) {
-        MedtrackColors.CustomRehab
-    } else {
-        when (category.name) {
-            "ANC" -> MedtrackColors.Anc
-            "SURGERY" -> MedtrackColors.Surgery
-            "MEDICINE" -> MedtrackColors.Medicine
-            else -> MedtrackColors.Primary
-        }
+    when (category.name) {
+        "ANC" -> MedtrackColors.Anc
+        "SURGERY" -> MedtrackColors.Surgery
+        "MEDICINE" -> MedtrackColors.Medicine
+        else -> MedtrackColors.Primary
     }
 
 private fun NotificationItem.isCritical(): Boolean =

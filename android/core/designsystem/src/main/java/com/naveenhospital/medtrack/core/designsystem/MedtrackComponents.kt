@@ -114,11 +114,6 @@ fun medtrackCategoryVisual(
         .trim()
         .lowercase()
     return when {
-        key.contains("rehab") -> MedtrackCategoryVisual(
-            tint = MedtrackColors.CustomRehab,
-            soft = MedtrackColors.CustomRehabSoft,
-            iconResId = R.drawable.ic_cat_rehab,
-        )
         key.contains("anc") -> MedtrackCategoryVisual(
             tint = MedtrackColors.Anc,
             soft = MedtrackColors.AncSoft,

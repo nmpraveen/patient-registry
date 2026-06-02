@@ -898,7 +898,7 @@ private fun pulseFilterChipColors(accent: Color = MedtrackColors.Primary) = Filt
 )
 
 private fun categoryOptionColor(option: CategoryFilterOption): Color =
-    if (option.label.isCustomRehabLabel()) MedtrackColors.CustomRehab else option.category.color()
+    option.category.color()
 
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
@@ -1776,7 +1776,7 @@ private fun PatientCase.cardRailColor(): Color =
     if (isHighRisk) MedtrackColors.Danger else categoryColor()
 
 private fun PatientCase.categoryColor(): Color =
-    if (categoryLabel.isCustomRehabLabel()) MedtrackColors.CustomRehab else category.color()
+    category.color()
 
 private fun CaseCategory.color(): Color =
     when (this) {
@@ -1788,9 +1788,6 @@ private fun CaseCategory.color(): Color =
 
 private fun PatientCase.riskReasonSource(): String =
     if (category == CaseCategory.ANC) "from ANC reason set" else "manually flagged"
-
-private fun String.isCustomRehabLabel(): Boolean =
-    trim().replace("-", " ").contains("rehab", ignoreCase = true)
 
 private fun PatientCase.iconResId(): Int =
     subcategoryValue?.let { subcategoryIconResId(it) } ?: category.iconResId()

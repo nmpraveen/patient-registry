@@ -1457,11 +1457,7 @@ private fun CaseCategory.color(): Color =
     }
 
 private fun PatientCase.categoryColor(): Color =
-    if (categoryLabel.trim().replace("-", " ").contains("rehab", ignoreCase = true)) {
-        MedtrackColors.CustomRehab
-    } else {
-        category.color()
-    }
+    category.color()
 
 private fun PatientCase.statusColor(): Color =
     when (status.name) {

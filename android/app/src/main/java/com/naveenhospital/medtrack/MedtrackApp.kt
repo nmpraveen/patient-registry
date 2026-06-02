@@ -375,6 +375,7 @@ fun MedtrackApp(
                     MedtrackBottomBar(
                         currentRoute = if (currentRoute == Routes.NOTIFICATIONS) Routes.HOME else currentRoute,
                         unreadCount = shellNotifications.count { !it.isRead },
+                        canQuickAdd = currentUserProfile?.capabilities?.get("case_create") ?: true,
                         onNavigate = ::navigateTopLevel,
                         onQuickAdd = { showQuickAddSheet = true },
                     )
@@ -1097,18 +1098,16 @@ fun MedtrackApp(
                     CaseCreationScreen(
                         modifier = Modifier.fillMaxSize(),
                         pathwayLabel = label,
-                        category = category,
+                        initialCategory = category,
+                        loadMetadata = { container.medtrackRepository.loadCaseFormMetadata() },
+                        searchPatients = { query -> container.medtrackRepository.searchPatients(query) },
+                        submit = { input -> container.medtrackRepository.createCase(input) },
                         onBack = { navController.popBackStack() },
-                        onDraftSaved = { patientName ->
+                        onCreated = { caseId, message ->
                             scope.launch {
-                                snackbarHostState.showSnackbar("Draft saved for $patientName")
+                                snackbarHostState.showSnackbar(message)
                             }
-                        },
-                        onCreated = { patientName ->
-                            scope.launch {
-                                snackbarHostState.showSnackbar("Mock case created for $patientName")
-                            }
-                            navController.navigate(Routes.HOME) {
+                            navController.navigate(Routes.caseDetail(caseId.toString())) {
                                 popUpTo(Routes.HOME) { inclusive = false }
                                 launchSingleTop = true
                             }
@@ -1425,6 +1424,7 @@ fun MedtrackApp(
 private fun MedtrackBottomBar(
     currentRoute: String?,
     unreadCount: Int,
+    canQuickAdd: Boolean,
     onNavigate: (String) -> Unit,
     onQuickAdd: () -> Unit,
 ) {
@@ -1461,37 +1461,39 @@ private fun MedtrackBottomBar(
                 )
             }
         }
-        Surface(
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .offset(y = BottomNavScale.CenterButtonYOffset)
-                .size(BottomNavScale.CenterButtonSize),
-            shape = RoundedCornerShape(BottomNavScale.CenterButtonRadius),
-            color = Color.Transparent,
-            shadowElevation = MedtrackElevation.Fab,
-        ) {
-            Box(
+        if (canQuickAdd) {
+            Surface(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        brush = Brush.linearGradient(
-                            listOf(
-                                MedtrackColors.Primary,
-                                MedtrackColors.PrimaryDark,
-                                MedtrackColors.PrimaryDeep,
-                            ),
-                        ),
-                        shape = RoundedCornerShape(BottomNavScale.CenterButtonRadius),
-                    )
-                    .clickable(onClick = onQuickAdd),
-                contentAlignment = Alignment.Center,
+                    .align(Alignment.TopCenter)
+                    .offset(y = BottomNavScale.CenterButtonYOffset)
+                    .size(BottomNavScale.CenterButtonSize),
+                shape = RoundedCornerShape(BottomNavScale.CenterButtonRadius),
+                color = Color.Transparent,
+                shadowElevation = MedtrackElevation.Fab,
             ) {
-                Icon(
-                    imageVector = Icons.Outlined.Add,
-                    contentDescription = "Quick add",
-                    modifier = Modifier.size(BottomNavScale.CenterIconSize),
-                    tint = Color.White,
-                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            brush = Brush.linearGradient(
+                                listOf(
+                                    MedtrackColors.Primary,
+                                    MedtrackColors.PrimaryDark,
+                                    MedtrackColors.PrimaryDeep,
+                                ),
+                            ),
+                            shape = RoundedCornerShape(BottomNavScale.CenterButtonRadius),
+                        )
+                        .clickable(onClick = onQuickAdd),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Add,
+                        contentDescription = "Quick add",
+                        modifier = Modifier.size(BottomNavScale.CenterIconSize),
+                        tint = Color.White,
+                    )
+                }
             }
         }
     }

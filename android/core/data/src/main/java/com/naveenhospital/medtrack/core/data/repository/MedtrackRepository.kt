@@ -27,9 +27,15 @@ import com.naveenhospital.medtrack.core.data.sync.PendingWriteJson
 import com.naveenhospital.medtrack.core.data.sync.PendingWriteTypes
 import com.naveenhospital.medtrack.core.data.sync.NotificationReadPayload
 import com.naveenhospital.medtrack.core.domain.model.CaseCategory
+import com.naveenhospital.medtrack.core.domain.model.CaseCreateOutcome
+import com.naveenhospital.medtrack.core.domain.model.CaseFormCategory
+import com.naveenhospital.medtrack.core.domain.model.CaseFormMetadata
 import com.naveenhospital.medtrack.core.domain.model.CaseStatus
 import com.naveenhospital.medtrack.core.domain.model.CategoryFilterOption
+import com.naveenhospital.medtrack.core.domain.model.FormChoice
 import com.naveenhospital.medtrack.core.domain.model.InboxStats
+import com.naveenhospital.medtrack.core.domain.model.NewCaseInput
+import com.naveenhospital.medtrack.core.domain.model.PatientLookup
 import com.naveenhospital.medtrack.core.domain.model.NotificationItem
 import com.naveenhospital.medtrack.core.domain.model.PatientCase
 import com.naveenhospital.medtrack.core.domain.model.PatientTask
@@ -39,8 +45,13 @@ import com.naveenhospital.medtrack.core.domain.model.SyncConflict
 import com.naveenhospital.medtrack.core.domain.model.VitalsThresholdConfig
 import com.naveenhospital.medtrack.core.domain.model.WriteResult
 import com.naveenhospital.medtrack.core.network.api.MedtrackApi
+import com.naveenhospital.medtrack.core.network.model.CaseCreateErrorDto
+import com.naveenhospital.medtrack.core.network.model.CaseFormMetadataDto
 import com.naveenhospital.medtrack.core.network.model.CategoriesResponseDto
 import com.naveenhospital.medtrack.core.network.model.CaseCategoryDto
+import com.naveenhospital.medtrack.core.network.model.ChoiceDto
+import com.naveenhospital.medtrack.core.network.model.CreateCaseRequestDto
+import com.naveenhospital.medtrack.core.network.model.PatientLookupDto
 import com.naveenhospital.medtrack.core.network.model.CaseListResponseDto
 import com.naveenhospital.medtrack.core.network.model.CaseStatsDto
 import com.naveenhospital.medtrack.core.network.model.CaseSummaryDto
@@ -88,6 +99,8 @@ class MedtrackRepository(
     val hasMoreCases: StateFlow<Boolean> = _hasMoreCases
     private var nextCasePage: Int? = null
     private var activeCaseListKey: String = ""
+    private val caseCreateErrorAdapter =
+        Moshi.Builder().add(KotlinJsonAdapterFactory()).build().adapter(CaseCreateErrorDto::class.java)
 
     val cases: Flow<List<PatientCase>> =
         database.caseDao().observeCases().map { entities -> entities.map { it.toDomain() } }
@@ -204,6 +217,32 @@ class MedtrackRepository(
         _hasMoreCases.value = nextCasePage != null
         database.caseDao().upsertCases(response.results.map { it.toEntity() })
         database.caseStatsDao().upsertStats(response.stats.toEntity(requestedKey))
+    }
+
+    suspend fun loadCaseFormMetadata(): CaseFormMetadata = api.caseFormMetadata().toDomain()
+
+    suspend fun searchPatients(query: String): List<PatientLookup> =
+        api.searchPatients(query = query.trim().ifBlank { null }).results.map { it.toDomain() }
+
+    suspend fun createCase(input: NewCaseInput): CaseCreateOutcome {
+        val request = input.toRequestDto(newClientWriteId("case"))
+        return runCatching {
+            val response = api.createCase(request)
+            database.caseDao().upsertCase(response.case.toEntity())
+            CaseCreateOutcome.Success(caseId = response.caseId, message = response.message)
+        }.getOrElse { throwable ->
+            if (throwable is HttpException && throwable.code() == 400) {
+                val parsed = runCatching {
+                    caseCreateErrorAdapter.fromJson(throwable.response()?.errorBody()?.string().orEmpty())
+                }.getOrNull()
+                CaseCreateOutcome.ValidationError(
+                    errors = parsed?.errors ?: emptyMap(),
+                    message = parsed?.message ?: "Please fix the highlighted fields.",
+                )
+            } else {
+                throw throwable
+            }
+        }
     }
 
     suspend fun loadCachedCategoryOptions() {
@@ -573,6 +612,89 @@ private class CaseRemoteMediator(
 }
 
 private fun newClientWriteId(prefix: String): String = "$prefix-${UUID.randomUUID()}"
+
+private fun List<ChoiceDto>.toChoices(): List<FormChoice> = map { FormChoice(it.value, it.label) }
+
+private fun CaseFormMetadataDto.toDomain(): CaseFormMetadata = CaseFormMetadata(
+    canCreate = canCreate,
+    categories = categories.map { category ->
+        CaseFormCategory(
+            id = category.id ?: 0L,
+            name = category.name,
+            subcategories = category.subcategories.mapNotNull { sub ->
+                val value = sub.value ?: return@mapNotNull null
+                FormChoice(value = value, label = sub.label ?: value)
+            },
+        )
+    },
+    prefixes = prefixes.toChoices(),
+    bloodGroups = bloodGroups.toChoices(),
+    genders = genders.toChoices(),
+    ncdFlags = ncdFlags.toChoices(),
+    ancHighRiskReasons = ancHighRiskReasons.toChoices(),
+    surgicalPathways = surgicalPathways.toChoices(),
+    reviewFrequencies = reviewFrequencies.toChoices(),
+)
+
+private fun PatientLookupDto.toDomain(): PatientLookup = PatientLookup(
+    id = id,
+    uhid = uhid,
+    name = name.orEmpty(),
+    prefix = prefix.orEmpty(),
+    firstName = firstName.orEmpty(),
+    lastName = lastName.orEmpty(),
+    gender = gender.orEmpty(),
+    genderLabel = genderLabel.orEmpty(),
+    bloodGroup = bloodGroup.orEmpty(),
+    dateOfBirth = dateOfBirth,
+    age = age,
+    place = place.orEmpty(),
+    phoneNumber = phoneNumber.orEmpty(),
+    alternatePhoneNumber = alternatePhoneNumber.orEmpty(),
+    isTemporaryId = isTemporaryId,
+    activeCaseCount = activeCaseCount,
+)
+
+private fun NewCaseInput.toRequestDto(clientWriteId: String): CreateCaseRequestDto = CreateCaseRequestDto(
+    patientMode = patientMode,
+    selectedPatient = selectedPatientId,
+    useTemporaryUhid = useTemporaryUhid,
+    uhid = uhid,
+    prefix = prefix,
+    firstName = firstName,
+    lastName = lastName,
+    gender = gender,
+    bloodGroup = bloodGroup,
+    dateOfBirth = dateOfBirth,
+    place = place,
+    age = age,
+    phoneNumber = phoneNumber,
+    alternatePhoneNumber = alternatePhoneNumber,
+    category = categoryId,
+    subcategory = subcategory,
+    diagnosis = diagnosis,
+    referredBy = referredBy,
+    notes = notes,
+    highRisk = highRisk,
+    ncdFlags = ncdFlags,
+    ancHighRiskReasons = ancHighRiskReasons,
+    rchNumber = rchNumber,
+    rchBypass = rchBypass,
+    lmp = lmp,
+    edd = edd,
+    usgEdd = usgEdd,
+    surgicalPathway = surgicalPathway,
+    surgeryDate = surgeryDate,
+    reviewFrequency = reviewFrequency,
+    reviewDate = reviewDate,
+    gravida = gravida,
+    para = para,
+    abortions = abortions,
+    living = living,
+    ftnd = ftnd,
+    lscs = lscs,
+    clientWriteId = clientWriteId,
+)
 
 fun caseListCacheKey(
     bucket: String?,

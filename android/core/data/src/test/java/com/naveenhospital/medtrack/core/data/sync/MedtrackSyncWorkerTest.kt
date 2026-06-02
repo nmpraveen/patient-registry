@@ -264,6 +264,9 @@ private class FakeSyncApi(
     override suspend fun markNotificationRead(notificationId: String): ApiMessageDto = unused()
     override suspend fun registerPushToken(request: RegisterPushTokenRequestDto): ApiMessageDto = unused()
     override suspend fun categories(): CategoriesResponseDto = unused()
+    override suspend fun createCase(request: com.naveenhospital.medtrack.core.network.model.CreateCaseRequestDto): com.naveenhospital.medtrack.core.network.model.CaseCreateResponseDto = unused()
+    override suspend fun searchPatients(query: String?, page: Int?): com.naveenhospital.medtrack.core.network.model.PatientSearchResponseDto = unused()
+    override suspend fun caseFormMetadata(): com.naveenhospital.medtrack.core.network.model.CaseFormMetadataDto = unused()
 
     private fun unused(): Nothing = error("Not used by this test")
 

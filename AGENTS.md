@@ -18,8 +18,8 @@ Before coding:
 
 Local Codex setup on this machine:
 - The checked-out `main` branch should stay aligned with GitHub. A few extra local-only helper files are intentionally present in this working copy and should remain local-only unless the user explicitly asks to push them.
-- When the user says `push to GitHub`, interpret that as committing and pushing the current changes to `main` directly.
-- Do not create feature branches or open pull requests unless the user explicitly asks for a branch-based or PR-based workflow.
+- When the user says `push to GitHub`, do not push directly to `main` by default. Create a feature branch with the `codex/` prefix, push that branch, and open a pull request unless the user explicitly says to push directly to `main`.
+- Direct-to-`main` pushes are allowed only when the user explicitly asks for that workflow in the current task.
 - Local-only files intentionally restored here: `package.json`, `package-lock.json`, `patients/management/commands/ensure_local_demo_superuser.py`, `local-dev/TEST_NNH_SERVER.md`, `local-dev/test-nnh-up.ps1`, and `local-dev/test-nnh-web-start.sh`.
 - Purpose of those local-only files: improve Playwright reliability for Codex in this repo and keep the local Test NNH server able to recreate the demo superuser with username `admin` and password `pass`.
 - Local generated directories such as `.venv/`, `node_modules/`, and `staticfiles/` are also intentional and should not be treated as repo changes.

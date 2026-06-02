@@ -468,10 +468,12 @@ class CaseDetailView(APIView):
         # The mobile wizard does not expose every patient identity field, so backfill the
         # ones it omits from the existing record. Without this, a mobile edit would submit a
         # full CaseForm without date_of_birth / alternate_phone_number and erase them.
+        # Only backfill when the key is ABSENT — an explicit blank ("") is treated as an
+        # intentional clear so the field can still be removed via the API.
         data = request.data.copy()
-        if not data.get("date_of_birth") and case.date_of_birth:
+        if "date_of_birth" not in data and case.date_of_birth:
             data["date_of_birth"] = case.date_of_birth.isoformat()
-        if not data.get("alternate_phone_number") and case.alternate_phone_number:
+        if "alternate_phone_number" not in data and case.alternate_phone_number:
             data["alternate_phone_number"] = case.alternate_phone_number
         form = CaseForm(data=data, instance=case)
         form.actor = request.user

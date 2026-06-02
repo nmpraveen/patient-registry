@@ -1202,6 +1202,18 @@ class MobileEditApiTests(APITestCase):
         self.assertEqual(patient.date_of_birth, dob)
         self.assertEqual(patient.alternate_phone_number, "9000000001")
 
+        # An explicit blank is an intentional clear and must NOT be backfilled.
+        clear_payload = dict(payload)
+        clear_payload["alternate_phone_number"] = ""
+        clear_payload["date_of_birth"] = ""
+        response = self.client.patch(
+            reverse("api:case_detail", args=[case.id]), clear_payload, format="json"
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        patient.refresh_from_db()
+        self.assertEqual(patient.alternate_phone_number, "")
+        self.assertIsNone(patient.date_of_birth)
+
     # --- Task metadata + create ---
     def test_task_form_metadata(self):
         response = self.client.get(reverse("api:task_form_metadata"))

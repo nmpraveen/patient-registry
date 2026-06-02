@@ -1966,52 +1966,48 @@ private data class QuickAddPathwaySpec(
 )
 
 private fun List<CategoryFilterOption>.quickAddPathways(): List<QuickAddPathwaySpec> {
-    val supportedCategories = setOf(CaseCategory.ANC, CaseCategory.MEDICINE, CaseCategory.SURGERY, CaseCategory.OTHER)
+    val supportedCategories = setOf(CaseCategory.ANC, CaseCategory.MEDICINE, CaseCategory.SURGERY)
     val fromServer = filter { it.category in supportedCategories }
-        .distinctBy { if (it.label.isCustomRehabLabel()) "rehab" else it.category.name }
+        .distinctBy { it.category.name }
         .map { option ->
             QuickAddPathwaySpec(
-                label = option.label.quickAddDisplayLabel(),
-                color = categoryColor(option.label, option.category),
+                label = option.label,
+                color = categoryColor(option.category),
                 category = option.category,
-                iconResId = option.category.quickAddIconResId(option.label),
+                iconResId = option.category.quickAddIconResId(),
                 description = option.quickAddDescription(),
             )
         }
     val byKey = (fromServer + defaultQuickAddPathways())
-        .distinctBy { if (it.label.isCustomRehabLabel()) "rehab" else it.category.name }
-        .associateBy { if (it.label.isCustomRehabLabel()) "rehab" else it.category.name }
+        .distinctBy { it.category.name }
+        .associateBy { it.category.name }
     return listOfNotNull(
         byKey[CaseCategory.ANC.name],
         byKey[CaseCategory.MEDICINE.name],
         byKey[CaseCategory.SURGERY.name],
-        byKey["rehab"],
     )
 }
 
 private fun defaultQuickAddPathways(): List<QuickAddPathwaySpec> =
     listOf(
-        QuickAddPathwaySpec("ANC", MedtrackColors.Anc, CaseCategory.ANC, CaseCategory.ANC.quickAddIconResId("ANC"), "Antenatal follow-up"),
-        QuickAddPathwaySpec("Medicine", MedtrackColors.Medicine, CaseCategory.MEDICINE, CaseCategory.MEDICINE.quickAddIconResId("Medicine"), "General medicine"),
-        QuickAddPathwaySpec("Surgery", MedtrackColors.Surgery, CaseCategory.SURGERY, CaseCategory.SURGERY.quickAddIconResId("Surgery"), "Pre/post-op review"),
-        QuickAddPathwaySpec("Rehab", MedtrackColors.CustomRehab, CaseCategory.OTHER, CaseCategory.OTHER.quickAddIconResId("Rehab"), "Custom rehab"),
+        QuickAddPathwaySpec("ANC", MedtrackColors.Anc, CaseCategory.ANC, CaseCategory.ANC.quickAddIconResId(), "Antenatal follow-up"),
+        QuickAddPathwaySpec("Medicine", MedtrackColors.Medicine, CaseCategory.MEDICINE, CaseCategory.MEDICINE.quickAddIconResId(), "General medicine"),
+        QuickAddPathwaySpec("Surgery", MedtrackColors.Surgery, CaseCategory.SURGERY, CaseCategory.SURGERY.quickAddIconResId(), "Pre/post-op review"),
     )
 
-private fun CaseCategory.quickAddIconResId(label: String): Int =
-    when {
-        label.isCustomRehabLabel() -> DesignR.drawable.ic_cat_rehab
-        this == CaseCategory.ANC -> DesignR.drawable.ic_cat_anc
-        this == CaseCategory.SURGERY -> DesignR.drawable.ic_cat_surgery
-        this == CaseCategory.MEDICINE -> DesignR.drawable.ic_cat_medicine
+private fun CaseCategory.quickAddIconResId(): Int =
+    when (this) {
+        CaseCategory.ANC -> DesignR.drawable.ic_cat_anc
+        CaseCategory.SURGERY -> DesignR.drawable.ic_cat_surgery
+        CaseCategory.MEDICINE -> DesignR.drawable.ic_cat_medicine
         else -> DesignR.drawable.ic_cat_medicine
     }
 
 private fun CategoryFilterOption.quickAddDescription(): String =
-    when {
-        label.isCustomRehabLabel() -> "Custom rehab"
-        category == CaseCategory.ANC -> "Antenatal follow-up"
-        category == CaseCategory.SURGERY -> "Pre/post-op review"
-        category == CaseCategory.MEDICINE -> "General medicine"
+    when (category) {
+        CaseCategory.ANC -> "Antenatal follow-up"
+        CaseCategory.SURGERY -> "Pre/post-op review"
+        CaseCategory.MEDICINE -> "General medicine"
         else -> "Custom pathway"
     }
 
@@ -2050,17 +2046,6 @@ private fun categoryColor(category: CaseCategory): Color =
         CaseCategory.MEDICINE -> MedtrackColors.Medicine
         CaseCategory.OTHER -> MedtrackColors.Primary
     }
-
-private fun categoryColor(label: String, category: CaseCategory): Color =
-    if (label.isCustomRehabLabel()) MedtrackColors.CustomRehab else categoryColor(category)
-
-private fun String.isCustomRehabLabel(): Boolean =
-    trim().replace("-", " ").let {
-        it.contains("rehab", ignoreCase = true) || it.contains("physio", ignoreCase = true)
-    }
-
-private fun String.quickAddDisplayLabel(): String =
-    if (isCustomRehabLabel()) "Rehab" else this
 
 private fun NotificationItem.resolvePatientCase(cases: List<PatientCase>): PatientCase? {
     val exactCaseId = caseId?.trim()?.takeIf { it.isNotBlank() }

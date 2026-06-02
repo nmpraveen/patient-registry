@@ -31,8 +31,6 @@ object MedtrackColors {
     val SurgerySoft = Color(0xFFFAF0E0)
     val Medicine = Color(0xFF5B53D6)
     val MedicineSoft = Color(0xFFECEBFB)
-    val CustomRehab = Color(0xFF0E7490)
-    val CustomRehabSoft = Color(0xFFE2F2F6)
     val VitalOk = Color(0xFF0E9A6C)
     val VitalOkSoft = Color(0xFFE7F6F0)
     val VitalHigh = Color(0xFFC77A12)

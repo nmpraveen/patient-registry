@@ -76,7 +76,7 @@ fun CaseCreationScreen(
         mutableStateOf(setOf("Advanced maternal age", "Anaemia"))
     }
     val uhid = "auto \u00B7 ${district.toDistrictPrefix()}-26\u2026"
-    val pathwayColor = category.handoffColor(pathwayLabel)
+    val pathwayColor = category.handoffColor()
     val canContinue = fullName.isNotBlank() && phone.isNotBlank() && age.toIntOrNull() != null
     val steps = listOf("Patient", "Clinical", "Schedule")
 
@@ -333,7 +333,7 @@ private fun ClinicalStep(
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         MedtrackSectionTitle(title = "Clinical")
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-            CreateReadout(label = "Pathway", value = pathwayLabel, color = category.handoffColor(pathwayLabel), modifier = Modifier.weight(1f))
+            CreateReadout(label = "Pathway", value = pathwayLabel, color = category.handoffColor(), modifier = Modifier.weight(1f))
             CreateReadout(label = "Status", value = "Active", color = MedtrackColors.Primary, modifier = Modifier.weight(1f))
         }
         CreateField(
@@ -516,7 +516,7 @@ private fun CategoryChip(label: String, category: CaseCategory, color: Color) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
-                painter = painterResource(category.creationIconResId(label)),
+                painter = painterResource(category.creationIconResId()),
                 contentDescription = null,
                 tint = color,
                 modifier = Modifier.size(16.dp),
@@ -526,20 +526,18 @@ private fun CategoryChip(label: String, category: CaseCategory, color: Color) {
     }
 }
 
-private fun CaseCategory.creationIconResId(label: String): Int =
-    when {
-        label.contains("rehab", ignoreCase = true) -> DesignR.drawable.ic_cat_rehab
-        this == CaseCategory.ANC -> DesignR.drawable.ic_cat_anc
-        this == CaseCategory.SURGERY -> DesignR.drawable.ic_cat_surgery
+private fun CaseCategory.creationIconResId(): Int =
+    when (this) {
+        CaseCategory.ANC -> DesignR.drawable.ic_cat_anc
+        CaseCategory.SURGERY -> DesignR.drawable.ic_cat_surgery
         else -> DesignR.drawable.ic_cat_medicine
     }
 
-private fun CaseCategory.handoffColor(label: String): Color =
-    when {
-        label.contains("rehab", ignoreCase = true) -> MedtrackColors.CustomRehab
-        this == CaseCategory.ANC -> MedtrackColors.Anc
-        this == CaseCategory.SURGERY -> MedtrackColors.Surgery
-        this == CaseCategory.MEDICINE -> MedtrackColors.Medicine
+private fun CaseCategory.handoffColor(): Color =
+    when (this) {
+        CaseCategory.ANC -> MedtrackColors.Anc
+        CaseCategory.SURGERY -> MedtrackColors.Surgery
+        CaseCategory.MEDICINE -> MedtrackColors.Medicine
         else -> MedtrackColors.Primary
     }
 
@@ -561,5 +559,5 @@ private fun defaultClinicalSummary(category: CaseCategory): String =
         CaseCategory.ANC -> "First trimester ANC follow-up"
         CaseCategory.SURGERY -> "Pre-operative fitness review"
         CaseCategory.MEDICINE -> "Diabetes follow-up"
-        CaseCategory.OTHER -> "Custom rehab follow-up"
+        CaseCategory.OTHER -> "Custom follow-up"
     }

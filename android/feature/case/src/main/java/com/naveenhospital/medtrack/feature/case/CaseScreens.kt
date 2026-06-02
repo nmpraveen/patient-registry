@@ -322,6 +322,16 @@ fun CaseDetailScreen(
                             }
                         }
                     } else {
+                        if (overdueTasks.isNotEmpty()) {
+                            item {
+                                TaskSectionCard(title = "Overdue", tasks = overdueTasks, onCompleteTask = onCompleteTask)
+                            }
+                        }
+                        if (upcomingTasks.isNotEmpty()) {
+                            item {
+                                TaskSectionCard(title = "Upcoming", tasks = upcomingTasks, onCompleteTask = onCompleteTask)
+                            }
+                        }
                         if (doneTasks.isNotEmpty()) {
                             item {
                                 TaskSectionCard(title = "Done", tasks = doneTasks, onCompleteTask = onCompleteTask)
@@ -333,18 +343,6 @@ fun CaseDetailScreen(
                             vitals = vitals,
                             fallback = patientCase.latestVitalSummary,
                         )
-                    }
-                    if (tasks.isNotEmpty()) {
-                        if (overdueTasks.isNotEmpty()) {
-                            item {
-                                TaskSectionCard(title = "Overdue", tasks = overdueTasks, onCompleteTask = onCompleteTask)
-                            }
-                        }
-                        if (upcomingTasks.isNotEmpty()) {
-                            item {
-                                TaskSectionCard(title = "Upcoming", tasks = upcomingTasks, onCompleteTask = onCompleteTask)
-                            }
-                        }
                     }
                 }
             }
@@ -1180,14 +1178,6 @@ private fun ExpandedCaseTray(
             modifier = Modifier.fillMaxWidth(),
         ) {
             DuePill(patientCase.nextTaskDueDate)
-            Text(
-                text = "Last call · -",
-                color = MedtrackColors.Faint,
-                style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.sp),
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
         }
         CompactVitalsStrip(summary = patientCase.latestVitalSummary)
         Button(

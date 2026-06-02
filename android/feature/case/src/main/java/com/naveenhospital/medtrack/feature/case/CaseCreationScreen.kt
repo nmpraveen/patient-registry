@@ -377,12 +377,12 @@ private fun PathwayStep(state: CaseFormState) {
             category.name.isAnc() -> {
                 MedtrackSectionTitle(title = "Obstetric history (GPLA)")
                 FieldRow {
-                    StepperField("Gravida", state.gravida, { state.gravida = it }, Modifier.weight(1f))
-                    StepperField("Para", state.para, { state.para = it }, Modifier.weight(1f))
+                    StepperField("Gravida (G)", state.gravida, { state.gravida = it }, Modifier.weight(1f))
+                    StepperField("Para (P)", state.para, { state.para = it }, Modifier.weight(1f))
                 }
                 FieldRow {
-                    StepperField("Abortions", state.abortions, { state.abortions = it }, Modifier.weight(1f))
-                    StepperField("Living", state.living, { state.living = it }, Modifier.weight(1f))
+                    StepperField("Abortions (A)", state.abortions, { state.abortions = it }, Modifier.weight(1f))
+                    StepperField("Living (L)", state.living, { state.living = it }, Modifier.weight(1f))
                 }
                 FieldRow {
                     StepperField("FTND", state.ftnd, { state.ftnd = it }, Modifier.weight(1f))
@@ -500,8 +500,8 @@ private fun StatusMark(status: FieldStatus) {
     when (status) {
         FieldStatus.Needs -> Box(
             modifier = Modifier
-                .size(7.dp)
-                .background(MedtrackColors.Warning, CircleShape),
+                .size(6.dp)
+                .background(MedtrackColors.Warning.copy(alpha = 0.85f), CircleShape),
         )
         FieldStatus.Done -> Icon(
             Icons.Outlined.Check,
@@ -540,11 +540,11 @@ private fun FieldShell(
 ) {
     val borderColor = when {
         focused -> MedtrackColors.Primary
-        status == FieldStatus.Needs -> MedtrackColors.Warning.copy(alpha = 0.55f)
+        status == FieldStatus.Needs -> MedtrackColors.Warning.copy(alpha = 0.3f)
         else -> MedtrackColors.Border
     }
     val fill = if (status == FieldStatus.Needs && !focused) {
-        MedtrackColors.WarningSoft.copy(alpha = 0.5f)
+        MedtrackColors.WarningSoft.copy(alpha = 0.25f)
     } else {
         MedtrackColors.Card
     }
@@ -612,11 +612,11 @@ private fun MultilineField(
     val status = fieldStatus(required, value.isNotBlank())
     val borderColor = when {
         focused -> MedtrackColors.Primary
-        status == FieldStatus.Needs -> MedtrackColors.Warning.copy(alpha = 0.55f)
+        status == FieldStatus.Needs -> MedtrackColors.Warning.copy(alpha = 0.3f)
         else -> MedtrackColors.Border
     }
     val fill = if (status == FieldStatus.Needs && !focused) {
-        MedtrackColors.WarningSoft.copy(alpha = 0.5f)
+        MedtrackColors.WarningSoft.copy(alpha = 0.25f)
     } else {
         MedtrackColors.Card
     }

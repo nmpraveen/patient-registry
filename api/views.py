@@ -387,6 +387,9 @@ class CaseListView(APIView):
             )
         write_serializer = ClientWriteSerializer(data=request.data)
         write_serializer.is_valid(raise_exception=True)
+        replay_response = _idempotent_replay_response(request, write_serializer)
+        if replay_response is not None:
+            return replay_response
 
         form = CaseForm(data=request.data)
         form.actor = request.user
@@ -623,6 +626,19 @@ def _idempotent_response(request, serializer, write_type, apply_write):
             status=MobileWriteReceipt.STATUS_APPLIED if response_status < 400 else MobileWriteReceipt.STATUS_FAILED,
         )
         return Response(payload, status=response_status)
+
+
+def _idempotent_replay_response(request, serializer):
+    client_write_id = serializer.validated_data.get("client_write_id", "").strip()
+    if not client_write_id:
+        return None
+    receipt = MobileWriteReceipt.objects.filter(
+        user=request.user,
+        client_write_id=client_write_id,
+    ).first()
+    if not receipt:
+        return None
+    return Response(receipt.response_payload, status=receipt.response_status)
 
 
 def _json_safe_payload(payload):

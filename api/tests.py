@@ -968,6 +968,38 @@ class MobileCaseCreateTests(APITestCase):
         self.assertEqual(first.json()["case_id"], second.json()["case_id"])
         self.assertEqual(Case.objects.filter(first_name="Divya").count(), 1)
 
+    def test_create_with_real_uhid_replays_before_duplicate_validation(self):
+        payload = {
+            "patient_mode": "new",
+            "use_temporary_uhid": False,
+            "uhid": "REAL-IDEM-1",
+            "prefix": "MRS",
+            "first_name": "Revathi",
+            "last_name": "Menon",
+            "gender": "FEMALE",
+            "age": 29,
+            "phone_number": "9876500006",
+            "category": self.anc.id,
+            "diagnosis": "ANC",
+            "rch_bypass": True,
+            "lmp": (timezone.localdate() - timedelta(days=60)).isoformat(),
+            "edd": (timezone.localdate() + timedelta(days=220)).isoformat(),
+            "gravida": 1,
+            "para": 0,
+            "abortions": 0,
+            "living": 0,
+            "client_write_id": "real-uhid-idem-1",
+        }
+
+        first = self._post_create(payload)
+        second = self._post_create(payload)
+
+        self.assertEqual(first.status_code, 201, first.content)
+        self.assertEqual(second.status_code, 201, second.content)
+        self.assertEqual(first.json()["case_id"], second.json()["case_id"])
+        self.assertEqual(Case.objects.filter(uhid="REAL-IDEM-1").count(), 1)
+        self.assertEqual(MobileWriteReceipt.objects.filter(client_write_id="real-uhid-idem-1").count(), 1)
+
     def test_create_denied_without_case_create_capability(self):
         group = Group.objects.create(name="ReadOnlyRole")
         RoleSetting.objects.create(role_name="ReadOnlyRole", can_note_add=True, can_case_create=False)

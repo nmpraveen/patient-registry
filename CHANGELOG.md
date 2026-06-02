@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.06.02.18.51
+- Restored the Android Home Red bucket chip so red-flag cases are directly filterable from the worklist again.
+- Replayed mobile case-create idempotency receipts before full form validation so real-UHID retries return the original success instead of duplicate-UHID errors.
+- Added regression coverage for real-UHID mobile create retries while preserving the existing mobile case-create test suite.
+
 ## 2026.06.01.16.35
 - Preserved Android notification event payloads from the API through Room and domain models so alert detail screens can explain why a notification fired from event-time data.
 - Replaced alert-detail fired-reason inference from latest case vitals with type-specific payload rendering for red flags, overdue tasks, assignments, and explicit vitals alerts.

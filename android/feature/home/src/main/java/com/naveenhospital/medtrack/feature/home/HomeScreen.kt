@@ -921,6 +921,7 @@ private fun BucketChips(
                 BucketFilter("upcoming", "Upcoming", stats.upcoming, MedtrackColors.Primary),
                 BucketFilter("overdue", "Overdue", stats.overdue, MedtrackColors.Danger),
                 BucketFilter("awaiting", "Awaiting", stats.awaiting, MedtrackColors.Warning),
+                BucketFilter("red", "Red", stats.red, MedtrackColors.Danger),
             ).forEach { filter ->
                 BucketFilterChip(
                     selected = selectedBucket == filter.key,

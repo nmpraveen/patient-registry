@@ -66,6 +66,8 @@ import com.naveenhospital.medtrack.core.designsystem.MedtrackColors
 import com.naveenhospital.medtrack.core.designsystem.MedtrackSectionTitle
 import com.naveenhospital.medtrack.core.domain.model.CaseCategory
 import com.naveenhospital.medtrack.core.domain.model.CaseCreateOutcome
+import com.naveenhospital.medtrack.core.domain.model.CaseEditOutcome
+import com.naveenhospital.medtrack.core.domain.model.CaseEditPrefill
 import com.naveenhospital.medtrack.core.domain.model.CaseFormMetadata
 import com.naveenhospital.medtrack.core.domain.model.FormChoice
 import com.naveenhospital.medtrack.core.domain.model.NewCaseInput
@@ -110,38 +112,46 @@ fun CaseCreationScreen(
             "Your role can't create cases. Ask an administrator for access.",
             onBack,
         )
-        else -> CaseCreationForm(
-            metadata = meta,
-            initialCategory = initialCategory,
-            pathwayLabel = pathwayLabel,
-            searchPatients = searchPatients,
-            onBack = onBack,
-            onSubmit = { input, onResult ->
-                scope.launch {
-                    val outcome = runCatching { submit(input) }.getOrElse {
-                        CaseCreateOutcome.Failure(it.message ?: "Network error. Try again.")
+        else -> {
+            val state = remember(meta) { CaseFormState(meta, initialCategory) }
+            CaseFormScaffold(
+                state = state,
+                screenTitle = "New case",
+                finalActionLabel = "Create case",
+                searchPatients = searchPatients,
+                onBack = onBack,
+                onSubmit = { input, onResult ->
+                    scope.launch {
+                        val outcome = runCatching { submit(input) }.getOrElse {
+                            CaseCreateOutcome.Failure(it.message ?: "Network error. Try again.")
+                        }
+                        onResult(
+                            when (outcome) {
+                                is CaseCreateOutcome.Success -> CaseSubmitResult.Success(outcome.caseId, outcome.message)
+                                is CaseCreateOutcome.ValidationError -> CaseSubmitResult.Banner(outcome.bannerText())
+                                is CaseCreateOutcome.Failure -> CaseSubmitResult.Banner(outcome.message)
+                            },
+                        )
                     }
-                    onResult(outcome)
-                }
-            },
-            onCreated = onCreated,
-            modifier = modifier,
-        )
+                },
+                onDone = onCreated,
+                modifier = modifier,
+            )
+        }
     }
 }
 
 @Composable
-private fun CaseCreationForm(
-    metadata: CaseFormMetadata,
-    initialCategory: CaseCategory,
-    pathwayLabel: String,
+private fun CaseFormScaffold(
+    state: CaseFormState,
+    screenTitle: String,
+    finalActionLabel: String,
     searchPatients: suspend (String) -> List<PatientLookup>,
     onBack: () -> Unit,
-    onSubmit: (NewCaseInput, (CaseCreateOutcome) -> Unit) -> Unit,
-    onCreated: (Long, String) -> Unit,
+    onSubmit: (NewCaseInput, (CaseSubmitResult) -> Unit) -> Unit,
+    onDone: (Long, String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val state = remember { CaseFormState(metadata, initialCategory) }
     state.searchPatients = searchPatients
     var step by remember { mutableStateOf(0) }
     var submitting by remember { mutableStateOf(false) }
@@ -170,7 +180,7 @@ private fun CaseCreationForm(
                 Icon(Icons.Outlined.Close, contentDescription = "Close", tint = MedtrackColors.Ink)
             }
             Text(
-                text = "New case",
+                text = screenTitle,
                 modifier = Modifier.weight(1f),
                 color = MedtrackColors.Ink,
                 style = MaterialTheme.typography.titleMedium,
@@ -178,7 +188,7 @@ private fun CaseCreationForm(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            CategoryChip(category?.name ?: pathwayLabel, pathwayColor)
+            CategoryChip(category?.name ?: screenTitle, pathwayColor)
         }
 
         Stepper(stepTitles, step)
@@ -204,7 +214,7 @@ private fun CaseCreationForm(
         Column(modifier = Modifier.fillMaxWidth()) {
             banner?.let { BannerError(it) }
             BottomBar(
-                primaryLabel = if (step < stepTitles.lastIndex) "Continue" else "Create case",
+                primaryLabel = if (step < stepTitles.lastIndex) "Continue" else finalActionLabel,
                 submitting = submitting,
                 showBack = step > 0,
                 onBack = { if (step > 0) { banner = null; step -= 1 } },
@@ -219,12 +229,11 @@ private fun CaseCreationForm(
                         step += 1
                     } else {
                         submitting = true
-                        onSubmit(state.toInput()) { outcome ->
+                        onSubmit(state.toInput()) { result ->
                             submitting = false
-                            when (outcome) {
-                                is CaseCreateOutcome.Success -> onCreated(outcome.caseId, outcome.message)
-                                is CaseCreateOutcome.ValidationError -> banner = outcome.bannerText()
-                                is CaseCreateOutcome.Failure -> banner = outcome.message
+                            when (result) {
+                                is CaseSubmitResult.Success -> onDone(result.caseId, result.message)
+                                is CaseSubmitResult.Banner -> banner = result.text
                             }
                         }
                     }
@@ -237,6 +246,82 @@ private fun CaseCreationForm(
 private fun CaseCreateOutcome.ValidationError.bannerText(): String {
     val details = errors.values.flatten().take(3)
     return if (details.isEmpty()) message else details.joinToString("  •  ")
+}
+
+private fun CaseEditOutcome.ValidationError.bannerText(): String {
+    val details = errors.values.flatten().take(3)
+    return if (details.isEmpty()) message else details.joinToString("  •  ")
+}
+
+internal sealed interface CaseSubmitResult {
+    data class Success(val caseId: Long, val message: String) : CaseSubmitResult
+    data class Banner(val text: String) : CaseSubmitResult
+}
+
+internal val caseStatusChoices = listOf(
+    FormChoice("ACTIVE", "Active"),
+    FormChoice("COMPLETED", "Completed"),
+    FormChoice("CANCELLED", "Cancelled"),
+    FormChoice("LOSS_TO_FOLLOW_UP", "Loss to follow-up"),
+)
+
+@Composable
+fun CaseEditScreen(
+    loadPrefill: suspend () -> CaseEditPrefill,
+    searchPatients: suspend (String) -> List<PatientLookup>,
+    submit: suspend (NewCaseInput) -> CaseEditOutcome,
+    onBack: () -> Unit,
+    onSaved: (Long, String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val scope = rememberCoroutineScope()
+    var prefill by remember { mutableStateOf<CaseEditPrefill?>(null) }
+    var loadError by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(Unit) {
+        runCatching { loadPrefill() }
+            .onSuccess { prefill = it }
+            .onFailure { loadError = it.message ?: "Unable to load case" }
+    }
+
+    val data = prefill
+    when {
+        loadError != null -> CenterState("Couldn't load the case", loadError, onBack)
+        data == null -> CenterState("Loading case…", null, onBack, loading = true)
+        !data.canEdit -> CenterState(
+            "No permission",
+            "Your role can't edit cases. Ask an administrator for access.",
+            onBack,
+        )
+        else -> {
+            val state = remember(data) {
+                CaseFormState(data.metadata, CaseCategory.OTHER).apply { applyPrefill(data) }
+            }
+            CaseFormScaffold(
+                state = state,
+                screenTitle = "Edit case",
+                finalActionLabel = "Save changes",
+                searchPatients = searchPatients,
+                onBack = onBack,
+                onSubmit = { input, onResult ->
+                    scope.launch {
+                        val outcome = runCatching { submit(input) }.getOrElse {
+                            CaseEditOutcome.Failure(it.message ?: "Network error. Try again.")
+                        }
+                        onResult(
+                            when (outcome) {
+                                is CaseEditOutcome.Success -> CaseSubmitResult.Success(outcome.caseId, outcome.message)
+                                is CaseEditOutcome.ValidationError -> CaseSubmitResult.Banner(outcome.bannerText())
+                                is CaseEditOutcome.Failure -> CaseSubmitResult.Banner(outcome.message)
+                            },
+                        )
+                    }
+                },
+                onDone = onSaved,
+                modifier = modifier,
+            )
+        }
+    }
 }
 
 /* ----------------------------- Steps ----------------------------- */
@@ -351,6 +436,9 @@ private fun NewPatientFields(state: CaseFormState) {
 private fun ClinicalStep(state: CaseFormState) {
     val category = state.category
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        if (state.isEdit) {
+            DropdownField("Case status", state.status, caseStatusChoices, { state.status = it }, required = true)
+        }
         if (category != null && category.subcategories.isNotEmpty()) {
             DropdownField("Subcategory", state.subcategory, category.subcategories, { state.subcategory = it }, required = true)
         }
@@ -448,7 +536,11 @@ private fun ReviewStep(state: CaseFormState) {
             }
         }
         Text(
-            "Creating the case saves it on the server and seeds its starter tasks.",
+            if (state.isEdit) {
+                "Saving updates this case on the server."
+            } else {
+                "Creating the case saves it on the server and seeds its starter tasks."
+            },
             color = MedtrackColors.Muted,
             style = MaterialTheme.typography.bodySmall,
         )
@@ -478,7 +570,7 @@ private fun ReviewRow(label: String, value: String) {
 /* ----------------------------- Reusable fields ----------------------------- */
 
 @Composable
-private fun FieldRow(content: @Composable () -> Unit) {
+internal fun FieldRow(content: @Composable () -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -570,7 +662,7 @@ private fun FieldShell(
 }
 
 @Composable
-private fun TextField(
+internal fun TextField(
     label: String,
     value: String,
     modifier: Modifier = Modifier,
@@ -601,7 +693,7 @@ private fun TextField(
 }
 
 @Composable
-private fun MultilineField(
+internal fun MultilineField(
     label: String,
     value: String,
     optional: Boolean = false,
@@ -647,7 +739,7 @@ private fun MultilineField(
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
-private fun DropdownField(
+internal fun DropdownField(
     label: String,
     value: String,
     options: List<FormChoice>,
@@ -750,7 +842,7 @@ private fun StepperField(label: String, value: Int?, onChange: (Int) -> Unit, mo
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
-private fun DateField(label: String, value: String, modifier: Modifier = Modifier, required: Boolean = false, onChange: (String) -> Unit) {
+internal fun DateField(label: String, value: String, modifier: Modifier = Modifier, required: Boolean = false, onChange: (String) -> Unit) {
     var open by remember { mutableStateOf(false) }
     FieldShell(label = label, modifier = modifier, status = fieldStatus(required, value.isNotBlank()), onClick = { open = true }) {
         Text(
@@ -913,7 +1005,7 @@ private fun ToggleRow(label: String, help: String, checked: Boolean, onChange: (
 }
 
 @Composable
-private fun BannerError(text: String) {
+internal fun BannerError(text: String) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()

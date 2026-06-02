@@ -42,6 +42,7 @@ import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.CloudDone
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.Favorite
 import androidx.compose.material.icons.outlined.Flag
@@ -102,6 +103,7 @@ import com.naveenhospital.medtrack.core.domain.model.CaseCategory
 import com.naveenhospital.medtrack.core.domain.model.PatientCase
 import com.naveenhospital.medtrack.core.domain.model.PatientTask
 import com.naveenhospital.medtrack.core.domain.model.PatientVital
+import com.naveenhospital.medtrack.core.domain.model.TaskFormMetadata
 import com.naveenhospital.medtrack.core.domain.model.VitalStatusResult
 import com.naveenhospital.medtrack.core.domain.model.VitalsThresholdConfig
 import java.text.SimpleDateFormat
@@ -230,8 +232,17 @@ fun CaseDetailScreen(
     onMessagePatient: (PatientCase) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    canEditCase: Boolean = false,
+    canCreateTask: Boolean = false,
+    canEditTask: Boolean = false,
+    taskMetadata: TaskFormMetadata? = null,
+    onEditCase: () -> Unit = {},
+    onTaskAction: (TaskSheetAction, String?, (String?) -> Unit) -> Unit = { _, _, cb -> cb(null) },
+    onEditVitals: (String, VitalsEntryInput) -> Unit = { _, _ -> },
 ) {
     var showVitalsDialog by rememberSaveable { mutableStateOf(false) }
+    var editingVital by remember(caseId) { mutableStateOf<PatientVital?>(null) }
+    var taskSheetTarget by remember(caseId) { mutableStateOf<TaskSheetTarget?>(null) }
     val listState = rememberLazyListState()
 
     Column(
@@ -259,6 +270,12 @@ fun CaseDetailScreen(
                     .weight(1f)
                     .padding(horizontal = 10.dp),
             )
+            if (canEditCase) {
+                CaseHeaderIconButton(onClick = onEditCase) {
+                    Icon(imageVector = Icons.Outlined.Edit, contentDescription = "Edit case", tint = MedtrackColors.Ink)
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+            }
             CaseHeaderIconButton(onClick = onRefresh) {
                 Icon(imageVector = Icons.Outlined.Refresh, contentDescription = "Refresh", tint = MedtrackColors.Ink)
             }
@@ -309,11 +326,20 @@ fun CaseDetailScreen(
                     val doneTasks = tasks.filter { it.taskGroup() == TaskGroup.DONE }
                     val openTaskCount = tasks.count { it.isActionable() }
                     val doneTaskCount = doneTasks.size
+                    val onEditTask: ((PatientTask) -> Unit)? =
+                        if (canEditTask) { task -> taskSheetTarget = TaskSheetTarget.Edit(task) } else null
                     item {
-                        MedtrackSectionEyebrow(
-                            title = "Tasks",
-                            trailing = "$openTaskCount open \u00B7 $doneTaskCount done",
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                            Box(modifier = Modifier.weight(1f)) {
+                                MedtrackSectionEyebrow(
+                                    title = "Tasks",
+                                    trailing = "$openTaskCount open \u00B7 $doneTaskCount done",
+                                )
+                            }
+                            if (canCreateTask) {
+                                AddTaskChip(onClick = { taskSheetTarget = TaskSheetTarget.Create })
+                            }
+                        }
                     }
                     if (tasks.isEmpty()) {
                         item {
@@ -324,17 +350,17 @@ fun CaseDetailScreen(
                     } else {
                         if (overdueTasks.isNotEmpty()) {
                             item {
-                                TaskSectionCard(title = "Overdue", tasks = overdueTasks, onCompleteTask = onCompleteTask)
+                                TaskSectionCard(title = "Overdue", tasks = overdueTasks, onCompleteTask = onCompleteTask, onEditTask = onEditTask)
                             }
                         }
                         if (upcomingTasks.isNotEmpty()) {
                             item {
-                                TaskSectionCard(title = "Upcoming", tasks = upcomingTasks, onCompleteTask = onCompleteTask)
+                                TaskSectionCard(title = "Upcoming", tasks = upcomingTasks, onCompleteTask = onCompleteTask, onEditTask = onEditTask)
                             }
                         }
                         if (doneTasks.isNotEmpty()) {
                             item {
-                                TaskSectionCard(title = "Done", tasks = doneTasks, onCompleteTask = onCompleteTask)
+                                TaskSectionCard(title = "Done", tasks = doneTasks, onCompleteTask = onCompleteTask, onEditTask = onEditTask)
                             }
                         }
                     }
@@ -342,6 +368,11 @@ fun CaseDetailScreen(
                         VitalsHistoryCard(
                             vitals = vitals,
                             fallback = patientCase.latestVitalSummary,
+                            onEditVital = if (canEditTask) {
+                                { vital -> editingVital = vital; showVitalsDialog = true }
+                            } else {
+                                null
+                            },
                         )
                     }
                 }
@@ -359,15 +390,71 @@ fun CaseDetailScreen(
     }
 
     if (showVitalsDialog) {
+        val vitalBeingEdited = editingVital
         VitalsEntrySheet(
             patientCase = patientCase,
             thresholds = vitalsThresholds,
-            onDismiss = { showVitalsDialog = false },
+            existingVital = vitalBeingEdited,
+            onDismiss = {
+                showVitalsDialog = false
+                editingVital = null
+            },
             onSubmit = { input ->
                 showVitalsDialog = false
-                onAddVitals(input)
+                editingVital = null
+                if (vitalBeingEdited != null) {
+                    onEditVitals(vitalBeingEdited.id, input)
+                } else {
+                    onAddVitals(input)
+                }
             },
         )
+    }
+
+    taskSheetTarget?.let { target ->
+        val editingTask = (target as? TaskSheetTarget.Edit)?.task
+        TaskEditorSheet(
+            metadata = taskMetadata,
+            existingTask = editingTask,
+            onDismiss = { taskSheetTarget = null },
+            onSubmit = { action, report ->
+                onTaskAction(action, editingTask?.id) { error ->
+                    report(error)
+                    if (error == null && action !is TaskSheetAction.Note) {
+                        taskSheetTarget = null
+                    }
+                }
+            },
+        )
+    }
+}
+
+private sealed interface TaskSheetTarget {
+    data object Create : TaskSheetTarget
+    data class Edit(val task: PatientTask) : TaskSheetTarget
+}
+
+@Composable
+private fun AddTaskChip(onClick: () -> Unit) {
+    Surface(
+        modifier = Modifier.clickable(onClick = onClick),
+        shape = RoundedCornerShape(999.dp),
+        color = MedtrackColors.PrimarySoft,
+        border = BorderStroke(1.dp, MedtrackColors.Primary.copy(alpha = 0.28f)),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 11.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Outlined.Add, contentDescription = null, tint = MedtrackColors.Primary, modifier = Modifier.size(16.dp))
+            Text(
+                text = "Add",
+                color = MedtrackColors.Primary,
+                style = MaterialTheme.typography.labelMedium.copy(fontSize = 12.5.sp),
+                fontWeight = FontWeight.ExtraBold,
+            )
+        }
     }
 }
 
@@ -589,6 +676,7 @@ private fun LatestVitalsStrip(
 private fun VitalsHistoryCard(
     vitals: List<PatientVital>,
     fallback: String?,
+    onEditVital: ((PatientVital) -> Unit)? = null,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
         MedtrackSectionEyebrow(
@@ -611,7 +699,7 @@ private fun VitalsHistoryCard(
                     )
                 } else {
                     vitals.take(2).forEachIndexed { index, vital ->
-                        VitalsRow(vital = vital, showDivider = index > 0)
+                        VitalsRow(vital = vital, showDivider = index > 0, onEditVital = onEditVital)
                     }
                 }
             }
@@ -624,6 +712,7 @@ private fun TaskSectionCard(
     title: String,
     tasks: List<PatientTask>,
     onCompleteTask: (PatientTask) -> Unit,
+    onEditTask: ((PatientTask) -> Unit)? = null,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
         Text(
@@ -635,7 +724,7 @@ private fun TaskSectionCard(
             modifier = Modifier.padding(horizontal = 2.dp),
         )
         tasks.forEach { task ->
-            TaskRow(task = task, onCompleteTask = onCompleteTask)
+            TaskRow(task = task, onCompleteTask = onCompleteTask, onEditTask = onEditTask)
         }
     }
 }
@@ -644,10 +733,13 @@ private fun TaskSectionCard(
 private fun TaskRow(
     task: PatientTask,
     onCompleteTask: (PatientTask) -> Unit,
+    onEditTask: ((PatientTask) -> Unit)? = null,
 ) {
     val actionable = task.isActionable()
     Surface(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (onEditTask != null) Modifier.clickable { onEditTask(task) } else Modifier),
         shape = RoundedCornerShape(12.dp),
         color = MedtrackColors.Card,
         border = BorderStroke(1.dp, MedtrackColors.Border),
@@ -706,10 +798,11 @@ private fun TaskRow(
 }
 
 @Composable
-private fun VitalsRow(vital: PatientVital, showDivider: Boolean) {
+private fun VitalsRow(vital: PatientVital, showDivider: Boolean, onEditVital: ((PatientVital) -> Unit)? = null) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .then(if (onEditVital != null) Modifier.clickable { onEditVital(vital) } else Modifier)
             .then(if (showDivider) Modifier.background(MedtrackColors.Card) else Modifier)
             .padding(vertical = 9.dp),
         horizontalArrangement = Arrangement.spacedBy(9.dp),
@@ -1553,13 +1646,15 @@ private fun VitalsEntrySheet(
     thresholds: VitalsThresholdConfig?,
     onDismiss: () -> Unit,
     onSubmit: (VitalsEntryInput) -> Unit,
+    existingVital: PatientVital? = null,
 ) {
-    var systolic by rememberSaveable { mutableStateOf("") }
-    var diastolic by rememberSaveable { mutableStateOf("") }
-    var pulse by rememberSaveable { mutableStateOf("") }
-    var spo2 by rememberSaveable { mutableStateOf("") }
-    var weight by rememberSaveable { mutableStateOf("") }
-    var hemoglobin by rememberSaveable { mutableStateOf("") }
+    val editKey = existingVital?.id
+    var systolic by remember(editKey) { mutableStateOf(existingVital?.bpSystolic?.toString() ?: "") }
+    var diastolic by remember(editKey) { mutableStateOf(existingVital?.bpDiastolic?.toString() ?: "") }
+    var pulse by remember(editKey) { mutableStateOf(existingVital?.pulse?.toString() ?: "") }
+    var spo2 by remember(editKey) { mutableStateOf(existingVital?.spo2?.toString() ?: "") }
+    var weight by remember(editKey) { mutableStateOf(existingVital?.weightKg.orEmpty()) }
+    var hemoglobin by remember(editKey) { mutableStateOf(existingVital?.hemoglobin.orEmpty()) }
     val hasAnyMetric = listOf(systolic, diastolic, pulse, spo2, weight, hemoglobin).any { it.isNotBlank() }
     val hasPartialBloodPressure = systolic.isNotBlank() xor diastolic.isNotBlank()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -1584,7 +1679,7 @@ private fun VitalsEntrySheet(
             ) {
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(
-                        text = "Add vitals",
+                        text = if (existingVital != null) "Edit vitals" else "Add vitals",
                         color = MedtrackColors.Ink,
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,

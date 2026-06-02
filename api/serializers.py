@@ -79,6 +79,28 @@ class VitalEntryCreateSerializer(ClientWriteSerializer):
         return vital, warning
 
 
+class VitalEntryUpdateSerializer(VitalEntryCreateSerializer):
+    """Same validation as create, but applies the values to an existing entry."""
+
+    def update_vital(self, *, vital, user):
+        data = dict(self.validated_data)
+        data.pop("client_write_id", None)
+        warning = data.pop("hemoglobin_warning", "")
+        recorded_at = data.pop("recorded_at", None)
+        # Partial update: only touch metrics the caller actually sent, so editing
+        # one value (e.g. BP) never wipes the others that were left out of the payload.
+        for field in self.metric_fields:
+            if field in self.validated_data:
+                setattr(vital, field, data.get(field))
+        if recorded_at is not None:
+            vital.recorded_at = recorded_at
+        vital.updated_by = user
+        if vital.created_by_id is None:
+            vital.created_by = user
+        vital.save()
+        return vital, warning
+
+
 def call_outcome_to_model_value(outcome):
     outcome = outcome.replace("-", "_")
     return {

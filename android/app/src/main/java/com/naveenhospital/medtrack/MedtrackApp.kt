@@ -113,8 +113,13 @@ import com.naveenhospital.medtrack.feature.calls.CallOutcomeSheet
 import com.naveenhospital.medtrack.feature.calls.CallsScreen
 import com.naveenhospital.medtrack.feature.cases.CaseCreationScreen
 import com.naveenhospital.medtrack.feature.cases.CaseDetailScreen
+import com.naveenhospital.medtrack.feature.cases.CaseEditScreen
 import com.naveenhospital.medtrack.feature.cases.CaseListScreen
+import com.naveenhospital.medtrack.feature.cases.TaskSheetAction
 import com.naveenhospital.medtrack.feature.cases.VitalsEntryInput
+import com.naveenhospital.medtrack.core.domain.model.TaskFormMetadata
+import com.naveenhospital.medtrack.core.domain.model.TaskWriteOutcome
+import com.naveenhospital.medtrack.core.domain.model.VitalsWriteOutcome
 import com.naveenhospital.medtrack.feature.home.HomeScreen
 import com.naveenhospital.medtrack.feature.notifications.AlertDetailScreen
 import com.naveenhospital.medtrack.feature.notifications.NotificationsScreen
@@ -141,6 +146,7 @@ private object Routes {
     const val CASES = "cases"
     const val CASE_DETAIL = "cases/{caseId}"
     const val CREATE_CASE = "create_case/{category}/{label}"
+    const val EDIT_CASE = "edit_case/{caseId}"
     const val CALLS = "calls"
     const val NOTIFICATIONS = "notifications"
     const val ALERT_DETAIL = "alerts/{notificationId}"
@@ -148,6 +154,7 @@ private object Routes {
 
     fun caseDetail(caseId: String): String = "cases/$caseId"
     fun createCase(category: CaseCategory, label: String): String = "create_case/${category.name}/${Uri.encode(label)}"
+    fun editCase(caseId: String): String = "edit_case/$caseId"
     fun alertDetail(notificationId: String): String = "alerts/${Uri.encode(notificationId)}"
 }
 
@@ -771,6 +778,18 @@ fun MedtrackApp(
                     val dialerHandoff = rememberDialerHandoff(caseId)
                     val patientCase = cachedCase ?: cases.firstOrNull { it.id == caseId }
                     val defaultCaseScope = currentUserProfile.mobileDefaultCaseScope()
+                    val caps = currentUserProfile?.capabilities.orEmpty()
+                    val canEditCase = caps["case_edit"] ?: false
+                    val canCreateTask = caps["task_create"] ?: false
+                    val canEditTask = caps["task_edit"] ?: false
+                    var taskMetadata by remember { mutableStateOf<TaskFormMetadata?>(null) }
+
+                    LaunchedEffect(canCreateTask, canEditTask) {
+                        if ((canCreateTask || canEditTask) && taskMetadata == null) {
+                            runCatching { container.medtrackRepository.loadTaskFormMetadata() }
+                                .onSuccess { taskMetadata = it }
+                        }
+                    }
 
                     fun refreshCaseDetail() {
                         if (caseId.isBlank()) return
@@ -887,6 +906,67 @@ fun MedtrackApp(
                             }
                         },
                         onBack = { navController.popBackStack() },
+                        canEditCase = canEditCase,
+                        canCreateTask = canCreateTask,
+                        canEditTask = canEditTask,
+                        taskMetadata = taskMetadata,
+                        onEditCase = {
+                            navController.navigate(Routes.editCase(caseId)) { launchSingleTop = true }
+                        },
+                        onTaskAction = { action, taskId, report ->
+                            scope.launch {
+                                val outcome = when (action) {
+                                    is TaskSheetAction.Create ->
+                                        container.medtrackRepository.createTask(caseId, action.input)
+                                    is TaskSheetAction.Edit ->
+                                        if (taskId != null) {
+                                            container.medtrackRepository.updateTask(taskId, caseId, action.input)
+                                        } else {
+                                            TaskWriteOutcome.Failure("Task is unavailable.")
+                                        }
+                                    is TaskSheetAction.Note ->
+                                        if (taskId != null) {
+                                            container.medtrackRepository.addTaskNote(taskId, caseId, action.text)
+                                        } else {
+                                            TaskWriteOutcome.Failure("Task is unavailable.")
+                                        }
+                                }
+                                when (outcome) {
+                                    is TaskWriteOutcome.Success -> {
+                                        caseActionMessage = outcome.message
+                                        refreshCaseDetail()
+                                        runCatching {
+                                            container.medtrackRepository.refreshCases(assignedTo = defaultCaseScope)
+                                        }
+                                        report(null)
+                                    }
+                                    is TaskWriteOutcome.ValidationError -> report(outcome.message)
+                                    is TaskWriteOutcome.Failure -> report(outcome.message)
+                                }
+                            }
+                        },
+                        onEditVitals = { vitalId, input ->
+                            scope.launch {
+                                val outcome = container.medtrackRepository.updateVitals(
+                                    vitalId = vitalId,
+                                    caseId = caseId,
+                                    bpSystolic = input.bpSystolic,
+                                    bpDiastolic = input.bpDiastolic,
+                                    pulse = input.pulse,
+                                    spo2 = input.spo2,
+                                    weightKg = input.weightKg,
+                                    hemoglobin = input.hemoglobin,
+                                )
+                                caseActionMessage = when (outcome) {
+                                    is VitalsWriteOutcome.Success -> {
+                                        refreshCaseDetail()
+                                        outcome.message
+                                    }
+                                    is VitalsWriteOutcome.ValidationError -> outcome.message
+                                    is VitalsWriteOutcome.Failure -> outcome.message
+                                }
+                            }
+                        },
                     )
 
                     DialerOutcomeSheet(dialerHandoff) { selectedCase, outcome, note, attemptedAt ->
@@ -915,6 +995,20 @@ fun MedtrackApp(
                                 popUpTo(Routes.HOME) { inclusive = false }
                                 launchSingleTop = true
                             }
+                        },
+                    )
+                }
+                composable(Routes.EDIT_CASE) { entry ->
+                    val caseId = entry.arguments?.getString("caseId").orEmpty()
+                    CaseEditScreen(
+                        modifier = Modifier.fillMaxSize(),
+                        loadPrefill = { container.medtrackRepository.loadCaseEditForm(caseId) },
+                        searchPatients = { query -> container.medtrackRepository.searchPatients(query) },
+                        submit = { input -> container.medtrackRepository.updateCase(caseId, input) },
+                        onBack = { navController.popBackStack() },
+                        onSaved = { savedCaseId, message ->
+                            scope.launch { snackbarHostState.showSnackbar(message) }
+                            navController.popBackStack()
                         },
                     )
                 }

@@ -74,6 +74,11 @@ data class TaskDto(
     val status: String,
     @Json(name = "status_label") val statusLabel: String? = null,
     @Json(name = "can_complete") val canComplete: Boolean? = null,
+    @Json(name = "task_type") val taskType: String? = null,
+    @Json(name = "task_type_label") val taskTypeLabel: String? = null,
+    @Json(name = "assigned_user") val assignedUser: String? = null,
+    @Json(name = "assigned_user_id") val assignedUserId: Long? = null,
+    val notes: String? = null,
 )
 
 data class CaseCategoryDto(
@@ -253,6 +258,7 @@ data class CreateCaseRequestDto(
     @Json(name = "alternate_phone_number") val alternatePhoneNumber: String? = null,
     val category: Long,
     val subcategory: String? = null,
+    val status: String? = null,
     val diagnosis: String? = null,
     @Json(name = "referred_by") val referredBy: String? = null,
     val notes: String? = null,
@@ -287,4 +293,108 @@ data class CaseCreateResponseDto(
 data class CaseCreateErrorDto(
     val message: String? = null,
     val errors: Map<String, List<String>> = emptyMap(),
+)
+
+data class CaseEditFormDto(
+    @Json(name = "can_edit") val canEdit: Boolean = false,
+    val categories: List<CaseCategoryDto> = emptyList(),
+    val prefixes: List<ChoiceDto> = emptyList(),
+    @Json(name = "blood_groups") val bloodGroups: List<ChoiceDto> = emptyList(),
+    val genders: List<ChoiceDto> = emptyList(),
+    @Json(name = "ncd_flags") val ncdFlags: List<ChoiceDto> = emptyList(),
+    @Json(name = "anc_high_risk_reasons") val ancHighRiskReasons: List<ChoiceDto> = emptyList(),
+    @Json(name = "surgical_pathways") val surgicalPathways: List<ChoiceDto> = emptyList(),
+    @Json(name = "review_frequencies") val reviewFrequencies: List<ChoiceDto> = emptyList(),
+    val case: CaseEditCaseDto,
+)
+
+data class CaseEditCaseDto(
+    val id: Long,
+    @Json(name = "patient_mode") val patientMode: String? = null,
+    @Json(name = "selected_patient") val selectedPatient: Long? = null,
+    @Json(name = "use_temporary_uhid") val useTemporaryUhid: Boolean = false,
+    val uhid: String? = null,
+    val prefix: String? = null,
+    @Json(name = "first_name") val firstName: String? = null,
+    @Json(name = "last_name") val lastName: String? = null,
+    val gender: String? = null,
+    @Json(name = "blood_group") val bloodGroup: String? = null,
+    @Json(name = "date_of_birth") val dateOfBirth: String? = null,
+    val place: String? = null,
+    val age: Int? = null,
+    @Json(name = "phone_number") val phoneNumber: String? = null,
+    @Json(name = "alternate_phone_number") val alternatePhoneNumber: String? = null,
+    val category: Long? = null,
+    val subcategory: String? = null,
+    val status: String? = null,
+    val diagnosis: String? = null,
+    @Json(name = "referred_by") val referredBy: String? = null,
+    val notes: String? = null,
+    @Json(name = "high_risk") val highRisk: Boolean = false,
+    @Json(name = "ncd_flags") val ncdFlags: List<String> = emptyList(),
+    @Json(name = "anc_high_risk_reasons") val ancHighRiskReasons: List<String> = emptyList(),
+    @Json(name = "rch_number") val rchNumber: String? = null,
+    @Json(name = "rch_bypass") val rchBypass: Boolean = false,
+    val lmp: String? = null,
+    val edd: String? = null,
+    @Json(name = "usg_edd") val usgEdd: String? = null,
+    @Json(name = "surgical_pathway") val surgicalPathway: String? = null,
+    @Json(name = "surgery_date") val surgeryDate: String? = null,
+    @Json(name = "review_frequency") val reviewFrequency: String? = null,
+    @Json(name = "review_date") val reviewDate: String? = null,
+    val gravida: Int? = null,
+    val para: Int? = null,
+    val abortions: Int? = null,
+    val living: Int? = null,
+    val ftnd: Int? = null,
+    val lscs: Int? = null,
+)
+
+data class TaskFormMetadataDto(
+    @Json(name = "can_create") val canCreate: Boolean = false,
+    @Json(name = "can_edit") val canEdit: Boolean = false,
+    @Json(name = "can_reopen") val canReopen: Boolean = false,
+    @Json(name = "default_status") val defaultStatus: String = "SCHEDULED",
+    @Json(name = "task_types") val taskTypes: List<ChoiceDto> = emptyList(),
+    val statuses: List<ChoiceDto> = emptyList(),
+    @Json(name = "assignable_users") val assignableUsers: List<TaskAssigneeDto> = emptyList(),
+)
+
+data class TaskAssigneeDto(
+    val id: Long,
+    val name: String,
+)
+
+data class CreateTaskRequestDto(
+    val title: String,
+    @Json(name = "due_date") val dueDate: String,
+    val status: String,
+    @Json(name = "task_type") val taskType: String,
+    @Json(name = "assigned_user") val assignedUser: Long? = null,
+    val notes: String? = null,
+    @Json(name = "client_write_id") val clientWriteId: String,
+)
+
+data class UpdateTaskRequestDto(
+    val title: String? = null,
+    @Json(name = "due_date") val dueDate: String? = null,
+    val status: String? = null,
+    @Json(name = "task_type") val taskType: String? = null,
+    // String so the edit form can explicitly clear the assignee (""): a null is omitted
+    // by Moshi and would leave the current assignee unchanged.
+    @Json(name = "assigned_user") val assignedUser: String? = null,
+)
+
+data class TaskNoteRequestDto(
+    val note: String,
+)
+
+data class VitalsUpdateRequestDto(
+    @Json(name = "recorded_at") val recordedAt: String? = null,
+    @Json(name = "bp_systolic") val bpSystolic: Int? = null,
+    @Json(name = "bp_diastolic") val bpDiastolic: Int? = null,
+    val pr: Int? = null,
+    val spo2: Int? = null,
+    @Json(name = "weight_kg") val weightKg: String? = null,
+    val hemoglobin: String? = null,
 )

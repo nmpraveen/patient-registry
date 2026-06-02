@@ -1,6 +1,8 @@
 import json
 from datetime import timedelta
 
+from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError
 from django.core.serializers.json import DjangoJSONEncoder
 from django.db import transaction
 from django.db.models import Max, Min, Prefetch, Q
@@ -30,25 +32,33 @@ from patients.models import (
     SurgicalPathway,
     Task,
     TaskStatus,
+    TaskType,
     VitalEntry,
     build_default_tasks,
+    cancel_open_rch_reminders,
     case_subcategory_choices_for_category_name,
     ensure_rch_reminder_task,
     frequency_to_days,
+    is_anc_case,
 )
 from patients.theme import build_theme_category_colors, resolve_category_theme
 from patients.vitals_thresholds import vitals_thresholds_payload
-from patients.forms import CaseForm
+from patients.forms import CaseForm, TaskForm
 from patients.views import (
     CASE_CATEGORY_GROUP_FILTERS,
     _blood_pressure_display,
     _build_case_detail_json_payload,
     _build_latest_vitals_summary,
+    _can_reopen_tasks,
     _complete_task_inline,
     _dashboard_category_icon_path,
     _dashboard_subcategory_icon_path,
     _display_user_name,
     _patient_search_queryset,
+    _reopen_task_inline,
+    _reschedule_task_inline,
+    _reopen_task_follow_up_cleanup,
+    _save_task_note_inline,
     _visible_case_queryset,
     _visible_task_queryset,
     can_access_case_data,
@@ -66,6 +76,7 @@ from .serializers import (
     LogoutSerializer,
     TaskCompleteSerializer,
     VitalEntryCreateSerializer,
+    VitalEntryUpdateSerializer,
     call_outcome_to_model_value,
 )
 
@@ -253,6 +264,8 @@ def _serialize_task(task, *, can_complete):
         "task_type_label": task.get_task_type_display(),
         "frequency_label": task.frequency_label,
         "assigned_user": _display_user_name(task.assigned_user) if task.assigned_user_id else "",
+        "assigned_user_id": task.assigned_user_id,
+        "notes": task.notes or "",
         "completed_at": task.completed_at.isoformat() if task.completed_at else None,
         "can_complete": can_complete and task.status not in {TaskStatus.COMPLETED, TaskStatus.CANCELLED},
     }
@@ -442,6 +455,140 @@ class CaseDetailView(APIView):
         ]
         return Response(payload)
 
+    def patch(self, request, pk):
+        if not has_capability(request.user, "case_edit"):
+            return Response(
+                {"message": "You do not have permission to edit cases."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        case = get_object_or_404(
+            _visible_case_queryset(Case.objects.select_related("category", "patient")), pk=pk
+        )
+        old_status = case.status
+        form = CaseForm(data=request.data, instance=case)
+        form.actor = request.user
+        if not form.is_valid():
+            return Response(
+                {"message": "Please fix the highlighted fields.", "errors": _form_errors(form)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        new_status = form.cleaned_data.get("status") or old_status
+        grey_list_cutoff = timezone.localdate() - timedelta(days=30)
+        has_grey_tasks = case.tasks.exclude(status=TaskStatus.COMPLETED).filter(
+            due_date__lt=grey_list_cutoff
+        ).exists()
+        if (
+            has_grey_tasks
+            and new_status in [CaseStatus.LOSS_TO_FOLLOW_UP, CaseStatus.ACTIVE]
+            and not is_doctor_admin(request.user)
+        ):
+            message = "Only Doctor/Admin can set Grey List cases to Active or Loss to Follow-up."
+            return Response(
+                {"message": message, "errors": {"status": [message]}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        with transaction.atomic():
+            if old_status != new_status:
+                create_case_activity(
+                    case=case,
+                    user=request.user,
+                    event_type=ActivityEventType.SYSTEM,
+                    note=f"Case status changed: {old_status} -> {new_status}",
+                )
+            updated = form.save()
+            if not is_anc_case(updated) or updated.rch_number:
+                cancel_open_rch_reminders(updated)
+            else:
+                ensure_rch_reminder_task(updated, request.user)
+            create_case_activity(
+                case=updated,
+                user=request.user,
+                event_type=ActivityEventType.SYSTEM,
+                note="Case updated from mobile.",
+            )
+        return Response(
+            {
+                "message": "Case updated.",
+                "case_id": updated.id,
+                "case": _mobile_case_payload(updated, user=request.user),
+            }
+        )
+
+
+def _case_edit_payload(case):
+    patient = getattr(case, "patient", None)
+
+    def iso(value):
+        return value.isoformat() if value else None
+
+    return {
+        "id": case.id,
+        "patient_mode": "existing",
+        "selected_patient": case.patient_id,
+        "use_temporary_uhid": bool(getattr(patient, "is_temporary_id", False)),
+        "uhid": case.uhid,
+        "prefix": case.prefix,
+        "first_name": case.first_name,
+        "last_name": case.last_name,
+        "gender": case.gender,
+        "blood_group": case.blood_group,
+        "date_of_birth": iso(case.date_of_birth),
+        "place": case.place,
+        "age": case.age,
+        "phone_number": case.phone_number,
+        "alternate_phone_number": case.alternate_phone_number,
+        "category": case.category_id,
+        "subcategory": case.subcategory,
+        "status": case.status,
+        "diagnosis": case.diagnosis,
+        "referred_by": case.referred_by,
+        "notes": case.notes,
+        "high_risk": case.high_risk,
+        "ncd_flags": case.ncd_flags or [],
+        "anc_high_risk_reasons": case.anc_high_risk_reasons or [],
+        "rch_number": case.rch_number,
+        "rch_bypass": case.rch_bypass,
+        "lmp": iso(case.lmp),
+        "edd": iso(case.edd),
+        "usg_edd": iso(case.usg_edd),
+        "surgical_pathway": case.surgical_pathway,
+        "surgery_date": iso(case.surgery_date),
+        "review_frequency": case.review_frequency,
+        "review_date": iso(case.review_date),
+        "gravida": case.gravida,
+        "para": case.para,
+        "abortions": case.abortions,
+        "living": case.living,
+        "ftnd": case.ftnd,
+        "lscs": case.lscs,
+    }
+
+
+class CaseEditFormView(APIView):
+    """Prefill + metadata for the mobile case-edit wizard."""
+
+    permission_classes = [HasMobileCaseAccess]
+
+    def get(self, request, pk):
+        case = get_object_or_404(
+            _visible_case_queryset(Case.objects.select_related("category", "patient")), pk=pk
+        )
+        return Response(
+            {
+                "can_edit": has_capability(request.user, "case_edit"),
+                "categories": _category_metadata_payload(),
+                "prefixes": _choice_payload(CasePrefix.choices),
+                "blood_groups": _choice_payload(BloodGroup.choices),
+                "genders": _choice_payload(Gender.choices),
+                "ncd_flags": _choice_payload(NonCommunicableDisease.choices),
+                "anc_high_risk_reasons": _choice_payload(AncHighRiskReason.choices),
+                "surgical_pathways": _choice_payload(SurgicalPathway.choices),
+                "review_frequencies": _choice_payload(ReviewFrequency.choices),
+                "case": _case_edit_payload(case),
+            }
+        )
+
 
 def _idempotent_response(request, serializer, write_type, apply_write):
     client_write_id = serializer.validated_data.get("client_write_id", "").strip()
@@ -496,6 +643,217 @@ class TaskCompleteView(APIView):
             }, status.HTTP_200_OK
 
         return _idempotent_response(request, serializer, "task_complete", apply_write)
+
+
+def _task_form_partial_data(task, request):
+    data = {
+        "title": task.title,
+        "due_date": task.due_date.isoformat(),
+        "status": task.status,
+        "assigned_user": task.assigned_user_id,
+        "task_type": task.task_type,
+        "frequency_label": task.frequency_label,
+        "notes": task.notes,
+    }
+    for key in ("title", "due_date", "status", "assigned_user", "task_type", "frequency_label", "notes"):
+        if key in request.data:
+            data[key] = request.data.get(key)
+    return data
+
+
+class TaskCreateView(APIView):
+    permission_classes = [HasMobileCaseAccess]
+
+    def post(self, request, pk):
+        if not has_capability(request.user, "task_create"):
+            return Response(
+                {"message": "You do not have permission to create tasks."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        write_serializer = ClientWriteSerializer(data=request.data)
+        write_serializer.is_valid(raise_exception=True)
+        case = get_object_or_404(_visible_case_queryset(Case.objects.select_related("category")), pk=pk)
+        form = TaskForm(request.data)
+        if not form.is_valid():
+            return Response(
+                {"message": "Please fix the highlighted fields.", "errors": _form_errors(form)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        def apply_write():
+            task = form.save(commit=False)
+            task.case = case
+            task.created_by = request.user
+            try:
+                task.full_clean()
+                task.save()
+            except ValidationError as exc:
+                return (
+                    {"message": "Could not add task. Please check the inputs.", "errors": exc.message_dict},
+                    status.HTTP_400_BAD_REQUEST,
+                )
+            create_case_activity(
+                case=case,
+                task=task,
+                user=request.user,
+                event_type=ActivityEventType.TASK,
+                note=f"Task created: {task.title}",
+            )
+            return (
+                {
+                    "message": "Task added.",
+                    "task": _serialize_task(task, can_complete=has_capability(request.user, "task_edit")),
+                    "case": _mobile_case_payload(case, user=request.user),
+                },
+                status.HTTP_201_CREATED,
+            )
+
+        return _idempotent_response(request, write_serializer, "task_create", apply_write)
+
+
+class TaskDetailView(APIView):
+    permission_classes = [HasMobileCaseAccess]
+
+    def patch(self, request, pk):
+        if not has_capability(request.user, "task_edit"):
+            return Response(
+                {"message": "You do not have permission to edit tasks."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        task = get_object_or_404(
+            _visible_task_queryset(
+                Task.objects.select_related("case", "case__category", "assigned_user")
+            ),
+            pk=pk,
+        )
+        previous_status = task.status
+        requested_status = request.data.get("status")
+        is_reopening = (
+            previous_status == TaskStatus.COMPLETED
+            and requested_status
+            and requested_status != TaskStatus.COMPLETED
+        )
+        can_reopen = _can_reopen_tasks(request.user)
+        if is_reopening and not can_reopen:
+            return Response(
+                {"message": "You do not have permission to reopen completed tasks."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        form = TaskForm(_task_form_partial_data(task, request), instance=task, allow_reopen=can_reopen)
+        if not form.is_valid():
+            return Response(
+                {"message": "Please fix the highlighted fields.", "errors": _form_errors(form)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if is_reopening and form.cleaned_data.get("status") != TaskStatus.SCHEDULED:
+            message = "Completed tasks can only be reopened to Scheduled."
+            return Response(
+                {"message": message, "errors": {"status": [message]}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        with transaction.atomic():
+            updated = form.save()
+            if is_reopening:
+                cancelled = _reopen_task_follow_up_cleanup(updated)
+                note = f"Task reopened: {updated.title}"
+                if cancelled:
+                    label = "reminder" if cancelled == 1 else "reminders"
+                    note = f"{note} ({cancelled} follow-up {label} cancelled)"
+            else:
+                note = f"Task updated: {updated.title} ({updated.status})"
+            create_case_activity(
+                case=updated.case,
+                task=updated,
+                user=request.user,
+                event_type=ActivityEventType.TASK,
+                note=note,
+            )
+        return Response(
+            {
+                "message": "Task updated.",
+                "task": _serialize_task(updated, can_complete=has_capability(request.user, "task_edit")),
+                "case": _mobile_case_payload(updated.case, user=request.user),
+            }
+        )
+
+
+class TaskNoteView(APIView):
+    permission_classes = [HasMobileCaseAccess]
+
+    def post(self, request, pk):
+        if not has_capability(request.user, "task_edit"):
+            return Response(
+                {"message": "You do not have permission to add task notes."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        task = get_object_or_404(
+            _visible_task_queryset(Task.objects.select_related("case", "case__category")), pk=pk
+        )
+        note_text = (request.data.get("note") or "").strip()
+        success, message = _save_task_note_inline(task, note_text=note_text, user=request.user)
+        if not success:
+            return Response({"message": message}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {
+                "message": message,
+                "task": _serialize_task(task, can_complete=has_capability(request.user, "task_edit")),
+                "case": _mobile_case_payload(task.case, user=request.user),
+            }
+        )
+
+
+class TaskFormMetadataView(APIView):
+    permission_classes = [HasMobileCaseAccess]
+
+    def get(self, request):
+        User = get_user_model()
+        users = User.objects.filter(is_active=True).order_by("first_name", "last_name", "username")
+        return Response(
+            {
+                "can_create": has_capability(request.user, "task_create"),
+                "can_edit": has_capability(request.user, "task_edit"),
+                "can_reopen": _can_reopen_tasks(request.user),
+                "default_status": TaskStatus.SCHEDULED,
+                "task_types": _choice_payload(TaskType.choices),
+                "statuses": _choice_payload(TaskStatus.choices),
+                "assignable_users": [
+                    {"id": user.id, "name": _display_user_name(user) or user.get_username()}
+                    for user in users
+                ],
+            }
+        )
+
+
+class VitalsDetailView(APIView):
+    permission_classes = [HasMobileCaseAccess]
+
+    def patch(self, request, pk):
+        if not has_capability(request.user, "task_edit"):
+            return Response(
+                {"message": "You do not have permission to edit vitals."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        vital = get_object_or_404(
+            VitalEntry.objects.select_related("case", "case__category"), pk=pk
+        )
+        get_object_or_404(_visible_case_queryset(Case.objects.all()), pk=vital.case_id)
+        serializer = VitalEntryUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        updated, warning = serializer.update_vital(vital=vital, user=request.user)
+        create_case_activity(
+            case=updated.case,
+            user=request.user,
+            event_type=ActivityEventType.SYSTEM,
+            note="Vitals entry updated.",
+        )
+        return Response(
+            {
+                "message": warning or "Vitals updated.",
+                "latest_vital_id": updated.id,
+                "vital": _serialize_vital(updated),
+                "case": _mobile_case_payload(updated.case, user=request.user),
+            }
+        )
 
 
 class CallOutcomeView(APIView):

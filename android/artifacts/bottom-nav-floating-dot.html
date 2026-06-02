@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>MEDTRACK · Floating Frosted Nav — Dot Indicator (UI mock)</title>
+<style>
+  :root{
+    --primary:#2563EB;
+    --primary-deep:#1E3A8A;
+    --primary-soft:#EFF4FF;
+    --card:#FFFFFF;
+    --ink:#0F172A;
+    --muted:#64748B;
+    --faint:#94A3B8;
+    --danger:#DC2626;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+  body{
+    font-family:'Inter','Segoe UI',Roboto,system-ui,-apple-system,sans-serif;
+    background:radial-gradient(140% 120% at 50% 0%,#1e293b 0%,#0f172a 60%);
+    min-height:100vh;
+    display:flex;flex-direction:column;align-items:center;
+    padding:44px 24px 64px;
+  }
+  h1{color:#fff;font-size:22px;font-weight:800;letter-spacing:.3px;text-align:center;}
+  .sub{color:#94a3b8;font-size:13.5px;margin:8px 0 36px;text-align:center;}
+
+  /* ---------- phone shell ---------- */
+  .phone{
+    width:360px;height:740px;border-radius:46px;position:relative;overflow:hidden;
+    background:#eef2f7;
+    box-shadow:0 40px 80px -28px rgba(0,0,0,.6), 0 0 0 11px #0b1220, 0 0 0 13px #1e293b;
+  }
+  .screen-bg{
+    position:absolute;inset:0;
+    background:linear-gradient(180deg,#f8fafc 0%,#eaeff5 100%);
+  }
+  /* status bar */
+  .statusbar{
+    position:absolute;top:0;left:0;right:0;height:48px;
+    display:flex;align-items:center;justify-content:space-between;
+    padding:0 28px;font-size:14px;font-weight:700;color:var(--ink);
+  }
+  .statusbar .icons{display:flex;gap:7px;align-items:center;}
+  /* header */
+  .header{
+    position:absolute;top:56px;left:22px;right:22px;
+    display:flex;align-items:center;justify-content:space-between;
+  }
+  .header h2{font-size:26px;font-weight:800;color:var(--ink);letter-spacing:-.3px;}
+  .header .avatar{
+    width:40px;height:40px;border-radius:50%;
+    background:linear-gradient(140deg,var(--primary),var(--primary-deep));
+    color:#fff;font-weight:800;font-size:15px;display:flex;align-items:center;justify-content:center;
+  }
+  /* content cards */
+  .list{position:absolute;top:118px;left:22px;right:22px;display:flex;flex-direction:column;gap:14px;}
+  .card{
+    background:#fff;border-radius:20px;padding:16px;display:flex;gap:14px;align-items:center;
+    box-shadow:0 10px 26px -16px rgba(15,23,42,.4);border:1px solid rgba(148,163,184,.10);
+  }
+  .card .pic{width:42px;height:42px;border-radius:13px;background:var(--primary-soft);flex-shrink:0;
+    display:flex;align-items:center;justify-content:center;color:var(--primary);font-weight:800;}
+  .card .meta{flex:1;display:flex;flex-direction:column;gap:7px;}
+  .card .l1{height:11px;width:62%;border-radius:6px;background:#e2e8f0;}
+  .card .l2{height:9px;width:42%;border-radius:6px;background:#eef2f7;}
+  .card .chip{font-size:10px;font-weight:800;color:var(--danger);background:#fcebeb;
+    padding:4px 9px;border-radius:999px;letter-spacing:.3px;}
+
+  /* ================= FLOATING FROSTED NAV (dot indicator) ================= */
+  .nav{
+    position:absolute;left:16px;right:16px;bottom:20px;height:72px;
+    background:rgba(255,255,255,.78);
+    backdrop-filter:blur(22px) saturate(140%);
+    -webkit-backdrop-filter:blur(22px) saturate(140%);
+    border-radius:28px;
+    border:1px solid rgba(255,255,255,.55);
+    box-shadow:0 20px 44px -18px rgba(15,23,42,.5),
+               inset 0 1px 0 rgba(255,255,255,.8);
+    display:flex;align-items:stretch;
+  }
+  .nav-item{
+    flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:4px;color:var(--faint);cursor:pointer;position:relative;
+    transition:color .18s ease;
+  }
+  .nav-item .dot{
+    position:absolute;top:12px;width:5px;height:5px;border-radius:50%;
+    background:var(--primary);opacity:0;transform:scale(.4);
+    transition:opacity .18s ease,transform .18s ease;
+  }
+  .nav-item.active{color:var(--primary);}
+  .nav-item.active .dot{opacity:1;transform:scale(1);}
+  .nav-item .ico{width:26px;height:26px;display:flex;align-items:center;justify-content:center;}
+  .nav-item .lbl{font-size:11.5px;font-weight:700;line-height:1;letter-spacing:.1px;}
+
+  /* center FAB notch spacer + raised button */
+  .nav-center{
+    flex:0 0 76px;display:flex;align-items:center;justify-content:center;position:relative;
+  }
+  .fab{
+    position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+    width:58px;height:58px;border-radius:20px;
+    background:linear-gradient(140deg,var(--primary),var(--primary-deep));
+    display:flex;align-items:center;justify-content:center;cursor:pointer;
+    box-shadow:0 14px 28px -8px rgba(37,99,235,.75),inset 0 1px 0 rgba(255,255,255,.25);
+  }
+  .fab:active{transform:translate(-50%,-50%) scale(.94);}
+
+  .badge{
+    position:absolute;top:8px;right:18px;min-width:18px;height:18px;border-radius:999px;
+    background:var(--danger);color:#fff;font-size:10px;font-weight:800;
+    display:flex;align-items:center;justify-content:center;padding:0 5px;
+    border:2px solid rgba(255,255,255,.95);box-shadow:0 2px 6px -1px rgba(220,38,38,.6);
+  }
+
+  .note{color:#cbd5e1;font-size:12.5px;text-align:center;max-width:340px;margin-top:26px;line-height:1.6;}
+</style>
+</head>
+<body>
+  <h1>MEDTRACK — Floating Frosted Nav</h1>
+  <p class="sub">Detached blurred bar · dot indicator + color shift · mock only</p>
+
+  <div class="phone">
+    <div class="screen-bg"></div>
+
+    <div class="statusbar">
+      <span>5:26</span>
+      <span class="icons">
+        <svg width="17" height="12" viewBox="0 0 17 12" fill="var(--ink)"><rect x="0" y="7" width="3" height="5" rx="1"/><rect x="4.5" y="4" width="3" height="8" rx="1"/><rect x="9" y="1.5" width="3" height="10.5" rx="1"/><rect x="13.5" y="0" width="3" height="12" rx="1" opacity=".35"/></svg>
+        <svg width="22" height="12" viewBox="0 0 22 12" fill="none"><rect x="1" y="1" width="18" height="10" rx="3" stroke="var(--ink)" stroke-width="1.4"/><rect x="3" y="3" width="12" height="6" rx="1.5" fill="var(--ink)"/><rect x="20" y="4" width="2" height="4" rx="1" fill="var(--ink)"/></svg>
+      </span>
+    </div>
+
+    <div class="header">
+      <h2>Home</h2>
+      <div class="avatar">DR</div>
+    </div>
+
+    <div class="list">
+      <div class="card">
+        <div class="pic">HS</div>
+        <div class="meta"><div class="l1"></div><div class="l2"></div></div>
+        <span class="chip">RED FLAG</span>
+      </div>
+      <div class="card">
+        <div class="pic">VN</div>
+        <div class="meta"><div class="l1"></div><div class="l2"></div></div>
+        <span class="chip">RED FLAG</span>
+      </div>
+      <div class="card">
+        <div class="pic">AB</div>
+        <div class="meta"><div class="l1"></div><div class="l2"></div></div>
+        <span class="chip" style="color:#b45309;background:#fef3c7;">OVERDUE</span>
+      </div>
+      <div class="card">
+        <div class="pic">NS</div>
+        <div class="meta"><div class="l1"></div><div class="l2"></div></div>
+      </div>
+      <div class="card" style="opacity:.6">
+        <div class="pic">KR</div>
+        <div class="meta"><div class="l1"></div><div class="l2"></div></div>
+      </div>
+    </div>
+
+    <!-- ===== floating frosted nav ===== -->
+    <nav class="nav">
+      <div class="nav-item active">
+        <span class="dot"></span>
+        <span class="ico">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>
+        </span>
+        <span class="lbl">Home</span>
+      </div>
+      <div class="nav-item">
+        <span class="dot"></span>
+        <span class="ico">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>
+        </span>
+        <span class="lbl">Cases</span>
+      </div>
+
+      <div class="nav-center">
+        <div class="fab">
+          <svg width="27" height="27" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        </div>
+      </div>
+
+      <div class="nav-item">
+        <span class="dot"></span>
+        <span class="ico">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h3l2 5-2 1a12 12 0 0 0 5 5l1-2 5 2v3a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2Z"/></svg>
+        </span>
+        <span class="lbl">Calls</span>
+      </div>
+      <div class="nav-item">
+        <span class="dot"></span>
+        <span class="ico">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
+        </span>
+        <span class="lbl">Me</span>
+        <span class="badge">10</span>
+      </div>
+    </nav>
+  </div>
+
+  <p class="note">Floating, detached bar with a frosted blur sitting above the content. The active tab is marked only by a small dot above the icon and a blue color shift — labels always visible, layout stays perfectly even. Center "+" is a raised rounded-square FAB.</p>
+</body>
+</html>

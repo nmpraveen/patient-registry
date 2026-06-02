@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -173,21 +174,28 @@ private val bottomDestinations = listOf(
 )
 
 private object BottomNavScale {
-    val ShellHeight = 98.dp
-    val BarHeight = 68.dp
-    val BarHorizontalPadding = 18.dp
-    val CenterSpacerWidth = 72.dp
-    val CenterButtonSize = 60.dp
+    // Detached, floating frosted bar with a dot indicator above the active icon.
+    val BarHeight = 72.dp
+    // Inset from the screen edges so the bar reads as a floating card.
+    val BarHorizontalInset = 16.dp
+    // Gap between the bar and the bottom edge of the shell.
+    val BarBottomInset = 16.dp
+    // The bar is an overlay that content slides underneath, so the shell only wraps
+    // the bar itself (bar height + bottom inset); no reserved "moat" is needed.
+    val ShellHeight = BarHeight + BarBottomInset
+    val BarCornerRadius = 28.dp
+    val BarBorderWidth = 1.dp
+    val CenterColumnWidth = 76.dp
+    val CenterButtonSize = 58.dp
     val CenterButtonRadius = 20.dp
-    // Negative-ish placement so the FAB floats above the bar rather than nesting in it.
-    val CenterButtonYOffset = 0.dp
-    val CenterIconSize = 32.dp
-    val ItemPaddingTop = 8.dp
-    val ItemPaddingBottom = 7.dp
+    val CenterIconSize = 30.dp
     val ItemIconBoxSize = 32.dp
     val ItemIconSize = 25.dp
-    val ItemBadgeSize = 7.dp
-    val ItemLabelGap = 3.dp
+    // Small dot marker that sits just above the icon for the selected tab.
+    val ItemDotSize = 5.dp
+    // Gap between the indicator dot and the icon below it.
+    val ItemDotTopGap = 5.dp
+    val ItemLabelGap = 4.dp
     val ItemLabelText = 12.sp
 }
 
@@ -377,24 +385,20 @@ fun MedtrackApp(
                     }
                 },
             snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
-            bottomBar = {
-                if (showBottomNav) {
-                    MedtrackBottomBar(
-                        currentRoute = if (currentRoute == Routes.NOTIFICATIONS) Routes.HOME else currentRoute,
-                        unreadCount = shellNotifications.count { !it.isRead },
-                        canQuickAdd = currentUserProfile?.capabilities?.get("case_create") ?: true,
-                        onNavigate = ::navigateTopLevel,
-                        onQuickAdd = { showQuickAddSheet = true },
-                    )
-                }
-            },
         ) { padding ->
-            NavHost(
-                navController = navController,
-                startDestination = startDestination ?: Routes.LOGIN,
+            // The bottom bar is an overlay (not a Scaffold bottomBar slot) so it
+            // floats on top of the content and screen lists slide underneath it.
+            // Scrollable screens already reserve ~104dp bottom content padding so
+            // their last rows can be scrolled clear of the floating bar.
+            Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding),
+            ) {
+            NavHost(
+                navController = navController,
+                startDestination = startDestination ?: Routes.LOGIN,
+                modifier = Modifier.fillMaxSize(),
             ) {
                 composable(Routes.LOGIN) {
                     LoginScreen(
@@ -1176,6 +1180,18 @@ fun MedtrackApp(
                     )
                 }
             }
+
+            if (showBottomNav) {
+                MedtrackBottomBar(
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                    currentRoute = if (currentRoute == Routes.NOTIFICATIONS) Routes.HOME else currentRoute,
+                    unreadCount = shellNotifications.count { !it.isRead },
+                    canQuickAdd = currentUserProfile?.capabilities?.get("case_create") ?: true,
+                    onNavigate = ::navigateTopLevel,
+                    onQuickAdd = { showQuickAddSheet = true },
+                )
+            }
+            }
         }
 
         if (showQuickAddSheet && showBottomNav) {
@@ -1263,31 +1279,34 @@ private fun MedtrackBottomBar(
     canQuickAdd: Boolean,
     onNavigate: (String) -> Unit,
     onQuickAdd: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Box(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
-            .height(BottomNavScale.ShellHeight)
-            .background(MedtrackColors.Card),
+            .height(BottomNavScale.ShellHeight),
     ) {
         Surface(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
+                .padding(horizontal = BottomNavScale.BarHorizontalInset)
+                .padding(bottom = BottomNavScale.BarBottomInset)
                 .height(BottomNavScale.BarHeight),
-            shape = RoundedCornerShape(0.dp),
-            color = MedtrackColors.Card,
-            shadowElevation = 6.dp,
+            shape = RoundedCornerShape(BottomNavScale.BarCornerRadius),
+            // Near-opaque so list rows slide cleanly underneath without text bleeding
+            // through, while a hint of translucency keeps the floating-glass feel.
+            color = MedtrackColors.Card.copy(alpha = 0.98f),
+            border = BorderStroke(BottomNavScale.BarBorderWidth, Color.White.copy(alpha = 0.6f)),
+            shadowElevation = MedtrackElevation.Pop,
         ) {
             Row(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = BottomNavScale.BarHorizontalPadding),
+                modifier = Modifier.fillMaxSize(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 BottomNavItem(bottomDestinations[0], currentRoute, onNavigate)
                 BottomNavItem(bottomDestinations[1], currentRoute, onNavigate)
-                Spacer(modifier = Modifier.width(BottomNavScale.CenterSpacerWidth))
+                BottomNavCenter(canQuickAdd = canQuickAdd, onQuickAdd = onQuickAdd)
                 BottomNavItem(bottomDestinations[2], currentRoute, onNavigate)
                 BottomNavItem(
                     destination = bottomDestinations[3],
@@ -1297,12 +1316,23 @@ private fun MedtrackBottomBar(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun RowScope.BottomNavCenter(
+    canQuickAdd: Boolean,
+    onQuickAdd: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .width(BottomNavScale.CenterColumnWidth)
+            .fillMaxHeight(),
+        contentAlignment = Alignment.Center,
+    ) {
         if (canQuickAdd) {
             Surface(
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .offset(y = BottomNavScale.CenterButtonYOffset)
-                    .size(BottomNavScale.CenterButtonSize),
+                modifier = Modifier.size(BottomNavScale.CenterButtonSize),
                 shape = RoundedCornerShape(BottomNavScale.CenterButtonRadius),
                 color = Color.Transparent,
                 shadowElevation = MedtrackElevation.Fab,
@@ -1348,15 +1378,28 @@ private fun RowScope.BottomNavItem(
     Box(
         modifier = Modifier
             .weight(1f)
-            .fillMaxSize()
-            .clickable { onNavigate(destination.route) }
-            .padding(top = BottomNavScale.ItemPaddingTop, bottom = BottomNavScale.ItemPaddingBottom),
+            .fillMaxHeight()
+            .clickable { onNavigate(destination.route) },
         contentAlignment = Alignment.Center,
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
+            // Reserved dot slot keeps every tab the same height; only the
+            // selected tab fills it, marking the active destination above the icon.
+            Box(
+                modifier = Modifier.size(BottomNavScale.ItemDotSize),
+            ) {
+                if (selected) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MedtrackColors.Primary, CircleShape),
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(BottomNavScale.ItemDotTopGap))
             Box(
                 modifier = Modifier.size(BottomNavScale.ItemIconBoxSize),
                 contentAlignment = Alignment.Center,

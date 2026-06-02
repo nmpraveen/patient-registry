@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026.06.02.17.40
+- Redesigned the MEDTRACK Android bottom navigation as a detached, floating bar that is inset from the screen edges with rounded corners, a highlight border, and a soft drop shadow, rendered as a near-opaque translucent surface (true backdrop blur is not available in Compose).
+- Marked the selected tab with a small dot above the icon plus the existing blue color shift instead of relying on the filled-icon swap alone, keeping all four labels visible and the layout symmetric around the center add button.
+- Refactored the center quick-add button into a dedicated `BottomNavCenter` composable (raised rounded-square FAB) and replaced the fixed center spacer, updating `BottomNavScale` tokens for the floating layout.
+- Recolored the system navigation bar from white to the app surface (`#F4F6FA`) with a light-navigation-bar flag so the floating bar rests on one continuous background instead of a white system-nav strip below it.
+- Moved the bar out of the Scaffold `bottomBar` slot into a bottom-aligned overlay so screen content (and scrolling list rows) slides underneath the floating bar instead of being pushed above a reserved surface; the scrollable screens already reserve ~104dp bottom content padding so their last rows can still be scrolled clear of the bar.
+- Added standalone HTML UI mockups for the navigation bar under `android/artifacts/` for design review.
+
 ## 2026.06.02.18.51
 - Restored the Android Home Red bucket chip so red-flag cases are directly filterable from the worklist again.
 - Replayed mobile case-create idempotency receipts before full form validation so real-UHID retries return the original success instead of duplicate-UHID errors.

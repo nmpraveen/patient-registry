@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>MEDTRACK · Bottom Nav — 3 Improved Styles (UI mock)</title>
+<style>
+  :root{
+    --primary:#2563EB;
+    --primary-dark:#1D4ED8;
+    --primary-deep:#1E3A8A;
+    --primary-soft:#EFF4FF;
+    --primary-soft-strong:#DCE7FF;
+    --card:#FFFFFF;
+    --ink:#0F172A;
+    --muted:#64748B;
+    --faint:#94A3B8;
+    --danger:#DC2626;
+    --bg:#F1F5F9;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+  body{
+    font-family:'Inter','Segoe UI',Roboto,system-ui,-apple-system,sans-serif;
+    background:linear-gradient(160deg,#0f172a,#1e293b);
+    color:var(--ink);
+    min-height:100vh;
+    padding:48px 24px 80px;
+  }
+  h1{color:#fff;font-size:24px;font-weight:800;text-align:center;letter-spacing:.3px;}
+  .sub{color:#94a3b8;text-align:center;margin:8px 0 48px;font-size:14px;}
+  .grid{
+    display:flex;flex-wrap:wrap;gap:56px;justify-content:center;align-items:flex-start;
+  }
+  .device{
+    width:340px;
+    display:flex;flex-direction:column;align-items:center;gap:18px;
+  }
+  .tag{
+    color:#fff;font-weight:700;font-size:13px;letter-spacing:.4px;
+    background:rgba(255,255,255,.08);padding:6px 16px;border-radius:999px;
+    border:1px solid rgba(255,255,255,.12);
+  }
+  .desc{color:#cbd5e1;font-size:12.5px;text-align:center;line-height:1.55;max-width:300px;}
+  /* phone shell */
+  .phone{
+    width:340px;height:600px;border-radius:42px;background:#fff;position:relative;
+    overflow:hidden;box-shadow:0 30px 60px -20px rgba(0,0,0,.55), 0 0 0 10px #0b1220, 0 0 0 12px #1e293b;
+  }
+  .screen-bg{
+    position:absolute;inset:0;
+    background:linear-gradient(180deg,#f8fafc 0%, #eef2f7 100%);
+  }
+  .statusbar{
+    position:absolute;top:0;left:0;right:0;height:46px;display:flex;align-items:center;
+    justify-content:space-between;padding:0 26px;font-size:13px;font-weight:700;color:var(--ink);
+  }
+  .content-stub{position:absolute;top:60px;left:20px;right:20px;display:flex;flex-direction:column;gap:14px;}
+  .stub-title{font-size:22px;font-weight:800;color:var(--ink);}
+  .stub-line{height:64px;border-radius:18px;background:#fff;box-shadow:0 6px 18px -10px rgba(15,23,42,.25);}
+  .stub-line.s{height:64px;opacity:.95;}
+  .stub-line.s2{opacity:.8;}
+  .stub-line.s3{opacity:.62;}
+  .stub-line.s4{opacity:.42;}
+
+  svg{display:block;}
+
+  /* ============ shared nav positioning ============ */
+  .navwrap{position:absolute;left:0;right:0;bottom:0;}
+
+  /* =================================================
+     STYLE 1 — Floating pill bar (active pill highlight)
+     ================================================= */
+  .s1-bar{
+    position:absolute;left:16px;right:16px;bottom:18px;height:68px;
+    background:rgba(255,255,255,.92);
+    backdrop-filter:blur(18px);
+    border-radius:26px;
+    box-shadow:0 18px 40px -16px rgba(15,23,42,.45), 0 2px 0 rgba(255,255,255,.6) inset;
+    border:1px solid rgba(148,163,184,.18);
+    display:flex;align-items:center;justify-content:space-between;padding:0 14px;
+  }
+  .s1-item{
+    display:flex;align-items:center;gap:8px;height:46px;padding:0 12px;border-radius:16px;
+    color:var(--faint);transition:.2s;cursor:pointer;position:relative;
+  }
+  .s1-item .lbl{font-size:0;font-weight:700;transition:.2s;}
+  .s1-item.active{background:var(--primary-soft);color:var(--primary);padding:0 16px;}
+  .s1-item.active .lbl{font-size:13.5px;}
+  .s1-fab{
+    width:52px;height:52px;border-radius:18px;
+    background:linear-gradient(140deg,var(--primary),var(--primary-deep));
+    display:flex;align-items:center;justify-content:center;
+    box-shadow:0 12px 24px -8px rgba(37,99,235,.7);cursor:pointer;flex-shrink:0;
+  }
+  .badge{
+    position:absolute;top:2px;right:4px;min-width:17px;height:17px;border-radius:999px;
+    background:var(--danger);color:#fff;font-size:10px;font-weight:800;
+    display:flex;align-items:center;justify-content:center;padding:0 4px;border:2px solid #fff;
+  }
+
+  /* =================================================
+     STYLE 2 — Notched bottom app bar (curved FAB cradle)
+     ================================================= */
+  .s2-bar{position:absolute;left:0;right:0;bottom:0;height:96px;}
+  .s2-row{
+    position:absolute;left:0;right:0;bottom:0;height:74px;
+    display:flex;align-items:center;
+  }
+  .s2-item{
+    flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;
+    color:var(--faint);cursor:pointer;position:relative;height:74px;
+  }
+  .s2-item .lbl{font-size:11px;font-weight:700;}
+  .s2-item.active{color:var(--primary);}
+  .s2-item.active .dot{
+    position:absolute;top:10px;width:5px;height:5px;border-radius:50%;background:var(--primary);
+  }
+  .s2-spacer{width:78px;}
+  .s2-fab{
+    position:absolute;left:50%;top:0;transform:transl(-50%,-50%);
+    width:62px;height:62px;border-radius:50%;
+    background:linear-gradient(140deg,var(--primary),var(--primary-deep));
+    display:flex;align-items:center;justify-content:center;
+    box-shadow:0 14px 26px -8px rgba(37,99,235,.75);cursor:pointer;
+    transform:translateX(-50%);
+    margin-left:0;left:calc(50% - 31px);top:6px;
+  }
+
+  /* =================================================
+     STYLE 3 — Segmented gradient indicator bar
+     ================================================= */
+  .s3-bar{
+    position:absolute;left:0;right:0;bottom:0;height:84px;background:#fff;
+    box-shadow:0 -10px 30px -16px rgba(15,23,42,.35);
+    border-top:1px solid rgba(148,163,184,.16);
+    display:flex;align-items:flex-start;padding-top:12px;
+  }
+  .s3-item{
+    flex:1;display:flex;flex-direction:column;align-items:center;gap:5px;
+    color:var(--faint);cursor:pointer;position:relative;padding-top:8px;
+  }
+  .s3-item .lbl{font-size:11px;font-weight:700;}
+  .s3-item .ico{
+    width:46px;height:34px;display:flex;align-items:center;justify-content:center;border-radius:14px;
+    transition:.2s;
+  }
+  .s3-item.active{color:var(--primary);}
+  .s3-item.active .ico{
+    background:linear-gradient(140deg,var(--primary-soft),var(--primary-soft-strong));
+  }
+  .s3-item.active::before{
+    content:"";position:absolute;top:-12px;width:34px;height:4px;border-radius:0 0 6px 6px;
+    background:linear-gradient(90deg,var(--primary),var(--primary-deep));
+  }
+  .s3-fab{
+    flex:0 0 auto;width:56px;height:56px;border-radius:20px;margin-top:-26px;
+    background:linear-gradient(140deg,var(--primary),var(--primary-deep));
+    display:flex;align-items:center;justify-content:center;align-self:flex-start;
+    box-shadow:0 12px 24px -8px rgba(37,99,235,.7);cursor:pointer;
+  }
+  .s3-col{flex:1;display:flex;justify-content:center;}
+</style>
+</head>
+<body>
+  <h1>MEDTRACK — Bottom Navigation</h1>
+  <p class="sub">Three improved UI styles · mockup only (no functionality)</p>
+
+  <div class="grid">
+
+    <!-- ===================== STYLE 1 ===================== -->
+    <div class="device">
+      <span class="tag">Style 1 · Floating Pill</span>
+      <div class="phone">
+        <div class="screen-bg"></div>
+        <div class="statusbar"><span>5:26</span><span>📶 🔋</span></div>
+        <div class="content-stub">
+          <div class="stub-title">Home</div>
+          <div class="stub-line s"></div>
+          <div class="stub-line s2"></div>
+          <div class="stub-line s3"></div>
+          <div class="stub-line s4"></div>
+        </div>
+        <div class="navwrap">
+          <div class="s1-bar">
+            <div class="s1-item active">
+              <!-- home -->
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>
+              <span class="lbl">Home</span>
+            </div>
+            <div class="s1-item">
+              <!-- folder -->
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>
+              <span class="lbl">Cases</span>
+            </div>
+            <div class="s1-fab">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+            </div>
+            <div class="s1-item">
+              <!-- phone -->
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h3l2 5-2 1a12 12 0 0 0 5 5l1-2 5 2v3a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2Z"/></svg>
+              <span class="lbl">Calls</span>
+            </div>
+            <div class="s1-item">
+              <!-- person + badge -->
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
+              <span class="lbl">Me</span>
+              <span class="badge">10</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="desc">Detached rounded bar that floats above content with a frosted blur. The active tab expands into a soft-blue pill that reveals its label — only the current section is named, keeping the bar calm.</p>
+    </div>
+
+    <!-- ===================== STYLE 2 ===================== -->
+    <div class="device">
+      <span class="tag">Style 2 · Notched Cradle</span>
+      <div class="phone">
+        <div class="screen-bg"></div>
+        <div class="statusbar"><span>5:26</span><span>📶 🔋</span></div>
+        <div class="content-stub">
+          <div class="stub-title">Home</div>
+          <div class="stub-line s"></div>
+          <div class="stub-line s2"></div>
+          <div class="stub-line s3"></div>
+          <div class="stub-line s4"></div>
+        </div>
+        <div class="navwrap">
+          <div class="s2-bar">
+            <!-- curved bar with a real notch under the FAB -->
+            <svg width="100%" height="96" viewBox="0 0 340 96" preserveAspectRatio="none" style="position:absolute;bottom:0;left:0;">
+              <defs>
+                <filter id="sh" x="-20%" y="-40%" width="140%" height="180%">
+                  <feDropShadow dx="0" dy="-4" stdDeviation="8" flood-color="#0f172a" flood-opacity="0.14"/>
+                </filter>
+              </defs>
+              <path filter="url(#sh)" fill="#ffffff" d="
+                M0,22
+                L120,22
+                C134,22 138,22 143,28
+                C150,40 158,48 170,48
+                C182,48 190,40 197,28
+                C202,22 206,22 220,22
+                L340,22
+                L340,96 L0,96 Z"/>
+            </svg>
+            <div class="s2-fab">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+            </div>
+            <div class="s2-row">
+              <div class="s2-item active">
+                <span class="dot"></span>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>
+                <span class="lbl">Home</span>
+              </div>
+              <div class="s2-item">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>
+                <span class="lbl">Cases</span>
+              </div>
+              <div class="s2-spacer"></div>
+              <div class="s2-item">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h3l2 5-2 1a12 12 0 0 0 5 5l1-2 5 2v3a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2Z"/></svg>
+                <span class="lbl">Calls</span>
+              </div>
+              <div class="s2-item" style="position:relative">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
+                <span class="lbl">Me</span>
+                <span class="badge" style="top:8px;right:24px;">10</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="desc">A true concave notch cradles the round FAB instead of letting it overlap a flat bar. Active tab is marked by a small dot above the icon plus a color shift — minimal, Material-3 flavoured.</p>
+    </div>
+
+    <!-- ===================== STYLE 3 ===================== -->
+    <div class="device">
+      <span class="tag">Style 3 · Indicator Tabs</span>
+      <div class="phone">
+        <div class="screen-bg"></div>
+        <div class="statusbar"><span>5:26</span><span>📶 🔋</span></div>
+        <div class="content-stub">
+          <div class="stub-title">Home</div>
+          <div class="stub-line s"></div>
+          <div class="stub-line s2"></div>
+          <div class="stub-line s3"></div>
+          <div class="stub-line s4"></div>
+        </div>
+        <div class="navwrap">
+          <div class="s3-bar">
+            <div class="s3-item active">
+              <div class="ico"><svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg></div>
+              <span class="lbl">Home</span>
+            </div>
+            <div class="s3-item">
+              <div class="ico"><svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg></div>
+              <span class="lbl">Cases</span>
+            </div>
+            <div class="s3-col">
+              <div class="s3-fab">
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+              </div>
+            </div>
+            <div class="s3-item">
+              <div class="ico"><svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h3l2 5-2 1a12 12 0 0 0 5 5l1-2 5 2v3a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2Z"/></svg></div>
+              <span class="lbl">Calls</span>
+            </div>
+            <div class="s3-item">
+              <div class="ico" style="position:relative">
+                <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
+                <span class="badge" style="top:-2px;right:2px;">10</span>
+              </div>
+              <span class="lbl">Me</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="desc">Anchored bar with a top gradient indicator bar over the active tab and a soft-blue rounded icon chip. The FAB sits as a raised rounded-square keeping MEDTRACK's existing brand shape.</p>
+    </div>
+
+  </div>
+</body>
+</html>

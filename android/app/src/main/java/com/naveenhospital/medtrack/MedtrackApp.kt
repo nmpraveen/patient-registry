@@ -512,11 +512,7 @@ fun MedtrackApp(
                     var error by remember { mutableStateOf<String?>(null) }
                     var actionMessage by remember { mutableStateOf<String?>(null) }
                     var hadPendingWrites by remember { mutableStateOf(false) }
-                    var dialedCase by remember { mutableStateOf<PatientCase?>(null) }
-                    var dialerStartedAt by remember { mutableStateOf<Long?>(null) }
-                    var leftForDialer by remember { mutableStateOf(false) }
-                    var callOutcomeCase by remember { mutableStateOf<PatientCase?>(null) }
-                    var callOutcomeAttemptedAt by remember { mutableStateOf<String?>(null) }
+                    val dialerHandoff = rememberDialerHandoff()
                     val pagedCasesFlow = remember(
                         selectedBucket,
                         searchQuery,
@@ -624,37 +620,6 @@ fun MedtrackApp(
                         }
                     }
 
-                    DisposableEffect(lifecycleOwner, dialedCase) {
-                        val observer = LifecycleEventObserver { _, event ->
-                            when (event) {
-                                Lifecycle.Event.ON_STOP -> {
-                                    if (dialedCase != null) {
-                                        leftForDialer = true
-                                    }
-                                }
-                                Lifecycle.Event.ON_START -> {
-                                    val startedAt = dialerStartedAt
-                                    val returnedFromDialer = dialedCase != null &&
-                                        leftForDialer &&
-                                        startedAt != null &&
-                                        System.currentTimeMillis() - startedAt > 300L
-                                    if (returnedFromDialer) {
-                                        callOutcomeCase = dialedCase
-                                        callOutcomeAttemptedAt = startedAt?.let(::utcTimestampFromMillis)
-                                        dialedCase = null
-                                        dialerStartedAt = null
-                                        leftForDialer = false
-                                    }
-                                }
-                                else -> Unit
-                            }
-                        }
-                        lifecycleOwner.lifecycle.addObserver(observer)
-                        onDispose {
-                            lifecycleOwner.lifecycle.removeObserver(observer)
-                        }
-                    }
-
                     HomeScreen(
                         modifier = Modifier.fillMaxSize(),
                         cases = pagedCases,
@@ -705,19 +670,7 @@ fun MedtrackApp(
                         },
                         onRefresh = { refreshHome() },
                         onCallPatient = { patientCase ->
-                            if (patientCase.phoneNumber.isNullOrBlank()) {
-                                actionMessage = "No phone number on file"
-                            } else {
-                                dialedCase = patientCase
-                                dialerStartedAt = System.currentTimeMillis()
-                                leftForDialer = false
-                                if (!openDialer(context, patientCase)) {
-                                    dialedCase = null
-                                    dialerStartedAt = null
-                                    callOutcomeAttemptedAt = null
-                                    actionMessage = "Unable to open dialer"
-                                }
-                            }
+                            dialerHandoff.startCall(context, patientCase) { actionMessage = it }
                         },
                         onMessagePatient = { patientCase ->
                             if (openWhatsApp(context, patientCase)) {
@@ -737,38 +690,15 @@ fun MedtrackApp(
                         onSignOut = { signOut() },
                     )
 
-                    callOutcomeCase?.let { patientCase ->
-                        CallOutcomeSheet(
-                            patientName = patientCase.patientName,
-                            onOutcome = { outcome, note ->
-                                val attemptedAt = callOutcomeAttemptedAt
-                                callOutcomeCase = null
-                                callOutcomeAttemptedAt = null
-                                submitCallOutcome(patientCase, outcome, note, attemptedAt)
-                            },
-                            onAttempted = {
-                                val attemptedAt = callOutcomeAttemptedAt
-                                callOutcomeCase = null
-                                callOutcomeAttemptedAt = null
-                                submitCallOutcome(
-                                    patientCase = patientCase,
-                                    outcome = "attempted",
-                                    note = "Mobile dialer opened; outcome was not confirmed.",
-                                    attemptedAt = attemptedAt,
-                                )
-                            },
-                        )
+                    DialerOutcomeSheet(dialerHandoff) { selectedCase, outcome, note, attemptedAt ->
+                        submitCallOutcome(selectedCase, outcome, note, attemptedAt)
                     }
                 }
                 composable(Routes.CASES) {
                     val cases by container.medtrackRepository.cases.collectAsState(initial = emptyList())
                     var isRefreshing by remember { mutableStateOf(false) }
                     var error by remember { mutableStateOf<String?>(null) }
-                    var dialedCase by remember { mutableStateOf<PatientCase?>(null) }
-                    var dialerStartedAt by remember { mutableStateOf<Long?>(null) }
-                    var leftForDialer by remember { mutableStateOf(false) }
-                    var callOutcomeCase by remember { mutableStateOf<PatientCase?>(null) }
-                    var callOutcomeAttemptedAt by remember { mutableStateOf<String?>(null) }
+                    val dialerHandoff = rememberDialerHandoff()
 
                     fun refreshCaseList() {
                         scope.launch {
@@ -809,37 +739,6 @@ fun MedtrackApp(
                         refreshCaseList()
                     }
 
-                    DisposableEffect(lifecycleOwner, dialedCase) {
-                        val observer = LifecycleEventObserver { _, event ->
-                            when (event) {
-                                Lifecycle.Event.ON_STOP -> {
-                                    if (dialedCase != null) {
-                                        leftForDialer = true
-                                    }
-                                }
-                                Lifecycle.Event.ON_START -> {
-                                    val startedAt = dialerStartedAt
-                                    val returnedFromDialer = dialedCase != null &&
-                                        leftForDialer &&
-                                        startedAt != null &&
-                                        System.currentTimeMillis() - startedAt > 300L
-                                    if (returnedFromDialer) {
-                                        callOutcomeCase = dialedCase
-                                        callOutcomeAttemptedAt = startedAt?.let(::utcTimestampFromMillis)
-                                        dialedCase = null
-                                        dialerStartedAt = null
-                                        leftForDialer = false
-                                    }
-                                }
-                                else -> Unit
-                            }
-                        }
-                        lifecycleOwner.lifecycle.addObserver(observer)
-                        onDispose {
-                            lifecycleOwner.lifecycle.removeObserver(observer)
-                        }
-                    }
-
                     CaseListScreen(
                         modifier = Modifier.fillMaxSize(),
                         cases = cases,
@@ -847,44 +746,15 @@ fun MedtrackApp(
                         error = error,
                         onRefresh = { refreshCaseList() },
                         onCallPatient = { patientCase ->
-                            if (patientCase.phoneNumber.isNullOrBlank()) {
-                                scope.launch { snackbarHostState.showSnackbar("No phone number on file") }
-                            } else {
-                                dialedCase = patientCase
-                                dialerStartedAt = System.currentTimeMillis()
-                                leftForDialer = false
-                                if (!openDialer(context, patientCase)) {
-                                    dialedCase = null
-                                    dialerStartedAt = null
-                                    callOutcomeAttemptedAt = null
-                                    scope.launch { snackbarHostState.showSnackbar("Unable to open dialer") }
-                                }
+                            dialerHandoff.startCall(context, patientCase) { message ->
+                                scope.launch { snackbarHostState.showSnackbar(message) }
                             }
                         },
                         onOpenCase = { caseId -> navController.navigate(Routes.caseDetail(caseId)) },
                     )
 
-                    callOutcomeCase?.let { patientCase ->
-                        CallOutcomeSheet(
-                            patientName = patientCase.patientName,
-                            onOutcome = { outcome, note ->
-                                val attemptedAt = callOutcomeAttemptedAt
-                                callOutcomeCase = null
-                                callOutcomeAttemptedAt = null
-                                submitCasesCallOutcome(patientCase, outcome, note, attemptedAt)
-                            },
-                            onAttempted = {
-                                val attemptedAt = callOutcomeAttemptedAt
-                                callOutcomeCase = null
-                                callOutcomeAttemptedAt = null
-                                submitCasesCallOutcome(
-                                    patientCase = patientCase,
-                                    outcome = "attempted",
-                                    note = "Mobile dialer opened; outcome was not confirmed.",
-                                    attemptedAt = attemptedAt,
-                                )
-                            },
-                        )
+                    DialerOutcomeSheet(dialerHandoff) { selectedCase, outcome, note, attemptedAt ->
+                        submitCasesCallOutcome(selectedCase, outcome, note, attemptedAt)
                     }
                 }
                 composable(Routes.CASE_DETAIL) { entry ->
@@ -898,11 +768,7 @@ fun MedtrackApp(
                     var caseError by remember { mutableStateOf<String?>(null) }
                     var caseRefreshing by remember { mutableStateOf(false) }
                     var hadPendingWrites by remember(caseId) { mutableStateOf(false) }
-                    var dialedCase by remember(caseId) { mutableStateOf<PatientCase?>(null) }
-                    var dialerStartedAt by remember(caseId) { mutableStateOf<Long?>(null) }
-                    var leftForDialer by remember(caseId) { mutableStateOf(false) }
-                    var callOutcomeCase by remember(caseId) { mutableStateOf<PatientCase?>(null) }
-                    var callOutcomeAttemptedAt by remember(caseId) { mutableStateOf<String?>(null) }
+                    val dialerHandoff = rememberDialerHandoff(caseId)
                     val patientCase = cachedCase ?: cases.firstOrNull { it.id == caseId }
                     val defaultCaseScope = currentUserProfile.mobileDefaultCaseScope()
 
@@ -960,37 +826,6 @@ fun MedtrackApp(
                         }
                     }
 
-                    DisposableEffect(lifecycleOwner, dialedCase) {
-                        val observer = LifecycleEventObserver { _, event ->
-                            when (event) {
-                                Lifecycle.Event.ON_STOP -> {
-                                    if (dialedCase != null) {
-                                        leftForDialer = true
-                                    }
-                                }
-                                Lifecycle.Event.ON_START -> {
-                                    val startedAt = dialerStartedAt
-                                    val returnedFromDialer = dialedCase != null &&
-                                        leftForDialer &&
-                                        startedAt != null &&
-                                        System.currentTimeMillis() - startedAt > 300L
-                                    if (returnedFromDialer) {
-                                        callOutcomeCase = dialedCase
-                                        callOutcomeAttemptedAt = startedAt?.let(::utcTimestampFromMillis)
-                                        dialedCase = null
-                                        dialerStartedAt = null
-                                        leftForDialer = false
-                                    }
-                                }
-                                else -> Unit
-                            }
-                        }
-                        lifecycleOwner.lifecycle.addObserver(observer)
-                        onDispose {
-                            lifecycleOwner.lifecycle.removeObserver(observer)
-                        }
-                    }
-
                     CaseDetailScreen(
                         modifier = Modifier.fillMaxSize(),
                         caseId = caseId,
@@ -1042,19 +877,7 @@ fun MedtrackApp(
                             }
                         },
                         onCallPatient = { selectedCase ->
-                            if (selectedCase.phoneNumber.isNullOrBlank()) {
-                                caseActionMessage = "No phone number on file"
-                            } else {
-                                dialedCase = selectedCase
-                                dialerStartedAt = System.currentTimeMillis()
-                                leftForDialer = false
-                                if (!openDialer(context, selectedCase)) {
-                                    dialedCase = null
-                                    dialerStartedAt = null
-                                    callOutcomeAttemptedAt = null
-                                    caseActionMessage = "Unable to open dialer"
-                                }
-                            }
+                            dialerHandoff.startCall(context, selectedCase) { caseActionMessage = it }
                         },
                         onMessagePatient = { selectedCase ->
                             caseActionMessage = if (openWhatsApp(context, selectedCase)) {
@@ -1066,27 +889,8 @@ fun MedtrackApp(
                         onBack = { navController.popBackStack() },
                     )
 
-                    callOutcomeCase?.let { selectedCase ->
-                        CallOutcomeSheet(
-                            patientName = selectedCase.patientName,
-                            onOutcome = { outcome, note ->
-                                val attemptedAt = callOutcomeAttemptedAt
-                                callOutcomeCase = null
-                                callOutcomeAttemptedAt = null
-                                submitCaseCallOutcome(selectedCase, outcome, note, attemptedAt)
-                            },
-                            onAttempted = {
-                                val attemptedAt = callOutcomeAttemptedAt
-                                callOutcomeCase = null
-                                callOutcomeAttemptedAt = null
-                                submitCaseCallOutcome(
-                                    patientCase = selectedCase,
-                                    outcome = "attempted",
-                                    note = "Mobile dialer opened; outcome was not confirmed.",
-                                    attemptedAt = attemptedAt,
-                                )
-                            },
-                        )
+                    DialerOutcomeSheet(dialerHandoff) { selectedCase, outcome, note, attemptedAt ->
+                        submitCaseCallOutcome(selectedCase, outcome, note, attemptedAt)
                     }
                 }
                 composable(Routes.CREATE_CASE) { entry ->
@@ -1119,11 +923,7 @@ fun MedtrackApp(
                     var isRefreshing by remember { mutableStateOf(false) }
                     var error by remember { mutableStateOf<String?>(null) }
                     var actionMessage by remember { mutableStateOf<String?>(null) }
-                    var dialedCase by remember { mutableStateOf<PatientCase?>(null) }
-                    var dialerStartedAt by remember { mutableStateOf<Long?>(null) }
-                    var leftForDialer by remember { mutableStateOf(false) }
-                    var callOutcomeCase by remember { mutableStateOf<PatientCase?>(null) }
-                    var callOutcomeAttemptedAt by remember { mutableStateOf<String?>(null) }
+                    val dialerHandoff = rememberDialerHandoff()
                     var hadPendingWrites by remember { mutableStateOf(false) }
 
                     fun refreshCalls() {
@@ -1176,37 +976,6 @@ fun MedtrackApp(
                         }
                     }
 
-                    DisposableEffect(lifecycleOwner, dialedCase) {
-                        val observer = LifecycleEventObserver { _, event ->
-                            when (event) {
-                                Lifecycle.Event.ON_STOP -> {
-                                    if (dialedCase != null) {
-                                        leftForDialer = true
-                                    }
-                                }
-                                Lifecycle.Event.ON_START -> {
-                                    val startedAt = dialerStartedAt
-                                    val returnedFromDialer = dialedCase != null &&
-                                        leftForDialer &&
-                                        startedAt != null &&
-                                        System.currentTimeMillis() - startedAt > 300L
-                                    if (returnedFromDialer) {
-                                        callOutcomeCase = dialedCase
-                                        callOutcomeAttemptedAt = startedAt?.let(::utcTimestampFromMillis)
-                                        dialedCase = null
-                                        dialerStartedAt = null
-                                        leftForDialer = false
-                                    }
-                                }
-                                else -> Unit
-                            }
-                        }
-                        lifecycleOwner.lifecycle.addObserver(observer)
-                        onDispose {
-                            lifecycleOwner.lifecycle.removeObserver(observer)
-                        }
-                    }
-
                     CallsScreen(
                         modifier = Modifier.fillMaxSize(),
                         cases = cases,
@@ -1216,15 +985,7 @@ fun MedtrackApp(
                         onRefresh = { refreshCalls() },
                         onOpenCase = { caseId -> navController.navigate(Routes.caseDetail(caseId)) },
                         onCallPatient = { patientCase ->
-                            dialedCase = patientCase
-                            dialerStartedAt = System.currentTimeMillis()
-                            leftForDialer = false
-                            if (!openDialer(context, patientCase)) {
-                                dialedCase = null
-                                dialerStartedAt = null
-                                callOutcomeAttemptedAt = null
-                                actionMessage = "Unable to open dialer"
-                            }
+                            dialerHandoff.startCall(context, patientCase) { actionMessage = it }
                         },
                         onMessagePatient = { patientCase ->
                             actionMessage = if (openWhatsApp(context, patientCase)) {
@@ -1235,27 +996,8 @@ fun MedtrackApp(
                         },
                     )
 
-                    callOutcomeCase?.let { patientCase ->
-                        CallOutcomeSheet(
-                            patientName = patientCase.patientName,
-                            onOutcome = { outcome, note ->
-                                val attemptedAt = callOutcomeAttemptedAt
-                                callOutcomeCase = null
-                                callOutcomeAttemptedAt = null
-                                submitCallOutcome(patientCase, outcome, note, attemptedAt)
-                            },
-                            onAttempted = {
-                                val attemptedAt = callOutcomeAttemptedAt
-                                callOutcomeCase = null
-                                callOutcomeAttemptedAt = null
-                                submitCallOutcome(
-                                    patientCase = patientCase,
-                                    outcome = "attempted",
-                                    note = "Mobile dialer opened; outcome was not confirmed.",
-                                    attemptedAt = attemptedAt,
-                                )
-                            },
-                        )
+                    DialerOutcomeSheet(dialerHandoff) { selectedCase, outcome, note, attemptedAt ->
+                        submitCallOutcome(selectedCase, outcome, note, attemptedAt)
                     }
                 }
                 composable(Routes.NOTIFICATIONS) {
@@ -1832,7 +1574,10 @@ private fun ProfileScreen(
             letterSpacing = 0.5.sp,
             modifier = Modifier.padding(start = 2.dp),
         )
-        ProfileSettingRow(onClick = onOpenNotifications)
+        ProfileSettingRow(
+            showUnreadDot = unreadNotificationCount > 0,
+            onClick = onOpenNotifications,
+        )
 
         Button(
             onClick = onSignOut,
@@ -1899,7 +1644,10 @@ private fun ProfileStatCard(
 }
 
 @Composable
-private fun ProfileSettingRow(onClick: () -> Unit) {
+private fun ProfileSettingRow(
+    showUnreadDot: Boolean,
+    onClick: () -> Unit,
+) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -1919,15 +1667,17 @@ private fun ProfileSettingRow(onClick: () -> Unit) {
                         Icon(imageVector = Icons.Outlined.Refresh, contentDescription = null, tint = MedtrackColors.Primary, modifier = Modifier.size(19.dp))
                     }
                 }
-                Surface(
-                    modifier = Modifier
-                        .size(9.dp)
-                        .align(Alignment.TopEnd)
-                        .offset(x = 2.dp, y = (-2).dp),
-                    shape = CircleShape,
-                    color = MedtrackColors.Danger,
-                    border = BorderStroke(1.5.dp, MedtrackColors.Card),
-                ) {}
+                if (showUnreadDot) {
+                    Surface(
+                        modifier = Modifier
+                            .size(9.dp)
+                            .align(Alignment.TopEnd)
+                            .offset(x = 2.dp, y = (-2).dp),
+                        shape = CircleShape,
+                        color = MedtrackColors.Danger,
+                        border = BorderStroke(1.5.dp, MedtrackColors.Card),
+                    ) {}
+                }
             }
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text("Notifications & sync", fontWeight = FontWeight.Bold, color = MedtrackColors.Ink, maxLines = 1)
@@ -2048,6 +1798,112 @@ private fun NotificationItem.resolvePatientCase(cases: List<PatientCase>): Patie
 private fun String.initials(): String {
     val parts = trim().split(Regex("\\s+")).filter { it.isNotBlank() }
     return parts.take(2).joinToString("") { it.take(1).uppercase(Locale.getDefault()) }.ifBlank { "M" }
+}
+
+private class DialerHandoff {
+    var pendingCase by mutableStateOf<PatientCase?>(null)
+    var startedAt by mutableStateOf<Long?>(null)
+    var leftForDialer by mutableStateOf(false)
+    var outcomeCase by mutableStateOf<PatientCase?>(null)
+    var outcomeAttemptedAt by mutableStateOf<String?>(null)
+
+    fun clearDialing() {
+        pendingCase = null
+        startedAt = null
+        leftForDialer = false
+    }
+
+    fun clearOutcome() {
+        outcomeCase = null
+        outcomeAttemptedAt = null
+    }
+}
+
+/**
+ * Shared dialer hand-off used by Home, Cases, Case detail, and Calls. It tracks the case that was
+ * dialed, detects the return from the system dialer via the lifecycle, and surfaces the case that
+ * needs a call-outcome prompt. [key] lets callers reset the state per case (e.g. the case detail).
+ */
+@Composable
+private fun rememberDialerHandoff(key: Any? = Unit): DialerHandoff {
+    val handoff = remember(key) { DialerHandoff() }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, handoff.pendingCase) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_STOP -> {
+                    if (handoff.pendingCase != null) {
+                        handoff.leftForDialer = true
+                    }
+                }
+                Lifecycle.Event.ON_START -> {
+                    val startedAt = handoff.startedAt
+                    val returnedFromDialer = handoff.pendingCase != null &&
+                        handoff.leftForDialer &&
+                        startedAt != null &&
+                        System.currentTimeMillis() - startedAt > 300L
+                    if (returnedFromDialer) {
+                        handoff.outcomeCase = handoff.pendingCase
+                        handoff.outcomeAttemptedAt = startedAt?.let(::utcTimestampFromMillis)
+                        handoff.clearDialing()
+                    }
+                }
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+    return handoff
+}
+
+/** Opens the dialer for [patientCase], reporting a human-readable reason through [onFailure]. */
+private fun DialerHandoff.startCall(
+    context: Context,
+    patientCase: PatientCase,
+    onFailure: (String) -> Unit,
+) {
+    if (patientCase.phoneNumber.isNullOrBlank()) {
+        onFailure("No phone number on file")
+        return
+    }
+    pendingCase = patientCase
+    startedAt = System.currentTimeMillis()
+    leftForDialer = false
+    if (!openDialer(context, patientCase)) {
+        clearDialing()
+        outcomeAttemptedAt = null
+        onFailure("Unable to open dialer")
+    }
+}
+
+/** Renders the call-outcome sheet when the handoff has a case awaiting an outcome. */
+@Composable
+private fun DialerOutcomeSheet(
+    handoff: DialerHandoff,
+    onSubmit: (patientCase: PatientCase, outcome: String, note: String?, attemptedAt: String?) -> Unit,
+) {
+    val patientCase = handoff.outcomeCase ?: return
+    CallOutcomeSheet(
+        patientName = patientCase.patientName,
+        onOutcome = { outcome, note ->
+            val attemptedAt = handoff.outcomeAttemptedAt
+            handoff.clearOutcome()
+            onSubmit(patientCase, outcome, note, attemptedAt)
+        },
+        onAttempted = {
+            val attemptedAt = handoff.outcomeAttemptedAt
+            handoff.clearOutcome()
+            onSubmit(
+                patientCase,
+                "attempted",
+                "Mobile dialer opened; outcome was not confirmed.",
+                attemptedAt,
+            )
+        },
+    )
 }
 
 private fun openDialer(context: android.content.Context, patientCase: PatientCase): Boolean {

@@ -384,7 +384,17 @@ fun MedtrackApp(
                         }
                     }
                 },
-            snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
+            snackbarHost = {
+                // The nav bar is a floating overlay (not a Scaffold bottomBar slot), so the
+                // Scaffold reserves no space for it. Lift the snackbar above the floating bar
+                // on bottom-nav routes so Undo / dialer-error snackbars aren't overlapped.
+                SnackbarHost(
+                    hostState = snackbarHostState,
+                    modifier = Modifier.padding(
+                        bottom = if (showBottomNav) BottomNavScale.ShellHeight else 0.dp,
+                    ),
+                )
+            },
         ) { padding ->
             // The bottom bar is an overlay (not a Scaffold bottomBar slot) so it
             // floats on top of the content and screen lists slide underneath it.

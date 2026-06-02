@@ -47,6 +47,11 @@ data class TaskEntity(
     val status: String,
     val statusLabel: String,
     val canComplete: Boolean,
+    val taskType: String? = null,
+    val taskTypeLabel: String? = null,
+    val assignedUserId: Long? = null,
+    val assignedUser: String? = null,
+    val notes: String? = null,
     val updatedAtMillis: Long,
 )
 

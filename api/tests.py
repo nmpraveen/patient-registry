@@ -1047,3 +1047,223 @@ class MobileCaseCreateTests(APITestCase):
             self.assertTrue(body[key])
         self.assertIn("value", body["prefixes"][0])
         self.assertIn("label", body["prefixes"][0])
+
+
+class MobileEditApiTests(APITestCase):
+    def setUp(self):
+        from patients.models import ensure_default_departments
+
+        ensure_default_departments()
+        self.admin = get_user_model().objects.create_superuser(
+            username="edit-admin",
+            email="edit-admin@example.com",
+            password="pass",
+        )
+        self.client.force_authenticate(self.admin)
+        self.anc = DepartmentConfig.objects.get(name="ANC")
+        self.medicine = DepartmentConfig.objects.get(name="Medicine")
+        self.case = Case.objects.create(
+            uhid="UH-EDIT-1",
+            prefix="MRS",
+            first_name="Asha",
+            last_name="Verma",
+            patient_name="Asha Verma",
+            gender="FEMALE",
+            age=30,
+            phone_number="9811100000",
+            category=self.medicine,
+            subcategory="GENERAL_MEDICINE",
+            diagnosis="Hypertension review",
+            review_date=timezone.localdate() + timedelta(days=10),
+            created_by=self.admin,
+        )
+        self.task = Task.objects.create(
+            case=self.case,
+            title="Initial review",
+            due_date=timezone.localdate(),
+            assigned_user=self.admin,
+            created_by=self.admin,
+        )
+        self.vital = VitalEntry.objects.create(
+            case=self.case,
+            recorded_at=timezone.now(),
+            bp_systolic=120,
+            bp_diastolic=80,
+            created_by=self.admin,
+            updated_by=self.admin,
+        )
+
+    def _limited_client(self, **role_flags):
+        user = get_user_model().objects.create_user(username=f"limited-{len(role_flags)}-{timezone.now().timestamp()}", password="pass")
+        role = RoleSetting.objects.create(role_name=f"Limited {timezone.now().timestamp()}", **role_flags)
+        group = Group.objects.create(name=role.role_name)
+        user.groups.add(group)
+        client = APIClient()
+        client.force_authenticate(user)
+        return client
+
+    # --- Case edit ---
+    def test_case_edit_form_returns_prefill_and_metadata(self):
+        response = self.client.get(reverse("api:case_edit_form", args=[self.case.id]))
+        self.assertEqual(response.status_code, 200, response.content)
+        body = response.json()
+        self.assertTrue(body["can_edit"])
+        self.assertEqual(body["case"]["diagnosis"], "Hypertension review")
+        self.assertEqual(body["case"]["category"], self.medicine.id)
+        self.assertTrue(len(body["categories"]) >= 1)
+
+    def test_case_patch_updates_fields(self):
+        payload = {
+            "patient_mode": "existing",
+            "uhid": self.case.uhid,
+            "prefix": "MRS",
+            "first_name": "Asha",
+            "last_name": "Verma",
+            "gender": "FEMALE",
+            "age": 31,
+            "phone_number": "9811100000",
+            "category": self.medicine.id,
+            "subcategory": "GENERAL_MEDICINE",
+            "status": "ACTIVE",
+            "diagnosis": "Hypertension stable",
+            "review_date": (timezone.localdate() + timedelta(days=30)).isoformat(),
+        }
+        response = self.client.patch(
+            reverse("api:case_detail", args=[self.case.id]), payload, format="json"
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        self.case.refresh_from_db()
+        self.assertEqual(self.case.diagnosis, "Hypertension stable")
+        self.assertEqual(self.case.age, 31)
+
+    def test_case_patch_forbidden_without_capability(self):
+        client = self._limited_client(can_note_add=True)
+        response = client.patch(
+            reverse("api:case_detail", args=[self.case.id]), {"diagnosis": "x"}, format="json"
+        )
+        self.assertEqual(response.status_code, 403)
+
+    # --- Task metadata + create ---
+    def test_task_form_metadata(self):
+        response = self.client.get(reverse("api:task_form_metadata"))
+        self.assertEqual(response.status_code, 200, response.content)
+        body = response.json()
+        self.assertEqual(body["default_status"], "SCHEDULED")
+        self.assertTrue(any(c["value"] == "VISIT" for c in body["task_types"]))
+        self.assertTrue(any(u["id"] == self.admin.id for u in body["assignable_users"]))
+
+    def test_task_create_happy_path(self):
+        payload = {
+            "title": "Follow-up call",
+            "due_date": (timezone.localdate() + timedelta(days=2)).isoformat(),
+            "status": "SCHEDULED",
+            "task_type": "CALL",
+            "assigned_user": self.admin.id,
+        }
+        response = self.client.post(
+            reverse("api:task_create", args=[self.case.id]), payload, format="json"
+        )
+        self.assertEqual(response.status_code, 201, response.content)
+        self.assertTrue(self.case.tasks.filter(title="Follow-up call").exists())
+
+    def test_task_create_forbidden_without_capability(self):
+        client = self._limited_client(can_task_edit=True)  # case access, but no task_create
+        payload = {"title": "x", "due_date": timezone.localdate().isoformat(), "status": "SCHEDULED", "task_type": "CALL"}
+        response = client.post(reverse("api:task_create", args=[self.case.id]), payload, format="json")
+        self.assertEqual(response.status_code, 403)
+
+    def test_task_create_is_idempotent(self):
+        payload = {
+            "title": "Idempotent task",
+            "due_date": (timezone.localdate() + timedelta(days=2)).isoformat(),
+            "status": "SCHEDULED",
+            "task_type": "CALL",
+            "client_write_id": "task-create-xyz",
+        }
+        first = self.client.post(reverse("api:task_create", args=[self.case.id]), payload, format="json")
+        second = self.client.post(reverse("api:task_create", args=[self.case.id]), payload, format="json")
+        self.assertEqual(first.status_code, 201, first.content)
+        self.assertEqual(second.status_code, 201, second.content)
+        # Same client_write_id replays the first result instead of creating a duplicate.
+        self.assertEqual(self.case.tasks.filter(title="Idempotent task").count(), 1)
+
+    # --- Task edit / reschedule / reopen / note ---
+    def test_task_patch_can_unassign(self):
+        self.assertIsNotNone(self.task.assigned_user_id)
+        response = self.client.patch(
+            reverse("api:task_detail", args=[self.task.id]), {"assigned_user": ""}, format="json"
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        self.task.refresh_from_db()
+        self.assertIsNone(self.task.assigned_user_id)
+
+    # --- Task edit / reschedule / reopen / note ---
+    def test_task_patch_reschedule(self):
+        new_date = (timezone.localdate() + timedelta(days=5)).isoformat()
+        response = self.client.patch(
+            reverse("api:task_detail", args=[self.task.id]), {"due_date": new_date}, format="json"
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.due_date.isoformat(), new_date)
+
+    def test_task_patch_reopen_completed(self):
+        self.task.status = TaskStatus.COMPLETED
+        self.task.save()
+        response = self.client.patch(
+            reverse("api:task_detail", args=[self.task.id]), {"status": "SCHEDULED"}, format="json"
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.status, TaskStatus.SCHEDULED)
+
+    def test_task_note_creates_timeline_entry(self):
+        response = self.client.post(
+            reverse("api:task_note", args=[self.task.id]), {"note": "Patient confirmed visit"}, format="json"
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.notes, "Patient confirmed visit")
+        self.assertTrue(
+            self.case.activity_logs.filter(note__icontains="Patient confirmed visit").exists()
+        )
+
+    # --- Vitals edit ---
+    def test_vitals_patch_updates_values(self):
+        payload = {"bp_systolic": 130, "bp_diastolic": 85, "pr": 78}
+        response = self.client.patch(
+            reverse("api:vitals_detail", args=[self.vital.id]), payload, format="json"
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        self.vital.refresh_from_db()
+        self.assertEqual(self.vital.bp_systolic, 130)
+        self.assertEqual(self.vital.pr, 78)
+
+    def test_vitals_patch_requires_metric(self):
+        response = self.client.patch(
+            reverse("api:vitals_detail", args=[self.vital.id]), {}, format="json"
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_vitals_patch_preserves_unsent_metrics(self):
+        vital = VitalEntry.objects.create(
+            case=self.case,
+            recorded_at=timezone.now(),
+            bp_systolic=118,
+            bp_diastolic=76,
+            pr=80,
+            spo2=98,
+            created_by=self.admin,
+            updated_by=self.admin,
+        )
+        response = self.client.patch(
+            reverse("api:vitals_detail", args=[vital.id]),
+            {"bp_systolic": 132, "bp_diastolic": 88},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        vital.refresh_from_db()
+        self.assertEqual(vital.bp_systolic, 132)
+        # Metrics not included in the PATCH must be left untouched, not wiped to null.
+        self.assertEqual(vital.pr, 80)
+        self.assertEqual(vital.spo2, 98)

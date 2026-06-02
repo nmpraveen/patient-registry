@@ -28,6 +28,8 @@ import com.naveenhospital.medtrack.core.data.sync.PendingWriteTypes
 import com.naveenhospital.medtrack.core.data.sync.NotificationReadPayload
 import com.naveenhospital.medtrack.core.domain.model.CaseCategory
 import com.naveenhospital.medtrack.core.domain.model.CaseCreateOutcome
+import com.naveenhospital.medtrack.core.domain.model.CaseEditOutcome
+import com.naveenhospital.medtrack.core.domain.model.CaseEditPrefill
 import com.naveenhospital.medtrack.core.domain.model.CaseFormCategory
 import com.naveenhospital.medtrack.core.domain.model.CaseFormMetadata
 import com.naveenhospital.medtrack.core.domain.model.CaseStatus
@@ -35,6 +37,12 @@ import com.naveenhospital.medtrack.core.domain.model.CategoryFilterOption
 import com.naveenhospital.medtrack.core.domain.model.FormChoice
 import com.naveenhospital.medtrack.core.domain.model.InboxStats
 import com.naveenhospital.medtrack.core.domain.model.NewCaseInput
+import com.naveenhospital.medtrack.core.domain.model.NewTaskInput
+import com.naveenhospital.medtrack.core.domain.model.TaskAssignee
+import com.naveenhospital.medtrack.core.domain.model.TaskEditInput
+import com.naveenhospital.medtrack.core.domain.model.TaskFormMetadata
+import com.naveenhospital.medtrack.core.domain.model.TaskWriteOutcome
+import com.naveenhospital.medtrack.core.domain.model.VitalsWriteOutcome
 import com.naveenhospital.medtrack.core.domain.model.PatientLookup
 import com.naveenhospital.medtrack.core.domain.model.NotificationItem
 import com.naveenhospital.medtrack.core.domain.model.PatientCase
@@ -51,6 +59,12 @@ import com.naveenhospital.medtrack.core.network.model.CategoriesResponseDto
 import com.naveenhospital.medtrack.core.network.model.CaseCategoryDto
 import com.naveenhospital.medtrack.core.network.model.ChoiceDto
 import com.naveenhospital.medtrack.core.network.model.CreateCaseRequestDto
+import com.naveenhospital.medtrack.core.network.model.CaseEditFormDto
+import com.naveenhospital.medtrack.core.network.model.CreateTaskRequestDto
+import com.naveenhospital.medtrack.core.network.model.TaskFormMetadataDto
+import com.naveenhospital.medtrack.core.network.model.TaskNoteRequestDto
+import com.naveenhospital.medtrack.core.network.model.UpdateTaskRequestDto
+import com.naveenhospital.medtrack.core.network.model.VitalsUpdateRequestDto
 import com.naveenhospital.medtrack.core.network.model.PatientLookupDto
 import com.naveenhospital.medtrack.core.network.model.CaseListResponseDto
 import com.naveenhospital.medtrack.core.network.model.CaseStatsDto
@@ -243,6 +257,120 @@ class MedtrackRepository(
                 throw throwable
             }
         }
+    }
+
+    suspend fun loadCaseEditForm(caseId: String): CaseEditPrefill =
+        api.caseEditForm(caseId).toDomain()
+
+    suspend fun updateCase(caseId: String, input: NewCaseInput): CaseEditOutcome {
+        val request = input.toRequestDto(newClientWriteId("case-edit"))
+        return runCatching {
+            val response = api.updateCase(caseId, request)
+            database.caseDao().upsertCase(response.case.toEntity())
+            CaseEditOutcome.Success(caseId = response.caseId, message = response.message)
+        }.getOrElse { throwable ->
+            parseFormErrors(throwable)?.let {
+                CaseEditOutcome.ValidationError(errors = it.errors, message = it.message ?: "Please fix the highlighted fields.")
+            } ?: CaseEditOutcome.Failure(throwable.message ?: "Could not save the case. Try again.")
+        }
+    }
+
+    suspend fun loadTaskFormMetadata(): TaskFormMetadata = api.taskFormMetadata().toDomain()
+
+    suspend fun createTask(caseId: String, input: NewTaskInput): TaskWriteOutcome {
+        val request = CreateTaskRequestDto(
+            title = input.title,
+            dueDate = input.dueDate,
+            status = input.status,
+            taskType = input.taskType,
+            assignedUser = input.assignedUserId,
+            notes = input.notes?.takeIf { it.isNotBlank() },
+            clientWriteId = newClientWriteId("task-create"),
+        )
+        return runCatching {
+            val response = api.createTask(caseId, request)
+            database.caseDao().upsertCase(response.case.toEntity())
+            database.taskDao().upsertTask(response.task.toEntity(caseId))
+            TaskWriteOutcome.Success(response.message)
+        }.getOrElse { throwable -> throwable.toTaskOutcome() }
+    }
+
+    suspend fun updateTask(taskId: String, caseId: String, input: TaskEditInput): TaskWriteOutcome {
+        val assignedUserValue = when {
+            input.assignedUserId != null -> input.assignedUserId.toString()
+            input.clearAssignee -> "" // explicit unassign
+            else -> null // omitted -> server keeps current assignee
+        }
+        val request = UpdateTaskRequestDto(
+            title = input.title,
+            dueDate = input.dueDate,
+            status = input.status,
+            taskType = input.taskType,
+            assignedUser = assignedUserValue,
+        )
+        return runCatching {
+            val response = api.updateTask(taskId, request)
+            database.caseDao().upsertCase(response.case.toEntity())
+            database.taskDao().upsertTask(response.task.toEntity(caseId))
+            TaskWriteOutcome.Success(response.message)
+        }.getOrElse { throwable -> throwable.toTaskOutcome() }
+    }
+
+    suspend fun addTaskNote(taskId: String, caseId: String, note: String): TaskWriteOutcome {
+        return runCatching {
+            val response = api.addTaskNote(taskId, TaskNoteRequestDto(note = note))
+            database.caseDao().upsertCase(response.case.toEntity())
+            database.taskDao().upsertTask(response.task.toEntity(caseId))
+            TaskWriteOutcome.Success(response.message)
+        }.getOrElse { throwable -> throwable.toTaskOutcome() }
+    }
+
+    suspend fun updateVitals(
+        vitalId: String,
+        caseId: String,
+        bpSystolic: Int?,
+        bpDiastolic: Int?,
+        pulse: Int?,
+        spo2: Int?,
+        weightKg: String?,
+        hemoglobin: String?,
+    ): VitalsWriteOutcome {
+        val request = VitalsUpdateRequestDto(
+            bpSystolic = bpSystolic,
+            bpDiastolic = bpDiastolic,
+            pr = pulse,
+            spo2 = spo2,
+            weightKg = weightKg,
+            hemoglobin = hemoglobin,
+        )
+        return runCatching {
+            val response = api.updateVitals(vitalId, request)
+            database.caseDao().upsertCase(response.case.toEntity())
+            database.vitalDao().upsertVital(response.vital.toEntity(caseId))
+            VitalsWriteOutcome.Success(response.message)
+        }.getOrElse { throwable ->
+            parseFormErrors(throwable)?.let {
+                VitalsWriteOutcome.ValidationError(errors = it.errors, message = it.message ?: "Please check the vitals.")
+            } ?: VitalsWriteOutcome.Failure(throwable.message ?: "Could not save vitals. Try again.")
+        }
+    }
+
+    private fun parseFormErrors(throwable: Throwable): CaseCreateErrorDto? {
+        val httpError = throwable as? HttpException ?: return null
+        if (httpError.code() != 400) return null
+        return runCatching {
+            caseCreateErrorAdapter.fromJson(httpError.response()?.errorBody()?.string().orEmpty())
+        }.getOrNull()
+    }
+
+    private fun Throwable.toTaskOutcome(): TaskWriteOutcome {
+        parseFormErrors(this)?.let {
+            return TaskWriteOutcome.ValidationError(errors = it.errors, message = it.message ?: "Please fix the highlighted fields.")
+        }
+        if (this is HttpException && code() == 403) {
+            return TaskWriteOutcome.Failure("You do not have permission for this action.")
+        }
+        return TaskWriteOutcome.Failure(message ?: "Could not save the task. Try again.")
     }
 
     suspend fun loadCachedCategoryOptions() {
@@ -672,6 +800,7 @@ private fun NewCaseInput.toRequestDto(clientWriteId: String): CreateCaseRequestD
     alternatePhoneNumber = alternatePhoneNumber,
     category = categoryId,
     subcategory = subcategory,
+    status = status,
     diagnosis = diagnosis,
     referredBy = referredBy,
     notes = notes,
@@ -694,6 +823,79 @@ private fun NewCaseInput.toRequestDto(clientWriteId: String): CreateCaseRequestD
     ftnd = ftnd,
     lscs = lscs,
     clientWriteId = clientWriteId,
+)
+
+private fun CaseEditFormDto.toDomain(): CaseEditPrefill {
+    val metadata = CaseFormMetadata(
+        canCreate = canEdit,
+        categories = categories.map { category ->
+            CaseFormCategory(
+                id = category.id ?: 0L,
+                name = category.name,
+                subcategories = category.subcategories.mapNotNull { sub ->
+                    val value = sub.value ?: return@mapNotNull null
+                    FormChoice(value = value, label = sub.label ?: value)
+                },
+            )
+        },
+        prefixes = prefixes.toChoices(),
+        bloodGroups = bloodGroups.toChoices(),
+        genders = genders.toChoices(),
+        ncdFlags = ncdFlags.toChoices(),
+        ancHighRiskReasons = ancHighRiskReasons.toChoices(),
+        surgicalPathways = surgicalPathways.toChoices(),
+        reviewFrequencies = reviewFrequencies.toChoices(),
+    )
+    return CaseEditPrefill(
+        canEdit = canEdit,
+        metadata = metadata,
+        patientMode = case.patientMode ?: "existing",
+        selectedPatientId = case.selectedPatient,
+        useTemporaryUhid = case.useTemporaryUhid,
+        uhid = case.uhid,
+        prefix = case.prefix,
+        firstName = case.firstName,
+        lastName = case.lastName,
+        gender = case.gender,
+        bloodGroup = case.bloodGroup,
+        place = case.place,
+        age = case.age,
+        phoneNumber = case.phoneNumber,
+        categoryId = case.category,
+        subcategory = case.subcategory,
+        status = case.status,
+        diagnosis = case.diagnosis,
+        referredBy = case.referredBy,
+        notes = case.notes,
+        highRisk = case.highRisk,
+        ncdFlags = case.ncdFlags,
+        ancHighRiskReasons = case.ancHighRiskReasons,
+        rchNumber = case.rchNumber,
+        rchBypass = case.rchBypass,
+        lmp = case.lmp,
+        edd = case.edd,
+        usgEdd = case.usgEdd,
+        surgicalPathway = case.surgicalPathway,
+        surgeryDate = case.surgeryDate,
+        reviewFrequency = case.reviewFrequency,
+        reviewDate = case.reviewDate,
+        gravida = case.gravida,
+        para = case.para,
+        abortions = case.abortions,
+        living = case.living,
+        ftnd = case.ftnd,
+        lscs = case.lscs,
+    )
+}
+
+private fun TaskFormMetadataDto.toDomain(): TaskFormMetadata = TaskFormMetadata(
+    canCreate = canCreate,
+    canEdit = canEdit,
+    canReopen = canReopen,
+    defaultStatus = defaultStatus,
+    taskTypes = taskTypes.toChoices(),
+    statuses = statuses.toChoices(),
+    assignableUsers = assignableUsers.map { TaskAssignee(id = it.id, name = it.name) },
 )
 
 fun caseListCacheKey(
@@ -820,6 +1022,11 @@ private fun TaskDto.toEntity(caseId: String): TaskEntity =
         status = status,
         statusLabel = statusLabel?.takeIf { it.isNotBlank() } ?: status,
         canComplete = canComplete ?: status.uppercase() !in setOf("COMPLETED", "CANCELLED"),
+        taskType = taskType,
+        taskTypeLabel = taskTypeLabel,
+        assignedUserId = assignedUserId,
+        assignedUser = assignedUser?.takeIf { it.isNotBlank() },
+        notes = notes?.takeIf { it.isNotBlank() },
         updatedAtMillis = System.currentTimeMillis(),
     )
 
@@ -832,6 +1039,11 @@ private fun TaskEntity.toDomain(): PatientTask =
         status = status,
         statusLabel = statusLabel,
         canComplete = canComplete,
+        taskType = taskType,
+        taskTypeLabel = taskTypeLabel,
+        assignedUserId = assignedUserId,
+        assignedUser = assignedUser,
+        notes = notes,
     )
 
 private fun VitalDto.toEntity(caseId: String): VitalEntity =

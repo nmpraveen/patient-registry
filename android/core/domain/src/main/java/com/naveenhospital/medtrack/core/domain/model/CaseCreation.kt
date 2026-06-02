@@ -63,6 +63,7 @@ data class NewCaseInput(
     val categoryId: Long,
     val categoryName: String,
     val subcategory: String? = null,
+    val status: String? = null,
     val diagnosis: String? = null,
     val referredBy: String? = null,
     val notes: String? = null,

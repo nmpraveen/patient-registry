@@ -4,16 +4,21 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.naveenhospital.medtrack.core.domain.model.CaseCategory
+import com.naveenhospital.medtrack.core.domain.model.CaseEditPrefill
 import com.naveenhospital.medtrack.core.domain.model.CaseFormCategory
 import com.naveenhospital.medtrack.core.domain.model.CaseFormMetadata
 import com.naveenhospital.medtrack.core.domain.model.NewCaseInput
 import com.naveenhospital.medtrack.core.domain.model.PatientLookup
 
-/** Mutable holder for the multi-step case-creation wizard. */
+/** Mutable holder for the multi-step case create/edit wizard. */
 class CaseFormState(
     val metadata: CaseFormMetadata,
     initialCategory: CaseCategory,
 ) {
+    /** True when seeded from an existing case (edit mode). */
+    var isEdit by mutableStateOf(false)
+    var status by mutableStateOf("ACTIVE")
+
     // Patient (new)
     var patientMode by mutableStateOf("new")
     var useTemporaryUhid by mutableStateOf(true)
@@ -90,6 +95,49 @@ class CaseFormState(
         selectedPatient = patient
         patientResults = emptyList()
         patientQuery = patient.name
+    }
+
+    /** Seed every field from an existing case so the wizard opens in edit mode. */
+    fun applyPrefill(prefill: CaseEditPrefill) {
+        isEdit = true
+        status = prefill.status ?: "ACTIVE"
+        // Edit always shows the patient fields inline with a stable UHID (no temp regeneration).
+        patientMode = "new"
+        useTemporaryUhid = false
+        uhid = prefill.uhid.orEmpty()
+        prefix = prefill.prefix.orEmpty()
+        firstName = prefill.firstName.orEmpty()
+        lastName = prefill.lastName.orEmpty()
+        gender = prefill.gender.orEmpty()
+        bloodGroup = prefill.bloodGroup.orEmpty()
+        age = prefill.age?.toString().orEmpty()
+        phone = prefill.phoneNumber.orEmpty()
+        place = prefill.place.orEmpty()
+        prefill.categoryId?.let { id ->
+            metadata.categories.firstOrNull { it.id == id }?.let { selectCategory(it) }
+        }
+        subcategory = prefill.subcategory.orEmpty()
+        diagnosis = prefill.diagnosis.orEmpty()
+        referredBy = prefill.referredBy.orEmpty()
+        notes = prefill.notes.orEmpty()
+        highRisk = prefill.highRisk
+        ncdFlags = prefill.ncdFlags.toSet()
+        ancReasons = prefill.ancHighRiskReasons.toSet()
+        rchNumber = prefill.rchNumber.orEmpty()
+        rchBypass = prefill.rchBypass
+        lmp = prefill.lmp.orEmpty()
+        edd = prefill.edd.orEmpty()
+        usgEdd = prefill.usgEdd.orEmpty()
+        surgicalPathway = prefill.surgicalPathway.orEmpty()
+        surgeryDate = prefill.surgeryDate.orEmpty()
+        reviewFrequency = prefill.reviewFrequency.orEmpty()
+        reviewDate = prefill.reviewDate.orEmpty()
+        gravida = prefill.gravida
+        para = prefill.para
+        abortions = prefill.abortions
+        living = prefill.living
+        ftnd = prefill.ftnd
+        lscs = prefill.lscs
     }
 
     fun toggleNcd(value: String) {
@@ -196,6 +244,7 @@ class CaseFormState(
             categoryId = cat.id,
             categoryName = cat.name,
             subcategory = subcategory.ifBlank { null },
+            status = status.takeIf { isEdit },
             diagnosis = diagnosis.ifBlank { null },
             referredBy = referredBy.ifBlank { null },
             notes = notes.ifBlank { null },

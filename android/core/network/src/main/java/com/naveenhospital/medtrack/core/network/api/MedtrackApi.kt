@@ -5,11 +5,17 @@ import com.naveenhospital.medtrack.core.network.model.CategoriesResponseDto
 import com.naveenhospital.medtrack.core.network.model.AuthSessionDto
 import com.naveenhospital.medtrack.core.network.model.CaseCreateResponseDto
 import com.naveenhospital.medtrack.core.network.model.CaseDetailDto
+import com.naveenhospital.medtrack.core.network.model.CaseEditFormDto
 import com.naveenhospital.medtrack.core.network.model.CaseFormMetadataDto
 import com.naveenhospital.medtrack.core.network.model.CaseListResponseDto
 import com.naveenhospital.medtrack.core.network.model.ClientWriteRequestDto
 import com.naveenhospital.medtrack.core.network.model.CreateCaseRequestDto
+import com.naveenhospital.medtrack.core.network.model.CreateTaskRequestDto
 import com.naveenhospital.medtrack.core.network.model.LogCallRequestDto
+import com.naveenhospital.medtrack.core.network.model.TaskFormMetadataDto
+import com.naveenhospital.medtrack.core.network.model.TaskNoteRequestDto
+import com.naveenhospital.medtrack.core.network.model.UpdateTaskRequestDto
+import com.naveenhospital.medtrack.core.network.model.VitalsUpdateRequestDto
 import com.naveenhospital.medtrack.core.network.model.PatientSearchResponseDto
 import com.naveenhospital.medtrack.core.network.model.LoginRequestDto
 import com.naveenhospital.medtrack.core.network.model.NotificationsResponseDto
@@ -23,6 +29,7 @@ import com.naveenhospital.medtrack.core.network.model.VitalsThresholdsDto
 import com.naveenhospital.medtrack.core.network.model.VitalsWriteResponseDto
 import retrofit2.http.Body
 import retrofit2.http.GET
+import retrofit2.http.PATCH
 import retrofit2.http.POST
 import retrofit2.http.Path
 import retrofit2.http.Query
@@ -62,8 +69,44 @@ interface MedtrackApi {
     @GET("api/metadata/case-form/")
     suspend fun caseFormMetadata(): CaseFormMetadataDto
 
+    @GET("api/metadata/task-form/")
+    suspend fun taskFormMetadata(): TaskFormMetadataDto
+
     @GET("api/cases/{caseId}/")
     suspend fun caseDetail(@Path("caseId") caseId: String): CaseDetailDto
+
+    @GET("api/cases/{caseId}/edit-form/")
+    suspend fun caseEditForm(@Path("caseId") caseId: String): CaseEditFormDto
+
+    @PATCH("api/cases/{caseId}/")
+    suspend fun updateCase(
+        @Path("caseId") caseId: String,
+        @Body request: CreateCaseRequestDto,
+    ): CaseCreateResponseDto
+
+    @POST("api/cases/{caseId}/tasks/")
+    suspend fun createTask(
+        @Path("caseId") caseId: String,
+        @Body request: CreateTaskRequestDto,
+    ): TaskWriteResponseDto
+
+    @PATCH("api/tasks/{taskId}/")
+    suspend fun updateTask(
+        @Path("taskId") taskId: String,
+        @Body request: UpdateTaskRequestDto,
+    ): TaskWriteResponseDto
+
+    @POST("api/tasks/{taskId}/note/")
+    suspend fun addTaskNote(
+        @Path("taskId") taskId: String,
+        @Body request: TaskNoteRequestDto,
+    ): TaskWriteResponseDto
+
+    @PATCH("api/vitals/{vitalId}/")
+    suspend fun updateVitals(
+        @Path("vitalId") vitalId: String,
+        @Body request: VitalsUpdateRequestDto,
+    ): VitalsWriteResponseDto
 
     @POST("api/tasks/{taskId}/complete/")
     suspend fun completeTask(

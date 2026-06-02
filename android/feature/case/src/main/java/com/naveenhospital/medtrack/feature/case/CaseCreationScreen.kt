@@ -21,15 +21,18 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.ArrowForward
+import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ExpandMore
+import androidx.compose.material.icons.outlined.Remove
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
@@ -190,7 +193,7 @@ private fun CaseCreationForm(
             item {
                 when (stepTitles.getOrNull(step)) {
                     "Patient" -> PatientStep(state)
-                    "Clinical" -> ClinicalStep(state, pathwayColor)
+                    "Clinical" -> ClinicalStep(state)
                     "ANC", "Surgery", "Medicine" -> PathwayStep(state)
                     else -> ReviewStep(state)
                 }
@@ -320,21 +323,21 @@ private fun NewPatientFields(state: CaseFormState) {
             onChange = { state.useTemporaryUhid = it },
         )
         if (!state.useTemporaryUhid) {
-            TextField("UHID", state.uhid) { state.uhid = it }
+            TextField("UHID", state.uhid, required = true) { state.uhid = it }
         }
         FieldRow {
-            DropdownField("Prefix", state.prefix, state.metadata.prefixes, { state.prefix = it }, Modifier.weight(1f))
-            TextField("First name", state.firstName, Modifier.weight(1.6f)) { state.firstName = it }
+            DropdownField("Prefix", state.prefix, state.metadata.prefixes, { state.prefix = it }, Modifier.weight(1f), required = true)
+            TextField("First name", state.firstName, Modifier.weight(1.6f), required = true) { state.firstName = it }
         }
-        TextField("Last name", state.lastName) { state.lastName = it }
+        TextField("Last name", state.lastName, required = true) { state.lastName = it }
         FieldRow {
-            DropdownField("Sex", state.gender, state.metadata.genders, { state.gender = it }, Modifier.weight(1f))
-            TextField("Age", state.age, Modifier.weight(0.8f), keyboard = KeyboardType.Number) {
+            DropdownField("Sex", state.gender, state.metadata.genders, { state.gender = it }, Modifier.weight(1f), required = true)
+            TextField("Age", state.age, Modifier.weight(0.8f), required = true, keyboard = KeyboardType.Number) {
                 state.age = it.filter(Char::isDigit).take(3)
             }
         }
         FieldRow {
-            TextField("Phone", state.phone, Modifier.weight(1.3f), keyboard = KeyboardType.Phone) {
+            TextField("Phone", state.phone, Modifier.weight(1.3f), required = true, keyboard = KeyboardType.Phone) {
                 state.phone = it.filter(Char::isDigit).take(10)
             }
             DropdownField("Blood group", state.bloodGroup, state.metadata.bloodGroups, { state.bloodGroup = it }, Modifier.weight(1f), optional = true)
@@ -345,15 +348,13 @@ private fun NewPatientFields(state: CaseFormState) {
 
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
-private fun ClinicalStep(state: CaseFormState, categoryColor: Color) {
+private fun ClinicalStep(state: CaseFormState) {
     val category = state.category
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        // Chosen category shown read-only (picked in quick-add)
-        ReadonlyField(label = "Category", value = category?.name ?: "-", tint = categoryColor)
         if (category != null && category.subcategories.isNotEmpty()) {
-            DropdownField("Subcategory", state.subcategory, category.subcategories, { state.subcategory = it })
+            DropdownField("Subcategory", state.subcategory, category.subcategories, { state.subcategory = it }, required = true)
         }
-        MultilineField("Diagnosis / reason", state.diagnosis) { state.diagnosis = it }
+        MultilineField("Diagnosis / reason", state.diagnosis, required = true) { state.diagnosis = it }
         TextField("Referred by", state.referredBy, optional = true) { state.referredBy = it }
         ToggleRow(
             label = "High risk",
@@ -376,21 +377,23 @@ private fun PathwayStep(state: CaseFormState) {
             category.name.isAnc() -> {
                 MedtrackSectionTitle(title = "Obstetric history (GPLA)")
                 FieldRow {
-                    GplaField("G", state.gravida, { state.gravida = it }, Modifier.weight(1f))
-                    GplaField("P", state.para, { state.para = it }, Modifier.weight(1f))
-                    GplaField("A", state.abortions, { state.abortions = it }, Modifier.weight(1f))
-                    GplaField("L", state.living, { state.living = it }, Modifier.weight(1f))
+                    StepperField("Gravida", state.gravida, { state.gravida = it }, Modifier.weight(1f))
+                    StepperField("Para", state.para, { state.para = it }, Modifier.weight(1f))
                 }
                 FieldRow {
-                    GplaField("FTND", state.ftnd, { state.ftnd = it }, Modifier.weight(1f))
-                    GplaField("LSCS", state.lscs, { state.lscs = it }, Modifier.weight(1f))
-                    Spacer(Modifier.weight(2f))
+                    StepperField("Abortions", state.abortions, { state.abortions = it }, Modifier.weight(1f))
+                    StepperField("Living", state.living, { state.living = it }, Modifier.weight(1f))
+                }
+                FieldRow {
+                    StepperField("FTND", state.ftnd, { state.ftnd = it }, Modifier.weight(1f))
+                    StepperField("LSCS", state.lscs, { state.lscs = it }, Modifier.weight(1f))
                 }
                 MedtrackSectionTitle(title = "Pregnancy dates")
-                DateField("LMP", state.lmp) { state.lmp = it }
+                DateField("LMP", state.lmp, required = true) { state.lmp = it }
+                val eddNeeded = state.edd.isBlank() && state.usgEdd.isBlank()
                 FieldRow {
-                    DateField("EDD", state.edd, Modifier.weight(1f)) { state.edd = it }
-                    DateField("USG EDD", state.usgEdd, Modifier.weight(1f)) { state.usgEdd = it }
+                    DateField("EDD", state.edd, Modifier.weight(1f), required = eddNeeded || state.edd.isNotBlank()) { state.edd = it }
+                    DateField("USG EDD", state.usgEdd, Modifier.weight(1f), required = eddNeeded || state.usgEdd.isNotBlank()) { state.usgEdd = it }
                 }
                 MedtrackSectionTitle(title = "RCH")
                 ToggleRow(
@@ -400,7 +403,7 @@ private fun PathwayStep(state: CaseFormState) {
                     onChange = { state.rchBypass = it },
                 )
                 if (!state.rchBypass) {
-                    TextField("RCH number", state.rchNumber, keyboard = KeyboardType.Number) {
+                    TextField("RCH number", state.rchNumber, required = true, keyboard = KeyboardType.Number) {
                         state.rchNumber = it.filter(Char::isDigit)
                     }
                 }
@@ -411,16 +414,16 @@ private fun PathwayStep(state: CaseFormState) {
             }
             category.name.isSurgery() -> {
                 MedtrackSectionTitle(title = "Surgical pathway")
-                DropdownField("Pathway", state.surgicalPathway, state.metadata.surgicalPathways, { state.surgicalPathway = it })
+                DropdownField("Pathway", state.surgicalPathway, state.metadata.surgicalPathways, { state.surgicalPathway = it }, required = true)
                 when (state.surgicalPathway) {
-                    "PLANNED_SURGERY" -> DateField("Surgery date", state.surgeryDate) { state.surgeryDate = it }
-                    "SURVEILLANCE" -> DateField("Review date", state.reviewDate) { state.reviewDate = it }
+                    "PLANNED_SURGERY" -> DateField("Surgery date", state.surgeryDate, required = true) { state.surgeryDate = it }
+                    "SURVEILLANCE" -> DateField("Review date", state.reviewDate, required = true) { state.reviewDate = it }
                 }
             }
             else -> {
                 MedtrackSectionTitle(title = "Review schedule")
                 DropdownField("Review frequency", state.reviewFrequency, state.metadata.reviewFrequencies, { state.reviewFrequency = it }, optional = true)
-                DateField("Review date", state.reviewDate) { state.reviewDate = it }
+                DateField("Review date", state.reviewDate, required = true) { state.reviewDate = it }
             }
         }
     }
@@ -483,36 +486,81 @@ private fun FieldRow(content: @Composable () -> Unit) {
     ) { content() }
 }
 
+private enum class FieldStatus { Neutral, Needs, Done }
+
+private fun fieldStatus(required: Boolean, filled: Boolean): FieldStatus =
+    when {
+        !required -> FieldStatus.Neutral
+        filled -> FieldStatus.Done
+        else -> FieldStatus.Needs
+    }
+
+@Composable
+private fun StatusMark(status: FieldStatus) {
+    when (status) {
+        FieldStatus.Needs -> Box(
+            modifier = Modifier
+                .size(7.dp)
+                .background(MedtrackColors.Warning, CircleShape),
+        )
+        FieldStatus.Done -> Icon(
+            Icons.Outlined.Check,
+            contentDescription = null,
+            tint = MedtrackColors.Success,
+            modifier = Modifier.size(13.dp),
+        )
+        FieldStatus.Neutral -> Unit
+    }
+}
+
+@Composable
+private fun FieldLabel(label: String, focused: Boolean, status: FieldStatus) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+        Text(
+            label,
+            color = if (focused) MedtrackColors.Primary else MedtrackColors.Faint,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.ExtraBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        StatusMark(status)
+    }
+}
+
 @Composable
 private fun FieldShell(
     label: String,
     modifier: Modifier = Modifier,
     focused: Boolean = false,
+    status: FieldStatus = FieldStatus.Neutral,
     onClick: (() -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
-    val borderColor = if (focused) MedtrackColors.Primary else MedtrackColors.Border
+    val borderColor = when {
+        focused -> MedtrackColors.Primary
+        status == FieldStatus.Needs -> MedtrackColors.Warning.copy(alpha = 0.55f)
+        else -> MedtrackColors.Border
+    }
+    val fill = if (status == FieldStatus.Needs && !focused) {
+        MedtrackColors.WarningSoft.copy(alpha = 0.5f)
+    } else {
+        MedtrackColors.Card
+    }
     Surface(
         modifier = modifier
             .height(FieldHeight)
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
         shape = RoundedCornerShape(14.dp),
-        color = MedtrackColors.Card,
+        color = fill,
         border = BorderStroke(1.5.dp, borderColor),
     ) {
         Column(
             modifier = Modifier.padding(horizontal = 13.dp, vertical = 9.dp),
             verticalArrangement = Arrangement.spacedBy(3.dp),
         ) {
-            Text(
-                label,
-                color = if (focused) MedtrackColors.Primary else MedtrackColors.Faint,
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.ExtraBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            FieldLabel(label, focused, status)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Box(Modifier.weight(1f)) { content() }
                 trailing?.invoke()
@@ -527,11 +575,17 @@ private fun TextField(
     value: String,
     modifier: Modifier = Modifier,
     optional: Boolean = false,
+    required: Boolean = false,
     keyboard: KeyboardType = KeyboardType.Text,
     onValueChange: (String) -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    FieldShell(label = if (optional) "$label (optional)" else label, modifier = modifier, focused = focused) {
+    FieldShell(
+        label = if (optional) "$label (optional)" else label,
+        modifier = modifier,
+        focused = focused,
+        status = fieldStatus(required, value.isNotBlank()),
+    ) {
         BasicTextField(
             value = value,
             onValueChange = onValueChange,
@@ -551,26 +605,32 @@ private fun MultilineField(
     label: String,
     value: String,
     optional: Boolean = false,
+    required: Boolean = false,
     onValueChange: (String) -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val borderColor = if (focused) MedtrackColors.Primary else MedtrackColors.Border
+    val status = fieldStatus(required, value.isNotBlank())
+    val borderColor = when {
+        focused -> MedtrackColors.Primary
+        status == FieldStatus.Needs -> MedtrackColors.Warning.copy(alpha = 0.55f)
+        else -> MedtrackColors.Border
+    }
+    val fill = if (status == FieldStatus.Needs && !focused) {
+        MedtrackColors.WarningSoft.copy(alpha = 0.5f)
+    } else {
+        MedtrackColors.Card
+    }
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(14.dp),
-        color = MedtrackColors.Card,
+        color = fill,
         border = BorderStroke(1.5.dp, borderColor),
     ) {
         Column(
             modifier = Modifier.padding(horizontal = 13.dp, vertical = 9.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Text(
-                if (optional) "$label (optional)" else label,
-                color = if (focused) MedtrackColors.Primary else MedtrackColors.Faint,
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.ExtraBold,
-            )
+            FieldLabel(if (optional) "$label (optional)" else label, focused, status)
             BasicTextField(
                 value = value,
                 onValueChange = onValueChange,
@@ -586,26 +646,6 @@ private fun MultilineField(
 }
 
 @Composable
-private fun ReadonlyField(label: String, value: String, tint: Color) {
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(FieldHeight),
-        shape = RoundedCornerShape(14.dp),
-        color = tint.copy(alpha = 0.08f),
-        border = BorderStroke(1.dp, tint.copy(alpha = 0.28f)),
-    ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 13.dp, vertical = 9.dp),
-            verticalArrangement = Arrangement.spacedBy(3.dp),
-        ) {
-            Text(label, color = MedtrackColors.Faint, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.ExtraBold)
-            Text(value, color = tint, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
-    }
-}
-
-@Composable
 @OptIn(ExperimentalMaterial3Api::class)
 private fun DropdownField(
     label: String,
@@ -614,6 +654,7 @@ private fun DropdownField(
     onSelect: (String) -> Unit,
     modifier: Modifier = Modifier,
     optional: Boolean = false,
+    required: Boolean = false,
 ) {
     var expanded by remember { mutableStateOf(false) }
     val selectedLabel = options.firstOrNull { it.value == value }?.label
@@ -621,6 +662,7 @@ private fun DropdownField(
         FieldShell(
             label = if (optional) "$label (optional)" else label,
             focused = expanded,
+            status = fieldStatus(required, value.isNotBlank()),
             onClick = { expanded = true },
             trailing = { Icon(Icons.Outlined.ExpandMore, contentDescription = null, tint = MedtrackColors.Faint, modifier = Modifier.size(20.dp)) },
         ) {
@@ -648,16 +690,69 @@ private fun DropdownField(
 }
 
 @Composable
-private fun GplaField(label: String, value: Int?, onSelect: (Int?) -> Unit, modifier: Modifier = Modifier) {
-    val options = remember { (0..10).map { FormChoice(it.toString(), it.toString()) } }
-    DropdownField(label, value?.toString() ?: "", options, { onSelect(it.toIntOrNull()) }, modifier)
+private fun StepButton(add: Boolean, enabled: Boolean, onClick: () -> Unit) {
+    Surface(
+        modifier = Modifier
+            .size(30.dp)
+            .clickable(enabled = enabled, onClick = onClick),
+        shape = CircleShape,
+        color = if (enabled) MedtrackColors.PrimarySoft else MedtrackColors.SurfaceAlt,
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                if (add) Icons.Outlined.Add else Icons.Outlined.Remove,
+                contentDescription = if (add) "Increase" else "Decrease",
+                tint = if (enabled) MedtrackColors.Primary else MedtrackColors.Faint,
+                modifier = Modifier.size(17.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun StepperField(label: String, value: Int?, onChange: (Int) -> Unit, modifier: Modifier = Modifier) {
+    val current = value ?: 0
+    Surface(
+        modifier = modifier.height(FieldHeight),
+        shape = RoundedCornerShape(14.dp),
+        color = MedtrackColors.Card,
+        border = BorderStroke(1.5.dp, MedtrackColors.Border),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                label,
+                color = MedtrackColors.Faint,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.ExtraBold,
+                maxLines = 1,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                StepButton(add = false, enabled = current > 0) { onChange((current - 1).coerceAtLeast(0)) }
+                Text(
+                    current.toString(),
+                    color = MedtrackColors.Ink,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.ExtraBold,
+                )
+                StepButton(add = true, enabled = current < 10) { onChange((current + 1).coerceAtMost(10)) }
+            }
+        }
+    }
 }
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
-private fun DateField(label: String, value: String, modifier: Modifier = Modifier, onChange: (String) -> Unit) {
+private fun DateField(label: String, value: String, modifier: Modifier = Modifier, required: Boolean = false, onChange: (String) -> Unit) {
     var open by remember { mutableStateOf(false) }
-    FieldShell(label = label, modifier = modifier, onClick = { open = true }) {
+    FieldShell(label = label, modifier = modifier, status = fieldStatus(required, value.isNotBlank()), onClick = { open = true }) {
         Text(
             value.ifBlank { "Select date" },
             color = if (value.isBlank()) MedtrackColors.Faint else MedtrackColors.Ink,

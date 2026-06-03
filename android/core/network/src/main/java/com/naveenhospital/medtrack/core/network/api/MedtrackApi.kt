@@ -51,6 +51,7 @@ interface MedtrackApi {
     suspend fun listCases(
         @Query("bucket") bucket: String? = null,
         @Query("assigned_to") assignedTo: String? = null,
+        @Query("scope_context") scopeContext: String? = null,
         @Query("category") categories: List<String>? = null,
         @Query("subcategory") subcategories: List<String>? = null,
         @Query("q") query: String? = null,

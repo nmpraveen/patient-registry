@@ -124,10 +124,11 @@ class MedtrackRepository(
         bucket: String? = "today",
         query: String? = null,
         assignedTo: String? = null,
+        scopeContext: String? = null,
         categories: List<String> = emptyList(),
         subcategories: List<String> = emptyList(),
     ): Flow<PagingData<PatientCase>> {
-        val cacheKey = caseListCacheKey(bucket, query, assignedTo, categories, subcategories)
+        val cacheKey = caseListCacheKey(bucket, query, assignedTo, scopeContext, categories, subcategories)
         activeCaseListKey = cacheKey
         return Pager(
             config = PagingConfig(
@@ -142,6 +143,7 @@ class MedtrackRepository(
                 bucket = bucket,
                 query = query,
                 assignedTo = assignedTo,
+                scopeContext = scopeContext,
                 categories = categories,
                 subcategories = subcategories,
                 onStats = { stats -> _stats.value = stats },
@@ -175,10 +177,11 @@ class MedtrackRepository(
         bucket: String? = "today",
         query: String? = null,
         assignedTo: String? = null,
+        scopeContext: String? = null,
         categories: List<String> = emptyList(),
         subcategories: List<String> = emptyList(),
     ) {
-        activeCaseListKey = caseListCacheKey(bucket, query, assignedTo, categories, subcategories)
+        activeCaseListKey = caseListCacheKey(bucket, query, assignedTo, scopeContext, categories, subcategories)
         database.caseStatsDao().statsForKey(activeCaseListKey)?.let { cachedStats ->
             _stats.value = cachedStats.toDomain()
         }
@@ -186,6 +189,7 @@ class MedtrackRepository(
             bucket = bucket ?: "all",
             query = query?.takeIf { it.isNotBlank() },
             assignedTo = assignedTo,
+            scopeContext = scopeContext,
             categories = categories.takeIf { it.isNotEmpty() },
             subcategories = subcategories.takeIf { it.isNotEmpty() },
             page = 1,
@@ -196,22 +200,24 @@ class MedtrackRepository(
         database.caseDao().clearCases()
         database.caseDao().upsertCases(response.results.map { it.toEntity() })
         database.caseStatsDao().upsertStats(response.stats.toEntity(activeCaseListKey))
-        markCacheFresh(caseListCacheKey(bucket, query, assignedTo, categories, subcategories))
+        markCacheFresh(caseListCacheKey(bucket, query, assignedTo, scopeContext, categories, subcategories))
     }
 
     suspend fun loadNextCases(
         bucket: String? = "today",
         query: String? = null,
         assignedTo: String? = null,
+        scopeContext: String? = null,
         categories: List<String> = emptyList(),
         subcategories: List<String> = emptyList(),
     ) {
-        val requestedKey = caseListCacheKey(bucket, query, assignedTo, categories, subcategories)
+        val requestedKey = caseListCacheKey(bucket, query, assignedTo, scopeContext, categories, subcategories)
         if (requestedKey != activeCaseListKey) {
             refreshCases(
                 bucket = bucket,
                 query = query,
                 assignedTo = assignedTo,
+                scopeContext = scopeContext,
                 categories = categories,
                 subcategories = subcategories,
             )
@@ -222,6 +228,7 @@ class MedtrackRepository(
             bucket = bucket ?: "all",
             query = query?.takeIf { it.isNotBlank() },
             assignedTo = assignedTo,
+            scopeContext = scopeContext,
             categories = categories.takeIf { it.isNotEmpty() },
             subcategories = subcategories.takeIf { it.isNotEmpty() },
             page = page,
@@ -698,6 +705,7 @@ private class CaseRemoteMediator(
     private val bucket: String?,
     private val query: String?,
     private val assignedTo: String?,
+    private val scopeContext: String?,
     private val categories: List<String>,
     private val subcategories: List<String>,
     private val onStats: (InboxStats) -> Unit,
@@ -716,6 +724,7 @@ private class CaseRemoteMediator(
                 bucket = bucket ?: "all",
                 query = query?.takeIf { it.isNotBlank() },
                 assignedTo = assignedTo,
+                scopeContext = scopeContext,
                 categories = categories.takeIf { it.isNotEmpty() },
                 subcategories = subcategories.takeIf { it.isNotEmpty() },
                 page = page,
@@ -909,6 +918,7 @@ fun caseListCacheKey(
     bucket: String?,
     query: String?,
     assignedTo: String?,
+    scopeContext: String?,
     categories: List<String>,
     subcategories: List<String>,
 ): String =
@@ -916,6 +926,7 @@ fun caseListCacheKey(
         bucket.orEmpty(),
         query.orEmpty().trim(),
         assignedTo.orEmpty(),
+        scopeContext.orEmpty(),
         categories.sorted().joinToString(","),
         subcategories.sorted().joinToString(","),
     ).joinToString("|")

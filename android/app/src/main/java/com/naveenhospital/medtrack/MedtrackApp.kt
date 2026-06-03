@@ -137,7 +137,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private const val IDLE_RELOCK_MILLIS = 15 * 60 * 1000L
-private const val UI_REVIEW_AUTO_LOGIN = true
+private const val UI_REVIEW_AUTO_LOGIN = false
 private const val UI_REVIEW_USERNAME = "admin"
 private const val UI_REVIEW_PASSWORD = "pass"
 
@@ -245,6 +245,7 @@ fun MedtrackApp(
     var currentUserProfile by remember { mutableStateOf<UserProfileDto?>(null) }
     var currentUserDisplayName by remember { mutableStateOf<String?>(null) }
     var showQuickAddSheet by remember { mutableStateOf(false) }
+    var lockSetupRequiresSessionRestore by remember { mutableStateOf(false) }
     // Hoisted so the Quick Add sheet's search can pre-fill the Home search query.
     var homeSearchQuery by remember { mutableStateOf("") }
     // Notification type the Notifications screen is scoped to (null = all). Set by the
@@ -276,6 +277,9 @@ fun MedtrackApp(
         currentUserDisplayName = profile.headerName()
     }
 
+    fun routeAfterPasswordLogin(): String =
+        if (container.lockStore.hasAnyLock()) Routes.HOME else Routes.LOCK_SETUP
+
     fun signOut() {
         // Clear app-scoped UI state so one user's search/filter never carries into the
         // next session on a shared device.
@@ -297,6 +301,7 @@ fun MedtrackApp(
             container.authRepository.logout(deviceToken = deviceToken)
             currentUserProfile = null
             currentUserDisplayName = null
+            lockSetupRequiresSessionRestore = false
             navController.navigate(Routes.LOGIN) {
                 popUpTo(navController.graph.findStartDestination().id) {
                     inclusive = true
@@ -332,8 +337,11 @@ fun MedtrackApp(
             startDestination = Routes.HOME
             return@LaunchedEffect
         }
-        startDestination = if (container.authRepository.hasRefreshToken()) {
-            if (container.lockStore.hasAnyLock()) Routes.UNLOCK else Routes.LOGIN
+        val hasRefreshToken = container.authRepository.hasRefreshToken()
+        val hasAnyLock = container.lockStore.hasAnyLock()
+        lockSetupRequiresSessionRestore = hasRefreshToken && !hasAnyLock
+        startDestination = if (hasRefreshToken) {
+            if (hasAnyLock) Routes.UNLOCK else Routes.LOCK_SETUP
         } else {
             Routes.LOGIN
         }
@@ -432,8 +440,12 @@ fun MedtrackApp(
                             homeSearchQuery = ""
                             notificationsFilterType = null
                             setCurrentUser(container.authRepository.login(username, password))
-                            onAuthenticated()
-                            navController.navigate(Routes.HOME) {
+                            val nextRoute = routeAfterPasswordLogin()
+                            lockSetupRequiresSessionRestore = false
+                            if (nextRoute == Routes.HOME) {
+                                onAuthenticated()
+                            }
+                            navController.navigate(nextRoute) {
                                 popUpTo(Routes.LOGIN) { inclusive = true }
                             }
                         },
@@ -462,7 +474,29 @@ fun MedtrackApp(
                             )
                         },
                         onContinue = {
-                            if (container.lockStore.hasAnyLock()) {
+                            if (!container.lockStore.hasAnyLock()) {
+                                return@LockSetupScreen
+                            }
+                            scope.launch {
+                                if (lockSetupRequiresSessionRestore) {
+                                    val restoredProfile = if (container.authRepository.restoreSession()) {
+                                        runCatching { container.authRepository.currentUser() }.getOrNull()
+                                    } else {
+                                        null
+                                    }
+                                    if (restoredProfile == null) {
+                                        currentUserProfile = null
+                                        currentUserDisplayName = null
+                                        lockSetupRequiresSessionRestore = false
+                                        snackbarHostState.showSnackbar("Session expired. Please sign in again.")
+                                        navController.navigate(Routes.LOGIN) {
+                                            popUpTo(Routes.LOCK_SETUP) { inclusive = true }
+                                        }
+                                        return@launch
+                                    }
+                                    setCurrentUser(restoredProfile)
+                                    lockSetupRequiresSessionRestore = false
+                                }
                                 onAuthenticated()
                                 navController.navigate(Routes.HOME) {
                                     popUpTo(Routes.LOCK_SETUP) { inclusive = true }
@@ -528,6 +562,7 @@ fun MedtrackApp(
                             biometricMessage = null
                             currentUserProfile = null
                             currentUserDisplayName = null
+                            lockSetupRequiresSessionRestore = false
                             navController.navigate(Routes.LOGIN) {
                                 popUpTo(Routes.UNLOCK) { inclusive = true }
                             }
@@ -1060,6 +1095,7 @@ fun MedtrackApp(
                                 container.medtrackRepository.refreshCases(
                                     bucket = "all",
                                     assignedTo = "all",
+                                    scopeContext = "calls",
                                 )
                             }.onFailure {
                                 error = it.message ?: "Unable to refresh calls"

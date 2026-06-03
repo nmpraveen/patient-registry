@@ -107,6 +107,17 @@ class MedtrackRepositoryTest {
     }
 
     @Test
+    fun refreshCasesCanSendCallsScopeContext() = runTest {
+        val api = FakeMedtrackApi()
+        val repository = MedtrackRepository(api = api, database = database)
+
+        repository.refreshCases(bucket = "all", assignedTo = "all", scopeContext = "calls")
+
+        assertEquals("all", api.lastListCasesAssignedTo)
+        assertEquals("calls", api.lastListCasesScopeContext)
+    }
+
+    @Test
     fun refreshNotificationsPreservesPayloadJsonAndParsedDomainPayload() = runTest {
         val api = FakeMedtrackApi(
             notificationsResponse = NotificationsResponseDto(
@@ -463,6 +474,8 @@ private class FakeMedtrackApi(
         private set
     var lastListCasesAssignedTo: String? = null
         private set
+    var lastListCasesScopeContext: String? = null
+        private set
 
     override suspend fun categories(): CategoriesResponseDto {
         categoryCalls += 1
@@ -477,12 +490,14 @@ private class FakeMedtrackApi(
     override suspend fun listCases(
         bucket: String?,
         assignedTo: String?,
+        scopeContext: String?,
         categories: List<String>?,
         subcategories: List<String>?,
         query: String?,
         page: Int?,
     ): CaseListResponseDto {
         lastListCasesAssignedTo = assignedTo
+        lastListCasesScopeContext = scopeContext
         return caseListResponse
     }
 

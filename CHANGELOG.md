@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.06.03.11.41
+- Changed Android debug builds to target the live Patient Registry server at `https://book.naveenhospital.net/` by default, while keeping explicit local backend overrides for emulator smoke scripts.
+- Restored the Android password-first login flow so review auto-login is disabled and first login routes to secure unlock setup when no pattern or biometric lock exists.
+- Hardened the mobile case list API so non-Doctor/non-Admin users cannot request the all-cases scope and are forced back to their assigned-task worklist.
+
 ## 2026.06.02.18.52
 - Redesigned the MEDTRACK Android bottom navigation as a detached, floating bar that is inset from the screen edges with rounded corners, a highlight border, and a soft drop shadow, rendered as a near-opaque translucent surface (true backdrop blur is not available in Compose).
 - Marked the selected tab with a small dot above the icon plus the existing blue color shift instead of relying on the filled-icon swap alone, keeping all four labels visible and the layout symmetric around the center add button.

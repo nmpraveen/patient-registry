@@ -781,7 +781,6 @@ fun MedtrackApp(
                                 container.medtrackRepository.refreshCases(
                                     bucket = "all",
                                     assignedTo = "all",
-                                    scopeContext = "calls",
                                 )
                             }.onFailure {
                                 error = it.message ?: "Unable to refresh cases"
@@ -1096,6 +1095,7 @@ fun MedtrackApp(
                                 container.medtrackRepository.refreshCases(
                                     bucket = "all",
                                     assignedTo = "all",
+                                    scopeContext = "calls",
                                 )
                             }.onFailure {
                                 error = it.message ?: "Unable to refresh calls"

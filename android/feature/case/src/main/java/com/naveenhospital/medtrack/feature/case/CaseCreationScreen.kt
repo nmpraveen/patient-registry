@@ -476,6 +476,15 @@ private fun PathwayStep(state: CaseFormState) {
                             state.living = 0
                             state.ftnd = 0
                             state.lscs = 0
+                        } else {
+                            // Allow undoing an accidental Primi selection: clear the preset
+                            // so the steppers are free to re-enter the real obstetric history.
+                            state.gravida = null
+                            state.para = null
+                            state.abortions = null
+                            state.living = null
+                            state.ftnd = null
+                            state.lscs = null
                         }
                     },
                 )

@@ -49,6 +49,7 @@ from patients.views import (
     _blood_pressure_display,
     _build_case_detail_json_payload,
     _build_latest_vitals_summary,
+    _can_access_upcoming_calls,
     _can_reopen_tasks,
     _complete_task_inline,
     _dashboard_category_icon_path,
@@ -167,14 +168,27 @@ def _default_assigned_to_scope(user):
     return "all" if is_doctor_admin(user) else "me"
 
 
+def _assigned_to_scope(request):
+    raw_value = request.GET.get("assigned_to")
+    assigned_to = (raw_value if raw_value is not None else _default_assigned_to_scope(request.user)).strip()
+    return assigned_to or _default_assigned_to_scope(request.user)
+
+
+def _can_use_all_assigned_scope(request):
+    if is_doctor_admin(request.user):
+        return True
+    scope_context = request.GET.get("scope_context", "").strip()
+    return scope_context == "calls" and _can_access_upcoming_calls(request.user)
+
+
 def _apply_scope_filters(queryset, request, *, include_bucket=True):
     today = timezone.localdate()
-    assigned_to = request.GET.get("assigned_to", _default_assigned_to_scope(request.user)).strip()
-    if assigned_to == "all" and not is_doctor_admin(request.user):
+    assigned_to = _assigned_to_scope(request)
+    if assigned_to == "all" and not _can_use_all_assigned_scope(request):
         assigned_to = "me"
     if assigned_to == "me":
         queryset = queryset.filter(tasks__assigned_user=request.user)
-    elif assigned_to not in {"all", ""}:
+    elif assigned_to != "all":
         queryset = queryset.none()
 
     raw_category_values = [value for value in request.GET.getlist("category") if value]

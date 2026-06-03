@@ -91,6 +91,7 @@ class MedtrackSyncWorker(
             bucket = "today",
             query = null,
             assignedTo = null,
+            scopeContext = null,
             categories = emptyList(),
             subcategories = emptyList(),
         )

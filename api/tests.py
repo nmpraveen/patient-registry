@@ -158,6 +158,148 @@ class MobileApiTests(APITestCase):
         self.assertIn("UH-API-ASSIGNED-MOBILE", uhids)
         self.assertNotIn("UH-API-1", uhids)
 
+    def test_case_list_blank_assigned_to_uses_default_scope_for_non_doctor_role(self):
+        mobile_user = get_user_model().objects.create_user(username="blank-scope-mobile", password="pass")
+        RoleSetting.objects.update_or_create(role_name="Blank Scope Staff", defaults={"can_task_edit": True})
+        staff_group, _ = Group.objects.get_or_create(name="Blank Scope Staff")
+        mobile_user.groups.add(staff_group)
+        assigned_case = Case.objects.create(
+            uhid="UH-API-BLANK-ASSIGNED",
+            first_name="Blank",
+            last_name="Assigned",
+            patient_name="Blank Assigned",
+            gender="F",
+            age=30,
+            phone_number="9876543218",
+            category=self.anc,
+            diagnosis="Assigned blank scope review",
+            created_by=self.user,
+        )
+        Task.objects.create(
+            case=assigned_case,
+            title="Assigned blank scope task",
+            due_date=timezone.localdate(),
+            assigned_user=mobile_user,
+            created_by=self.user,
+        )
+        unassigned_case = Case.objects.create(
+            uhid="UH-API-BLANK-UNASSIGNED",
+            first_name="Blank",
+            last_name="Unassigned",
+            patient_name="Blank Unassigned",
+            gender="F",
+            age=31,
+            phone_number="9876543219",
+            category=self.anc,
+            diagnosis="Unassigned blank scope review",
+            created_by=self.user,
+        )
+        Task.objects.create(
+            case=unassigned_case,
+            title="Unassigned blank scope task",
+            due_date=timezone.localdate(),
+            created_by=self.user,
+        )
+        self.client.force_authenticate(mobile_user)
+
+        response = self.client.get(reverse("api:case_list"), {"bucket": "today", "assigned_to": ""})
+
+        self.assertEqual(response.status_code, 200)
+        uhids = {row["uhid"] for row in response.json()["results"]}
+        self.assertIn("UH-API-BLANK-ASSIGNED", uhids)
+        self.assertNotIn("UH-API-BLANK-UNASSIGNED", uhids)
+        self.assertNotIn("UH-API-1", uhids)
+
+    def test_case_list_calls_context_allows_note_add_role_to_use_all_scope(self):
+        caller = get_user_model().objects.create_user(username="calls-scope-mobile", password="pass")
+        RoleSetting.objects.update_or_create(role_name="Calls Scope", defaults={"can_note_add": True})
+        calls_group, _ = Group.objects.get_or_create(name="Calls Scope")
+        caller.groups.add(calls_group)
+        unassigned_case = Case.objects.create(
+            uhid="UH-API-CALLS-UNASSIGNED",
+            first_name="Calls",
+            last_name="Unassigned",
+            patient_name="Calls Unassigned",
+            gender="F",
+            age=32,
+            phone_number="9876543220",
+            category=self.anc,
+            diagnosis="Unassigned calls review",
+            created_by=self.user,
+        )
+        Task.objects.create(
+            case=unassigned_case,
+            title="Unassigned calls task",
+            due_date=timezone.localdate(),
+            created_by=self.user,
+        )
+        self.client.force_authenticate(caller)
+
+        normal_response = self.client.get(reverse("api:case_list"), {"bucket": "all", "assigned_to": "all"})
+        calls_response = self.client.get(
+            reverse("api:case_list"),
+            {"bucket": "all", "assigned_to": "all", "scope_context": "calls"},
+        )
+
+        self.assertEqual(normal_response.status_code, 200)
+        self.assertNotIn("UH-API-CALLS-UNASSIGNED", {row["uhid"] for row in normal_response.json()["results"]})
+        self.assertEqual(calls_response.status_code, 200)
+        self.assertIn("UH-API-CALLS-UNASSIGNED", {row["uhid"] for row in calls_response.json()["results"]})
+
+    def test_case_list_calls_context_does_not_bypass_scope_without_note_add_permission(self):
+        mobile_user = get_user_model().objects.create_user(username="calls-scope-blocked", password="pass")
+        RoleSetting.objects.update_or_create(role_name="No Calls Scope", defaults={"can_task_edit": True})
+        staff_group, _ = Group.objects.get_or_create(name="No Calls Scope")
+        mobile_user.groups.add(staff_group)
+        assigned_case = Case.objects.create(
+            uhid="UH-API-CALLS-ASSIGNED",
+            first_name="Calls",
+            last_name="Assigned",
+            patient_name="Calls Assigned",
+            gender="F",
+            age=33,
+            phone_number="9876543221",
+            category=self.anc,
+            diagnosis="Assigned calls review",
+            created_by=self.user,
+        )
+        Task.objects.create(
+            case=assigned_case,
+            title="Assigned calls task",
+            due_date=timezone.localdate(),
+            assigned_user=mobile_user,
+            created_by=self.user,
+        )
+        unassigned_case = Case.objects.create(
+            uhid="UH-API-CALLS-BLOCKED-UNASSIGNED",
+            first_name="Calls",
+            last_name="Blocked",
+            patient_name="Calls Blocked",
+            gender="F",
+            age=34,
+            phone_number="9876543222",
+            category=self.anc,
+            diagnosis="Blocked calls review",
+            created_by=self.user,
+        )
+        Task.objects.create(
+            case=unassigned_case,
+            title="Blocked calls task",
+            due_date=timezone.localdate(),
+            created_by=self.user,
+        )
+        self.client.force_authenticate(mobile_user)
+
+        response = self.client.get(
+            reverse("api:case_list"),
+            {"bucket": "all", "assigned_to": "all", "scope_context": "calls"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        uhids = {row["uhid"] for row in response.json()["results"]}
+        self.assertIn("UH-API-CALLS-ASSIGNED", uhids)
+        self.assertNotIn("UH-API-CALLS-BLOCKED-UNASSIGNED", uhids)
+
     def test_case_list_defaults_to_all_scope_for_doctor(self):
         doctor = get_user_model().objects.create_user(username="doctor-mobile", password="pass")
         RoleSetting.objects.update_or_create(role_name="Doctor", defaults={"can_task_edit": True})

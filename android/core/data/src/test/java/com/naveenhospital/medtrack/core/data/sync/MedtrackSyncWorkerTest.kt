@@ -254,6 +254,7 @@ private class FakeSyncApi(
     override suspend fun listCases(
         bucket: String?,
         assignedTo: String?,
+        scopeContext: String?,
         categories: List<String>?,
         subcategories: List<String>?,
         query: String?,

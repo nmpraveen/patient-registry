@@ -277,6 +277,10 @@ fun MedtrackApp(
     }
 
     fun signOut() {
+        // Clear app-scoped UI state so one user's search/filter never carries into the
+        // next session on a shared device.
+        homeSearchQuery = ""
+        notificationsFilterType = null
         scope.launch {
             if (uiReviewAutoLoginEnabled) {
                 runCatching {
@@ -424,6 +428,9 @@ fun MedtrackApp(
                     LoginScreen(
                         modifier = Modifier.fillMaxSize(),
                         onLogin = { username, password ->
+                            // Start every fresh login with clean app-scoped UI state.
+                            homeSearchQuery = ""
+                            notificationsFilterType = null
                             setCurrentUser(container.authRepository.login(username, password))
                             onAuthenticated()
                             navController.navigate(Routes.HOME) {
@@ -687,8 +694,17 @@ fun MedtrackApp(
                             val categoryValue = categoryOptions.firstOrNull {
                                 it.label.equals(patientCase.categoryLabel, ignoreCase = true) || it.category == patientCase.category
                             }?.value ?: patientCase.categoryLabel
-                            selectedCategories = setOf(categoryValue)
-                            selectedSubcategories = emptySet()
+                            // Specialty card icons are subcategory-specific, so tapping one
+                            // filters by that subcategory. The active filter chips still show
+                            // and clear it even though the filter sheet stays categories-only.
+                            val subcategoryValue = patientCase.subcategoryValue?.takeIf { it.isNotBlank() }
+                            if (subcategoryValue == null) {
+                                selectedCategories = setOf(categoryValue)
+                                selectedSubcategories = emptySet()
+                            } else {
+                                selectedCategories = emptySet()
+                                selectedSubcategories = setOf(subcategoryValue)
+                            }
                             error = null
                         },
                         onRefresh = { refreshHome() },

@@ -173,7 +173,6 @@ fun HomeScreen(
     isLoadingMore: Boolean,
     error: String?,
     actionMessage: String?,
-    userDisplayName: String?,
     onSearchChanged: (String) -> Unit,
     onBucketSelected: (String?) -> Unit,
     onScopeSelected: (String) -> Unit,
@@ -184,13 +183,11 @@ fun HomeScreen(
     onMessagePatient: (PatientCase) -> Unit,
     onCompleteTask: (PatientCase) -> Unit,
     onOpenCase: (PatientCase) -> Unit,
-    onSignOut: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var expandedCaseId by rememberSaveable { mutableStateOf<String?>(null) }
     var riskCase by rememberSaveable { mutableStateOf<PatientCase?>(null) }
     var showFilterSheet by rememberSaveable { mutableStateOf(false) }
-    var showSignOutDialog by rememberSaveable { mutableStateOf(false) }
     val listState = rememberLazyListState()
 
     Column(
@@ -199,10 +196,7 @@ fun HomeScreen(
             .padding(horizontal = HomeUiScale.ScreenHorizontalPadding, vertical = HomeUiScale.ScreenVerticalPadding),
         verticalArrangement = Arrangement.spacedBy(HomeUiScale.SectionGap),
     ) {
-        V2aHeader(
-            userDisplayName = userDisplayName,
-            onAccount = { showSignOutDialog = true },
-        )
+        V2aHeader()
 
         SearchFilterBar(
             value = searchQuery,
@@ -327,7 +321,6 @@ fun HomeScreen(
         CategoryFilterSheet(
             categoryOptions = categoryOptions,
             selectedCategories = selectedCategories,
-            selectedSubcategories = selectedSubcategories,
             selectedScope = selectedScope,
             onDismiss = { showFilterSheet = false },
             onScopeSelected = onScopeSelected,
@@ -338,105 +331,21 @@ fun HomeScreen(
         )
     }
 
-    if (showSignOutDialog) {
-        AlertDialog(
-            onDismissRequest = { showSignOutDialog = false },
-            title = { Text("Sign out") },
-            text = { Text("End this mobile session?") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showSignOutDialog = false
-                        onSignOut()
-                    },
-                ) {
-                    Text("Sign out")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showSignOutDialog = false }) {
-                    Text("Cancel")
-                }
-            },
-        )
-    }
 }
 
 @Composable
-private fun V2aHeader(
-    userDisplayName: String?,
-    onAccount: () -> Unit,
-) {
-    val greetingName = headerDisplayName(userDisplayName)
+private fun V2aHeader() {
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Surface(
-            modifier = Modifier
-                .size(HomeUiScale.HeaderAvatarSize)
-                .clickable(onClick = onAccount),
-            shape = RoundedCornerShape(HomeUiScale.HeaderButtonRadius),
-            color = MedtrackColors.Primary,
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Text(
-                    text = avatarInitials(greetingName),
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    style = MaterialTheme.typography.titleSmall,
-                )
-            }
-        }
-        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
-            Text(
-                text = todayStampV2(),
-                color = MedtrackColors.Muted,
-                style = MaterialTheme.typography.labelSmall.copy(fontSize = HomeUiScale.HeaderDateText),
-                fontWeight = FontWeight.ExtraBold,
-            )
-            Text(
-                text = "Hi $greetingName.",
-                color = MedtrackColors.Ink,
-                style = MaterialTheme.typography.titleMedium.copy(fontSize = HomeUiScale.HeaderGreetingText),
-                fontWeight = FontWeight.ExtraBold,
-            )
-        }
+        Text(
+            text = todayStampV2(),
+            color = MedtrackColors.Muted,
+            style = MaterialTheme.typography.labelMedium.copy(fontSize = HomeUiScale.HeaderDateText),
+            fontWeight = FontWeight.ExtraBold,
+        )
     }
-}
-
-private fun headerDisplayName(displayName: String?): String =
-    displayName
-        ?.trim()
-        ?.takeIf { it.isNotBlank() }
-        ?.let(::titleCaseSimpleName)
-        ?: "Staff"
-
-private fun titleCaseSimpleName(name: String): String {
-    val locale = Locale.getDefault()
-    return name
-        .split(Regex("\\s+"))
-        .joinToString(" ") { word ->
-            if (word.all { it.isLowerCase() } || word.all { it.isUpperCase() }) {
-                word.lowercase(locale).replaceFirstChar { it.titlecase(locale) }
-            } else {
-                word
-            }
-        }
-}
-
-private fun avatarInitials(displayName: String): String {
-    val words = displayName
-        .trim()
-        .split(Regex("\\s+"))
-        .filter { it.isNotBlank() }
-    val initials = if (words.size >= 2) {
-        "${words[0].first()}${words[1].first()}"
-    } else {
-        words.firstOrNull()?.take(2).orEmpty()
-    }
-    return initials.uppercase(Locale.getDefault()).ifBlank { "MT" }
 }
 
 private fun todayStampV2(): String =
@@ -541,7 +450,6 @@ private fun ListHeader(
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
@@ -550,30 +458,6 @@ private fun ListHeader(
             fontWeight = FontWeight.Bold,
             color = MedtrackColors.Muted,
         )
-        Surface(
-            shape = RoundedCornerShape(50),
-            color = MedtrackColors.Card,
-            border = androidx.compose.foundation.BorderStroke(1.dp, MedtrackColors.Border.copy(alpha = 0.78f)),
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = "By time",
-                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 13.sp),
-                    color = MedtrackColors.InkSoft,
-                    fontWeight = FontWeight.Bold,
-                )
-                Icon(
-                    imageVector = Icons.Outlined.ExpandMore,
-                    contentDescription = null,
-                    tint = MedtrackColors.InkSoft,
-                    modifier = Modifier.size(16.dp),
-                )
-            }
-        }
     }
 }
 
@@ -762,7 +646,6 @@ private fun ActiveFilterChips(
 private fun CategoryFilterSheet(
     categoryOptions: List<CategoryFilterOption>,
     selectedCategories: Set<String>,
-    selectedSubcategories: Set<String>,
     selectedScope: String,
     onDismiss: () -> Unit,
     onScopeSelected: (String) -> Unit,
@@ -770,12 +653,7 @@ private fun CategoryFilterSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var draftCategories by rememberSaveable(selectedCategories.toList()) { mutableStateOf(selectedCategories.toList()) }
-    var draftSubcategories by rememberSaveable(selectedSubcategories.toList()) { mutableStateOf(selectedSubcategories.toList()) }
     var draftScope by rememberSaveable(selectedScope) { mutableStateOf(selectedScope) }
-    val visibleSubcategories = categoryOptions
-        .filter { draftCategories.isEmpty() || it.value in draftCategories }
-        .flatMap { it.subcategories }
-    val visibleSubcategoryValues = visibleSubcategories.map { it.value }.toSet()
 
     ModalBottomSheet(
         sheetState = sheetState,
@@ -805,47 +683,16 @@ private fun CategoryFilterSheet(
                             contentDescription = "Category filter ${option.label}"
                         },
                         selected = option.value in draftCategories,
-                        onClick = {
-                            val next = draftCategories.toggle(option.value)
-                            draftCategories = next
-                            if (next.isNotEmpty()) {
-                                val allowed = categoryOptions
-                                    .filter { it.value in next }
-                                    .flatMap { it.subcategories }
-                                    .map { it.value }
-                                    .toSet()
-                                draftSubcategories = draftSubcategories.filter { it in allowed }
-                            }
-                        },
+                        onClick = { draftCategories = draftCategories.toggle(option.value) },
                         colors = pulseFilterChipColors(categoryOptionColor(option)),
                         label = { Text(option.label) },
                     )
                 }
             }
 
-            if (visibleSubcategories.isNotEmpty()) {
-                Text(text = "Sub-category", fontWeight = FontWeight.SemiBold)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    visibleSubcategories.forEach { option ->
-                        FilterChip(
-                            modifier = Modifier.semantics {
-                                contentDescription = "Sub-category filter ${option.label}"
-                            },
-                            selected = option.value in draftSubcategories,
-                            onClick = { draftSubcategories = draftSubcategories.toggle(option.value) },
-                            colors = pulseFilterChipColors(),
-                            label = { Text(option.label) },
-                        )
-                    }
-                }
-            }
-
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 TextButton(
-                    onClick = {
-                        draftCategories = emptyList()
-                        draftSubcategories = emptyList()
-                    },
+                    onClick = { draftCategories = emptyList() },
                     modifier = Modifier.weight(1f),
                 ) {
                     Text("Clear")
@@ -853,10 +700,7 @@ private fun CategoryFilterSheet(
                 Button(
                     onClick = {
                         onScopeSelected(draftScope)
-                        onApply(
-                            draftCategories.toSet(),
-                            draftSubcategories.filter { it in visibleSubcategoryValues || draftCategories.isEmpty() }.toSet(),
-                        )
+                        onApply(draftCategories.toSet(), emptySet())
                     },
                     modifier = Modifier.weight(1f),
                 ) {

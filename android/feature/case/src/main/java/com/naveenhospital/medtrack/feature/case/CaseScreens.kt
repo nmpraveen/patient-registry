@@ -114,7 +114,6 @@ import java.util.TimeZone
 import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
 
-private const val CLOSED_CASE_SENTINEL = "__closed__"
 
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
@@ -136,7 +135,7 @@ fun CaseListScreen(
     val visibleCases = dedupedCases
         .filter { it.matchesCaseSearch(query) }
         .filter { it.matchesCaseFilter(filter) }
-    val effectiveExpandedCaseId = expandedCaseId ?: visibleCases.firstOrNull()?.id
+    val effectiveExpandedCaseId = expandedCaseId
 
     Column(
         modifier = modifier
@@ -205,7 +204,7 @@ fun CaseListScreen(
                     patientCase = patientCase,
                     expanded = effectiveExpandedCaseId == patientCase.id,
                     onToggle = {
-                        expandedCaseId = if (effectiveExpandedCaseId == patientCase.id) CLOSED_CASE_SENTINEL else patientCase.id
+                        expandedCaseId = if (effectiveExpandedCaseId == patientCase.id) null else patientCase.id
                     },
                     onCallPatient = { onCallPatient(patientCase) },
                     onOpenCase = { onOpenCase(patientCase.id) },
@@ -975,12 +974,6 @@ private fun CasesSearchBar(
                     }
                 },
             )
-            Icon(
-                imageVector = Icons.Outlined.Tune,
-                contentDescription = "Filters",
-                tint = MedtrackColors.Ink,
-                modifier = Modifier.size(20.dp),
-            )
         }
     }
 }
@@ -1272,7 +1265,7 @@ private fun ExpandedCaseTray(
         ) {
             DuePill(patientCase.nextTaskDueDate)
         }
-        CompactVitalsStrip(summary = patientCase.latestVitalSummary)
+        CompactVitalsStrip(summary = patientCase.latestVitalSummary, onAddVitals = onOpenCase)
         Button(
             onClick = onOpenCase,
             modifier = Modifier
@@ -1323,7 +1316,12 @@ private fun CompactVitalsStrip(
     onAddVitals: (() -> Unit)? = null,
 ) {
     val metrics = summary?.latestVitalPairs() ?: emptyList()
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(IntrinsicSize.Max),
+    ) {
         listOf("BP", "Pulse", "SpO\u2082", "Hb").forEachIndexed { index, label ->
             val metric = metrics.getOrNull(index)
             val value = metric?.value?.takeIf { it != "\u2014" }
@@ -1331,6 +1329,7 @@ private fun CompactVitalsStrip(
             Surface(
                 modifier = Modifier
                     .weight(1f)
+                    .fillMaxHeight()
                     .clickable(enabled = value == null && onAddVitals != null) { onAddVitals?.invoke() },
                 shape = RoundedCornerShape(12.dp),
                 color = tone.background,

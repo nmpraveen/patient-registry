@@ -240,6 +240,8 @@ fun MedtrackApp(
     var currentUserProfile by remember { mutableStateOf<UserProfileDto?>(null) }
     var currentUserDisplayName by remember { mutableStateOf<String?>(null) }
     var showQuickAddSheet by remember { mutableStateOf(false) }
+    // Hoisted so the Quick Add sheet's search can pre-fill the Home search query.
+    var homeSearchQuery by remember { mutableStateOf("") }
     val currentRoute = currentDestination?.route
     val bottomRoutes = remember { bottomDestinations.map { it.route }.toSet() }
     val showBottomNav = currentRoute in bottomRoutes || currentRoute == Routes.NOTIFICATIONS
@@ -526,7 +528,6 @@ fun MedtrackApp(
                     var selectedScope by remember(currentUserProfile?.id, defaultCaseScope) {
                         mutableStateOf(defaultCaseScope)
                     }
-                    var searchQuery by remember { mutableStateOf("") }
                     var selectedCategories by remember { mutableStateOf<Set<String>>(emptySet()) }
                     var selectedSubcategories by remember { mutableStateOf<Set<String>>(emptySet()) }
                     var isRefreshing by remember { mutableStateOf(false) }
@@ -536,14 +537,14 @@ fun MedtrackApp(
                     val dialerHandoff = rememberDialerHandoff()
                     val pagedCasesFlow = remember(
                         selectedBucket,
-                        searchQuery,
+                        homeSearchQuery,
                         selectedScope,
                         selectedCategories,
                         selectedSubcategories,
                     ) {
                         container.medtrackRepository.pagedCases(
                             bucket = selectedBucket,
-                            query = searchQuery,
+                            query = homeSearchQuery,
                             assignedTo = selectedScope,
                             categories = selectedCategories.toList(),
                             subcategories = selectedSubcategories.toList(),
@@ -645,7 +646,7 @@ fun MedtrackApp(
                         modifier = Modifier.fillMaxSize(),
                         cases = pagedCases,
                         stats = stats,
-                        searchQuery = searchQuery,
+                        searchQuery = homeSearchQuery,
                         selectedBucket = selectedBucket,
                         selectedScope = selectedScope,
                         categoryOptions = categoryOptions,
@@ -657,9 +658,8 @@ fun MedtrackApp(
                         isLoadingMore = pagedCases.loadState.append is LoadState.Loading,
                         error = error ?: pagingRefreshError ?: pagingAppendError,
                         actionMessage = actionMessage,
-                        userDisplayName = currentUserDisplayName,
                         onSearchChanged = { query ->
-                            searchQuery = query
+                            homeSearchQuery = query
                             error = null
                         },
                         onBucketSelected = { bucket ->
@@ -679,14 +679,8 @@ fun MedtrackApp(
                             val categoryValue = categoryOptions.firstOrNull {
                                 it.label.equals(patientCase.categoryLabel, ignoreCase = true) || it.category == patientCase.category
                             }?.value ?: patientCase.categoryLabel
-                            val subcategoryValue = patientCase.subcategoryValue?.takeIf { it.isNotBlank() }
-                            if (subcategoryValue == null) {
-                                selectedCategories = setOf(categoryValue)
-                                selectedSubcategories = emptySet()
-                            } else {
-                                selectedCategories = emptySet()
-                                selectedSubcategories = setOf(subcategoryValue)
-                            }
+                            selectedCategories = setOf(categoryValue)
+                            selectedSubcategories = emptySet()
                             error = null
                         },
                         onRefresh = { refreshHome() },
@@ -708,7 +702,6 @@ fun MedtrackApp(
                                 launchSingleTop = true
                             }
                         },
-                        onSignOut = { signOut() },
                     )
 
                     DialerOutcomeSheet(dialerHandoff) { selectedCase, outcome, note, attemptedAt ->
@@ -1147,11 +1140,33 @@ fun MedtrackApp(
                     val cases by container.medtrackRepository.cases.collectAsState(initial = emptyList())
                     val notification = notifications.firstOrNull { it.id == notificationId }
                     val patientCase = notification?.resolvePatientCase(cases)
+                    val dialerHandoff = rememberDialerHandoff()
 
                     LaunchedEffect(notification?.caseId, patientCase?.id) {
                         val caseId = notification?.caseId?.takeIf { it.isNotBlank() }
                         if (caseId != null && patientCase == null) {
                             runCatching { container.medtrackRepository.refreshCaseDetail(caseId) }
+                        }
+                    }
+
+                    fun submitAlertCallOutcome(selectedCase: PatientCase, outcome: String, note: String?, attemptedAt: String?) {
+                        scope.launch {
+                            runCatching {
+                                container.medtrackRepository.logCallOutcome(
+                                    caseId = selectedCase.id,
+                                    taskId = selectedCase.nextTaskId,
+                                    outcome = outcome,
+                                    note = note,
+                                    attemptedAt = attemptedAt,
+                                )
+                            }.onSuccess { result ->
+                                snackbarHostState.showSnackbar(result.message)
+                                if (!result.queued) {
+                                    runCatching { container.medtrackRepository.refreshCaseDetail(selectedCase.id) }
+                                }
+                            }.onFailure {
+                                snackbarHostState.showSnackbar(it.message ?: "Call logging failed")
+                            }
                         }
                     }
 
@@ -1161,14 +1176,18 @@ fun MedtrackApp(
                         patientCase = patientCase,
                         onBack = { navController.popBackStack() },
                         onCallPatient = { selectedCase ->
-                            if (!openDialer(context, selectedCase)) {
-                                scope.launch { snackbarHostState.showSnackbar("No phone number on file") }
+                            dialerHandoff.startCall(context, selectedCase) { message ->
+                                scope.launch { snackbarHostState.showSnackbar(message) }
                             }
                         },
                         onOpenCase = { caseId ->
                             navController.navigate(Routes.caseDetail(caseId))
                         },
                     )
+
+                    DialerOutcomeSheet(dialerHandoff) { selectedCase, outcome, note, attemptedAt ->
+                        submitAlertCallOutcome(selectedCase, outcome, note, attemptedAt)
+                    }
                 }
                 composable(Routes.ME) {
                     LaunchedEffect(Unit) {
@@ -1212,8 +1231,9 @@ fun MedtrackApp(
                     showQuickAddSheet = false
                     navController.navigate(Routes.createCase(pathway.category, pathway.label))
                 },
-                onOpenHomeSearch = {
+                onOpenHomeSearch = { query ->
                     showQuickAddSheet = false
+                    homeSearchQuery = query
                     navigateTopLevel(Routes.HOME)
                 },
             )
@@ -1458,7 +1478,7 @@ private fun QuickAddSheet(
     categoryOptions: List<CategoryFilterOption>,
     onDismiss: () -> Unit,
     onCreateCase: (QuickAddPathwaySpec) -> Unit,
-    onOpenHomeSearch: () -> Unit,
+    onOpenHomeSearch: (String) -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val pathways = categoryOptions.quickAddPathways()
@@ -1498,7 +1518,7 @@ private fun QuickAddSheet(
             QuickAddSearchBar(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
-                onSearch = onOpenHomeSearch,
+                onSearch = { onOpenHomeSearch(searchQuery) },
             )
 
             MedtrackSectionTitle(title = "Start a new case")

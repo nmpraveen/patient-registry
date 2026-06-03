@@ -97,7 +97,10 @@ fun AlertDetailScreen(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
                 AlertHero(notification = notification, patientCase = patientCase)
-            PatientContextCard(patientCase = patientCase)
+            PatientContextCard(
+                patientCase = patientCase,
+                onOpenCase = { openCaseId?.let(onOpenCase) },
+            )
             WhyThisFiredCard(notification = notification)
         }
 
@@ -203,7 +206,10 @@ private fun AlertHero(notification: NotificationItem?, patientCase: PatientCase?
 }
 
 @Composable
-private fun PatientContextCard(patientCase: PatientCase?) {
+private fun PatientContextCard(
+    patientCase: PatientCase?,
+    onOpenCase: () -> Unit,
+) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         MedtrackSectionEyebrow(title = "Patient")
         if (patientCase == null) {
@@ -212,7 +218,7 @@ private fun PatientContextCard(patientCase: PatientCase?) {
             }
         } else {
             val visual = medtrackCategoryVisual(patientCase.category.name, patientCase.categoryLabel)
-            MedtrackCompactCard {
+            MedtrackCompactCard(modifier = Modifier.clickable(onClick = onOpenCase)) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                 MedtrackCategoryTile(
                     iconResId = visual.iconResId,

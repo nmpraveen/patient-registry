@@ -1230,7 +1230,9 @@ fun MedtrackApp(
                     // Notifications is a sub-page of the Me tab, so keep Me highlighted there.
                     currentRoute = if (currentRoute == Routes.NOTIFICATIONS) Routes.ME else currentRoute,
                     unreadCount = shellNotifications.count { !it.isRead },
-                    canQuickAdd = currentUserProfile?.capabilities?.get("case_create") ?: true,
+                    // Hide the quick-add (+) until the profile confirms case_create, so we
+                    // never surface an action the server will reject.
+                    canQuickAdd = currentUserProfile?.capabilities?.get("case_create") ?: false,
                     onNavigate = { route ->
                         // The Me tab always returns to its root: never restore the
                         // Notifications sub-page on top of it (otherwise tapping Me from

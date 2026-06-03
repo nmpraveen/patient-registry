@@ -50,15 +50,15 @@ Open the `android/` directory in Android Studio. If you use the command line, ru
 .\gradlew.bat --no-daemon :app:assembleDebug
 ```
 
-## Emulator Backend
+## Backend
 
-The debug build defaults to the local Test NNH server through Android Emulator host loopback:
+The debug build defaults to the live Patient Registry server:
 
 ```text
-MEDTRACK_API_BASE_URL=http://10.0.2.2:8000/
+MEDTRACK_API_BASE_URL=https://book.naveenhospital.net/
 ```
 
-That maps to the Django server at `http://localhost:8000` on the Windows host. Override it for another target:
+Override it when a local or alternate backend is needed:
 
 ```powershell
 .\gradlew.bat --no-daemon :app:assembleDebug -PMEDTRACK_API_BASE_URL=https://example.com/
@@ -136,10 +136,10 @@ For manual testing, start or reuse the local Django backend from the repo root:
 .\local-dev\test-nnh-up.ps1
 ```
 
-Then build and install the debug APK from `android/`:
+Then build and install the debug APK from `android/` with a local backend override:
 
 ```powershell
-.\gradlew.bat --no-daemon :app:assembleDebug
+.\gradlew.bat --no-daemon :app:assembleDebug -PMEDTRACK_API_BASE_URL=http://10.0.2.2:8000/
 $apk = Join-Path $env:USERPROFILE ".codex\build\medtrack-android\app\outputs\apk\debug\app-debug.apk"
 adb install -r $apk
 adb shell monkey -p com.naveenhospital.medtrack 1
@@ -165,9 +165,9 @@ adb shell pm clear com.naveenhospital.medtrack
 adb shell am start -W -n com.naveenhospital.medtrack/.MainActivity
 ```
 
-Sign in with `admin` / `pass`. On first run after `pm clear`, set the secure pattern with top-left, top-middle, top-right, then middle-right dots; tap Save, Continue, and deny the Android notification permission unless the test needs notifications.
+Sign in with `admin` / `pass` on the local Test NNH backend. On first run after `pm clear`, set the secure pattern with top-left, top-middle, top-right, then middle-right dots; tap Save, Continue, and deny the Android notification permission unless the test needs notifications.
 
-For this local emulator path, keep the default `http://10.0.2.2:8000/` API base URL. Do not use `10.0.2.2` for shared APKs or handoff builds.
+For this local emulator path, use the explicit `http://10.0.2.2:8000/` API base URL override. Do not use `10.0.2.2` for shared APKs or handoff builds.
 
 ## Physical Device Smoke
 

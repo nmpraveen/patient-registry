@@ -170,6 +170,8 @@ def _default_assigned_to_scope(user):
 def _apply_scope_filters(queryset, request, *, include_bucket=True):
     today = timezone.localdate()
     assigned_to = request.GET.get("assigned_to", _default_assigned_to_scope(request.user)).strip()
+    if assigned_to == "all" and not is_doctor_admin(request.user):
+        assigned_to = "me"
     if assigned_to == "me":
         queryset = queryset.filter(tasks__assigned_user=request.user)
     elif assigned_to not in {"all", ""}:

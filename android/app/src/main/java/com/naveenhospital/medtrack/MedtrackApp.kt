@@ -137,7 +137,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private const val IDLE_RELOCK_MILLIS = 15 * 60 * 1000L
-private const val UI_REVIEW_AUTO_LOGIN = true
+private const val UI_REVIEW_AUTO_LOGIN = false
 private const val UI_REVIEW_USERNAME = "admin"
 private const val UI_REVIEW_PASSWORD = "pass"
 
@@ -276,6 +276,9 @@ fun MedtrackApp(
         currentUserDisplayName = profile.headerName()
     }
 
+    fun routeAfterPasswordLogin(): String =
+        if (container.lockStore.hasAnyLock()) Routes.HOME else Routes.LOCK_SETUP
+
     fun signOut() {
         // Clear app-scoped UI state so one user's search/filter never carries into the
         // next session on a shared device.
@@ -333,7 +336,7 @@ fun MedtrackApp(
             return@LaunchedEffect
         }
         startDestination = if (container.authRepository.hasRefreshToken()) {
-            if (container.lockStore.hasAnyLock()) Routes.UNLOCK else Routes.LOGIN
+            if (container.lockStore.hasAnyLock()) Routes.UNLOCK else Routes.LOCK_SETUP
         } else {
             Routes.LOGIN
         }
@@ -432,8 +435,11 @@ fun MedtrackApp(
                             homeSearchQuery = ""
                             notificationsFilterType = null
                             setCurrentUser(container.authRepository.login(username, password))
-                            onAuthenticated()
-                            navController.navigate(Routes.HOME) {
+                            val nextRoute = routeAfterPasswordLogin()
+                            if (nextRoute == Routes.HOME) {
+                                onAuthenticated()
+                            }
+                            navController.navigate(nextRoute) {
                                 popUpTo(Routes.LOGIN) { inclusive = true }
                             }
                         },

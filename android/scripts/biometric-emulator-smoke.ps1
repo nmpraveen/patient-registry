@@ -397,7 +397,7 @@ try {
             -Name "gradle-assemble-debug" `
             -WorkingDirectory $androidRoot `
             -FilePath (Join-Path $androidRoot "gradlew.bat") `
-            -Arguments @("--no-daemon", ":app:assembleDebug")
+            -Arguments @("--no-daemon", ":app:assembleDebug", "-PMEDTRACK_API_BASE_URL=http://10.0.2.2:8000/")
     }
     if (-not (Test-Path $apkPath)) {
         throw "APK not found at $apkPath"

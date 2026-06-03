@@ -119,11 +119,30 @@ class MobileApiTests(APITestCase):
 
         self.assertEqual(response.status_code, 403)
 
-    def test_case_api_allows_real_jwt_user_with_case_data_role(self):
+    def test_case_api_scopes_real_jwt_non_doctor_with_case_data_role_to_assigned_tasks(self):
         mobile_user = get_user_model().objects.create_user(username="mobile-role", password="pass")
         RoleSetting.objects.create(role_name="Mobile Staff", can_task_edit=True)
         group = Group.objects.create(name="Mobile Staff")
         mobile_user.groups.add(group)
+        assigned_case = Case.objects.create(
+            uhid="UH-API-ASSIGNED-MOBILE",
+            first_name="Assigned",
+            last_name="Mobile",
+            patient_name="Assigned Mobile",
+            gender="F",
+            age=30,
+            phone_number="9876543211",
+            category=self.anc,
+            diagnosis="Assigned mobile review",
+            created_by=self.user,
+        )
+        Task.objects.create(
+            case=assigned_case,
+            title="Assigned mobile task",
+            due_date=timezone.localdate(),
+            assigned_user=mobile_user,
+            created_by=self.user,
+        )
         client = APIClient()
         token_response = client.post(
             reverse("api:token_obtain_pair"),
@@ -135,7 +154,9 @@ class MobileApiTests(APITestCase):
         response = client.get(reverse("api:case_list"), {"bucket": "today", "assigned_to": "all"})
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["results"][0]["uhid"], "UH-API-1")
+        uhids = {row["uhid"] for row in response.json()["results"]}
+        self.assertIn("UH-API-ASSIGNED-MOBILE", uhids)
+        self.assertNotIn("UH-API-1", uhids)
 
     def test_case_list_defaults_to_all_scope_for_doctor(self):
         doctor = get_user_model().objects.create_user(username="doctor-mobile", password="pass")

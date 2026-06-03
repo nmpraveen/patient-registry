@@ -7,7 +7,7 @@ plugins {
 
 val hasFirebaseConfig = file("google-services.json").exists()
 val medtrackApiBaseUrl = providers.gradleProperty("MEDTRACK_API_BASE_URL")
-    .getOrElse("http://10.0.2.2:8000/")
+    .getOrElse("https://book.naveenhospital.net/")
 
 if (hasFirebaseConfig) {
     apply(plugin = "com.google.gms.google-services")

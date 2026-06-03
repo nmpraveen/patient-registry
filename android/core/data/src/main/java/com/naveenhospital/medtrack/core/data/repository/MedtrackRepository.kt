@@ -412,7 +412,12 @@ class MedtrackRepository(
         // matches beyond the untyped first page aren't missed by client-side filtering.
         val response = api.notifications(type = type)
         database.notificationDao().upsertNotifications(response.results.map { it.toEntity() })
-        markCacheFresh(CACHE_KEY_NOTIFICATIONS)
+        // Only a full (untyped) refresh covers every category, so only it may mark the
+        // shared cache fresh. A typed refresh must not suppress the global sync, or the
+        // Me badge/counts could miss other categories until "All" is opened.
+        if (type == null) {
+            markCacheFresh(CACHE_KEY_NOTIFICATIONS)
+        }
     }
 
     suspend fun markNotificationRead(notificationId: String) {

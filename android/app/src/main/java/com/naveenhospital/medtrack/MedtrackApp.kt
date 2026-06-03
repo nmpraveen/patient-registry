@@ -9,6 +9,8 @@ import androidx.biometric.BiometricPrompt
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -1696,7 +1698,9 @@ private fun ProfileScreen(
     Column(
         modifier = modifier
             .background(MedtrackColors.Surface)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .verticalScroll(rememberScrollState())
+            // Reserve space so the last row clears the floating bottom nav overlay.
+            .padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = BottomNavScale.ShellHeight + 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Surface(

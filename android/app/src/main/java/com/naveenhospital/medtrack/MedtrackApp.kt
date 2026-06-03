@@ -1117,13 +1117,13 @@ fun MedtrackApp(
                         scope.launch {
                             isRefreshing = true
                             error = null
-                            runCatching { container.medtrackRepository.refreshNotifications() }
+                            runCatching { container.medtrackRepository.refreshNotifications(notificationsFilterType) }
                                 .onFailure { error = it.message ?: "Unable to refresh notifications" }
                             isRefreshing = false
                         }
                     }
 
-                    LaunchedEffect(Unit) {
+                    LaunchedEffect(notificationsFilterType) {
                         refreshNotifications()
                     }
 

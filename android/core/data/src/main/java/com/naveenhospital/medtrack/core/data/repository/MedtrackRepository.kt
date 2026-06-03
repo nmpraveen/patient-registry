@@ -407,8 +407,10 @@ class MedtrackRepository(
         markCacheFresh(caseDetailCacheKey(caseId))
     }
 
-    suspend fun refreshNotifications() {
-        val response = api.notifications()
+    suspend fun refreshNotifications(type: String? = null) {
+        // When a Me-page category is open, fetch that type server-side so paginated
+        // matches beyond the untyped first page aren't missed by client-side filtering.
+        val response = api.notifications(type = type)
         database.notificationDao().upsertNotifications(response.results.map { it.toEntity() })
         markCacheFresh(CACHE_KEY_NOTIFICATIONS)
     }

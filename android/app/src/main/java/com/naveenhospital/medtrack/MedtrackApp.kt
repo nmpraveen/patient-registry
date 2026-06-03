@@ -9,6 +9,8 @@ import androidx.biometric.BiometricPrompt
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -35,10 +37,13 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.AssignmentInd
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.CloudDone
 import androidx.compose.material.icons.outlined.ErrorOutline
+import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.HealthAndSafety
 import androidx.compose.material.icons.outlined.Home
@@ -240,6 +245,11 @@ fun MedtrackApp(
     var currentUserProfile by remember { mutableStateOf<UserProfileDto?>(null) }
     var currentUserDisplayName by remember { mutableStateOf<String?>(null) }
     var showQuickAddSheet by remember { mutableStateOf(false) }
+    // Hoisted so the Quick Add sheet's search can pre-fill the Home search query.
+    var homeSearchQuery by remember { mutableStateOf("") }
+    // Notification type the Notifications screen is scoped to (null = all). Set by the
+    // Me-page category rows before navigating to the Notifications screen.
+    var notificationsFilterType by remember { mutableStateOf<String?>(null) }
     val currentRoute = currentDestination?.route
     val bottomRoutes = remember { bottomDestinations.map { it.route }.toSet() }
     val showBottomNav = currentRoute in bottomRoutes || currentRoute == Routes.NOTIFICATIONS
@@ -267,6 +277,10 @@ fun MedtrackApp(
     }
 
     fun signOut() {
+        // Clear app-scoped UI state so one user's search/filter never carries into the
+        // next session on a shared device.
+        homeSearchQuery = ""
+        notificationsFilterType = null
         scope.launch {
             if (uiReviewAutoLoginEnabled) {
                 runCatching {
@@ -414,6 +428,9 @@ fun MedtrackApp(
                     LoginScreen(
                         modifier = Modifier.fillMaxSize(),
                         onLogin = { username, password ->
+                            // Start every fresh login with clean app-scoped UI state.
+                            homeSearchQuery = ""
+                            notificationsFilterType = null
                             setCurrentUser(container.authRepository.login(username, password))
                             onAuthenticated()
                             navController.navigate(Routes.HOME) {
@@ -526,7 +543,6 @@ fun MedtrackApp(
                     var selectedScope by remember(currentUserProfile?.id, defaultCaseScope) {
                         mutableStateOf(defaultCaseScope)
                     }
-                    var searchQuery by remember { mutableStateOf("") }
                     var selectedCategories by remember { mutableStateOf<Set<String>>(emptySet()) }
                     var selectedSubcategories by remember { mutableStateOf<Set<String>>(emptySet()) }
                     var isRefreshing by remember { mutableStateOf(false) }
@@ -536,14 +552,14 @@ fun MedtrackApp(
                     val dialerHandoff = rememberDialerHandoff()
                     val pagedCasesFlow = remember(
                         selectedBucket,
-                        searchQuery,
+                        homeSearchQuery,
                         selectedScope,
                         selectedCategories,
                         selectedSubcategories,
                     ) {
                         container.medtrackRepository.pagedCases(
                             bucket = selectedBucket,
-                            query = searchQuery,
+                            query = homeSearchQuery,
                             assignedTo = selectedScope,
                             categories = selectedCategories.toList(),
                             subcategories = selectedSubcategories.toList(),
@@ -645,7 +661,7 @@ fun MedtrackApp(
                         modifier = Modifier.fillMaxSize(),
                         cases = pagedCases,
                         stats = stats,
-                        searchQuery = searchQuery,
+                        searchQuery = homeSearchQuery,
                         selectedBucket = selectedBucket,
                         selectedScope = selectedScope,
                         categoryOptions = categoryOptions,
@@ -657,9 +673,8 @@ fun MedtrackApp(
                         isLoadingMore = pagedCases.loadState.append is LoadState.Loading,
                         error = error ?: pagingRefreshError ?: pagingAppendError,
                         actionMessage = actionMessage,
-                        userDisplayName = currentUserDisplayName,
                         onSearchChanged = { query ->
-                            searchQuery = query
+                            homeSearchQuery = query
                             error = null
                         },
                         onBucketSelected = { bucket ->
@@ -679,6 +694,9 @@ fun MedtrackApp(
                             val categoryValue = categoryOptions.firstOrNull {
                                 it.label.equals(patientCase.categoryLabel, ignoreCase = true) || it.category == patientCase.category
                             }?.value ?: patientCase.categoryLabel
+                            // Specialty card icons are subcategory-specific, so tapping one
+                            // filters by that subcategory. The active filter chips still show
+                            // and clear it even though the filter sheet stays categories-only.
                             val subcategoryValue = patientCase.subcategoryValue?.takeIf { it.isNotBlank() }
                             if (subcategoryValue == null) {
                                 selectedCategories = setOf(categoryValue)
@@ -708,7 +726,6 @@ fun MedtrackApp(
                                 launchSingleTop = true
                             }
                         },
-                        onSignOut = { signOut() },
                     )
 
                     DialerOutcomeSheet(dialerHandoff) { selectedCase, outcome, note, attemptedAt ->
@@ -764,6 +781,7 @@ fun MedtrackApp(
                         modifier = Modifier.fillMaxSize(),
                         cases = cases,
                         isRefreshing = isRefreshing,
+                        pendingWriteCount = pendingWriteCount,
                         error = error,
                         onRefresh = { refreshCaseList() },
                         onCallPatient = { patientCase ->
@@ -1117,13 +1135,13 @@ fun MedtrackApp(
                         scope.launch {
                             isRefreshing = true
                             error = null
-                            runCatching { container.medtrackRepository.refreshNotifications() }
+                            runCatching { container.medtrackRepository.refreshNotifications(notificationsFilterType) }
                                 .onFailure { error = it.message ?: "Unable to refresh notifications" }
                             isRefreshing = false
                         }
                     }
 
-                    LaunchedEffect(Unit) {
+                    LaunchedEffect(notificationsFilterType) {
                         refreshNotifications()
                     }
 
@@ -1132,6 +1150,7 @@ fun MedtrackApp(
                         notifications = notifications,
                         isRefreshing = isRefreshing,
                         error = error,
+                        filterType = notificationsFilterType,
                         onRefresh = { refreshNotifications() },
                         onOpenNotification = { item ->
                             scope.launch {
@@ -1147,11 +1166,33 @@ fun MedtrackApp(
                     val cases by container.medtrackRepository.cases.collectAsState(initial = emptyList())
                     val notification = notifications.firstOrNull { it.id == notificationId }
                     val patientCase = notification?.resolvePatientCase(cases)
+                    val dialerHandoff = rememberDialerHandoff()
 
                     LaunchedEffect(notification?.caseId, patientCase?.id) {
                         val caseId = notification?.caseId?.takeIf { it.isNotBlank() }
                         if (caseId != null && patientCase == null) {
                             runCatching { container.medtrackRepository.refreshCaseDetail(caseId) }
+                        }
+                    }
+
+                    fun submitAlertCallOutcome(selectedCase: PatientCase, outcome: String, note: String?, attemptedAt: String?) {
+                        scope.launch {
+                            runCatching {
+                                container.medtrackRepository.logCallOutcome(
+                                    caseId = selectedCase.id,
+                                    taskId = selectedCase.nextTaskId,
+                                    outcome = outcome,
+                                    note = note,
+                                    attemptedAt = attemptedAt,
+                                )
+                            }.onSuccess { result ->
+                                snackbarHostState.showSnackbar(result.message)
+                                if (!result.queued) {
+                                    runCatching { container.medtrackRepository.refreshCaseDetail(selectedCase.id) }
+                                }
+                            }.onFailure {
+                                snackbarHostState.showSnackbar(it.message ?: "Call logging failed")
+                            }
                         }
                     }
 
@@ -1161,14 +1202,18 @@ fun MedtrackApp(
                         patientCase = patientCase,
                         onBack = { navController.popBackStack() },
                         onCallPatient = { selectedCase ->
-                            if (!openDialer(context, selectedCase)) {
-                                scope.launch { snackbarHostState.showSnackbar("No phone number on file") }
+                            dialerHandoff.startCall(context, selectedCase) { message ->
+                                scope.launch { snackbarHostState.showSnackbar(message) }
                             }
                         },
                         onOpenCase = { caseId ->
                             navController.navigate(Routes.caseDetail(caseId))
                         },
                     )
+
+                    DialerOutcomeSheet(dialerHandoff) { selectedCase, outcome, note, attemptedAt ->
+                        submitAlertCallOutcome(selectedCase, outcome, note, attemptedAt)
+                    }
                 }
                 composable(Routes.ME) {
                     LaunchedEffect(Unit) {
@@ -1185,7 +1230,13 @@ fun MedtrackApp(
                         buildLabel = "MEDTRACK ${BuildConfig.VERSION_NAME} \u00B7 code ${BuildConfig.VERSION_CODE}",
                         pendingWriteCount = pendingWriteCount,
                         unreadNotificationCount = shellNotifications.count { !it.isRead },
-                        onOpenNotifications = { navController.navigate(Routes.NOTIFICATIONS) },
+                        redFlagUnreadCount = shellNotifications.count { it.type == "red_flag" && !it.isRead },
+                        assignmentUnreadCount = shellNotifications.count { it.type == "assignment" && !it.isRead },
+                        overdueUnreadCount = shellNotifications.count { it.type == "overdue" && !it.isRead },
+                        onOpenNotifications = { type ->
+                            notificationsFilterType = type
+                            navController.navigate(Routes.NOTIFICATIONS)
+                        },
                         onSignOut = { signOut() },
                     )
                 }
@@ -1194,10 +1245,28 @@ fun MedtrackApp(
             if (showBottomNav) {
                 MedtrackBottomBar(
                     modifier = Modifier.align(Alignment.BottomCenter),
-                    currentRoute = if (currentRoute == Routes.NOTIFICATIONS) Routes.HOME else currentRoute,
+                    // Notifications is a sub-page of the Me tab, so keep Me highlighted there.
+                    currentRoute = if (currentRoute == Routes.NOTIFICATIONS) Routes.ME else currentRoute,
                     unreadCount = shellNotifications.count { !it.isRead },
-                    canQuickAdd = currentUserProfile?.capabilities?.get("case_create") ?: true,
-                    onNavigate = ::navigateTopLevel,
+                    // Hide the quick-add (+) until the profile confirms case_create, so we
+                    // never surface an action the server will reject.
+                    canQuickAdd = currentUserProfile?.capabilities?.get("case_create") ?: false,
+                    onNavigate = { route ->
+                        // The Me tab always returns to its root: never restore the
+                        // Notifications sub-page on top of it (otherwise tapping Me from
+                        // within Notifications would just re-open Notifications).
+                        if (route == Routes.ME) {
+                            navController.navigate(Routes.ME) {
+                                launchSingleTop = true
+                                restoreState = false
+                                popUpTo(navController.graph.findStartDestination().id) {
+                                    saveState = true
+                                }
+                            }
+                        } else {
+                            navigateTopLevel(route)
+                        }
+                    },
                     onQuickAdd = { showQuickAddSheet = true },
                 )
             }
@@ -1212,8 +1281,9 @@ fun MedtrackApp(
                     showQuickAddSheet = false
                     navController.navigate(Routes.createCase(pathway.category, pathway.label))
                 },
-                onOpenHomeSearch = {
+                onOpenHomeSearch = { query ->
                     showQuickAddSheet = false
+                    homeSearchQuery = query
                     navigateTopLevel(Routes.HOME)
                 },
             )
@@ -1458,7 +1528,7 @@ private fun QuickAddSheet(
     categoryOptions: List<CategoryFilterOption>,
     onDismiss: () -> Unit,
     onCreateCase: (QuickAddPathwaySpec) -> Unit,
-    onOpenHomeSearch: () -> Unit,
+    onOpenHomeSearch: (String) -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val pathways = categoryOptions.quickAddPathways()
@@ -1498,7 +1568,7 @@ private fun QuickAddSheet(
             QuickAddSearchBar(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
-                onSearch = onOpenHomeSearch,
+                onSearch = { onOpenHomeSearch(searchQuery) },
             )
 
             MedtrackSectionTitle(title = "Start a new case")
@@ -1634,14 +1704,19 @@ private fun ProfileScreen(
     buildLabel: String,
     pendingWriteCount: Int,
     unreadNotificationCount: Int,
-    onOpenNotifications: () -> Unit,
+    redFlagUnreadCount: Int,
+    assignmentUnreadCount: Int,
+    overdueUnreadCount: Int,
+    onOpenNotifications: (String?) -> Unit,
     onSignOut: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
         modifier = modifier
             .background(MedtrackColors.Surface)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .verticalScroll(rememberScrollState())
+            // Reserve space so the last row clears the floating bottom nav overlay.
+            .padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = BottomNavScale.ShellHeight + 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Surface(
@@ -1714,16 +1789,44 @@ private fun ProfileScreen(
         }
 
         Text(
-            text = "SETTINGS",
+            text = "NOTIFICATIONS",
             color = MedtrackColors.Faint,
             style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.ExtraBold,
             letterSpacing = 0.5.sp,
             modifier = Modifier.padding(start = 2.dp),
         )
-        ProfileSettingRow(
-            showUnreadDot = unreadNotificationCount > 0,
-            onClick = onOpenNotifications,
+        NotificationCategoryRow(
+            title = "Red flags",
+            subtitle = "Patients flagged for urgent review",
+            icon = Icons.Outlined.ErrorOutline,
+            accent = MedtrackColors.Danger,
+            unreadCount = redFlagUnreadCount,
+            onClick = { onOpenNotifications("red_flag") },
+        )
+        NotificationCategoryRow(
+            title = "Assignments",
+            subtitle = "Cases newly assigned to you",
+            icon = Icons.Outlined.AssignmentInd,
+            accent = MedtrackColors.Primary,
+            unreadCount = assignmentUnreadCount,
+            onClick = { onOpenNotifications("assignment") },
+        )
+        NotificationCategoryRow(
+            title = "Overdue tasks",
+            subtitle = "Tasks past their due date",
+            icon = Icons.Outlined.Schedule,
+            accent = MedtrackColors.Warning,
+            unreadCount = overdueUnreadCount,
+            onClick = { onOpenNotifications("overdue") },
+        )
+        NotificationCategoryRow(
+            title = "All notifications",
+            subtitle = "Everything in one place",
+            icon = Icons.Outlined.Notifications,
+            accent = MedtrackColors.Muted,
+            unreadCount = unreadNotificationCount,
+            onClick = { onOpenNotifications(null) },
         )
 
         Button(
@@ -1791,8 +1894,12 @@ private fun ProfileStatCard(
 }
 
 @Composable
-private fun ProfileSettingRow(
-    showUnreadDot: Boolean,
+private fun NotificationCategoryRow(
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    accent: Color,
+    unreadCount: Int,
     onClick: () -> Unit,
 ) {
     Surface(
@@ -1808,27 +1915,29 @@ private fun ProfileSettingRow(
             horizontalArrangement = Arrangement.spacedBy(13.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box {
-                Surface(shape = RoundedCornerShape(11.dp), color = MedtrackColors.PrimarySoft, modifier = Modifier.size(38.dp)) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(imageVector = Icons.Outlined.Refresh, contentDescription = null, tint = MedtrackColors.Primary, modifier = Modifier.size(19.dp))
-                    }
-                }
-                if (showUnreadDot) {
-                    Surface(
-                        modifier = Modifier
-                            .size(9.dp)
-                            .align(Alignment.TopEnd)
-                            .offset(x = 2.dp, y = (-2).dp),
-                        shape = CircleShape,
-                        color = MedtrackColors.Danger,
-                        border = BorderStroke(1.5.dp, MedtrackColors.Card),
-                    ) {}
+            Surface(shape = RoundedCornerShape(11.dp), color = accent.copy(alpha = 0.14f), modifier = Modifier.size(38.dp)) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(imageVector = icon, contentDescription = null, tint = accent, modifier = Modifier.size(19.dp))
                 }
             }
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text("Notifications & sync", fontWeight = FontWeight.Bold, color = MedtrackColors.Ink, maxLines = 1)
-                Text("Alerts and queued mobile work", color = MedtrackColors.Muted, style = MaterialTheme.typography.bodySmall, maxLines = 1)
+                Text(title, fontWeight = FontWeight.Bold, color = MedtrackColors.Ink, maxLines = 1)
+                Text(subtitle, color = MedtrackColors.Muted, style = MaterialTheme.typography.bodySmall, maxLines = 1)
+            }
+            if (unreadCount > 0) {
+                Surface(
+                    shape = CircleShape,
+                    color = accent,
+                ) {
+                    Text(
+                        text = unreadCount.coerceAtMost(99).toString(),
+                        color = Color.White,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.ExtraBold,
+                        maxLines = 1,
+                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
+                    )
+                }
             }
             Icon(imageVector = Icons.Outlined.ChevronRight, contentDescription = null, tint = MedtrackColors.Faint, modifier = Modifier.size(20.dp))
         }

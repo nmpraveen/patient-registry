@@ -463,7 +463,31 @@ private fun PathwayStep(state: CaseFormState) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         when {
             category.name.isAnc() -> {
-                MedtrackSectionTitle(title = "Obstetric history (GPLA)")
+                MedtrackSectionTitle(title = "Obstetric history (GPAL)")
+                ToggleRow(
+                    label = "Primi (first pregnancy)",
+                    help = "Sets Gravida 1 · Para 0 · Abortions 0 · Living 0.",
+                    checked = state.isPrimi(),
+                    onChange = { checked ->
+                        if (checked) {
+                            state.gravida = 1
+                            state.para = 0
+                            state.abortions = 0
+                            state.living = 0
+                            state.ftnd = 0
+                            state.lscs = 0
+                        } else {
+                            // Allow undoing an accidental Primi selection: clear the preset
+                            // so the steppers are free to re-enter the real obstetric history.
+                            state.gravida = null
+                            state.para = null
+                            state.abortions = null
+                            state.living = null
+                            state.ftnd = null
+                            state.lscs = null
+                        }
+                    },
+                )
                 FieldRow {
                     StepperField("Gravida (G)", state.gravida, { state.gravida = it }, Modifier.weight(1f))
                     StepperField("Para (P)", state.para, { state.para = it }, Modifier.weight(1f))
@@ -472,10 +496,17 @@ private fun PathwayStep(state: CaseFormState) {
                     StepperField("Abortions (A)", state.abortions, { state.abortions = it }, Modifier.weight(1f))
                     StepperField("Living (L)", state.living, { state.living = it }, Modifier.weight(1f))
                 }
-                FieldRow {
-                    StepperField("FTND", state.ftnd, { state.ftnd = it }, Modifier.weight(1f))
-                    StepperField("LSCS", state.lscs, { state.lscs = it }, Modifier.weight(1f))
+                if (state.showsDeliveryModes()) {
+                    MedtrackSectionTitle(
+                        title = "Mode of previous deliveries",
+                        trailing = "Must equal Para (${state.para ?: 0})",
+                    )
+                    FieldRow {
+                        StepperField("Vaginal (FTND)", state.ftnd, { state.ftnd = it }, Modifier.weight(1f))
+                        StepperField("C-section (LSCS)", state.lscs, { state.lscs = it }, Modifier.weight(1f))
+                    }
                 }
+                ObstetricSummaryText(state)
                 MedtrackSectionTitle(title = "Pregnancy dates")
                 DateField("LMP", state.lmp, required = true) { state.lmp = it }
                 val eddNeeded = state.edd.isBlank() && state.usgEdd.isBlank()
@@ -796,6 +827,46 @@ private fun StepButton(add: Boolean, enabled: Boolean, onClick: () -> Unit) {
                 contentDescription = if (add) "Increase" else "Decrease",
                 tint = if (enabled) MedtrackColors.Primary else MedtrackColors.Faint,
                 modifier = Modifier.size(17.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun ObstetricSummaryText(state: CaseFormState) {
+    val g = state.gravida ?: 0
+    val p = state.para ?: 0
+    val a = state.abortions ?: 0
+    val l = state.living ?: 0
+    val summary = buildString {
+        append("G$g P$p A$a L$l")
+        if (state.showsDeliveryModes()) {
+            append("  |  FTND ${state.ftnd ?: 0} LSCS ${state.lscs ?: 0}")
+        }
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            color = MedtrackColors.PrimarySoft,
+        ) {
+            Text(
+                text = summary,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 9.dp),
+                color = MedtrackColors.Primary,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.ExtraBold,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            )
+        }
+        if (l > p) {
+            Text(
+                text = "Living children can exceed Para when there were multiple births.",
+                color = MedtrackColors.Muted,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Medium,
             )
         }
     }

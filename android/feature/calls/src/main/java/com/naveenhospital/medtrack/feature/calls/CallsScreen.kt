@@ -195,17 +195,26 @@ private fun CallQueueHero(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                Box(contentAlignment = Alignment.Center, modifier = Modifier.size(78.dp)) {
+                Box(contentAlignment = Alignment.Center, modifier = Modifier.size(96.dp)) {
                     CircularProgressIndicator(
                         progress = { progress.coerceIn(0f, 1f) },
-                        modifier = Modifier.size(70.dp),
+                        modifier = Modifier.size(90.dp),
                         color = MedtrackColors.Primary,
                         trackColor = MedtrackColors.SurfaceAlt,
                         strokeWidth = 7.dp,
                     )
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(doneCount.toString(), color = MedtrackColors.Ink, fontWeight = FontWeight.Bold)
-                        Text("of $totalCount done", color = MedtrackColors.Muted, style = MaterialTheme.typography.labelSmall)
+                        Text(
+                            text = "$doneCount/$totalCount",
+                            color = MedtrackColors.Ink,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Text(
+                            text = "done",
+                            color = MedtrackColors.Muted,
+                            style = MaterialTheme.typography.labelSmall,
+                        )
                     }
                 }
             }

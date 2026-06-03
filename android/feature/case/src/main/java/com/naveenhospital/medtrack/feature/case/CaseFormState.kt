@@ -85,6 +85,12 @@ class CaseFormState(
     private fun CaseFormCategory.isAnc() = name.trim().equals("ANC", ignoreCase = true)
     private fun CaseFormCategory.isSurgery() = name.trim().equals("Surgery", ignoreCase = true)
 
+    /** Mirrors the server rule: G1 P0 A0 L0 marks a first pregnancy. */
+    fun isPrimi(): Boolean = gravida == 1 && para == 0 && abortions == 0 && living == 0
+
+    /** Previous-delivery counters are only relevant once there is a prior delivery. */
+    fun showsDeliveryModes(): Boolean = (para ?: 0) > 0 && !isPrimi()
+
     fun selectCategory(option: CaseFormCategory) {
         category = option
         subcategory = ""
@@ -183,6 +189,8 @@ class CaseFormState(
                 lmp.isBlank() -> "Enter the LMP date."
                 edd.isBlank() && usgEdd.isBlank() -> "Enter an EDD (LMP-based or USG)."
                 !rchBypass && rchNumber.isBlank() -> "Enter an RCH number or bypass it."
+                showsDeliveryModes() && (ftnd ?: 0) + (lscs ?: 0) != (para ?: 0) ->
+                    "FTND and LSCS together must equal Para (${para ?: 0})."
                 highRisk && ancReasons.isEmpty() -> "Select at least one high-risk reason."
                 else -> null
             }

@@ -233,6 +233,43 @@ class MobileApiTests(APITestCase):
             due_date=timezone.localdate(),
             created_by=self.user,
         )
+        future_case = Case.objects.create(
+            uhid="UH-API-CALLS-FUTURE",
+            first_name="Calls",
+            last_name="Future",
+            patient_name="Calls Future",
+            gender="F",
+            age=33,
+            phone_number="9876543223",
+            category=self.anc,
+            diagnosis="Future calls review",
+            created_by=self.user,
+        )
+        Task.objects.create(
+            case=future_case,
+            title="Future calls task",
+            due_date=timezone.localdate() + timedelta(days=14),
+            created_by=self.user,
+        )
+        awaiting_case = Case.objects.create(
+            uhid="UH-API-CALLS-AWAITING",
+            first_name="Calls",
+            last_name="Awaiting",
+            patient_name="Calls Awaiting",
+            gender="F",
+            age=34,
+            phone_number="9876543224",
+            category=self.anc,
+            diagnosis="Awaiting calls review",
+            created_by=self.user,
+        )
+        Task.objects.create(
+            case=awaiting_case,
+            title="Awaiting calls task",
+            due_date=timezone.localdate(),
+            status=TaskStatus.AWAITING_REPORTS,
+            created_by=self.user,
+        )
         self.client.force_authenticate(caller)
 
         normal_response = self.client.get(reverse("api:case_list"), {"bucket": "all", "assigned_to": "all"})
@@ -244,7 +281,10 @@ class MobileApiTests(APITestCase):
         self.assertEqual(normal_response.status_code, 200)
         self.assertNotIn("UH-API-CALLS-UNASSIGNED", {row["uhid"] for row in normal_response.json()["results"]})
         self.assertEqual(calls_response.status_code, 200)
-        self.assertIn("UH-API-CALLS-UNASSIGNED", {row["uhid"] for row in calls_response.json()["results"]})
+        calls_uhids = {row["uhid"] for row in calls_response.json()["results"]}
+        self.assertIn("UH-API-CALLS-UNASSIGNED", calls_uhids)
+        self.assertNotIn("UH-API-CALLS-FUTURE", calls_uhids)
+        self.assertNotIn("UH-API-CALLS-AWAITING", calls_uhids)
 
     def test_case_list_calls_context_does_not_bypass_scope_without_note_add_permission(self):
         mobile_user = get_user_model().objects.create_user(username="calls-scope-blocked", password="pass")

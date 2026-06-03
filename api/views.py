@@ -49,6 +49,7 @@ from patients.views import (
     _blood_pressure_display,
     _build_case_detail_json_payload,
     _build_latest_vitals_summary,
+    _build_upcoming_call_filters,
     _can_access_upcoming_calls,
     _can_reopen_tasks,
     _complete_task_inline,
@@ -181,6 +182,14 @@ def _can_use_all_assigned_scope(request):
     return scope_context == "calls" and _can_access_upcoming_calls(request.user)
 
 
+def _calls_scope_query(request):
+    scope_context = request.GET.get("scope_context", "").strip()
+    if scope_context != "calls" or not _can_access_upcoming_calls(request.user):
+        return Q()
+    filters = _build_upcoming_call_filters(request.GET.get("range"))
+    return Q(tasks__status=TaskStatus.SCHEDULED, tasks__due_date__range=(filters["range_start"], filters["range_end"]))
+
+
 def _apply_scope_filters(queryset, request, *, include_bucket=True):
     today = timezone.localdate()
     assigned_to = _assigned_to_scope(request)
@@ -190,6 +199,10 @@ def _apply_scope_filters(queryset, request, *, include_bucket=True):
         queryset = queryset.filter(tasks__assigned_user=request.user)
     elif assigned_to != "all":
         queryset = queryset.none()
+
+    calls_scope_query = _calls_scope_query(request)
+    if calls_scope_query:
+        queryset = queryset.filter(calls_scope_query)
 
     raw_category_values = [value for value in request.GET.getlist("category") if value]
     category_query = Q()

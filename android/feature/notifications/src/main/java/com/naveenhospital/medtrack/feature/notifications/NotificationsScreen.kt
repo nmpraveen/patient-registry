@@ -58,14 +58,17 @@ fun NotificationsScreen(
     onRefresh: () -> Unit,
     onOpenNotification: (NotificationItem) -> Unit,
     modifier: Modifier = Modifier,
+    filterType: String? = null,
 ) {
+    // When opened from a Me-page category row, scope to that notification type.
+    val scopedNotifications = if (filterType != null) notifications.filter { it.type == filterType } else notifications
     var criticalOnly by rememberSaveable { mutableStateOf(false) }
-    val unreadCount = notifications.count { !it.isRead }
-    val criticalCount = notifications.count { it.type == "red_flag" }
-    val visibleNotifications = if (criticalOnly) {
-        notifications.filter { it.type == "red_flag" }
+    val unreadCount = scopedNotifications.count { !it.isRead }
+    val criticalCount = if (filterType == null) scopedNotifications.count { it.type == "red_flag" } else 0
+    val visibleNotifications = if (criticalOnly && filterType == null) {
+        scopedNotifications.filter { it.type == "red_flag" }
     } else {
-        notifications
+        scopedNotifications
     }
     val grouped = visibleNotifications
         .sortedWith(
@@ -88,9 +91,18 @@ fun NotificationsScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text("Notifications", color = MedtrackColors.Ink, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
                 Text(
-                    text = if (criticalOnly) "${visibleNotifications.size} red flags shown" else "$unreadCount unread · $criticalCount critical",
+                    text = filterType?.let(::notificationTypeTitle) ?: "Notifications",
+                    color = MedtrackColors.Ink,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.ExtraBold,
+                )
+                Text(
+                    text = when {
+                        filterType != null -> "$unreadCount unread · ${scopedNotifications.size} total"
+                        criticalOnly -> "${visibleNotifications.size} red flags shown"
+                        else -> "$unreadCount unread · $criticalCount critical"
+                    },
                     color = MedtrackColors.Muted,
                     style = MaterialTheme.typography.labelSmall,
                 )
@@ -291,6 +303,14 @@ private fun NotificationTypePill(text: String, color: Color) {
         )
     }
 }
+
+fun notificationTypeTitle(type: String): String =
+    when (type) {
+        "red_flag" -> "Red flags"
+        "assignment" -> "Assignments"
+        "overdue" -> "Overdue tasks"
+        else -> "Notifications"
+    }
 
 private fun NotificationItem.groupLabel(): String =
     when (type) {

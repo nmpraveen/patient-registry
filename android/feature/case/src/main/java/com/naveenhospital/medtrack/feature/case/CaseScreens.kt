@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
@@ -42,6 +43,7 @@ import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.CloudDone
+import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.Favorite
@@ -120,6 +122,7 @@ import kotlin.math.roundToInt
 fun CaseListScreen(
     cases: List<PatientCase>,
     isRefreshing: Boolean = false,
+    pendingWriteCount: Int = 0,
     error: String? = null,
     onRefresh: () -> Unit = {},
     onCallPatient: (PatientCase) -> Unit,
@@ -146,26 +149,31 @@ fun CaseListScreen(
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.Top,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(
-                    text = "Cases",
-                    color = MedtrackColors.Ink,
-                    style = MaterialTheme.typography.headlineSmall.copy(fontSize = 24.sp),
-                    fontWeight = FontWeight.ExtraBold,
-                )
+            Text(
+                text = "Cases",
+                color = MedtrackColors.Ink,
+                style = MaterialTheme.typography.headlineSmall.copy(fontSize = 24.sp),
+                fontWeight = FontWeight.ExtraBold,
+            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Text(
                     text = "${cases.size} active records",
                     color = MedtrackColors.Muted,
                     style = MaterialTheme.typography.labelMedium.copy(fontSize = 13.sp),
                     fontWeight = FontWeight.SemiBold,
                 )
+                SyncCloud(
+                    isRefreshing = isRefreshing,
+                    pendingWriteCount = pendingWriteCount,
+                    hasError = error != null,
+                    onRefresh = onRefresh,
+                )
             }
-            SyncStatusPill(
-                isRefreshing = isRefreshing,
-                onRefresh = onRefresh,
-            )
         }
         error?.let { Text(text = it, color = MedtrackColors.Danger) }
         if (isRefreshing) {
@@ -893,34 +901,44 @@ private fun VitalStatusResult.statusSoftColor(): Color =
     }
 
 @Composable
-private fun SyncStatusPill(
+private fun SyncCloud(
     isRefreshing: Boolean,
+    pendingWriteCount: Int,
+    hasError: Boolean,
     onRefresh: () -> Unit,
 ) {
-    val label = if (isRefreshing) "Syncing" else "Synced"
-    val color = if (isRefreshing) MedtrackColors.Primary else MedtrackColors.Success
+    // Green cloud when everything is synced; red when there are queued writes
+    // or a sync error. Tapping triggers a refresh.
+    val outOfSync = pendingWriteCount > 0 || hasError
+    val color = when {
+        outOfSync -> MedtrackColors.Danger
+        isRefreshing -> MedtrackColors.Primary
+        else -> MedtrackColors.Success
+    }
+    val background = when {
+        outOfSync -> MedtrackColors.DangerSoft
+        isRefreshing -> MedtrackColors.PrimarySoft
+        else -> MedtrackColors.SuccessSoft
+    }
+    val icon = if (outOfSync) Icons.Outlined.CloudOff else Icons.Outlined.CloudDone
+    val description = when {
+        outOfSync -> "Not synced, tap to retry"
+        isRefreshing -> "Syncing"
+        else -> "Synced"
+    }
     Surface(
-        modifier = Modifier.clickable(onClick = onRefresh),
-        shape = RoundedCornerShape(999.dp),
-        color = if (isRefreshing) MedtrackColors.PrimarySoft else MedtrackColors.SuccessSoft,
+        modifier = Modifier
+            .size(34.dp)
+            .clickable(onClick = onRefresh),
+        shape = CircleShape,
+        color = background,
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 11.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(5.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+        Box(contentAlignment = Alignment.Center) {
             Icon(
-                imageVector = Icons.Outlined.CloudDone,
-                contentDescription = null,
+                imageVector = icon,
+                contentDescription = description,
                 tint = color,
-                modifier = Modifier.size(15.dp),
-            )
-            Text(
-                text = label,
-                color = color,
-                style = MaterialTheme.typography.labelMedium.copy(fontSize = 12.5.sp),
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
+                modifier = Modifier.size(19.dp),
             )
         }
     }

@@ -35,10 +35,13 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.AssignmentInd
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.CloudDone
 import androidx.compose.material.icons.outlined.ErrorOutline
+import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.HealthAndSafety
 import androidx.compose.material.icons.outlined.Home
@@ -242,6 +245,9 @@ fun MedtrackApp(
     var showQuickAddSheet by remember { mutableStateOf(false) }
     // Hoisted so the Quick Add sheet's search can pre-fill the Home search query.
     var homeSearchQuery by remember { mutableStateOf("") }
+    // Notification type the Notifications screen is scoped to (null = all). Set by the
+    // Me-page category rows before navigating to the Notifications screen.
+    var notificationsFilterType by remember { mutableStateOf<String?>(null) }
     val currentRoute = currentDestination?.route
     val bottomRoutes = remember { bottomDestinations.map { it.route }.toSet() }
     val showBottomNav = currentRoute in bottomRoutes || currentRoute == Routes.NOTIFICATIONS
@@ -757,6 +763,7 @@ fun MedtrackApp(
                         modifier = Modifier.fillMaxSize(),
                         cases = cases,
                         isRefreshing = isRefreshing,
+                        pendingWriteCount = pendingWriteCount,
                         error = error,
                         onRefresh = { refreshCaseList() },
                         onCallPatient = { patientCase ->
@@ -1125,6 +1132,7 @@ fun MedtrackApp(
                         notifications = notifications,
                         isRefreshing = isRefreshing,
                         error = error,
+                        filterType = notificationsFilterType,
                         onRefresh = { refreshNotifications() },
                         onOpenNotification = { item ->
                             scope.launch {
@@ -1204,7 +1212,13 @@ fun MedtrackApp(
                         buildLabel = "MEDTRACK ${BuildConfig.VERSION_NAME} \u00B7 code ${BuildConfig.VERSION_CODE}",
                         pendingWriteCount = pendingWriteCount,
                         unreadNotificationCount = shellNotifications.count { !it.isRead },
-                        onOpenNotifications = { navController.navigate(Routes.NOTIFICATIONS) },
+                        redFlagUnreadCount = shellNotifications.count { it.type == "red_flag" && !it.isRead },
+                        assignmentUnreadCount = shellNotifications.count { it.type == "assignment" && !it.isRead },
+                        overdueUnreadCount = shellNotifications.count { it.type == "overdue" && !it.isRead },
+                        onOpenNotifications = { type ->
+                            notificationsFilterType = type
+                            navController.navigate(Routes.NOTIFICATIONS)
+                        },
                         onSignOut = { signOut() },
                     )
                 }
@@ -1213,10 +1227,26 @@ fun MedtrackApp(
             if (showBottomNav) {
                 MedtrackBottomBar(
                     modifier = Modifier.align(Alignment.BottomCenter),
-                    currentRoute = if (currentRoute == Routes.NOTIFICATIONS) Routes.HOME else currentRoute,
+                    // Notifications is a sub-page of the Me tab, so keep Me highlighted there.
+                    currentRoute = if (currentRoute == Routes.NOTIFICATIONS) Routes.ME else currentRoute,
                     unreadCount = shellNotifications.count { !it.isRead },
                     canQuickAdd = currentUserProfile?.capabilities?.get("case_create") ?: true,
-                    onNavigate = ::navigateTopLevel,
+                    onNavigate = { route ->
+                        // The Me tab always returns to its root: never restore the
+                        // Notifications sub-page on top of it (otherwise tapping Me from
+                        // within Notifications would just re-open Notifications).
+                        if (route == Routes.ME) {
+                            navController.navigate(Routes.ME) {
+                                launchSingleTop = true
+                                restoreState = false
+                                popUpTo(navController.graph.findStartDestination().id) {
+                                    saveState = true
+                                }
+                            }
+                        } else {
+                            navigateTopLevel(route)
+                        }
+                    },
                     onQuickAdd = { showQuickAddSheet = true },
                 )
             }
@@ -1654,7 +1684,10 @@ private fun ProfileScreen(
     buildLabel: String,
     pendingWriteCount: Int,
     unreadNotificationCount: Int,
-    onOpenNotifications: () -> Unit,
+    redFlagUnreadCount: Int,
+    assignmentUnreadCount: Int,
+    overdueUnreadCount: Int,
+    onOpenNotifications: (String?) -> Unit,
     onSignOut: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -1734,16 +1767,44 @@ private fun ProfileScreen(
         }
 
         Text(
-            text = "SETTINGS",
+            text = "NOTIFICATIONS",
             color = MedtrackColors.Faint,
             style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.ExtraBold,
             letterSpacing = 0.5.sp,
             modifier = Modifier.padding(start = 2.dp),
         )
-        ProfileSettingRow(
-            showUnreadDot = unreadNotificationCount > 0,
-            onClick = onOpenNotifications,
+        NotificationCategoryRow(
+            title = "Red flags",
+            subtitle = "Patients flagged for urgent review",
+            icon = Icons.Outlined.ErrorOutline,
+            accent = MedtrackColors.Danger,
+            unreadCount = redFlagUnreadCount,
+            onClick = { onOpenNotifications("red_flag") },
+        )
+        NotificationCategoryRow(
+            title = "Assignments",
+            subtitle = "Cases newly assigned to you",
+            icon = Icons.Outlined.AssignmentInd,
+            accent = MedtrackColors.Primary,
+            unreadCount = assignmentUnreadCount,
+            onClick = { onOpenNotifications("assignment") },
+        )
+        NotificationCategoryRow(
+            title = "Overdue tasks",
+            subtitle = "Tasks past their due date",
+            icon = Icons.Outlined.Schedule,
+            accent = MedtrackColors.Warning,
+            unreadCount = overdueUnreadCount,
+            onClick = { onOpenNotifications("overdue") },
+        )
+        NotificationCategoryRow(
+            title = "All notifications",
+            subtitle = "Everything in one place",
+            icon = Icons.Outlined.Notifications,
+            accent = MedtrackColors.Muted,
+            unreadCount = unreadNotificationCount,
+            onClick = { onOpenNotifications(null) },
         )
 
         Button(
@@ -1811,8 +1872,12 @@ private fun ProfileStatCard(
 }
 
 @Composable
-private fun ProfileSettingRow(
-    showUnreadDot: Boolean,
+private fun NotificationCategoryRow(
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    accent: Color,
+    unreadCount: Int,
     onClick: () -> Unit,
 ) {
     Surface(
@@ -1828,27 +1893,29 @@ private fun ProfileSettingRow(
             horizontalArrangement = Arrangement.spacedBy(13.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box {
-                Surface(shape = RoundedCornerShape(11.dp), color = MedtrackColors.PrimarySoft, modifier = Modifier.size(38.dp)) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(imageVector = Icons.Outlined.Refresh, contentDescription = null, tint = MedtrackColors.Primary, modifier = Modifier.size(19.dp))
-                    }
-                }
-                if (showUnreadDot) {
-                    Surface(
-                        modifier = Modifier
-                            .size(9.dp)
-                            .align(Alignment.TopEnd)
-                            .offset(x = 2.dp, y = (-2).dp),
-                        shape = CircleShape,
-                        color = MedtrackColors.Danger,
-                        border = BorderStroke(1.5.dp, MedtrackColors.Card),
-                    ) {}
+            Surface(shape = RoundedCornerShape(11.dp), color = accent.copy(alpha = 0.14f), modifier = Modifier.size(38.dp)) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(imageVector = icon, contentDescription = null, tint = accent, modifier = Modifier.size(19.dp))
                 }
             }
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text("Notifications & sync", fontWeight = FontWeight.Bold, color = MedtrackColors.Ink, maxLines = 1)
-                Text("Alerts and queued mobile work", color = MedtrackColors.Muted, style = MaterialTheme.typography.bodySmall, maxLines = 1)
+                Text(title, fontWeight = FontWeight.Bold, color = MedtrackColors.Ink, maxLines = 1)
+                Text(subtitle, color = MedtrackColors.Muted, style = MaterialTheme.typography.bodySmall, maxLines = 1)
+            }
+            if (unreadCount > 0) {
+                Surface(
+                    shape = CircleShape,
+                    color = accent,
+                ) {
+                    Text(
+                        text = unreadCount.coerceAtMost(99).toString(),
+                        color = Color.White,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.ExtraBold,
+                        maxLines = 1,
+                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
+                    )
+                }
             }
             Icon(imageVector = Icons.Outlined.ChevronRight, contentDescription = null, tint = MedtrackColors.Faint, modifier = Modifier.size(20.dp))
         }

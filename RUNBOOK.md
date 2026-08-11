@@ -92,6 +92,39 @@ docker compose exec web python manage.py migrate
 
 Never run `docker compose down -v` unless deleting the database volume is intentional.
 
+## Production VPS Deployment
+
+Production checkout: `/srv/medtrack/app`
+
+Production domain: `https://book.naveenhospital.net`
+
+Preflight:
+
+```bash
+cd /srv/medtrack/app
+test -f .env
+git status --short
+git rev-parse HEAD
+docker compose -f docker-compose.yml -f docker-compose.prod.yml config --quiet
+```
+
+Deploy only the reviewed full commit:
+
+```bash
+./scripts/deploy-production.sh <expected-full-git-commit>
+```
+
+Acceptance:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
+docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T web python manage.py check --deploy
+curl --fail --silent --show-error --resolve book.naveenhospital.net:443:127.0.0.1 https://book.naveenhospital.net/login/ >/dev/null
+curl --fail --silent --show-error https://book.naveenhospital.net/login/ >/dev/null
+```
+
+Before a future code update, run `./scripts/backup.sh` and preserve the resulting backup outside the VPS. Never deploy from a dirty checkout and never run `docker compose down -v` during an update.
+
 ## Android Local Verification
 
 Fast manual emulator start and login:

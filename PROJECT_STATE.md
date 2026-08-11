@@ -8,13 +8,13 @@ The web app supports login-based role-aware workflows, case dashboards, case act
 
 The Android v1 implementation is locally implemented and has local verification evidence from the Test NNH workflow. The release goal is not complete until the external Firebase and physical-device gates pass.
 
-Production recovery is deployed on the hardened VPS at commit `73e551ec79cd96fd191a51abc62ce34d95b47c8c`: pinned Python/PostgreSQL/Caddy versions, loopback-only Django exposure, persistent host backup storage, health-gated startup, and exact-commit deployment. The encrypted Google Drive canary and an independent off-VPS scratch restore both passed. Recurring offsite timers remain disabled until the private `age` identity has a confirmed second offline copy and a policy-compatible unattended storage backend is selected.
+Production recovery is deployed on the hardened VPS at commit `73e551ec79cd96fd191a51abc62ce34d95b47c8c`: pinned Python/PostgreSQL/Caddy versions, loopback-only Django exposure, persistent host backup storage, health-gated startup, and exact-commit deployment. Encrypted Google Drive backups and health timers are active by explicit owner decision, a second offline private-key copy is confirmed, and a pull-only Synology ciphertext mirror provides an independent off-VPS copy. Independent restores from both Drive and the NAS passed PostgreSQL and exact-commit Django validation.
 
 ## Last Verified Date
 
 2026-08-11
 
-Production infrastructure changes were verified with Compose rendering, deployment-script syntax validation, Django migration-drift checks, `manage.py check --deploy`, all 369 Django tests (2 skipped), origin-bypassed and public HTTPS responses, a live encrypted canary, and an independent PostgreSQL/Django scratch restore. The earlier Android evidence remains the screenshot handoff package at `output/android-claude-handoff-final-20260531-105420/`.
+Production infrastructure changes were verified with Compose rendering, deployment-script syntax validation, Django migration-drift checks, `manage.py check --deploy`, all 369 Django tests (2 skipped), origin-bypassed and public HTTPS responses, active encrypted tier timers, five checksum-valid NAS tiers, containment tests, and independent Drive- and NAS-sourced PostgreSQL/Django scratch restores. The earlier Android evidence remains the screenshot handoff package at `output/android-claude-handoff-final-20260531-105420/`.
 
 ## How To Run Locally
 
@@ -51,7 +51,7 @@ If `docker-compose.override.yml` exists locally, the local-dev PowerShell wrappe
 ## Current Phase
 
 - Web MVP: operational and runnable locally.
-- Production recovery deployment: deployed and healthy on the hardened VPS; recurring offsite scheduling remains gated.
+- Production recovery deployment: deployed and healthy on the hardened VPS; encrypted Drive scheduling and the isolated Synology mirror are active and restore-proven.
 - Android v1: locally implemented and locally smoke-tested.
 - Release readiness: blocked on external Firebase delivery evidence, a physical Android phone smoke, and a two-user field-test record.
 
@@ -74,6 +74,8 @@ If `docker-compose.override.yml` exists locally, the local-dev PowerShell wrappe
 - Production Caddy/Docker deployment with exact-commit refusal, service healthchecks, secure loopback binding, and persistent `/app/backups` storage.
 - Encrypted off-VPS recovery tooling with immutable upload names, post-upload verification, exact-pattern retention, four scheduled tiers, a pre-deployment tier, and freshness/retention health checks.
 - Live encrypted canary `medtrack-prod-canary-20260811T165254Z.tar.age`, independently downloaded, checksum-verified, decrypted off VPS, restored into PostgreSQL 16.14, and validated by the exact deployed Django commit.
+- Pull-only Synology mirror at `Home/Backups/MEDTRACK` with a read-only SFTP export, networked incoming-only fetcher, network-disabled archive promoter, hard space/transfer ceilings, and no automatic deletion.
+- NAS-sourced restore proof for the same canary: external and internal checksums, PostgreSQL restore, exact-commit Django checks, ORM queries, and login HTTP 200 all passed; decrypted scratch material was removed.
 
 ## Not Done
 
@@ -91,9 +93,9 @@ If `docker-compose.override.yml` exists locally, the local-dev PowerShell wrappe
 - Importing patient-data bundles is destructive for existing patient data after a safety backup.
 - The Test NNH server is local/demo infrastructure and must not be treated as production.
 - Caddy certificate issuance still depends on correct public DNS/Cloudflare routing to the VPS on ports 80 and 443.
-- The Google Drive API terms prohibit backing up user or app content from a developer app/project without Google's express prior written consent. The Drive canary is retained as technical proof, but recurring Drive-backed timers must remain disabled unless that consent is obtained.
-- A policy-compatible second offsite backend is still required before unattended backup automation is operational; Google Drive must not be the sole offsite copy.
-- The scratch restore is proven, but automation must remain disabled until a second offline/password-manager copy of the private `age` identity is confirmed.
+- Google Drive's developer API terms restrict general backup use without express written consent. The owner explicitly accepted that residual policy risk for this personal-use deployment and enabled the timers; this is not a legal or compliance conclusion.
+- The NAS mirror is append-only by application logic rather than immutable/WORM storage. A compromised VPS could feed correctly named malicious ciphertext or exhaust the bounded 20 GiB areas, but cannot use this path to decrypt backups, write the archive directly, or access other NAS folders.
+- The Synology Docker host enforces AppArmor, memory limits, dropped capabilities, `no-new-privileges`, mount isolation, and a networkless promoter, but its kernel did not expose the normal seccomp profile or honor requested PID/CPU limits.
 - The current Test NNH listener can appear LAN-exposed through Docker port publishing; use `adb reverse` for physical-device local testing when possible.
 - `MarkUS_Latest_API37` can appear attached while stuck behind a locked/black SystemUI state. For quick manual starts, switch to `MarkUS_Local` instead of debugging the APK.
 - Firebase readiness depends on external console configuration and local secrets that are intentionally excluded from Git.
@@ -104,11 +106,13 @@ If `docker-compose.override.yml` exists locally, the local-dev PowerShell wrappe
 - `staticfiles/` - collected Django static files.
 - `output/` - Android/API smoke, audit, and field-test evidence when scripts are run.
 - `output/android-claude-handoff-final-20260531-105420/` - current screenshot handoff for style and workflow review.
+- Synology `Home/Backups/MEDTRACK/archive/` - encrypted NAS recovery archive; no private `age` key and no automatic deletion.
+- `C:\Users\prave\Documents\NNH umich\MEDTRACK Recovery\2026-08-11-nas-restore\` - local encrypted NAS restore evidence and verification report; no retained plaintext.
 - `%USERPROFILE%\.codex\build\medtrack-android\app\outputs\apk\debug\app-debug.apk` - default debug APK output.
 - `test_nnh_state` - Docker volume for the Test NNH demo SQLite database.
 
 ## Next 3 Actions
 
-1. Confirm a second offline/password-manager copy of the private `age` identity and configure a policy-compatible unattended offsite backend; then initialize and enable the backup/health timers.
-2. Rotate the temporary VPS root credential and arrange an independent host-level snapshot or second storage copy.
+1. Rotate the temporary VPS root credential and arrange a host-level snapshot in addition to the Drive and NAS application backups.
+2. Monitor Drive and NAS backup health, space ceilings, and timer failures; repeat a scratch restore at least monthly and after backup-system changes.
 3. Configure Firebase inputs, prove real push delivery, record the two-user field test, and rerun `.\android\scripts\medtrack-v1-audit.ps1`.

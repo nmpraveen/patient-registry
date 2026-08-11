@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026.08.11.18.17
+- Added a hardened, append-only VPS ciphertext export for a pull-only Synology mirror, including an SFTP-only chroot account, immutable conflict checks, systemd isolation, and SSH validation/rollback.
+- Deployed a two-zone NAS design: a restricted networked fetcher writes only to quarantine, while a network-disabled promoter validates complete SHA-256 triplets into an archive with no automatic deletion.
+- Recorded five successful initial tier mirrors, remote-write denial and container-boundary tests, plus a full NAS-sourced PostgreSQL/Django restore and plaintext cleanup.
+- Updated live operations status: recurring encrypted Drive timers are active by explicit owner decision, the second private-key copy is confirmed, and Google Drive is no longer the sole off-VPS copy.
+
 ## 2026.08.11.17.01
 - Recorded the successful live encrypted canary and independent off-VPS PostgreSQL/Django scratch restore at deployed commit `73e551ec79cd96fd191a51abc62ce34d95b47c8c`.
 - Documented the verified dump, manifest, schema, migration, ORM, and login checks plus post-verification plaintext cleanup.

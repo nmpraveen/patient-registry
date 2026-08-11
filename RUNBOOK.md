@@ -129,6 +129,8 @@ Before a future code update, run `./scripts/backup.sh` and preserve the resultin
 
 The production backup remote is `medtrack-drive:Naveen-Hospital-Backups/MEDTRACK/production`. Backup payloads are encrypted before upload; filenames and tier names are not encrypted. Never put the private `age` identity or a decrypted archive on the VPS.
 
+Policy gate: [Google Drive API policy](https://developers.google.com/workspace/drive/api/terms) prohibits backing up user or app content from a developer app/project to Drive without Google's express prior written consent. The verified Drive canary may be kept as recovery evidence, but do not enable unattended Drive-backed timers unless that consent is obtained. Prefer a policy-compatible rclone object-storage backend and retain an independent host snapshot or second provider copy. The narrow [`drive.file` scope](https://developers.google.com/workspace/drive/api/guides/api-specific-auth) limits technical access; it does not override the use-case restriction.
+
 Required root-only paths:
 
 ```text
@@ -166,7 +168,12 @@ MEDTRACK_BACKUP_CONFIG=/etc/medtrack-backup/backup.env ./scripts/backup-offsite.
 rclone --config /srv/medtrack/backup-secrets/rclone.conf lsl medtrack-drive:Naveen-Hospital-Backups/MEDTRACK/production/canary
 ```
 
-Enable the four backup schedules only after the canary succeeds:
+Enable the four backup schedules only after all of these gates pass:
+
+- live encrypted canary verification
+- independent scratch PostgreSQL/Django restore
+- confirmed second offline/password-manager copy of the private `age` identity
+- policy-compatible unattended remote, or written Google consent for Drive API backup use
 
 ```bash
 systemctl enable --now \
@@ -203,6 +210,16 @@ MEDTRACK_BACKUP_CONFIG=/etc/medtrack-backup/backup.env ./scripts/backup-offsite.
 ```
 
 A successful upload is not restore proof. On a separate scratch host, download one completed ciphertext plus its checksum, verify SHA-256, decrypt it with the offline identity, verify the internal `manifest.sha256`, list `database.dump` with `pg_restore --list`, and restore it into a new empty PostgreSQL database. Never test a restore over production.
+
+Verified 2026-08-11 recovery proof:
+
+- deployed commit `73e551ec79cd96fd191a51abc62ce34d95b47c8c`
+- canary `medtrack-prod-canary-20260811T165254Z.tar.age`
+- external and 9-entry internal SHA-256 verification passed
+- 283-entry PostgreSQL custom dump restored into isolated PostgreSQL 16.14
+- 30 public tables and 69 Django migration rows restored
+- exact-commit Django check, migration check, ORM query, and `/login/` HTTP 200 passed
+- recurring timers intentionally left disabled pending the remaining key-copy and remote-policy gates
 
 ## Android Local Verification
 
@@ -323,4 +340,4 @@ Do not write raw FCM tokens, service-account JSON, PHI, patient names, or patien
 - `%USERPROFILE%\.codex\build\medtrack-android\` - Android Gradle build output outside Dropbox.
 - Docker volume `test_nnh_state` - Test NNH demo SQLite state.
 - `/srv/medtrack/offsite-backups/` - root-only local ciphertext cache and success-state files.
-- Google Drive `Naveen-Hospital-Backups/MEDTRACK/production/` - encrypted recovery sets only.
+- Google Drive `Naveen-Hospital-Backups/MEDTRACK/production/canary/` - encrypted technical canary evidence only; recurring Drive-backed timers are disabled pending policy clearance.

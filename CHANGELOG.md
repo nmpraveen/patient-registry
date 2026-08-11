@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.08.11.17.01
+- Recorded the successful live encrypted canary and independent off-VPS PostgreSQL/Django scratch restore at deployed commit `73e551ec79cd96fd191a51abc62ce34d95b47c8c`.
+- Documented the verified dump, manifest, schema, migration, ORM, and login checks plus post-verification plaintext cleanup.
+- Kept recurring timers disabled pending a second offline private-key copy and a policy-compatible unattended backend because Google Drive API policy restricts developer-app backup use.
+
 ## 2026.08.11.15.45
 - Added encrypted full-recovery backups that validate PostgreSQL dumps, capture recovery configuration, encrypt before upload, and verify immutable Google Drive objects.
 - Added rapid, daily, weekly, monthly, pre-deployment, and canary retention tiers plus systemd timers and freshness/retention health checks.

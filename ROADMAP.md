@@ -9,13 +9,15 @@
 | Mobile API | Done locally | DRF endpoints support Android auth, worklists, case detail, writes, notifications, and device registration. |
 | Android v1 app | Done locally | Kotlin/Compose app, offline writes, notifications surface, local smoke scripts, and screenshot/style handoff evidence exist. |
 | Android release readiness | In progress | Screenshot handoff is captured; Firebase delivery, create-case persistence, lock-flow routing, field-test evidence, release signing, and final v1 audit remain. |
-| Production hardening | In progress | Pinned Caddy/Docker deployment and secure environment contract are defined; complete live HTTPS acceptance and off-VPS restore proof. |
+| Production hardening | In progress | Live HTTPS is accepted and encrypted off-VPS automation is implemented; complete Drive OAuth, the live canary, timers, and scratch restore proof. |
 
 ## Near-Term Roadmap
 
 1. Complete the hardened production restart.
    - Deploy only the reviewed exact Git commit to `/srv/medtrack/app`.
-   - Verify container health, Django deployment checks, direct-origin HTTPS, and public Cloudflare HTTPS.
+   - Bind restricted Drive OAuth to the intended backup account and keep its token root-only.
+   - Upload and verify an encrypted canary, enable the tier timers, and run the health service.
+   - Prove a scratch PostgreSQL restore with the off-VPS private key.
    - Keep the production database empty until the restore/new-data decision is explicit.
 
 2. Review the Android screenshot handoff.
@@ -55,7 +57,7 @@
 ## Later Work
 
 - Decide whether the Android app needs a signed release build and distribution checklist.
-- Add encrypted off-VPS backup retention and recurring scratch-restore verification after the initial production acceptance.
+- Add recurring independent scratch-restore verification after the first manual restore proof.
 - Design the permanent mobile worklist scope policy so elevated users can choose the operational queue intentionally instead of relying on the temporary `assigned_to=all` default.
 - Keep the app scoped as case-based follow-up tracking, not a full EHR.
 - Add new seed support whenever future workflows create or update patient data.

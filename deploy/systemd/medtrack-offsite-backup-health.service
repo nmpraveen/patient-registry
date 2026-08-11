@@ -1,0 +1,34 @@
+[Unit]
+Description=Verify MEDTRACK encrypted off-site backup freshness and retention
+Documentation=file:///srv/medtrack/app/RUNBOOK.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=/srv/medtrack/app
+Environment=MEDTRACK_BACKUP_CONFIG=/etc/medtrack-backup/backup.env
+ExecStart=/srv/medtrack/app/scripts/check-offsite-backups.sh
+UMask=0077
+TimeoutStartSec=15m
+NoNewPrivileges=yes
+PrivateDevices=yes
+PrivateTmp=yes
+ProtectClock=yes
+ProtectControlGroups=yes
+ProtectHome=yes
+ProtectHostname=yes
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectSystem=strict
+ReadOnlyPaths=/srv/medtrack/app /srv/medtrack/backup-secrets /etc/medtrack-backup /srv/medtrack/offsite-backups
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,11 @@
+[Unit]
+Description=MEDTRACK encrypted weekly backup
+
+[Timer]
+OnCalendar=Sun *-*-* 03:15:00 Asia/Kolkata
+RandomizedDelaySec=15m
+Persistent=true
+Unit=medtrack-offsite-backup@weekly.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,9 @@
+{$MEDTRACK_DOMAIN} {
+    encode zstd gzip
+
+    header {
+        -Server
+    }
+
+    reverse_proxy web:8000
+}

@@ -30,6 +30,45 @@ If you keep a private local override file, add `-f docker-compose.override.yml` 
 
 For a private VPS, keep server-only Docker settings in an untracked `docker-compose.override.yml`. Docker Compose auto-loads that file for `up`, `exec`, `ps`, and `logs`, so host-specific settings stay off GitHub while commands like `update_medtrack` remain unchanged.
 
+## Production deployment
+
+Production uses the shared Compose file plus the tracked Caddy overlay:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml config
+./scripts/deploy-production.sh "$(git rev-parse HEAD)"
+```
+
+The deployment script refuses a different commit or modified tracked files, pulls the pinned PostgreSQL and Caddy images, builds the pinned app commit, waits for Django to become healthy, and runs `manage.py check --deploy`.
+
+Create an untracked `.env` with fresh values. At minimum, production must set:
+
+```dotenv
+MEDTRACK_DOMAIN=book.naveenhospital.net
+SECRET_KEY=<fresh-long-random-secret>
+DEBUG=False
+ALLOWED_HOSTS=book.naveenhospital.net,127.0.0.1,localhost
+CSRF_TRUSTED_ORIGINS=https://book.naveenhospital.net
+SECURE_SSL_REDIRECT=True
+SECURE_HSTS_SECONDS=31536000
+SECURE_HSTS_INCLUDE_SUBDOMAINS=True
+SECURE_HSTS_PRELOAD=False
+SESSION_COOKIE_SECURE=True
+CSRF_COOKIE_SECURE=True
+USE_X_FORWARDED_PROTO=True
+WEBAUTHN_RP_ID=book.naveenhospital.net
+WEBAUTHN_ALLOWED_ORIGINS=https://book.naveenhospital.net
+FCM_ENABLED=False
+POSTGRES_DB=patient_registry
+POSTGRES_USER=patient_registry
+POSTGRES_PASSWORD=<fresh-long-random-password>
+POSTGRES_HOST=db
+POSTGRES_PORT=5432
+BACKUP_HOST_DIR=/srv/medtrack/backups
+```
+
+Django is published only on `127.0.0.1:8000`; Caddy is the public entry point on ports 80 and 443 and obtains HTTPS automatically. PostgreSQL is not published to the host. Do not seed demo patients in production.
+
 Create admin user:
 
 ```bash

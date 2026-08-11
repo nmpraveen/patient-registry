@@ -8,11 +8,13 @@ The web app supports login-based role-aware workflows, case dashboards, case act
 
 The Android v1 implementation is locally implemented and has local verification evidence from the Test NNH workflow. The release goal is not complete until the external Firebase and physical-device gates pass.
 
+Production recovery deployment tooling is now defined for the hardened VPS: pinned Python/PostgreSQL/Caddy versions, loopback-only Django exposure, persistent host backup storage, health-gated startup, and exact-commit deployment. Live VPS acceptance is recorded separately during the recovery run.
+
 ## Last Verified Date
 
-2026-05-31
+2026-08-11
 
-Verified with the local Test NNH server on `http://localhost:8000`, `.\local-dev\test-nnh-health.ps1`, full Django tests, Android `:app:assembleDebug`, Android `testDebugUnitTest`, APK install on `emulator-5554` / `MarkUS_Local`, and the screenshot handoff package at `output/android-claude-handoff-final-20260531-105420/`.
+Production infrastructure changes were verified with Compose rendering, deployment-script syntax validation, Django migration-drift checks, `manage.py check --deploy`, and all 369 Django tests (2 skipped). The earlier Android evidence remains the screenshot handoff package at `output/android-claude-handoff-final-20260531-105420/`.
 
 ## How To Run Locally
 
@@ -49,6 +51,7 @@ If `docker-compose.override.yml` exists locally, the local-dev PowerShell wrappe
 ## Current Phase
 
 - Web MVP: operational and runnable locally.
+- Production recovery deployment: defined and ready for the hardened VPS rollout.
 - Android v1: locally implemented and locally smoke-tested.
 - Release readiness: blocked on external Firebase delivery evidence, a physical Android phone smoke, and a two-user field-test record.
 
@@ -68,6 +71,7 @@ If `docker-compose.override.yml` exists locally, the local-dev PowerShell wrappe
 - Android alert detail, call outcome, and Custom Rehab visual surfaces are locally implemented for review.
 - `MarkUS_Local` is the preferred AVD for quick manual Android start/login checks against Test NNH.
 - Firebase/FCM integration boundary is implemented so missing Firebase config does not break normal local use.
+- Production Caddy/Docker deployment with exact-commit refusal, service healthchecks, secure loopback binding, and persistent `/app/backups` storage.
 
 ## Not Done
 
@@ -84,6 +88,8 @@ If `docker-compose.override.yml` exists locally, the local-dev PowerShell wrappe
 - Patient data and backups can contain PHI. Do not commit real patient data, backup bundles, screenshots, logs, FCM tokens, service-account JSON, or `.env`.
 - Importing patient-data bundles is destructive for existing patient data after a safety backup.
 - The Test NNH server is local/demo infrastructure and must not be treated as production.
+- Caddy certificate issuance still depends on correct public DNS/Cloudflare routing to the VPS on ports 80 and 443.
+- VPS-local backups remain one failure domain until the encrypted off-site backup stage and scratch restore are complete.
 - The current Test NNH listener can appear LAN-exposed through Docker port publishing; use `adb reverse` for physical-device local testing when possible.
 - `MarkUS_Latest_API37` can appear attached while stuck behind a locked/black SystemUI state. For quick manual starts, switch to `MarkUS_Local` instead of debugging the APK.
 - Firebase readiness depends on external console configuration and local secrets that are intentionally excluded from Git.
@@ -99,6 +105,6 @@ If `docker-compose.override.yml` exists locally, the local-dev PowerShell wrappe
 
 ## Next 3 Actions
 
-1. Review the current screenshot handoff in `output/android-claude-handoff-final-20260531-105420/CLAUDE_HANDOFF.md`.
-2. Decide whether native create-case should persist to the backend now, and wire the first-run lock setup/unlock route if it remains part of the v1 scope.
+1. Complete live HTTPS and application acceptance on the hardened production VPS without adding demo or patient data.
+2. Implement encrypted off-VPS backups and prove a scratch PostgreSQL restore before real patient entry.
 3. Configure Firebase inputs, prove real push delivery, record the two-user field test, and rerun `.\android\scripts\medtrack-v1-audit.ps1`.

@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.08.11.13.13
+- Added a production Compose overlay with pinned Caddy, PostgreSQL, and Python image versions for reproducible VPS recovery deployments.
+- Restricted Django's published port to host loopback, persisted `/app/backups`, and added web/Caddy healthchecks before proxy startup.
+- Added commit-locked production deployment automation and documented the secure HTTPS environment required for `book.naveenhospital.net`.
+
 ## 2026.06.03.11.41
 - Changed Android debug builds to target the live Patient Registry server at `https://book.naveenhospital.net/` by default, while keeping explicit local backend overrides for emulator smoke scripts.
 - Restored the Android password-first login flow so review auto-login is disabled and first login routes to secure unlock setup when no pattern or biometric lock exists.

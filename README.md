@@ -146,11 +146,12 @@ docker compose exec web python manage.py seed_mock_data --count 30 --reset
 
 Good news: the Postgres DB already persists in Docker volume `postgres_data`, so container rebuild/restart will not erase your patient data by default.
 
-There are now three backup paths:
+There are now four backup paths:
 
 - `./scripts/backup.sh`: VPS-local Postgres + config backup for upgrade safety
 - `python manage.py backup_patient_data`: patient-data bundle backup for regular operational snapshots
 - `./scripts/backup-offsite.sh --tier <tier>`: full, encrypted Postgres + recovery-config archive uploaded off the VPS
+- restricted Synology pull mirror: the NAS fetches only completed ciphertext triplets into an isolated archive; the VPS cannot push to or browse the NAS
 
 ### 1) Create backup before pull/update
 
@@ -249,6 +250,8 @@ Production retention is:
 | Pre-deployment | Before a production deployment | 14 |
 
 The four scheduled tiers provide 82 completed recovery points after the retention windows fill. Pre-deployment backups are additional and capped at 14. See `RUNBOOK.md` for credential placement, canary, timer, health, and restore-check commands.
+
+The live deployment also mirrors completed encrypted sets to Synology `Home/Backups/MEDTRACK`. A restricted SFTP-only VPS account exposes ciphertext read-only; a networked NAS fetcher can write only to an incoming quarantine, and a separate network-disabled promoter validates complete triplets before copying them into the archive. The NAS mirror never receives the private `age` identity and has no automatic deletion path.
 
 ## Useful commands
 

@@ -129,7 +129,7 @@ Before a future code update, run `./scripts/backup.sh` and preserve the resultin
 
 The production backup remote is `medtrack-drive:Naveen-Hospital-Backups/MEDTRACK/production`. Backup payloads are encrypted before upload; filenames and tier names are not encrypted. Never put the private `age` identity or a decrypted archive on the VPS.
 
-Policy gate: [Google Drive API policy](https://developers.google.com/workspace/drive/api/terms) prohibits backing up user or app content from a developer app/project to Drive without Google's express prior written consent. The verified Drive canary may be kept as recovery evidence, but do not enable unattended Drive-backed timers unless that consent is obtained. Prefer a policy-compatible rclone object-storage backend and retain an independent host snapshot or second provider copy. The narrow [`drive.file` scope](https://developers.google.com/workspace/drive/api/guides/api-specific-auth) limits technical access; it does not override the use-case restriction.
+Policy note: [Google Drive API policy](https://developers.google.com/workspace/drive/api/terms) restricts using a developer app/project as a general backup mechanism without Google's express prior written consent. On 2026-08-11 the owner explicitly chose personal-use operation and enabled the recurring timers after the technical restore and key-copy gates passed. That is an operator risk decision, not a legal or policy-compliance conclusion. The independent Synology ciphertext mirror below prevents Google Drive from being the only off-VPS copy. The narrow [`drive.file` scope](https://developers.google.com/workspace/drive/api/guides/api-specific-auth) limits technical access; it does not override the use-case restriction.
 
 Required root-only paths:
 
@@ -146,7 +146,7 @@ OAuth requirements:
 - set the External OAuth app to **In production** before authorization; Google's Testing-mode refresh tokens expire after seven days and are not suitable for unattended backups
 - keep the OAuth refresh token only in `/srv/medtrack/backup-secrets/rclone.conf`
 - do not use Drive `sync` or `purge`; the scripts upload immutable unique names and delete only expired, exact-pattern tier files
-- keep a second offline/password-manager copy of the private `age` identity before enabling automation
+- keep at least two recoverable off-VPS copies of the private `age` identity; the second copy was confirmed on 2026-08-11
 
 Install the configuration and units after the reviewed commit is deployed:
 
@@ -168,12 +168,12 @@ MEDTRACK_BACKUP_CONFIG=/etc/medtrack-backup/backup.env ./scripts/backup-offsite.
 rclone --config /srv/medtrack/backup-secrets/rclone.conf lsl medtrack-drive:Naveen-Hospital-Backups/MEDTRACK/production/canary
 ```
 
-Enable the four backup schedules only after all of these gates pass:
+Technical gates used before enabling the four backup schedules:
 
 - live encrypted canary verification
 - independent scratch PostgreSQL/Django restore
 - confirmed second offline/password-manager copy of the private `age` identity
-- policy-compatible unattended remote, or written Google consent for Drive API backup use
+- explicit owner decision for the selected unattended remote, with the remaining provider-policy risk recorded
 
 ```bash
 systemctl enable --now \
@@ -219,7 +219,66 @@ Verified 2026-08-11 recovery proof:
 - 283-entry PostgreSQL custom dump restored into isolated PostgreSQL 16.14
 - 30 public tables and 69 Django migration rows restored
 - exact-commit Django check, migration check, ORM query, and `/login/` HTTP 200 passed
-- recurring timers intentionally left disabled pending the remaining key-copy and remote-policy gates
+- rapid, daily, weekly, monthly, and health timers enabled after the owner accepted the remaining Drive policy risk
+
+## Restricted Synology NAS Ciphertext Mirror
+
+The NAS mirror is a separate failure domain from Google Drive and is deliberately pull-only:
+
+```text
+root-only VPS ciphertext cache
+  -> root-published append-only export
+  -> SFTP-only read account (public key, no shell, no forwarding)
+  -> NAS incoming quarantine (networked fetcher)
+  -> checksum-valid complete triplets only
+  -> NAS archive (network-disabled promoter)
+```
+
+Live paths and cadence:
+
+| Component | Location or cadence |
+|---|---|
+| VPS ciphertext source | `/srv/medtrack/offsite-backups/local` |
+| VPS SFTP chroot | `/srv/medtrack/nas-export`, with `/data` exposed read-only |
+| VPS export refresh | Every 15 minutes |
+| NAS user-facing destination | `Home/Backups/MEDTRACK` |
+| NAS physical destination | `/volume1/homes/nmpraveen/Backups/MEDTRACK` |
+| NAS encrypted fetch | Every 6 hours |
+| Incoming-to-archive promotion | Every 5 minutes |
+| Incoming/archive ceilings | 20 GiB each; fail closed, no automatic deletion |
+
+Install the VPS export only with the NAS-generated public key:
+
+```bash
+sudo ./deploy/nas-export/install-nas-export.sh \
+  --public-key-file /absolute/path/to/medtrack-nas-pull.pub
+systemctl status --no-pager medtrack-nas-export.timer
+systemctl show medtrack-nas-export.service --property=Result --value
+sshd -T -C user=medtrack-nas-pull,host=localhost,addr=127.0.0.1
+```
+
+The installer creates `medtrack-nas-pull` as an SFTP-only chrooted account, keeps its authorized key outside the chroot, adds it to the existing SSH `AllowUsers` line, validates `sshd` before reload, and starts the hardened export timer. The export script accepts only complete, checksum-valid MEDTRACK tier triplets. Existing same-name files must be byte-identical, so source deletion does not delete the export and a changed same-name source fails closed.
+
+NAS containment rules:
+
+- the fetcher runs non-root with a read-only root filesystem, all Linux capabilities dropped, `no-new-privileges`, a 256 MiB memory limit, and only the incoming area writable
+- the promoter runs non-root with `network_mode: none`, cannot see SFTP credentials, and has the incoming area read-only plus archive/state writable
+- the private `age` identity never enters the VPS or NAS; both hold ciphertext only
+- strict filename filters, per-file/transfer ceilings, complete-triplet checks, and SHA-256 verification limit what a compromised VPS can feed the NAS
+- no container has the Docker socket, NAS media mounts, or access to other NAS folders
+- there is no automatic NAS deletion; space exhaustion fails closed and requires operator review
+
+Residual limitation: this Synology kernel exposes AppArmor but not Docker's normal seccomp profile and did not honor the requested PID/CPU limits. Memory limits, namespace/mount separation, capability dropping, `no-new-privileges`, the SFTP read-only boundary, and the two-container split remain enforced. A compromised VPS could still send correctly named malicious ciphertext or consume the bounded incoming/archive allocation, but it cannot decrypt existing backups, directly write the archive, or reach other NAS data through these containers.
+
+Verified 2026-08-11 NAS recovery proof:
+
+- five initial tiers fetched and promoted; every archive SHA-256 passed
+- restricted VPS write attempt returned `permission denied`, and the test file remained absent
+- fetcher had no archive mount; promoter had no network or credentials; no NAS `age` identity was present
+- NAS-sourced canary matched both external checksums and all 9 internal manifest entries
+- 283-entry dump restored into isolated PostgreSQL 16.14 with 30 public tables and 69 migration rows
+- exact backup commit passed Django deployment/migration checks, ORM queries, and `/login/` HTTP 200
+- all decrypted scratch material and disposable restore infrastructure were removed after verification
 
 ## Android Local Verification
 

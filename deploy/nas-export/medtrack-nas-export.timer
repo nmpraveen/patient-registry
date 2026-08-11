@@ -1,0 +1,12 @@
+[Unit]
+Description=Refresh the read-only MEDTRACK NAS ciphertext export
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=15min
+RandomizedDelaySec=60
+Persistent=true
+Unit=medtrack-nas-export.service
+
+[Install]
+WantedBy=timers.target

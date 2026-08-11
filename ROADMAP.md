@@ -9,16 +9,16 @@
 | Mobile API | Done locally | DRF endpoints support Android auth, worklists, case detail, writes, notifications, and device registration. |
 | Android v1 app | Done locally | Kotlin/Compose app, offline writes, notifications surface, local smoke scripts, and screenshot/style handoff evidence exist. |
 | Android release readiness | In progress | Screenshot handoff is captured; Firebase delivery, create-case persistence, lock-flow routing, field-test evidence, release signing, and final v1 audit remain. |
-| Production hardening | In progress | Live HTTPS is accepted and encrypted off-VPS automation is implemented; complete Drive OAuth, the live canary, timers, and scratch restore proof. |
+| Production hardening | Operational | Live HTTPS, exact-commit deployment, encrypted Drive timers, an isolated Synology ciphertext mirror, and independent scratch restores are verified. Credential rotation and a host-level snapshot remain operational follow-ups. |
 
 ## Near-Term Roadmap
 
-1. Complete the hardened production restart.
-   - Deploy only the reviewed exact Git commit to `/srv/medtrack/app`.
-   - Bind restricted Drive OAuth to the intended backup account and keep its token root-only.
-   - Upload and verify an encrypted canary, enable the tier timers, and run the health service.
-   - Prove a scratch PostgreSQL restore with the off-VPS private key.
-   - Keep the production database empty until the restore/new-data decision is explicit.
+1. Operate and exercise the recovered production system.
+   - Rotate the temporary VPS root credential and preserve the normal non-root admin path.
+   - Add a host-level VPS snapshot so application backups are not the only recovery layer.
+   - Review Drive/NAS timer health and bounded storage use, and investigate failures without automatically deleting NAS archives.
+   - Repeat an off-production scratch restore at least monthly and after any backup-system change.
+   - Keep the private `age` identity in at least two recoverable off-VPS locations and never place it on the VPS or NAS.
 
 2. Review the Android screenshot handoff.
    - Current handoff: `output/android-claude-handoff-final-20260531-105420/CLAUDE_HANDOFF.md`.

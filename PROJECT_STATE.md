@@ -8,13 +8,13 @@ The web app supports login-based role-aware workflows, case dashboards, case act
 
 The Android v1 implementation is locally implemented and has local verification evidence from the Test NNH workflow. The release goal is not complete until the external Firebase and physical-device gates pass.
 
-Production recovery deployment tooling is defined for the hardened VPS: pinned Python/PostgreSQL/Caddy versions, loopback-only Django exposure, persistent host backup storage, health-gated startup, and exact-commit deployment. Encrypted off-VPS backup code, tiered retention, systemd schedules, and health checks are implemented; Google OAuth, the first live encrypted canary, and the independent scratch restore remain deployment gates.
+Production recovery is deployed on the hardened VPS at commit `73e551ec79cd96fd191a51abc62ce34d95b47c8c`: pinned Python/PostgreSQL/Caddy versions, loopback-only Django exposure, persistent host backup storage, health-gated startup, and exact-commit deployment. The encrypted Google Drive canary and an independent off-VPS scratch restore both passed. Recurring offsite timers remain disabled until the private `age` identity has a confirmed second offline copy and a policy-compatible unattended storage backend is selected.
 
 ## Last Verified Date
 
 2026-08-11
 
-Production infrastructure changes were verified with Compose rendering, deployment-script syntax validation, Django migration-drift checks, `manage.py check --deploy`, and all 369 Django tests (2 skipped). The earlier Android evidence remains the screenshot handoff package at `output/android-claude-handoff-final-20260531-105420/`.
+Production infrastructure changes were verified with Compose rendering, deployment-script syntax validation, Django migration-drift checks, `manage.py check --deploy`, all 369 Django tests (2 skipped), origin-bypassed and public HTTPS responses, a live encrypted canary, and an independent PostgreSQL/Django scratch restore. The earlier Android evidence remains the screenshot handoff package at `output/android-claude-handoff-final-20260531-105420/`.
 
 ## How To Run Locally
 
@@ -51,7 +51,7 @@ If `docker-compose.override.yml` exists locally, the local-dev PowerShell wrappe
 ## Current Phase
 
 - Web MVP: operational and runnable locally.
-- Production recovery deployment: defined and ready for the hardened VPS rollout.
+- Production recovery deployment: deployed and healthy on the hardened VPS; recurring offsite scheduling remains gated.
 - Android v1: locally implemented and locally smoke-tested.
 - Release readiness: blocked on external Firebase delivery evidence, a physical Android phone smoke, and a two-user field-test record.
 
@@ -73,6 +73,7 @@ If `docker-compose.override.yml` exists locally, the local-dev PowerShell wrappe
 - Firebase/FCM integration boundary is implemented so missing Firebase config does not break normal local use.
 - Production Caddy/Docker deployment with exact-commit refusal, service healthchecks, secure loopback binding, and persistent `/app/backups` storage.
 - Encrypted off-VPS recovery tooling with immutable upload names, post-upload verification, exact-pattern retention, four scheduled tiers, a pre-deployment tier, and freshness/retention health checks.
+- Live encrypted canary `medtrack-prod-canary-20260811T165254Z.tar.age`, independently downloaded, checksum-verified, decrypted off VPS, restored into PostgreSQL 16.14, and validated by the exact deployed Django commit.
 
 ## Not Done
 
@@ -90,8 +91,9 @@ If `docker-compose.override.yml` exists locally, the local-dev PowerShell wrappe
 - Importing patient-data bundles is destructive for existing patient data after a safety backup.
 - The Test NNH server is local/demo infrastructure and must not be treated as production.
 - Caddy certificate issuance still depends on correct public DNS/Cloudflare routing to the VPS on ports 80 and 443.
-- Off-VPS backup automation is not operational until durable production-mode OAuth is bound to the intended Google account, an encrypted canary succeeds, and the timers are enabled.
-- A successful encrypted upload is not restore proof; the private key and a scratch PostgreSQL restore must both be proven before real patient entry.
+- The Google Drive API terms prohibit backing up user or app content from a developer app/project without Google's express prior written consent. The Drive canary is retained as technical proof, but recurring Drive-backed timers must remain disabled unless that consent is obtained.
+- A policy-compatible second offsite backend is still required before unattended backup automation is operational; Google Drive must not be the sole offsite copy.
+- The scratch restore is proven, but automation must remain disabled until a second offline/password-manager copy of the private `age` identity is confirmed.
 - The current Test NNH listener can appear LAN-exposed through Docker port publishing; use `adb reverse` for physical-device local testing when possible.
 - `MarkUS_Latest_API37` can appear attached while stuck behind a locked/black SystemUI state. For quick manual starts, switch to `MarkUS_Local` instead of debugging the APK.
 - Firebase readiness depends on external console configuration and local secrets that are intentionally excluded from Git.
@@ -107,6 +109,6 @@ If `docker-compose.override.yml` exists locally, the local-dev PowerShell wrappe
 
 ## Next 3 Actions
 
-1. Bind restricted Google Drive OAuth, upload and verify the first encrypted canary, and enable the backup/health timers.
-2. Prove an independent scratch PostgreSQL restore with the offline private key before real patient entry.
+1. Confirm a second offline/password-manager copy of the private `age` identity and configure a policy-compatible unattended offsite backend; then initialize and enable the backup/health timers.
+2. Rotate the temporary VPS root credential and arrange an independent host-level snapshot or second storage copy.
 3. Configure Firebase inputs, prove real push delivery, record the two-user field test, and rerun `.\android\scripts\medtrack-v1-audit.ps1`.

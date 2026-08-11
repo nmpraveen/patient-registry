@@ -21,6 +21,17 @@ sudo ./deploy/nas-export/install-nas-export.sh \
 
 The installer validates the key, existing MEDTRACK SSH allowlist, `sshd` configuration, and systemd units before reloading SSH. On failure it restores the affected SSH configuration files.
 
+The recurring export runs hourly with up to five minutes of jitter. After a manual pre-deployment backup, publish it immediately rather than waiting for the timer:
+
+```bash
+MEDTRACK_BACKUP_CONFIG=/etc/medtrack-backup/backup.env \
+  ./scripts/backup-offsite.sh --tier pre-deployment
+systemctl start medtrack-nas-export.service
+test "$(systemctl show medtrack-nas-export.service --property=Result --value)" = success
+```
+
+This only refreshes the local read-only SFTP export. The NAS still initiates its own six-hour pull.
+
 ## Verify
 
 ```bash

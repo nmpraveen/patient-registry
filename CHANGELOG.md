@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.08.11.18.37
+- Reduced the VPS ciphertext-export scan from every 15 minutes to hourly with up to five minutes of jitter, while retaining the NAS six-hour pull cadence.
+- Added an explicit immediate export step after manual pre-deployment backups so urgent recovery points do not wait for the hourly timer.
+
 ## 2026.08.11.18.17
 - Added a hardened, append-only VPS ciphertext export for a pull-only Synology mirror, including an SFTP-only chroot account, immutable conflict checks, systemd isolation, and SSH validation/rollback.
 - Deployed a two-zone NAS design: a restricted networked fetcher writes only to quarantine, while a network-disabled promoter validates complete SHA-256 triplets into an archive with no automatic deletion.

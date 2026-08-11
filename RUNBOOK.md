@@ -207,7 +207,11 @@ Before each production deployment:
 
 ```bash
 MEDTRACK_BACKUP_CONFIG=/etc/medtrack-backup/backup.env ./scripts/backup-offsite.sh --tier pre-deployment
+systemctl start medtrack-nas-export.service
+test "$(systemctl show medtrack-nas-export.service --property=Result --value)" = success
 ```
+
+The second command publishes the newly completed pre-deployment ciphertext immediately instead of waiting for the hourly export timer. It does not contact the NAS; the NAS remains pull-only and fetches on its normal six-hour cadence.
 
 A successful upload is not restore proof. On a separate scratch host, download one completed ciphertext plus its checksum, verify SHA-256, decrypt it with the offline identity, verify the internal `manifest.sha256`, list `database.dump` with `pg_restore --list`, and restore it into a new empty PostgreSQL database. Never test a restore over production.
 
@@ -240,7 +244,7 @@ Live paths and cadence:
 |---|---|
 | VPS ciphertext source | `/srv/medtrack/offsite-backups/local` |
 | VPS SFTP chroot | `/srv/medtrack/nas-export`, with `/data` exposed read-only |
-| VPS export refresh | Every 15 minutes |
+| VPS export refresh | Every hour, with up to 5 minutes of jitter |
 | NAS user-facing destination | `Home/Backups/MEDTRACK` |
 | NAS physical destination | `/volume1/homes/nmpraveen/Backups/MEDTRACK` |
 | NAS encrypted fetch | Every 6 hours |

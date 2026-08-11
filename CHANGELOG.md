@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.08.11.15.45
+- Added encrypted full-recovery backups that validate PostgreSQL dumps, capture recovery configuration, encrypt before upload, and verify immutable Google Drive objects.
+- Added rapid, daily, weekly, monthly, pre-deployment, and canary retention tiers plus systemd timers and freshness/retention health checks.
+- Documented the root-only OAuth configuration, off-VPS private-key boundary, 82-point scheduled retention plan, first-canary gate, and independent scratch-restore requirement.
+
 ## 2026.08.11.13.13
 - Added a production Compose overlay with pinned Caddy, PostgreSQL, and Python image versions for reproducible VPS recovery deployments.
 - Restricted Django's published port to host loopback, persisted `/app/backups`, and added web/Caddy healthchecks before proxy startup.

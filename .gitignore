@@ -17,3 +17,6 @@ android/app/google-services.json
 firebase-service-account*.json
 *firebase-adminsdk*.json
 *service-account*.json
+*.agekey
+rclone.conf
+backup.env

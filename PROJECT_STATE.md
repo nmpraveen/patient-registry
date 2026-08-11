@@ -8,7 +8,7 @@ The web app supports login-based role-aware workflows, case dashboards, case act
 
 The Android v1 implementation is locally implemented and has local verification evidence from the Test NNH workflow. The release goal is not complete until the external Firebase and physical-device gates pass.
 
-Production recovery deployment tooling is now defined for the hardened VPS: pinned Python/PostgreSQL/Caddy versions, loopback-only Django exposure, persistent host backup storage, health-gated startup, and exact-commit deployment. Live VPS acceptance is recorded separately during the recovery run.
+Production recovery deployment tooling is defined for the hardened VPS: pinned Python/PostgreSQL/Caddy versions, loopback-only Django exposure, persistent host backup storage, health-gated startup, and exact-commit deployment. Encrypted off-VPS backup code, tiered retention, systemd schedules, and health checks are implemented; Google OAuth, the first live encrypted canary, and the independent scratch restore remain deployment gates.
 
 ## Last Verified Date
 
@@ -72,6 +72,7 @@ If `docker-compose.override.yml` exists locally, the local-dev PowerShell wrappe
 - `MarkUS_Local` is the preferred AVD for quick manual Android start/login checks against Test NNH.
 - Firebase/FCM integration boundary is implemented so missing Firebase config does not break normal local use.
 - Production Caddy/Docker deployment with exact-commit refusal, service healthchecks, secure loopback binding, and persistent `/app/backups` storage.
+- Encrypted off-VPS recovery tooling with immutable upload names, post-upload verification, exact-pattern retention, four scheduled tiers, a pre-deployment tier, and freshness/retention health checks.
 
 ## Not Done
 
@@ -89,7 +90,8 @@ If `docker-compose.override.yml` exists locally, the local-dev PowerShell wrappe
 - Importing patient-data bundles is destructive for existing patient data after a safety backup.
 - The Test NNH server is local/demo infrastructure and must not be treated as production.
 - Caddy certificate issuance still depends on correct public DNS/Cloudflare routing to the VPS on ports 80 and 443.
-- VPS-local backups remain one failure domain until the encrypted off-site backup stage and scratch restore are complete.
+- Off-VPS backup automation is not operational until durable production-mode OAuth is bound to the intended Google account, an encrypted canary succeeds, and the timers are enabled.
+- A successful encrypted upload is not restore proof; the private key and a scratch PostgreSQL restore must both be proven before real patient entry.
 - The current Test NNH listener can appear LAN-exposed through Docker port publishing; use `adb reverse` for physical-device local testing when possible.
 - `MarkUS_Latest_API37` can appear attached while stuck behind a locked/black SystemUI state. For quick manual starts, switch to `MarkUS_Local` instead of debugging the APK.
 - Firebase readiness depends on external console configuration and local secrets that are intentionally excluded from Git.
@@ -105,6 +107,6 @@ If `docker-compose.override.yml` exists locally, the local-dev PowerShell wrappe
 
 ## Next 3 Actions
 
-1. Complete live HTTPS and application acceptance on the hardened production VPS without adding demo or patient data.
-2. Implement encrypted off-VPS backups and prove a scratch PostgreSQL restore before real patient entry.
+1. Bind restricted Google Drive OAuth, upload and verify the first encrypted canary, and enable the backup/health timers.
+2. Prove an independent scratch PostgreSQL restore with the offline private key before real patient entry.
 3. Configure Firebase inputs, prove real push delivery, record the two-user field test, and rerun `.\android\scripts\medtrack-v1-audit.ps1`.

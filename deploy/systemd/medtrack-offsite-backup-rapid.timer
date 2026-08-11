@@ -1,0 +1,11 @@
+[Unit]
+Description=MEDTRACK encrypted rapid backup every six hours
+
+[Timer]
+OnCalendar=*-*-* 00,06,12,18:15:00 Asia/Kolkata
+RandomizedDelaySec=5m
+Persistent=true
+Unit=medtrack-offsite-backup@rapid.service
+
+[Install]
+WantedBy=timers.target

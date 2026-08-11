@@ -146,10 +146,11 @@ docker compose exec web python manage.py seed_mock_data --count 30 --reset
 
 Good news: the Postgres DB already persists in Docker volume `postgres_data`, so container rebuild/restart will not erase your patient data by default.
 
-There are now two backup paths:
+There are now three backup paths:
 
-- `./scripts/backup.sh`: full Postgres + config backup for disaster recovery and upgrade safety
+- `./scripts/backup.sh`: VPS-local Postgres + config backup for upgrade safety
 - `python manage.py backup_patient_data`: patient-data bundle backup for regular operational snapshots
+- `./scripts/backup-offsite.sh --tier <tier>`: full, encrypted Postgres + recovery-config archive uploaded off the VPS
 
 ### 1) Create backup before pull/update
 
@@ -165,7 +166,7 @@ This backs up:
 - `docker-compose.override.yml` if present
 - current app commit hash
 
-This remains the recommended full-environment disaster-recovery backup.
+This is useful for a fast rollback, but it is not disaster recovery by itself because it remains on the VPS.
 
 ### 2) Pull latest and rebuild
 
@@ -222,6 +223,32 @@ Notes:
 - `backups/` is gitignored and should be treated as PHI-containing server storage.
 - The built-in app scheduler creates separate daily, monthly, and yearly archive bundles; the management command creates manual bundles and prunes only other manual bundles.
 - Use the patient-data bundle flow for routine restores of patient records, and keep `scripts/backup.sh` / `scripts/restore.sh` for full-environment recovery.
+
+## Encrypted off-VPS recovery backups
+
+Production disaster-recovery backups use `scripts/backup-offsite.sh`. Each run:
+
+- creates and validates a PostgreSQL custom-format dump
+- captures the production `.env`, Compose/Caddy recovery files, Git commit, and runtime versions
+- builds an internal SHA-256 manifest
+- encrypts the entire archive with an `age` public key before any upload
+- uploads a unique ciphertext, checksum, and completion marker through rclone
+- verifies the uploaded objects before recording success
+- prunes only files matching the exact MEDTRACK tier pattern; Google Drive removals go to Trash
+
+The VPS stores only the public encryption recipient. The private `age` identity must remain off the VPS, with at least two recoverable copies. The Google OAuth token is restricted to the root-only rclone configuration and must never be committed.
+
+Production retention is:
+
+| Tier | Frequency | Retained |
+|---|---:|---:|
+| Rapid | Every 6 hours | 28 (7 days) |
+| Daily | Every day | 30 |
+| Weekly | Every Sunday | 12 |
+| Monthly | First day of each month | 12 |
+| Pre-deployment | Before a production deployment | 14 |
+
+The four scheduled tiers provide 82 completed recovery points after the retention windows fill. Pre-deployment backups are additional and capped at 14. See `RUNBOOK.md` for credential placement, canary, timer, health, and restore-check commands.
 
 ## Useful commands
 

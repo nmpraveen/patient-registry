@@ -125,6 +125,85 @@ curl --fail --silent --show-error https://book.naveenhospital.net/login/ >/dev/n
 
 Before a future code update, run `./scripts/backup.sh` and preserve the resulting backup outside the VPS. Never deploy from a dirty checkout and never run `docker compose down -v` during an update.
 
+## Encrypted Google Drive Recovery Backups
+
+The production backup remote is `medtrack-drive:Naveen-Hospital-Backups/MEDTRACK/production`. Backup payloads are encrypted before upload; filenames and tier names are not encrypted. Never put the private `age` identity or a decrypted archive on the VPS.
+
+Required root-only paths:
+
+```text
+/etc/medtrack-backup/backup.env                 mode 0600
+/srv/medtrack/backup-secrets/rclone.conf        mode 0600
+/srv/medtrack/backup-secrets/age-recipient.txt  mode 0644 (public key only)
+/srv/medtrack/offsite-backups/                  mode 0700
+```
+
+OAuth requirements:
+
+- authorize the intended backup Google account with rclone's `drive.file` scope
+- set the External OAuth app to **In production** before authorization; Google's Testing-mode refresh tokens expire after seven days and are not suitable for unattended backups
+- keep the OAuth refresh token only in `/srv/medtrack/backup-secrets/rclone.conf`
+- do not use Drive `sync` or `purge`; the scripts upload immutable unique names and delete only expired, exact-pattern tier files
+- keep a second offline/password-manager copy of the private `age` identity before enabling automation
+
+Install the configuration and units after the reviewed commit is deployed:
+
+```bash
+install -d -m 0700 /srv/medtrack/backup-secrets /srv/medtrack/offsite-backups
+install -d -m 0755 /etc/medtrack-backup
+install -m 0600 deploy/backup/backup.env.example /etc/medtrack-backup/backup.env
+install -m 0644 deploy/systemd/medtrack-offsite-backup@.service /etc/systemd/system/
+install -m 0644 deploy/systemd/medtrack-offsite-backup-*.timer /etc/systemd/system/
+install -m 0644 deploy/systemd/medtrack-offsite-backup-health.service /etc/systemd/system/
+systemd-analyze verify /etc/systemd/system/medtrack-offsite-backup@.service /etc/systemd/system/medtrack-offsite-backup-*.timer /etc/systemd/system/medtrack-offsite-backup-health.service
+systemctl daemon-reload
+```
+
+Run an encrypted canary and inspect only ciphertext metadata:
+
+```bash
+MEDTRACK_BACKUP_CONFIG=/etc/medtrack-backup/backup.env ./scripts/backup-offsite.sh --tier canary
+rclone --config /srv/medtrack/backup-secrets/rclone.conf lsl medtrack-drive:Naveen-Hospital-Backups/MEDTRACK/production/canary
+```
+
+Enable the four backup schedules only after the canary succeeds:
+
+```bash
+systemctl enable --now \
+  medtrack-offsite-backup-rapid.timer \
+  medtrack-offsite-backup-daily.timer \
+  medtrack-offsite-backup-weekly.timer \
+  medtrack-offsite-backup-monthly.timer \
+  medtrack-offsite-backup-health.timer
+systemctl list-timers 'medtrack-offsite-backup*'
+```
+
+Schedule and retention (all calendar times are `Asia/Kolkata`):
+
+| Tier | Schedule | Maximum completed sets |
+|---|---|---:|
+| Rapid | 00:15, 06:15, 12:15, 18:15 daily, up to 5-minute jitter | 28 |
+| Daily | 02:15 daily, up to 10-minute jitter | 30 |
+| Weekly | Sunday 03:15, up to 15-minute jitter | 12 |
+| Monthly | Day 1 at 04:15, up to 20-minute jitter | 12 |
+| Pre-deployment | Manual before deployment | 14 |
+
+Run and inspect health checks:
+
+```bash
+systemctl start medtrack-offsite-backup-health.service
+systemctl status --no-pager medtrack-offsite-backup-health.service
+journalctl -u 'medtrack-offsite-backup*' --since '24 hours ago' --no-pager
+```
+
+Before each production deployment:
+
+```bash
+MEDTRACK_BACKUP_CONFIG=/etc/medtrack-backup/backup.env ./scripts/backup-offsite.sh --tier pre-deployment
+```
+
+A successful upload is not restore proof. On a separate scratch host, download one completed ciphertext plus its checksum, verify SHA-256, decrypt it with the offline identity, verify the internal `manifest.sha256`, list `database.dump` with `pg_restore --list`, and restore it into a new empty PostgreSQL database. Never test a restore over production.
+
 ## Android Local Verification
 
 Fast manual emulator start and login:
@@ -243,3 +322,5 @@ Do not write raw FCM tokens, service-account JSON, PHI, patient names, or patien
 - `staticfiles/` - collected Django static files.
 - `%USERPROFILE%\.codex\build\medtrack-android\` - Android Gradle build output outside Dropbox.
 - Docker volume `test_nnh_state` - Test NNH demo SQLite state.
+- `/srv/medtrack/offsite-backups/` - root-only local ciphertext cache and success-state files.
+- Google Drive `Naveen-Hospital-Backups/MEDTRACK/production/` - encrypted recovery sets only.

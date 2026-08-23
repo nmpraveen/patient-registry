@@ -422,6 +422,118 @@ class MobileApiTests(APITestCase):
         self.assertIn("UH-API-ASSIGNED-STAFF", uhids)
         self.assertNotIn("UH-API-UNASSIGNED-STAFF", uhids)
 
+    def test_direct_case_task_vitals_and_patient_routes_enforce_case_scope(self):
+        scoped_user = get_user_model().objects.create_user(username="scoped-api-user", password="pass")
+        RoleSetting.objects.create(role_name="Scoped API Staff", can_task_edit=True)
+        scoped_group = Group.objects.create(name="Scoped API Staff")
+        scoped_user.groups.add(scoped_group)
+        Task.objects.create(
+            case=self.case,
+            title="Scoped assignment",
+            due_date=timezone.localdate(),
+            assigned_user=scoped_user,
+            created_by=self.user,
+        )
+        blocked_case = Case.objects.create(
+            uhid="UH-API-DIRECT-BLOCKED",
+            first_name="Direct",
+            last_name="Blocked",
+            patient_name="Direct Blocked",
+            gender="F",
+            age=33,
+            phone_number="9876543291",
+            category=self.anc,
+            diagnosis="Must remain inaccessible",
+            created_by=self.user,
+        )
+        blocked_task = Task.objects.create(
+            case=blocked_case,
+            title="Blocked direct task",
+            due_date=timezone.localdate(),
+            assigned_user=self.user,
+            created_by=self.user,
+        )
+        blocked_vital = VitalEntry.objects.create(
+            case=blocked_case,
+            recorded_at=timezone.now(),
+            pr=81,
+            created_by=self.user,
+            updated_by=self.user,
+        )
+        self.client.force_authenticate(scoped_user)
+
+        self.assertEqual(self.client.get(reverse("api:case_detail", args=[self.case.pk])).status_code, 200)
+        self.assertEqual(self.client.get(reverse("api:case_detail", args=[blocked_case.pk])).status_code, 404)
+        self.assertEqual(
+            self.client.patch(
+                reverse("api:task_detail", args=[blocked_task.pk]),
+                {"notes": "forged write"},
+                format="json",
+            ).status_code,
+            404,
+        )
+        self.assertEqual(
+            self.client.patch(
+                reverse("api:vitals_detail", args=[blocked_vital.pk]),
+                {"pr": 99},
+                format="json",
+            ).status_code,
+            404,
+        )
+        assigned_patient_response = self.client.get(reverse("api:patient_search"), {"q": "Priya"})
+        blocked_patient_response = self.client.get(reverse("api:patient_search"), {"q": "Direct Blocked"})
+        self.assertEqual(assigned_patient_response.status_code, 200)
+        self.assertEqual(assigned_patient_response.json()["count"], 1)
+        self.assertEqual(blocked_patient_response.status_code, 200)
+        self.assertEqual(blocked_patient_response.json()["count"], 0)
+
+        self.case.tasks.filter(assigned_user=scoped_user).update(assigned_user=self.user)
+        self.assertEqual(self.client.get(reverse("api:case_detail", args=[self.case.pk])).status_code, 404)
+
+    def test_direct_case_route_allows_only_current_call_queue_for_callers(self):
+        caller = get_user_model().objects.create_user(username="scoped-api-caller", password="pass")
+        RoleSetting.objects.create(role_name="Scoped API Caller", can_note_add=True)
+        caller_group = Group.objects.create(name="Scoped API Caller")
+        caller.groups.add(caller_group)
+        queue_case = Case.objects.create(
+            uhid="UH-API-CALL-QUEUE",
+            first_name="Queue",
+            last_name="Allowed",
+            patient_name="Queue Allowed",
+            gender="F",
+            age=34,
+            phone_number="9876543292",
+            category=self.anc,
+            created_by=self.user,
+        )
+        Task.objects.create(
+            case=queue_case,
+            title="Call today",
+            due_date=timezone.localdate(),
+            created_by=self.user,
+        )
+        future_case = Case.objects.create(
+            uhid="UH-API-CALL-FUTURE-DIRECT",
+            first_name="Queue",
+            last_name="Future",
+            patient_name="Queue Future",
+            gender="F",
+            age=35,
+            phone_number="9876543293",
+            category=self.anc,
+            created_by=self.user,
+        )
+        Task.objects.create(
+            case=future_case,
+            title="Call later",
+            due_date=timezone.localdate() + timedelta(days=14),
+            created_by=self.user,
+        )
+        self.client.force_authenticate(caller)
+
+        self.assertEqual(self.client.get(reverse("api:case_detail", args=[queue_case.pk])).status_code, 200)
+        self.assertEqual(self.client.get(reverse("api:case_detail", args=[future_case.pk])).status_code, 404)
+
     def test_logout_returns_json_contract_for_android_client(self):
         refresh = RefreshToken.for_user(self.user)
 

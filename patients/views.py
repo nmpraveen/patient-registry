@@ -97,7 +97,6 @@ from .models import (
     TaskType,
     TaskStatus,
     ThemeSettings,
-    UserAdminNote,
     valid_case_subcategory_values_for_category_name,
     VitalEntry,
     build_default_tasks,
@@ -811,6 +810,53 @@ def _visible_patient_queryset(queryset=None):
     return queryset.filter(merged_into__isnull=True)
 
 
+def _call_queue_scope_end():
+    today = timezone.localdate()
+    end_of_week = today + timedelta(days=6 - today.weekday())
+    return max(today + timedelta(days=2), end_of_week)
+
+
+def _accessible_case_queryset(user, queryset=None, *, include_archived=False):
+    queryset = queryset if queryset is not None else Case.objects.all()
+    has_full_scope = is_doctor_admin(user) if getattr(user, "is_authenticated", False) else False
+    if not include_archived or not has_full_scope:
+        queryset = _visible_case_queryset(queryset)
+    if not getattr(user, "is_authenticated", False):
+        return queryset.none()
+    if has_full_scope:
+        return queryset
+
+    scope = Q(created_by=user) | Q(tasks__assigned_user=user)
+    if _can_access_upcoming_calls(user):
+        scope |= Q(
+            tasks__status=TaskStatus.SCHEDULED,
+            tasks__due_date__range=(timezone.localdate(), _call_queue_scope_end()),
+        )
+    return queryset.filter(scope).distinct()
+
+
+def _accessible_task_queryset(user, queryset=None):
+    queryset = _visible_task_queryset(queryset)
+    accessible_case_ids = _accessible_case_queryset(user).values("pk")
+    return queryset.filter(case_id__in=accessible_case_ids)
+
+
+def _accessible_patient_queryset(user, queryset=None):
+    queryset = _visible_patient_queryset(queryset)
+    if not getattr(user, "is_authenticated", False):
+        return queryset.none()
+    if is_doctor_admin(user):
+        return queryset
+    accessible_case_ids = _accessible_case_queryset(user).values("pk")
+    return queryset.filter(Q(created_by=user) | Q(cases__in=accessible_case_ids)).distinct()
+
+
+def _accessible_vital_queryset(user, queryset=None):
+    queryset = queryset if queryset is not None else VitalEntry.objects.all()
+    accessible_case_ids = _accessible_case_queryset(user).values("pk")
+    return queryset.filter(case_id__in=accessible_case_ids)
+
+
 def _parse_patient_search_date(raw_value):
     normalized = (raw_value or "").strip()
     if not normalized:
@@ -823,9 +869,12 @@ def _parse_patient_search_date(raw_value):
     return None
 
 
-def _patient_search_queryset(query=""):
+def _patient_search_queryset(query="", *, user=None, allow_intake_lookup=False):
+    patient_queryset = Patient.objects.all()
+    if user is not None and not (allow_intake_lookup and has_capability(user, "case_create")):
+        patient_queryset = _accessible_patient_queryset(user, patient_queryset)
     queryset = _visible_patient_queryset(
-        Patient.objects.annotate(
+        patient_queryset.annotate(
             total_case_count=Count("cases", distinct=True),
             active_case_count=Count(
                 "cases",
@@ -936,9 +985,12 @@ def _case_management_queryset(query=""):
     return queryset
 
 
-def _patient_queryset(query=""):
+def _patient_queryset(query="", *, user=None):
+    patient_queryset = Patient.objects.filter(merged_into__isnull=True)
+    if user is not None:
+        patient_queryset = _accessible_patient_queryset(user, patient_queryset)
     queryset = (
-        Patient.objects.filter(merged_into__isnull=True)
+        patient_queryset
         .annotate(
             case_count=Count("cases", distinct=True),
             active_case_count=Count(
@@ -968,9 +1020,12 @@ def _patient_queryset(query=""):
     return queryset.filter(query_filter)
 
 
-def _patient_case_rows(patient):
+def _patient_case_rows(patient, *, user=None):
+    case_queryset = patient.cases.select_related("category")
+    if user is not None:
+        case_queryset = _accessible_case_queryset(user, case_queryset)
     cases = list(
-        patient.cases.select_related("category")
+        case_queryset
         .annotate(open_task_count=Count("tasks", filter=~Q(tasks__status__in=[TaskStatus.COMPLETED, TaskStatus.CANCELLED])))
         .order_by("-updated_at", "-id")
     )
@@ -981,9 +1036,12 @@ def _patient_case_rows(patient):
     return cases
 
 
-def _serialize_patient_search_result(patient, *, exclude_case_id=None):
+def _serialize_patient_search_result(patient, *, exclude_case_id=None, user=None):
     active_case_queryset = patient.cases.select_related("category").filter(is_archived=False)
     case_queryset = patient.cases.all()
+    if user is not None:
+        active_case_queryset = _accessible_case_queryset(user, active_case_queryset)
+        case_queryset = _accessible_case_queryset(user, case_queryset)
     if exclude_case_id is not None:
         active_case_queryset = active_case_queryset.exclude(pk=exclude_case_id)
         case_queryset = case_queryset.exclude(pk=exclude_case_id)
@@ -1100,8 +1158,7 @@ def _custom_theme_token_count(saved_tokens):
 def _settings_user_queryset(query=""):
     User = get_user_model()
     queryset = (
-        User.objects.select_related("admin_note", "admin_note__updated_by")
-        .prefetch_related(Prefetch("groups", queryset=Group.objects.order_by("name")))
+        User.objects.prefetch_related(Prefetch("groups", queryset=Group.objects.order_by("name")))
         .order_by("username")
     )
     normalized_query = (query or "").strip()
@@ -1129,12 +1186,6 @@ def _attach_user_role_metadata(users):
         user.primary_role_name = group_names[0] if group_names else ""
         user.role_names_display = ", ".join(group_names) if group_names else "No role assigned"
         user.display_name = user.get_full_name().strip() or "No name set"
-        note = getattr(user, "admin_note", None)
-        note_text = (note.temporary_password_note or "").strip() if note is not None else ""
-        user.temporary_password_note = note_text
-        user.has_temporary_password_note = bool(note_text)
-        user.temporary_password_note_updated_at = note.updated_at if note_text else None
-        user.temporary_password_note_updated_by_display = _display_user_name(note.updated_by) if note_text else ""
         user.has_settings_access = user.is_superuser or bool(set(group_names) & manage_settings_roles)
     return users
 
@@ -1143,8 +1194,8 @@ def _recent_case_task_queryset():
     return Task.objects.only("id", "case_id", "title", "due_date", "status", "notes").order_by("due_date", "id")
 
 
-def _recent_case_queryset(limit=None, *, include_tasks=True):
-    queryset = _visible_case_queryset(
+def _recent_case_queryset(limit=None, *, include_tasks=True, user=None):
+    case_queryset = (
         Case.objects.select_related("category")
         .only(
             "id",
@@ -1165,6 +1216,11 @@ def _recent_case_queryset(limit=None, *, include_tasks=True):
             "category__theme_text_color",
         )
         .order_by("-created_at", "-id")
+    )
+    queryset = (
+        _accessible_case_queryset(user, case_queryset)
+        if user is not None
+        else _visible_case_queryset(case_queryset)
     )
     if include_tasks:
         queryset = queryset.prefetch_related(Prefetch("tasks", queryset=_recent_case_task_queryset()))
@@ -1327,7 +1383,7 @@ def _recent_cases_payload_for_user(user, *, limit=RECENT_CASE_LIMIT_DEFAULT):
     today = timezone.localdate()
     can_edit_recent = _can_edit_recent_cases(user)
     can_edit_tasks = can_edit_recent and has_capability(user, "task_edit")
-    cases = list(_recent_case_queryset(limit=limit))
+    cases = list(_recent_case_queryset(limit=limit, user=user))
     theme_category_colors = build_theme_category_colors(
         [case.category for case in cases if getattr(case, "category", None) is not None]
     )
@@ -1347,7 +1403,7 @@ def _recent_cases_payload_for_user(user, *, limit=RECENT_CASE_LIMIT_DEFAULT):
 def _recent_case_summary_payload_for_user(user, *, limit=RECENT_CASE_LIMIT_DEFAULT):
     today = timezone.localdate()
     can_edit_recent = _can_edit_recent_cases(user)
-    cases = list(_recent_case_queryset(limit=limit, include_tasks=False))
+    cases = list(_recent_case_queryset(limit=limit, include_tasks=False, user=user))
     theme_category_colors = build_theme_category_colors(
         [case.category for case in cases if getattr(case, "category", None) is not None]
     )
@@ -1365,7 +1421,7 @@ def _recent_case_summary_payload_for_user(user, *, limit=RECENT_CASE_LIMIT_DEFAU
 
 def _recent_case_payload_for_id(case_id, user):
     today = timezone.localdate()
-    case = get_object_or_404(_recent_case_queryset(include_tasks=True), pk=case_id)
+    case = get_object_or_404(_recent_case_queryset(include_tasks=True, user=user), pk=case_id)
     can_edit_recent = _can_edit_recent_cases(user)
     can_edit_tasks = can_edit_recent and has_capability(user, "task_edit")
     theme_category_colors = build_theme_category_colors([case.category] if getattr(case, "category", None) else [])
@@ -2927,7 +2983,8 @@ class DashboardView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
         return schedule_days
 
     def _task_queryset(self):
-        return _visible_task_queryset(
+        return _accessible_task_queryset(
+            self.request.user,
             Task.objects.select_related("case", "case__category")
             .only(*self.task_only_fields)
             .order_by("due_date", "case_id", "id")
@@ -3417,7 +3474,10 @@ class RecentCaseUpdateView(LoginRequiredMixin, CaseDataAccessMixin, View):
         if not _can_edit_recent_cases(request.user):
             return _forbidden_response(request, "You do not have permission to edit recent cases.")
 
-        case = get_object_or_404(Case.objects.select_related("category"), pk=pk)
+        case = get_object_or_404(
+            _accessible_case_queryset(request.user, Case.objects.select_related("category")),
+            pk=pk,
+        )
         old_diagnosis = case.diagnosis or ""
         old_notes = case.notes or ""
         form = RecentCaseUpdateForm(request.POST, instance=case)
@@ -3482,7 +3542,11 @@ class PatientSearchView(LoginRequiredMixin, CaseDataAccessMixin, View):
         query = (request.GET.get("q") or "").strip()
         if len(query) < self.min_query_length:
             return JsonResponse({"results": []})
-        queryset = _patient_search_queryset(query)
+        queryset = _patient_search_queryset(
+            query,
+            user=request.user,
+            allow_intake_lookup=True,
+        )
         category_query = self._category_query(request.GET.getlist("category"))
         if category_query:
             queryset = queryset.filter(category_query).distinct()
@@ -3497,7 +3561,7 @@ class PatientListView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
     paginate_by = 25
 
     def get_queryset(self):
-        return _patient_search_queryset(self.request.GET.get("q", ""))
+        return _patient_search_queryset(self.request.GET.get("q", ""), user=self.request.user)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -3511,12 +3575,15 @@ class PatientDetailView(LoginRequiredMixin, CaseDataAccessMixin, DetailView):
     context_object_name = "patient"
 
     def get_queryset(self):
-        return _visible_patient_queryset(Patient.objects.all())
+        return _accessible_patient_queryset(self.request.user, Patient.objects.all())
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         patient = self.object
-        visible_cases = _visible_case_queryset(patient.cases.select_related("category").order_by("-updated_at", "-id"))
+        visible_cases = _accessible_case_queryset(
+            self.request.user,
+            patient.cases.select_related("category").order_by("-updated_at", "-id"),
+        )
         context["active_cases"] = [case for case in visible_cases if case.status == CaseStatus.ACTIVE]
         context["closed_cases"] = [case for case in visible_cases if case.status != CaseStatus.ACTIVE]
         context["can_edit_patient"] = has_capability(self.request.user, "case_edit")
@@ -3536,7 +3603,7 @@ class PatientUpdateView(LoginRequiredMixin, CaseDataAccessMixin, UpdateView):
         return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
-        return _visible_patient_queryset(Patient.objects.all())
+        return _accessible_patient_queryset(self.request.user, Patient.objects.all())
 
     def form_valid(self, form):
         response = super().form_valid(form)
@@ -3572,8 +3639,9 @@ class PatientMergeView(LoginRequiredMixin, CaseDataAccessMixin, View):
     def post(self, request, pk):
         if not has_capability(request.user, "patient_merge"):
             return HttpResponseForbidden("You do not have permission to merge patient records.")
-        source_patient = get_object_or_404(_visible_patient_queryset(Patient.objects.all()), pk=pk)
-        form = PatientMergeForm(request.POST, source_patient=source_patient)
+        patient_queryset = _accessible_patient_queryset(request.user, Patient.objects.all())
+        source_patient = get_object_or_404(patient_queryset, pk=pk)
+        form = PatientMergeForm(request.POST, source_patient=source_patient, target_queryset=patient_queryset)
         if not form.is_valid():
             messages.error(request, "Choose a valid patient to merge into.")
             return redirect("patients:patient_detail", pk=source_patient.pk)
@@ -3601,7 +3669,8 @@ class CaseListView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
             .annotate(total=Count("id"))
             .values("total")[:1]
         )
-        queryset = _visible_case_queryset(
+        queryset = _accessible_case_queryset(
+            self.request.user,
             Case.objects.select_related("category")
             .only(
                 "id",
@@ -3749,7 +3818,8 @@ class CaseAutocompleteView(LoginRequiredMixin, CaseDataAccessMixin, View):
 
         grouped = {}
 
-        queryset = _visible_case_queryset(
+        queryset = _accessible_case_queryset(
+            request.user,
             Case.objects.exclude(**{f"{field}__isnull": True})
             .exclude(**{field: ""})
             .filter(**{f"{field}__istartswith": normalized_query.split(" ", 1)[0]})
@@ -3824,8 +3894,8 @@ class UniversalCaseSearchView(LoginRequiredMixin, CaseDataAccessMixin, View):
         selected_categories = request.GET.getlist("category")
         category_query = self._category_query(selected_categories)
         patient_results = []
-        for patient in list(_patient_queryset(raw_query)[: self.max_results]):
-            payload = _serialize_patient_search_result(patient)
+        for patient in list(_patient_queryset(raw_query, user=request.user)[: self.max_results]):
+            payload = _serialize_patient_search_result(patient, user=request.user)
             payload["tags"] = [{"kind": "record_type", "label": "Patient"}] + list(payload.get("tags") or [])
             patient_results.append(payload)
 
@@ -3834,7 +3904,8 @@ class UniversalCaseSearchView(LoginRequiredMixin, CaseDataAccessMixin, View):
         call_note_matches = Exists(_matching_call_note_queryset(query))
 
         cases = list(
-            _visible_case_queryset(
+            _accessible_case_queryset(
+                request.user,
                 Case.objects.select_related("category")
                 .annotate(
                     search_matches_note_activity=note_activity_matches,
@@ -4906,7 +4977,7 @@ class PatientListView(LoginRequiredMixin, PatientDataAccessMixin, ListView):
     paginate_by = 25
 
     def get_queryset(self):
-        return _patient_queryset(self.request.GET.get("q", ""))
+        return _patient_queryset(self.request.GET.get("q", ""), user=self.request.user)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -4926,16 +4997,22 @@ class PatientDetailView(LoginRequiredMixin, PatientDataAccessMixin, DetailView):
     context_object_name = "patient"
 
     def get_queryset(self):
-        return Patient.objects.filter(merged_into__isnull=True)
+        return _accessible_patient_queryset(
+            self.request.user,
+            Patient.objects.filter(merged_into__isnull=True),
+        )
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         patient = self.object
         context["patient_age_display"] = _patient_age_number(patient)
-        context["patient_cases"] = _patient_case_rows(patient)
+        context["patient_cases"] = _patient_case_rows(patient, user=self.request.user)
         context["can_edit_patient"] = has_capability(self.request.user, "case_edit")
         context["can_patient_merge"] = has_capability(self.request.user, "patient_merge")
-        context["merge_form"] = PatientMergeForm(source_patient=patient)
+        context["merge_form"] = PatientMergeForm(
+            source_patient=patient,
+            target_queryset=_accessible_patient_queryset(self.request.user, Patient.objects.all()),
+        )
         context["patient_edit_url"] = reverse("patients:patient_edit", kwargs={"pk": patient.pk})
         context["new_case_url"] = f"{reverse('patients:case_create')}?patient_mode=existing&patient_id={patient.pk}"
         return context
@@ -4948,7 +5025,10 @@ class PatientUpdateView(LoginRequiredMixin, PatientEditAccessMixin, UpdateView):
     context_object_name = "patient"
 
     def get_queryset(self):
-        return Patient.objects.filter(merged_into__isnull=True)
+        return _accessible_patient_queryset(
+            self.request.user,
+            Patient.objects.filter(merged_into__isnull=True),
+        )
 
     def form_valid(self, form):
         response = super().form_valid(form)
@@ -4962,8 +5042,12 @@ class PatientUpdateView(LoginRequiredMixin, PatientEditAccessMixin, UpdateView):
 
 class PatientMergeView(LoginRequiredMixin, PatientMergeAccessMixin, View):
     def post(self, request, pk):
-        source_patient = get_object_or_404(Patient.objects.filter(merged_into__isnull=True), pk=pk)
-        form = PatientMergeForm(request.POST, source_patient=source_patient)
+        patient_queryset = _accessible_patient_queryset(
+            request.user,
+            Patient.objects.filter(merged_into__isnull=True),
+        )
+        source_patient = get_object_or_404(patient_queryset, pk=pk)
+        form = PatientMergeForm(request.POST, source_patient=source_patient, target_queryset=patient_queryset)
         if not form.is_valid():
             for errors in form.errors.values():
                 for error in errors:
@@ -4992,6 +5076,13 @@ class CaseDetailView(LoginRequiredMixin, DetailView):
     model = Case
     template_name = "patients/case_detail.html"
     context_object_name = "case"
+
+    def get_queryset(self):
+        return _accessible_case_queryset(
+            self.request.user,
+            Case.objects.select_related("category", "patient"),
+            include_archived=True,
+        )
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -5101,6 +5192,12 @@ class CaseVitalsDetailView(LoginRequiredMixin, DetailView):
     template_name = "patients/vitals_detail.html"
     context_object_name = "case"
 
+    def get_queryset(self):
+        return _accessible_case_queryset(
+            self.request.user,
+            Case.objects.select_related("category", "patient"),
+        )
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         case = self.object
@@ -5127,6 +5224,12 @@ class CaseUpdateView(LoginRequiredMixin, CaseUpdateAccessMixin, CaseUpdateContex
     model = Case
     form_class = CaseForm
     template_name = CaseUpdateContextMixin.template_name
+
+    def get_queryset(self):
+        return _accessible_case_queryset(
+            self.request.user,
+            Case.objects.select_related("category", "patient"),
+        )
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -5200,7 +5303,7 @@ class CaseUpdateView(LoginRequiredMixin, CaseUpdateAccessMixin, CaseUpdateContex
 
 class CaseUpdatePreviewView(LoginRequiredMixin, CaseUpdateAccessMixin, CaseUpdateContextMixin, View):
     def post(self, request, pk):
-        case = get_object_or_404(Case, pk=pk)
+        case = get_object_or_404(_accessible_case_queryset(request.user), pk=pk)
         form = CaseForm(data=request.POST, instance=case)
         context = {
             "case": case,
@@ -5212,7 +5315,7 @@ class CaseUpdatePreviewView(LoginRequiredMixin, CaseUpdateAccessMixin, CaseUpdat
 
 class CaseUpdateIdentityCheckView(LoginRequiredMixin, CaseUpdateAccessMixin, CaseUpdateContextMixin, View):
     def post(self, request, pk):
-        case = get_object_or_404(Case, pk=pk)
+        case = get_object_or_404(_accessible_case_queryset(request.user), pk=pk)
         form = CaseForm(data=request.POST, instance=case)
         context = {
             "case": case,
@@ -5226,7 +5329,10 @@ class TaskCreateView(LoginRequiredMixin, View):
     def post(self, request, pk):
         if not has_capability(request.user, "task_create"):
             return _forbidden_response(request, "You do not have permission to create tasks.")
-        case = get_object_or_404(Case.objects.select_related("category"), pk=pk)
+        case = get_object_or_404(
+            _accessible_case_queryset(request.user, Case.objects.select_related("category")),
+            pk=pk,
+        )
         form = TaskForm(request.POST)
         if form.is_valid():
             task = form.save(commit=False)
@@ -5276,7 +5382,10 @@ class TaskQuickCompleteView(LoginRequiredMixin, View):
         if not has_capability(request.user, "task_edit"):
             return _forbidden_response(request, "You do not have permission to edit tasks.")
 
-        task = get_object_or_404(Task.objects.select_related("case", "case__category"), pk=pk)
+        task = get_object_or_404(
+            _accessible_task_queryset(request.user, Task.objects.select_related("case", "case__category")),
+            pk=pk,
+        )
         success, message = _complete_task_inline(task, user=request.user)
         if not success:
             return _task_action_error_response(request, case_id=task.case_id, message=message)
@@ -5288,7 +5397,10 @@ class TaskQuickReopenView(LoginRequiredMixin, View):
         if not _can_reopen_tasks(request.user):
             return _forbidden_response(request, "You do not have permission to reopen completed tasks.")
 
-        task = get_object_or_404(Task.objects.select_related("case", "case__category"), pk=pk)
+        task = get_object_or_404(
+            _accessible_task_queryset(request.user, Task.objects.select_related("case", "case__category")),
+            pk=pk,
+        )
         success, message = _reopen_task_inline(task, user=request.user)
         if not success:
             return _task_action_error_response(request, case_id=task.case_id, message=message)
@@ -5300,7 +5412,10 @@ class TaskQuickRescheduleView(LoginRequiredMixin, View):
         if not has_capability(request.user, "task_edit"):
             return _forbidden_response(request, "You do not have permission to edit tasks.")
 
-        task = get_object_or_404(Task.objects.select_related("case", "case__category"), pk=pk)
+        task = get_object_or_404(
+            _accessible_task_queryset(request.user, Task.objects.select_related("case", "case__category")),
+            pk=pk,
+        )
         success, message = _reschedule_task_inline(
             task,
             due_date_raw=(request.POST.get("due_date") or "").strip(),
@@ -5316,7 +5431,10 @@ class TaskQuickNoteView(LoginRequiredMixin, View):
         if not has_capability(request.user, "task_edit"):
             return _forbidden_response(request, "You do not have permission to edit tasks.")
 
-        task = get_object_or_404(Task.objects.select_related("case", "case__category"), pk=pk)
+        task = get_object_or_404(
+            _accessible_task_queryset(request.user, Task.objects.select_related("case", "case__category")),
+            pk=pk,
+        )
         success, message = _save_task_note_inline(
             task,
             note_text=(request.POST.get("note") or "").strip(),
@@ -5331,6 +5449,12 @@ class TaskUpdateView(LoginRequiredMixin, UpdateView):
     model = Task
     form_class = TaskForm
     template_name = "patients/task_form.html"
+
+    def get_queryset(self):
+        return _accessible_task_queryset(
+            self.request.user,
+            Task.objects.select_related("case", "case__category", "assigned_user"),
+        )
 
     def dispatch(self, request, *args, **kwargs):
         if not has_capability(request.user, "task_edit"):
@@ -5405,7 +5529,10 @@ class AddCaseNoteView(LoginRequiredMixin, View):
     def post(self, request, pk):
         if not has_capability(request.user, "note_add"):
             return _forbidden_response(request, "You do not have permission to add notes.")
-        case = get_object_or_404(Case.objects.select_related("category"), pk=pk)
+        case = get_object_or_404(
+            _accessible_case_queryset(request.user, Case.objects.select_related("category")),
+            pk=pk,
+        )
         form = ActivityLogForm(request.POST)
         if form.is_valid():
             log = form.save(commit=False)
@@ -5436,7 +5563,10 @@ class AddCallLogView(LoginRequiredMixin, View):
     def post(self, request, pk):
         if not has_capability(request.user, "note_add"):
             return _forbidden_response(request, "You do not have permission to add call logs.")
-        case = get_object_or_404(Case.objects.select_related("category"), pk=pk)
+        case = get_object_or_404(
+            _accessible_case_queryset(request.user, Case.objects.select_related("category")),
+            pk=pk,
+        )
         form = CallLogForm(request.POST)
         form.fields["task"].queryset = case.tasks.all()
         if form.is_valid():
@@ -5501,7 +5631,7 @@ class VitalEntryCreateView(LoginRequiredMixin, View):
         denied = self._check_access(request)
         if denied:
             return denied
-        case = get_object_or_404(Case, pk=pk)
+        case = get_object_or_404(_accessible_case_queryset(request.user), pk=pk)
         form = VitalEntryForm()
         return render(request, self.template_name, _build_vitals_form_context(case=case, form=form, is_edit=False))
 
@@ -5509,7 +5639,7 @@ class VitalEntryCreateView(LoginRequiredMixin, View):
         denied = self._check_access(request)
         if denied:
             return denied
-        case = get_object_or_404(Case, pk=pk)
+        case = get_object_or_404(_accessible_case_queryset(request.user), pk=pk)
         form = VitalEntryForm(request.POST)
         if form.is_valid():
             vital = form.save(commit=False)
@@ -5567,7 +5697,10 @@ class VitalEntryUpdateView(LoginRequiredMixin, View):
         denied = self._check_access(request)
         if denied:
             return denied
-        vital = get_object_or_404(VitalEntry.objects.select_related("case"), pk=pk)
+        vital = get_object_or_404(
+            _accessible_vital_queryset(request.user, VitalEntry.objects.select_related("case")),
+            pk=pk,
+        )
         form = VitalEntryForm(instance=vital)
         return render(
             request,
@@ -5579,7 +5712,10 @@ class VitalEntryUpdateView(LoginRequiredMixin, View):
         denied = self._check_access(request)
         if denied:
             return denied
-        vital = get_object_or_404(VitalEntry.objects.select_related("case"), pk=pk)
+        vital = get_object_or_404(
+            _accessible_vital_queryset(request.user, VitalEntry.objects.select_related("case")),
+            pk=pk,
+        )
         form = VitalEntryForm(request.POST, instance=vital)
         if form.is_valid():
             updated_vital = form.save(commit=False)
@@ -5874,6 +6010,25 @@ class UserManagementSettingsView(LoginRequiredMixin, View):
         return None
 
     @staticmethod
+    def _role_grants_settings(role):
+        if role is None:
+            return False
+        return RoleSetting.objects.filter(role_name=role.name, can_manage_settings=True).exists()
+
+    @staticmethod
+    def _superuser_target_denied(request, target_user):
+        return target_user.is_superuser and not request.user.is_superuser
+
+    @staticmethod
+    def _protected_settings_role_denied(request, *, current_role=None, proposed_role=None):
+        if request.user.is_superuser:
+            return False
+        return bool(
+            (current_role is not None and current_role.can_manage_settings)
+            or (proposed_role is not None and proposed_role.can_manage_settings)
+        )
+
+    @staticmethod
     def _normalize_tab(raw_value):
         return raw_value if raw_value in {"users", "roles"} else "users"
 
@@ -5927,7 +6082,6 @@ class UserManagementSettingsView(LoginRequiredMixin, View):
             "total_user_count": User.objects.count(),
             "active_user_count": User.objects.filter(is_active=True).count(),
             "settings_admin_count": _settings_admin_user_count(),
-            "users_with_temp_note_count": UserAdminNote.objects.exclude(temporary_password_note="").count(),
             "role_create_form": role_create_form or RoleSettingForm(),
             "role_edit_form": role_edit_form or (RoleSettingUpdateForm(instance=selected_role) if selected_role else None),
             "selected_role": selected_role,
@@ -5964,6 +6118,8 @@ class UserManagementSettingsView(LoginRequiredMixin, View):
         if action == "create_user":
             create_form = UserManagementCreateForm(request.POST)
             if create_form.is_valid():
+                if not request.user.is_superuser and self._role_grants_settings(create_form.cleaned_data["role"]):
+                    return HttpResponseForbidden("Only a superuser can assign settings-administrator access.")
                 user = create_form.save(actor=request.user)
                 messages.success(request, f"Created user {user.username}.")
                 return redirect(_settings_url("patients:settings_user_management", tab="users", user=user.pk, q=user_query))
@@ -5983,8 +6139,12 @@ class UserManagementSettingsView(LoginRequiredMixin, View):
         if action == "update_user":
             User = get_user_model()
             selected_user = get_object_or_404(User, pk=request.POST.get("user_id"))
+            if self._superuser_target_denied(request, selected_user):
+                return HttpResponseForbidden("Only a superuser can modify another superuser.")
             edit_form = UserManagementUpdateForm(request.POST, instance=selected_user)
             if edit_form.is_valid():
+                if not request.user.is_superuser and self._role_grants_settings(edit_form.cleaned_data["role"]):
+                    return HttpResponseForbidden("Only a superuser can assign settings-administrator access.")
                 user = edit_form.save(actor=request.user)
                 messages.success(request, f"Updated user {user.username}.")
                 return redirect(_settings_url("patients:settings_user_management", tab="users", user=user.pk, q=user_query))
@@ -6001,19 +6161,14 @@ class UserManagementSettingsView(LoginRequiredMixin, View):
                 ),
             )
 
-        if action == "clear_temp_password_note":
-            User = get_user_model()
-            selected_user = get_object_or_404(User.objects.select_related("admin_note"), pk=request.POST.get("user_id"))
-            note, _ = UserAdminNote.objects.get_or_create(user=selected_user)
-            note.temporary_password_note = ""
-            note.updated_by = request.user
-            note.save()
-            messages.success(request, f"Cleared the temporary password note for {selected_user.username}.")
-            return redirect(_settings_url("patients:settings_user_management", tab="users", user=selected_user.pk, q=user_query))
-
         if action == "create_role":
             role_create_form = RoleSettingForm(request.POST)
             if role_create_form.is_valid():
+                if self._protected_settings_role_denied(
+                    request,
+                    proposed_role=role_create_form.instance,
+                ):
+                    return HttpResponseForbidden("Only a superuser can create a settings-administrator role.")
                 role = role_create_form.save()
                 Group.objects.get_or_create(name=role.role_name)
                 messages.success(request, f"Created role {role.role_name}.")
@@ -6033,8 +6188,15 @@ class UserManagementSettingsView(LoginRequiredMixin, View):
 
         if action == "update_role":
             selected_role = get_object_or_404(RoleSetting, pk=request.POST.get("role_id"))
+            if self._protected_settings_role_denied(request, current_role=selected_role):
+                return HttpResponseForbidden("Only a superuser can change a settings-administrator role.")
             role_edit_form = RoleSettingUpdateForm(request.POST, instance=selected_role)
             if role_edit_form.is_valid():
+                if self._protected_settings_role_denied(
+                    request,
+                    proposed_role=role_edit_form.instance,
+                ):
+                    return HttpResponseForbidden("Only a superuser can change a settings-administrator role.")
                 role = role_edit_form.save()
                 Group.objects.get_or_create(name=role.role_name)
                 messages.success(request, f"Updated permissions for {role.role_name}.")
@@ -6841,7 +7003,6 @@ class AdminSettingsView(LoginRequiredMixin, View):
             "total_user_count": User.objects.count(),
             "active_user_count": User.objects.filter(is_active=True).count(),
             "settings_admin_count": _settings_admin_user_count(),
-            "users_with_temp_note_count": UserAdminNote.objects.exclude(temporary_password_note="").count(),
         }
 
     @staticmethod
@@ -6851,7 +7012,6 @@ class AdminSettingsView(LoginRequiredMixin, View):
             "total_user_count": 0,
             "active_user_count": 0,
             "settings_admin_count": 0,
-            "users_with_temp_note_count": 0,
         }
 
     def _workflow_context(self):

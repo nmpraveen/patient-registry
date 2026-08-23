@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026.08.23.17.31
+- Enforced one server-side case scope across website and mobile API list, detail, task, patient, call-log, and vitals workflows: Doctor/Admin can access all active cases, while other staff are limited to cases they created, assigned cases, and the active calling queue when permitted.
+- Blocked non-superuser settings administrators from modifying superusers, assigning settings-administrator roles, or changing settings-capable role definitions.
+- Removed the plaintext temporary-password-note model, migration table, forms, and user-interface controls.
+- Added forged-ID, revocation, caller-window, superuser-takeover, and privilege-escalation regression coverage.
+
 ## 2026.08.11.18.37
 - Reduced the VPS ciphertext-export scan from every 15 minutes to hourly with up to five minutes of jitter, while retaining the NAS six-hour pull cadence.
 - Added an explicit immediate export step after manual pre-deployment backups so urgent recovery points do not wait for the hourly timer.

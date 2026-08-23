@@ -123,6 +123,14 @@ curl --fail --silent --show-error --resolve book.naveenhospital.net:443:127.0.0.
 curl --fail --silent --show-error https://book.naveenhospital.net/login/ >/dev/null
 ```
 
+Last verified production deployment (2026-08-23):
+
+- live commit `a5dff668b23c52e5a71431807a291573f9e0404c` from merged PR #95;
+- migration `patients.0036_remove_plaintext_password_notes` applied and the removed table absent;
+- real administrator login, authenticated `/patients/`, and user-management UI passed over public HTTPS;
+- rollback-only live authorization smoke passed assigned access, forged-ID denial, and reassignment revocation without retaining synthetic records;
+- pre-deployment archive `medtrack-prod-pre-deployment-20260823T174416Z.tar.age` passed Drive verification, immediate NAS export, and off-site health checks.
+
 Before a future code update, run `./scripts/backup.sh` and preserve the resulting backup outside the VPS. Never deploy from a dirty checkout and never run `docker compose down -v` during an update.
 
 ## Encrypted Google Drive Recovery Backups
@@ -403,4 +411,4 @@ Do not write raw FCM tokens, service-account JSON, PHI, patient names, or patien
 - `%USERPROFILE%\.codex\build\medtrack-android\` - Android Gradle build output outside Dropbox.
 - Docker volume `test_nnh_state` - Test NNH demo SQLite state.
 - `/srv/medtrack/offsite-backups/` - root-only local ciphertext cache and success-state files.
-- Google Drive `Naveen-Hospital-Backups/MEDTRACK/production/canary/` - encrypted technical canary evidence only; recurring Drive-backed timers are disabled pending policy clearance.
+- Google Drive `Naveen-Hospital-Backups/MEDTRACK/production/` - encrypted canary, rapid, daily, weekly, monthly, and pre-deployment recovery tiers; recurring timers are active by explicit owner decision.

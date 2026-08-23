@@ -8,13 +8,13 @@ The web app supports login-based role-aware workflows, case dashboards, case act
 
 The Android v1 implementation is locally implemented and has local verification evidence from the Test NNH workflow. The release goal is not complete until the external Firebase and physical-device gates pass.
 
-Production recovery is deployed on the hardened VPS at commit `73e551ec79cd96fd191a51abc62ce34d95b47c8c`: pinned Python/PostgreSQL/Caddy versions, loopback-only Django exposure, persistent host backup storage, health-gated startup, and exact-commit deployment. Encrypted Google Drive backups and health timers are active by explicit owner decision, a second offline private-key copy is confirmed, and a pull-only Synology ciphertext mirror provides an independent off-VPS copy. Independent restores from both Drive and the NAS passed PostgreSQL and exact-commit Django validation.
+Production is deployed on the hardened VPS at commit `a5dff668b23c52e5a71431807a291573f9e0404c`: pinned Python/PostgreSQL/Caddy versions, loopback-only Django exposure, persistent host backup storage, health-gated startup, and exact-commit deployment. Website and API object authorization now enforce created, assigned, or current call-queue scope for restricted staff; Doctor/Admin retain full active-case scope. Non-superusers can no longer modify superusers or grant settings-admin access, and the plaintext temporary-password-note model/table/UI have been removed. Encrypted Google Drive backups and health timers are active, and a pull-only Synology ciphertext mirror provides an independent off-VPS copy.
 
 ## Last Verified Date
 
-2026-08-11
+2026-08-23
 
-Production infrastructure changes were verified with Compose rendering, deployment-script syntax validation, Django migration-drift checks, `manage.py check --deploy`, all 369 Django tests (2 skipped), origin-bypassed and public HTTPS responses, active encrypted tier timers, five checksum-valid NAS tiers, containment tests, and independent Drive- and NAS-sourced PostgreSQL/Django scratch restores. The earlier Android evidence remains the screenshot handoff package at `output/android-claude-handoff-final-20260531-105420/`.
+PR #95 was reviewed at exact head `4b591627d9fac0ff4ecff1230fc74162280c4e84` and merged/deployed as `a5dff668b23c52e5a71431807a291573f9e0404c`. Verification covered all 375 Django tests (2 skipped), migration drift and clean scratch migration, production migration state, healthy Compose services, origin-bypassed and public HTTPS, real administrator login, removal of the plaintext-note table/UI, and a rollback-only live forged-ID/revocation smoke with no persisted synthetic records. Immediately before deployment, encrypted pre-deployment backup `medtrack-prod-pre-deployment-20260823T174416Z.tar.age` passed Drive verification, NAS export, and off-site health checks.
 
 ## How To Run Locally
 
@@ -51,7 +51,7 @@ If `docker-compose.override.yml` exists locally, the local-dev PowerShell wrappe
 ## Current Phase
 
 - Web MVP: operational and runnable locally.
-- Production recovery deployment: deployed and healthy on the hardened VPS; encrypted Drive scheduling and the isolated Synology mirror are active and restore-proven.
+- Production website deployment: deployed and healthy on the hardened VPS with the website/API P0 authorization and admin-IAM containment live.
 - Android v1: locally implemented and locally smoke-tested.
 - Release readiness: blocked on external Firebase delivery evidence, a physical Android phone smoke, and a two-user field-test record.
 
@@ -59,6 +59,8 @@ If `docker-compose.override.yml` exists locally, the local-dev PowerShell wrappe
 
 - Django server-rendered MEDTRACK app for case-based ANC, Surgery, and Medicine follow-up tracking.
 - Role-aware login and role/action settings.
+- Server-side object scope on website and API list/detail/mutation routes, including forged-ID and reassignment revocation coverage.
+- Superuser/settings-role takeover containment and removal of plaintext temporary-password-note storage.
 - Today, Upcoming, Overdue, Awaiting, Red, and Grey dashboard views.
 - Activity logging with user/timestamp context.
 - Patient-data ZIP export/import and server-side patient-data backups.
@@ -85,6 +87,7 @@ If `docker-compose.override.yml` exists locally, the local-dev PowerShell wrappe
 - Low-end or representative physical Android phone smoke is not complete.
 - Two-user field-test record is not complete.
 - Final Android v1 audit remains incomplete until `.\android\scripts\medtrack-v1-audit.ps1` reports `goalComplete=true`.
+- Android account-scoped local storage/outbox isolation and PHI-free FCM payloads remain separate production blockers; they were intentionally outside PR #95.
 
 ## Known Risks
 
@@ -99,6 +102,7 @@ If `docker-compose.override.yml` exists locally, the local-dev PowerShell wrappe
 - The current Test NNH listener can appear LAN-exposed through Docker port publishing; use `adb reverse` for physical-device local testing when possible.
 - `MarkUS_Latest_API37` can appear attached while stuck behind a locked/black SystemUI state. For quick manual starts, switch to `MarkUS_Local` instead of debugging the APK.
 - Firebase readiness depends on external console configuration and local secrets that are intentionally excluded from Git.
+- The website-side authorization containment is live, but overall MEDTRACK production readiness remains NO-GO for Android until account isolation, generic push payloads, and the remaining release/recovery gates are completed.
 
 ## Important Generated Outputs
 
@@ -113,6 +117,6 @@ If `docker-compose.override.yml` exists locally, the local-dev PowerShell wrappe
 
 ## Next 3 Actions
 
-1. Rotate the temporary VPS root credential and arrange a host-level snapshot in addition to the Drive and NAS application backups.
-2. Monitor Drive and NAS backup health, space ceilings, and timer failures; repeat a scratch restore at least monthly and after backup-system changes.
-3. Configure Firebase inputs, prove real push delivery, record the two-user field test, and rerun `.\android\scripts\medtrack-v1-audit.ps1`.
+1. Resume the website Stage 7 role/profile and frontend cleanup on top of the now-live object-authorization boundary.
+2. Rotate temporary production credentials and resolve the HostDZire browser-console recovery issue; keep Drive/NAS health and monthly scratch restores monitored.
+3. Before enabling Android/FCM in production, implement account-scoped encrypted local state and PHI-free push payloads, then complete physical-device and two-user field tests.

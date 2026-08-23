@@ -21,13 +21,11 @@ from patients.models import (
     BloodGroup,
     CallLog,
     Case,
-    CaseActivityLog,
     CasePrefix,
     CaseStatus,
     DepartmentConfig,
     Gender,
     NonCommunicableDisease,
-    Patient,
     ReviewFrequency,
     SurgicalPathway,
     Task,
@@ -52,18 +50,17 @@ from patients.views import (
     _build_upcoming_call_filters,
     _can_access_upcoming_calls,
     _can_reopen_tasks,
+    _accessible_case_queryset,
+    _accessible_task_queryset,
+    _accessible_vital_queryset,
     _complete_task_inline,
     _dashboard_category_icon_path,
     _dashboard_subcategory_icon_path,
     _display_user_name,
     _patient_search_queryset,
-    _reopen_task_inline,
-    _reschedule_task_inline,
     _reopen_task_follow_up_cleanup,
     _save_task_note_inline,
     _visible_case_queryset,
-    _visible_task_queryset,
-    can_access_case_data,
     create_case_activity,
     has_capability,
     is_doctor_admin,
@@ -465,7 +462,10 @@ class CaseDetailView(APIView):
     permission_classes = [HasMobileCaseAccess]
 
     def get(self, request, pk):
-        case = get_object_or_404(_visible_case_queryset(Case.objects.select_related("category")), pk=pk)
+        case = get_object_or_404(
+            _accessible_case_queryset(request.user, Case.objects.select_related("category")),
+            pk=pk,
+        )
         payload = _build_case_detail_json_payload(case, user=request.user)
         tasks = list(case.tasks.select_related("assigned_user").order_by("due_date", "id"))
         vitals = list(case.vitals.order_by("-recorded_at", "-id")[:25])
@@ -494,7 +494,11 @@ class CaseDetailView(APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
         case = get_object_or_404(
-            _visible_case_queryset(Case.objects.select_related("category", "patient")), pk=pk
+            _accessible_case_queryset(
+                request.user,
+                Case.objects.select_related("category", "patient"),
+            ),
+            pk=pk,
         )
         old_status = case.status
         # The mobile wizard does not expose every patient identity field, so backfill the
@@ -614,7 +618,11 @@ class CaseEditFormView(APIView):
 
     def get(self, request, pk):
         case = get_object_or_404(
-            _visible_case_queryset(Case.objects.select_related("category", "patient")), pk=pk
+            _accessible_case_queryset(
+                request.user,
+                Case.objects.select_related("category", "patient"),
+            ),
+            pk=pk,
         )
         return Response(
             {
@@ -685,7 +693,10 @@ class TaskCompleteView(APIView):
 
         def apply_write():
             task = get_object_or_404(
-                _visible_task_queryset(Task.objects.select_related("case", "case__category")),
+                _accessible_task_queryset(
+                    request.user,
+                    Task.objects.select_related("case", "case__category"),
+                ),
                 pk=pk,
             )
             success, message = _complete_task_inline(task, user=request.user)
@@ -727,7 +738,10 @@ class TaskCreateView(APIView):
             )
         write_serializer = ClientWriteSerializer(data=request.data)
         write_serializer.is_valid(raise_exception=True)
-        case = get_object_or_404(_visible_case_queryset(Case.objects.select_related("category")), pk=pk)
+        case = get_object_or_404(
+            _accessible_case_queryset(request.user, Case.objects.select_related("category")),
+            pk=pk,
+        )
         form = TaskForm(request.data)
         if not form.is_valid():
             return Response(
@@ -776,7 +790,8 @@ class TaskDetailView(APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
         task = get_object_or_404(
-            _visible_task_queryset(
+            _accessible_task_queryset(
+                request.user,
                 Task.objects.select_related("case", "case__category", "assigned_user")
             ),
             pk=pk,
@@ -842,7 +857,11 @@ class TaskNoteView(APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
         task = get_object_or_404(
-            _visible_task_queryset(Task.objects.select_related("case", "case__category")), pk=pk
+            _accessible_task_queryset(
+                request.user,
+                Task.objects.select_related("case", "case__category"),
+            ),
+            pk=pk,
         )
         note_text = (request.data.get("note") or "").strip()
         success, message = _save_task_note_inline(task, note_text=note_text, user=request.user)
@@ -889,9 +908,12 @@ class VitalsDetailView(APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
         vital = get_object_or_404(
-            VitalEntry.objects.select_related("case", "case__category"), pk=pk
+            _accessible_vital_queryset(
+                request.user,
+                VitalEntry.objects.select_related("case", "case__category"),
+            ),
+            pk=pk,
         )
-        get_object_or_404(_visible_case_queryset(Case.objects.all()), pk=vital.case_id)
         serializer = VitalEntryUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         updated, warning = serializer.update_vital(vital=vital, user=request.user)
@@ -921,7 +943,10 @@ class CallOutcomeView(APIView):
         serializer.is_valid(raise_exception=True)
 
         def apply_write():
-            case = get_object_or_404(_visible_case_queryset(Case.objects.select_related("category")), pk=pk)
+            case = get_object_or_404(
+                _accessible_case_queryset(request.user, Case.objects.select_related("category")),
+                pk=pk,
+            )
             task = None
             task_id = serializer.validated_data.get("task_id")
             if task_id:
@@ -976,7 +1001,10 @@ class CaseVitalsView(APIView):
         serializer.is_valid(raise_exception=True)
 
         def apply_write():
-            case = get_object_or_404(_visible_case_queryset(Case.objects.select_related("category")), pk=pk)
+            case = get_object_or_404(
+                _accessible_case_queryset(request.user, Case.objects.select_related("category")),
+                pk=pk,
+            )
             vital, warning = serializer.create_vital(case=case, user=request.user)
             create_case_activity(
                 case=case,
@@ -1162,7 +1190,11 @@ class PatientSearchView(APIView):
 
     def get(self, request):
         query = request.GET.get("q", "").strip()
-        queryset = _patient_search_queryset(query)
+        queryset = _patient_search_queryset(
+            query,
+            user=request.user,
+            allow_intake_lookup=True,
+        )
         paginator = MobilePagination()
         page = paginator.paginate_queryset(queryset, request, view=self)
         return Response(

@@ -33,7 +33,6 @@ from .models import (
     TaskStatus,
     TaskType,
     ThemeSettings,
-    UserAdminNote,
     valid_case_subcategory_values_for_category_name,
     VitalEntry,
     ensure_default_departments,
@@ -664,10 +663,11 @@ class PatientMergeForm(forms.Form):
         label="Merge into patient",
     )
 
-    def __init__(self, *args, source_patient=None, **kwargs):
+    def __init__(self, *args, source_patient=None, target_queryset=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.source_patient = source_patient
-        queryset = Patient.objects.filter(merged_into__isnull=True).order_by("patient_name", "uhid")
+        queryset = target_queryset if target_queryset is not None else Patient.objects.all()
+        queryset = queryset.filter(merged_into__isnull=True).order_by("patient_name", "uhid")
         if source_patient and source_patient.pk:
             queryset = queryset.exclude(pk=source_patient.pk)
         self.fields["target_patient"].queryset = queryset
@@ -1240,12 +1240,6 @@ class DeviceApprovalPolicyForm(forms.ModelForm):
 
 class UserManagementBaseForm(StyledModelForm):
     role = forms.ModelChoiceField(queryset=Group.objects.none(), label="Primary role")
-    temporary_password_note = forms.CharField(
-        required=False,
-        label="Temporary password note",
-        widget=forms.Textarea(attrs={"rows": 3}),
-        help_text="Admin-only plaintext note for short-lived password handoff. Clear it once it is no longer needed.",
-    )
 
     class Meta:
         model = User
@@ -1264,25 +1258,6 @@ class UserManagementBaseForm(StyledModelForm):
             primary_group = self.instance.groups.order_by("name").first()
             if primary_group:
                 self.fields["role"].initial = primary_group
-            note = getattr(self.instance, "admin_note", None)
-            if note is not None:
-                self.fields["temporary_password_note"].initial = note.temporary_password_note
-
-    def _save_temporary_password_note(self, *, user, actor=None):
-        note_text = (self.cleaned_data.get("temporary_password_note") or "").strip()
-        note = getattr(user, "admin_note", None)
-        actor_id = actor.pk if actor is not None else None
-        if note is None and not note_text:
-            return None
-        if note is not None and note.temporary_password_note == note_text and note.updated_by_id == actor_id:
-            return note
-        if note is None:
-            note = UserAdminNote(user=user)
-        note.temporary_password_note = note_text
-        note.updated_by = actor
-        note.save()
-        user.admin_note = note
-        return note
 
 
 class UserManagementCreateForm(UserManagementBaseForm):
@@ -1309,7 +1284,6 @@ class UserManagementCreateForm(UserManagementBaseForm):
         if commit:
             user.save()
             user.groups.set([self.cleaned_data["role"]])
-            self._save_temporary_password_note(user=user, actor=actor)
         return user
 
 
@@ -1383,7 +1357,6 @@ class UserManagementUpdateForm(UserManagementBaseForm):
         if commit:
             user.save()
             user.groups.set([self.cleaned_data["role"]])
-            self._save_temporary_password_note(user=user, actor=actor)
         return user
 
 

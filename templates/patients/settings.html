@@ -151,12 +151,12 @@
 {% endif %}
 
 <div class="settings-card-grid" id="settings-card-grid">
-  <section class="settings-card" data-settings-card data-settings-search="user management users roles permissions temporary password notes">
+  <section class="settings-card" data-settings-card data-settings-search="user management users roles permissions">
     <div class="settings-card-body">
       <div>
         <div class="settings-kicker">People</div>
         <h2 class="h5 mt-2 mb-1">User Management</h2>
-        <p class="text-muted mb-0">The single place for staff accounts, primary roles, role permissions, and temporary password notes.</p>
+        <p class="text-muted mb-0">The single place for staff accounts, primary roles, and role permissions.</p>
       </div>
       <div class="settings-metric-grid">
         <div class="settings-metric">
@@ -170,10 +170,6 @@
         <div class="settings-metric">
           <div class="settings-metric-value">{% if user_management_available %}{{ settings_admin_count }}{% else %}Unavailable{% endif %}</div>
           <div class="settings-metric-label">Settings admins</div>
-        </div>
-        <div class="settings-metric">
-          <div class="settings-metric-value">{% if user_management_available %}{{ users_with_temp_note_count }}{% else %}Unavailable{% endif %}</div>
-          <div class="settings-metric-label">Temp notes stored</div>
         </div>
       </div>
       <div class="settings-card-links">

@@ -333,22 +333,6 @@ class ThemeSettings(models.Model):
         return cls.objects.get_or_create(pk=1)[0]
 
 
-class UserAdminNote(models.Model):
-    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="admin_note")
-    temporary_password_note = models.TextField(blank=True)
-    updated_at = models.DateTimeField(auto_now=True)
-    updated_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="updated_user_admin_notes",
-    )
-
-    def __str__(self) -> str:
-        return f"Admin note for {self.user}"
-
-
 class Patient(models.Model):
     uhid = models.CharField(max_length=64, unique=True)
     is_temporary_id = models.BooleanField(default=False)

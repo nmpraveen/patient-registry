@@ -54,6 +54,8 @@ SECURE_HSTS_SECONDS=31536000
 SECURE_HSTS_INCLUDE_SUBDOMAINS=True
 SECURE_HSTS_PRELOAD=False
 SESSION_COOKIE_SECURE=True
+SESSION_TIMEOUT_SECONDS=43200
+SESSION_SAVE_EVERY_REQUEST=True
 CSRF_COOKIE_SECURE=True
 USE_X_FORWARDED_PROTO=True
 WEBAUTHN_RP_ID=book.naveenhospital.net
@@ -66,6 +68,8 @@ POSTGRES_HOST=db
 POSTGRES_PORT=5432
 BACKUP_HOST_DIR=/srv/medtrack/backups
 ```
+
+The two session settings above implement a sliding 12-hour inactivity timeout: each authenticated request refreshes the session expiry. Staff should still log out manually on shared workstations.
 
 Django is published only on `127.0.0.1:8000`; Caddy is the public entry point on ports 80 and 443 and obtains HTTPS automatically. PostgreSQL is not published to the host. Do not seed demo patients in production.
 

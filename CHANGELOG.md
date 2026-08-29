@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.08.29.17.26
+- Changed website sessions to a sliding 12-hour inactivity timeout so normal authenticated activity refreshes the expiry instead of logging staff out roughly 30 minutes after login.
+- Documented the explicit production session settings and the shared-workstation logout precaution.
+
 ## 2026.08.23.17.31
 - Enforced one server-side case scope across website and mobile API list, detail, task, patient, call-log, and vitals workflows: Doctor/Admin can access all active cases, while other staff are limited to cases they created, assigned cases, and the active calling queue when permitted.
 - Blocked non-superuser settings administrators from modifying superusers, assigning settings-administrator roles, or changing settings-capable role definitions.

@@ -458,6 +458,11 @@ class MedtrackModelTests(TestCase):
     def test_project_timezone_is_asia_kolkata(self):
         self.assertEqual(settings.TIME_ZONE, "Asia/Kolkata")
 
+    def test_web_session_policy_is_twelve_hour_sliding_timeout(self):
+        self.assertEqual(settings.SESSION_COOKIE_AGE, 12 * 60 * 60)
+        self.assertTrue(settings.SESSION_SAVE_EVERY_REQUEST)
+        self.assertFalse(settings.SESSION_EXPIRE_AT_BROWSER_CLOSE)
+
 
 class ThemeSystemTests(TestCase):
     def test_normalize_hex_color_and_merge_theme_tokens_compute_derived_values(self):
@@ -875,7 +880,7 @@ class MedtrackViewTests(TestCase):
             )
 
         response = self.assert_max_queries(
-            10,
+            13,  # Includes the database-session refresh required by the sliding inactivity timeout.
             reverse("patients:case_list"),
             {
                 "q": "Perf",

@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.08.30.01.53
+- Integrated Android with the published server-issued mobile-device approval contract: first login handles HTTP 202 without navigation, stores the one-time device secret in dedicated encrypted preferences, and supplies the approved credential on later login while keeping FCM delivery tokens separate.
+- Bound login, restore, worker, push, and automatic refresh to matching account and `mobile_device_id` claims across both access and rotated refresh JWTs; pending, revoked, missing-claim, mismatched, and malformed responses now fail closed.
+
 ## 2026.08.30.01.52
 - Replaced notification and patient/case search pagination with stable, server-side opaque snapshot cursors bound to account, policy, authentication version, filters, page size, order, and dataset epoch.
 - Restricted FCM and persisted mobile notifications to generic PHI-free copy plus opaque event identifiers, with current-object reauthorization, bounded retention, deterministic device limits, and revocation-triggered snapshot resets.

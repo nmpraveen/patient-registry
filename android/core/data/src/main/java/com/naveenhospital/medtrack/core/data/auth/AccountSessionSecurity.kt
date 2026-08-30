@@ -3,6 +3,7 @@ package com.naveenhospital.medtrack.core.data.auth
 import android.content.Context
 import com.naveenhospital.medtrack.core.data.local.MedtrackDatabase
 import com.naveenhospital.medtrack.core.data.sync.MedtrackSyncWorker
+import com.naveenhospital.medtrack.core.network.model.requireSessionBinding
 import com.squareup.moshi.JsonDataException
 import java.io.IOException
 import java.util.concurrent.CopyOnWriteArraySet
@@ -61,6 +62,13 @@ suspend fun refreshAndVerifyAccountSession(
         }
     }
     if (!tokenStore.isCurrent(expectedSession)) return AccountSessionRefreshResult.StaleAccount
+    try {
+        session.requireSessionBinding(expectedSession.accountId, expectedSession.mobileDeviceId)
+    } catch (failure: IllegalArgumentException) {
+        return AccountSessionRefreshResult.DefinitiveFailure(
+            DefinitiveAccountIdentityException("Authentication returned malformed account credentials.", failure),
+        )
+    }
     val access = session.access.takeIf { it.isNotBlank() }
         ?: return AccountSessionRefreshResult.DefinitiveFailure(
             DefinitiveAccountIdentityException("Authentication returned no access token."),

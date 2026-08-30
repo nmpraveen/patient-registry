@@ -71,7 +71,9 @@ class AutomaticRefreshSessionRaceTest {
                 "/api/metadata/categories/" -> MockResponse().setResponseCode(401)
                 "/api/auth/token/refresh/" -> MockResponse()
                     .setHeader("Content-Type", "application/json")
-                    .setBody("""{"access":"stale-candidate","refresh":"stale-rotated"}""")
+                    .setBody(
+                        """{"access":"${jwt("stale-candidate")}","refresh":"${jwt("stale-rotated")}"}""",
+                    )
                 "/api/me/" -> {
                     assertTrue(tokenStore.commitVerifiedSession(ACCOUNT_ID, "new-access", "new-refresh"))
                     MockResponse()
@@ -93,6 +95,39 @@ class AutomaticRefreshSessionRaceTest {
         assertNotEquals(expectedSession, tokenStore.sessionIdentityFor(ACCOUNT_ID))
     }
 
+    @Test
+    fun automaticRefreshWithoutExpectedMobileClaimNeverCommitsOrRetriesClinicalRequest() {
+        assertTrue(
+            tokenStore.commitVerifiedSession(
+                ACCOUNT_ID,
+                "old-access",
+                "old-refresh",
+                MOBILE_DEVICE_ID,
+            ),
+        )
+        val expectedSession = requireNotNull(tokenStore.sessionIdentityFor(ACCOUNT_ID))
+        var sessionUpdateCalls = 0
+        val api = boundApi(expectedSession) { _, _ ->
+            sessionUpdateCalls += 1
+            true
+        }
+        server.enqueue(MockResponse().setResponseCode(401))
+        server.enqueue(
+            MockResponse()
+                .setHeader("Content-Type", "application/json")
+                .setBody(
+                    """{"access":"${jwt("access-without-device")}","refresh":"${jwt("refresh-without-device")}"}""",
+                ),
+        )
+
+        assertTrue(kotlinx.coroutines.runBlocking { runCatching { api.categories() }.isFailure })
+
+        assertEquals(2, server.requestCount)
+        assertEquals(0, sessionUpdateCalls)
+        assertEquals(expectedSession, tokenStore.sessionIdentityFor(ACCOUNT_ID))
+        assertEquals("old-refresh", tokenStore.refreshTokenFor(expectedSession))
+    }
+
     private fun boundApi(
         expectedSession: AccountSessionIdentity,
         sessionUpdater: (String, String?) -> Boolean = { access, refresh ->
@@ -105,6 +140,7 @@ class AutomaticRefreshSessionRaceTest {
         expectedAccountIdProvider = {
             ACCOUNT_ID.takeIf { tokenStore.accountId() == ACCOUNT_ID }
         },
+        expectedMobileDeviceIdProvider = { expectedSession.mobileDeviceId },
         sessionIncarnationProvider = {
             tokenStore.sessionIdentityFor(ACCOUNT_ID)?.incarnation
         },
@@ -113,5 +149,13 @@ class AutomaticRefreshSessionRaceTest {
 
     private companion object {
         const val ACCOUNT_ID = "1"
+        const val MOBILE_DEVICE_ID = "11111111-1111-4111-8111-111111111111"
+    }
+
+    private fun jwt(marker: String): String {
+        val payload = """{"user_id":$ACCOUNT_ID,"marker":"$marker"}"""
+        val encoded = java.util.Base64.getUrlEncoder().withoutPadding()
+            .encodeToString(payload.toByteArray(Charsets.UTF_8))
+        return "header.$encoded.signature"
     }
 }

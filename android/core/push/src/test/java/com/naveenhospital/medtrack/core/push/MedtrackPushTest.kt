@@ -116,12 +116,60 @@ class MedtrackPushTest {
             tokenStore = tokenStore,
             database = database,
             invalidateIfCurrent = invalidator::invalidateIfCurrent,
-            refreshSession = { AuthSessionDto("candidate", "rotated") },
+            refreshSession = {
+                AuthSessionDto(
+                    jwt(ACCOUNT_ID, "candidate"),
+                    jwt(ACCOUNT_ID, "rotated"),
+                )
+            },
             verifyProfile = { UserProfileDto(2, "other", "Other", emptyList(), emptyMap()) },
             registerRemote = { error("must not register") },
         )
 
         assertFalse(registered)
+        assertPurged(tokenStore, lockStore)
+    }
+
+    @Test
+    fun targetedPushRefreshWithoutApprovedMobileClaimInvalidatesSession() = runTest {
+        val lockStore = seedTrustedState()
+        val sessionWriter = TokenStore(context)
+        assertTrue(
+            sessionWriter.commitVerifiedSession(
+                ACCOUNT_ID,
+                "old-access",
+                "old-refresh",
+                MOBILE_DEVICE_ID,
+            ),
+        )
+        val tokenStore = TokenStore(context)
+        val expectedSession = requireNotNull(tokenStore.sessionIdentityFor(ACCOUNT_ID))
+        val accountGeneration = requireNotNull(database.activeAccountGeneration(ACCOUNT_ID))
+        var verifyCalls = 0
+
+        val registered = registerPushTokenForAccountSession(
+            expectedSession = expectedSession,
+            accountGeneration = accountGeneration,
+            token = "push-mobile-bound",
+            deviceLabel = "device",
+            tokenStore = tokenStore,
+            database = database,
+            invalidateIfCurrent = testInvalidator(tokenStore, lockStore)::invalidateIfCurrent,
+            refreshSession = {
+                AuthSessionDto(
+                    jwt(ACCOUNT_ID, "access-without-device"),
+                    jwt(ACCOUNT_ID, "refresh-without-device"),
+                )
+            },
+            verifyProfile = {
+                verifyCalls += 1
+                UserProfileDto(1, "same", "Same", emptyList(), emptyMap())
+            },
+            registerRemote = { error("must not register") },
+        )
+
+        assertFalse(registered)
+        assertEquals(0, verifyCalls)
         assertPurged(tokenStore, lockStore)
     }
 
@@ -238,7 +286,10 @@ class MedtrackPushTest {
             invalidateIfCurrent = invalidator::invalidateIfCurrent,
             refreshSession = {
                 replaceWithNewSameAccountSession(expectedSession, accountGeneration, tokenStore, lockStore)
-                AuthSessionDto("stale-candidate", "stale-rotated")
+                AuthSessionDto(
+                    jwt(ACCOUNT_ID, "stale-candidate"),
+                    jwt(ACCOUNT_ID, "stale-rotated"),
+                )
             },
             verifyProfile = {
                 verifyCalls += 1
@@ -313,7 +364,16 @@ class MedtrackPushTest {
             ),
         )
 
+    private fun jwt(accountId: String, marker: String, mobileDeviceId: String? = null): String {
+        val mobileClaim = mobileDeviceId?.let { ",\"mobile_device_id\":\"$it\"" }.orEmpty()
+        val payload = """{"user_id":"$accountId","marker":"$marker"$mobileClaim}"""
+        val encoded = java.util.Base64.getUrlEncoder().withoutPadding()
+            .encodeToString(payload.toByteArray(Charsets.UTF_8))
+        return "header.$encoded.signature"
+    }
+
     private companion object {
         const val ACCOUNT_ID = "1"
+        const val MOBILE_DEVICE_ID = "11111111-1111-4111-8111-111111111111"
     }
 }

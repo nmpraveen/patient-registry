@@ -86,6 +86,7 @@ object MedtrackPush {
             expectedAccountIdProvider = {
                 ownerAccountId.takeIf { tokenStore.accountId() == ownerAccountId }
             },
+            expectedMobileDeviceIdProvider = { expectedSession.mobileDeviceId },
             sessionIncarnationProvider = {
                 tokenStore.sessionIdentityFor(ownerAccountId)?.incarnation
             },

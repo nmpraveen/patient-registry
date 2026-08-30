@@ -47,7 +47,7 @@ class MedtrackNetworkTest {
         server.enqueue(
             MockResponse()
                 .setHeader("Content-Type", "application/json")
-                .setBody("""{"access":"new-access","refresh":"new-refresh"}"""),
+                .setBody(sessionBody("1", "new-access", "new-refresh")),
         )
         server.enqueue(
             MockResponse()
@@ -63,7 +63,10 @@ class MedtrackNetworkTest {
         val response = api.categories()
 
         assertTrue(response.categories.isEmpty())
-        assertEquals(listOf("new-access" to "new-refresh"), updatedSessions)
+        assertEquals(
+            listOf(jwt("1", "new-access") to jwt("1", "new-refresh")),
+            updatedSessions,
+        )
 
         val original = server.takeRequest()
         assertEquals("/api/metadata/categories/", original.path)
@@ -75,11 +78,11 @@ class MedtrackNetworkTest {
 
         val retry = server.takeRequest()
         assertEquals("/api/me/", retry.path)
-        assertEquals("Bearer new-access", retry.getHeader("Authorization"))
+        assertEquals("Bearer ${jwt("1", "new-access")}", retry.getHeader("Authorization"))
 
         val originalRetry = server.takeRequest()
         assertEquals("/api/metadata/categories/", originalRetry.path)
-        assertEquals("Bearer new-access", originalRetry.getHeader("Authorization"))
+        assertEquals("Bearer ${jwt("1", "new-access")}", originalRetry.getHeader("Authorization"))
     }
 
     @Test
@@ -117,7 +120,7 @@ class MedtrackNetworkTest {
         server.enqueue(
             MockResponse()
                 .setHeader("Content-Type", "application/json")
-                .setBody("""{"access":"candidate","refresh":"rotated"}"""),
+                .setBody(sessionBody("1", "candidate", "rotated")),
         )
         server.enqueue(
             MockResponse()
@@ -145,7 +148,7 @@ class MedtrackNetworkTest {
         server.enqueue(
             MockResponse()
                 .setHeader("Content-Type", "application/json")
-                .setBody("""{"access":"candidate","refresh":"rotated"}"""),
+                .setBody(sessionBody("1", "candidate", "rotated")),
         )
         server.enqueue(
             MockResponse()
@@ -157,4 +160,14 @@ class MedtrackNetworkTest {
         assertEquals(1, commitCalls)
         assertEquals(3, server.requestCount)
     }
+}
+
+private fun sessionBody(accountId: String, accessMarker: String, refreshMarker: String): String =
+    """{"access":"${jwt(accountId, accessMarker)}","refresh":"${jwt(accountId, refreshMarker)}"}"""
+
+private fun jwt(accountId: String, marker: String): String {
+    val payload = """{"user_id":$accountId,"marker":"$marker"}"""
+    val encoded = java.util.Base64.getUrlEncoder().withoutPadding()
+        .encodeToString(payload.toByteArray(Charsets.UTF_8))
+    return "header.$encoded.signature"
 }

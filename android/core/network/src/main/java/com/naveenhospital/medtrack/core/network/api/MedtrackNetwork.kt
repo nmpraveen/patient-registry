@@ -7,6 +7,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import com.naveenhospital.medtrack.core.network.model.UserProfileDto
+import com.naveenhospital.medtrack.core.network.model.requireSessionBinding
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -30,6 +31,7 @@ object MedtrackNetwork {
         accessTokenProvider: () -> String? = { null },
         refreshTokenProvider: () -> String? = { null },
         expectedAccountIdProvider: () -> String? = { null },
+        expectedMobileDeviceIdProvider: () -> String? = { null },
         sessionIncarnationProvider: () -> String? = { null },
         sessionUpdater: (access: String, refresh: String?) -> Boolean = { _, _ -> false },
     ): MedtrackApi {
@@ -58,6 +60,7 @@ object MedtrackNetwork {
                     accessTokenProvider = accessTokenProvider,
                     refreshTokenProvider = refreshTokenProvider,
                     expectedAccountIdProvider = expectedAccountIdProvider,
+                    expectedMobileDeviceId = expectedMobileDeviceIdProvider(),
                     expectedSessionIncarnation = sessionIncarnationProvider()
                         ?.takeIf { it.isNotBlank() },
                     currentSessionIncarnationProvider = sessionIncarnationProvider,
@@ -83,6 +86,7 @@ private class RefreshTokenAuthenticator(
     private val accessTokenProvider: () -> String?,
     private val refreshTokenProvider: () -> String?,
     private val expectedAccountIdProvider: () -> String?,
+    private val expectedMobileDeviceId: String?,
     private val expectedSessionIncarnation: String?,
     private val currentSessionIncarnationProvider: () -> String?,
     private val sessionUpdater: (access: String, refresh: String?) -> Boolean,
@@ -121,6 +125,13 @@ private class RefreshTokenAuthenticator(
                 AutomaticRefreshAttempt.DefinitiveFailure -> return@synchronized null
             }
             if (currentSessionIncarnationProvider() != sessionIncarnation) return@synchronized null
+            if (
+                runCatching {
+                    session.requireSessionBinding(expectedAccountId, expectedMobileDeviceId)
+                }.isFailure
+            ) {
+                return@synchronized null
+            }
             val access = session.access.takeIf { it.isNotBlank() } ?: return@synchronized null
             val profile = when (val verification = verifyAccessToken(access)) {
                 is AutomaticVerificationAttempt.Success -> verification.profile

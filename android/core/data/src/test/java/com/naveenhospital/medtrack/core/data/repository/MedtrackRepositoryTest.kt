@@ -616,7 +616,7 @@ private class FakeMedtrackApi(
         return categoriesResponse
     }
 
-    override suspend fun login(request: LoginRequestDto): AuthSessionDto = unused()
+    override suspend fun login(request: LoginRequestDto): retrofit2.Response<com.naveenhospital.medtrack.core.network.model.LoginResponseDto> = unused()
     override suspend fun refresh(request: RefreshTokenRequestDto): AuthSessionDto = unused()
     override suspend fun logout(request: RefreshTokenRequestDto): ApiMessageDto = unused()
     override suspend fun me(): UserProfileDto = unused()

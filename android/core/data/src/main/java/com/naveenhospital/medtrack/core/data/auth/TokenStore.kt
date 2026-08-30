@@ -9,6 +9,7 @@ import java.util.UUID
 data class AccountSessionIdentity(
     val accountId: String,
     val incarnation: String,
+    val mobileDeviceId: String? = null,
 )
 
 class TokenStore internal constructor(
@@ -48,7 +49,8 @@ class TokenStore internal constructor(
         val incarnation = prefs.getString(KEY_SESSION_INCARNATION, null)
             ?.takeIf { it.isNotBlank() }
             ?: return@synchronized null
-        AccountSessionIdentity(accountId, incarnation)
+        val mobileDeviceId = prefs.getString(KEY_MOBILE_DEVICE_ID, null)?.takeIf { it.isNotBlank() }
+        AccountSessionIdentity(accountId, incarnation, mobileDeviceId)
     }
 
     fun sessionIdentityFor(accountId: String): AccountSessionIdentity? =
@@ -69,7 +71,12 @@ class TokenStore internal constructor(
     fun refreshTokenFor(identity: AccountSessionIdentity): String? =
         refreshToken()?.takeIf { isCurrent(identity) }
 
-    fun commitVerifiedSession(accountId: String, access: String, refresh: String?): Boolean =
+    fun commitVerifiedSession(
+        accountId: String,
+        access: String,
+        refresh: String?,
+        mobileDeviceId: String? = null,
+    ): Boolean =
         synchronized(MUTATION_LOCK) {
             require(accountId.isNotBlank()) { "Verified account ID is required." }
             require(access.isNotBlank()) { "Access token is required." }
@@ -77,11 +84,16 @@ class TokenStore internal constructor(
             val resolvedRefresh = refresh?.takeIf { it.isNotBlank() }
                 ?: refreshToken()?.takeIf { existingAccountId == accountId }
             if (resolvedRefresh.isNullOrBlank()) return@synchronized false
-            val committed = prefs.edit()
+            val editor = prefs.edit()
                 .putString(KEY_ACCOUNT_ID, accountId)
                 .putString(KEY_REFRESH_TOKEN, resolvedRefresh)
                 .putString(KEY_SESSION_INCARNATION, UUID.randomUUID().toString())
-                .commit()
+            if (mobileDeviceId.isNullOrBlank()) {
+                editor.remove(KEY_MOBILE_DEVICE_ID)
+            } else {
+                editor.putString(KEY_MOBILE_DEVICE_ID, UUID.fromString(mobileDeviceId).toString())
+            }
+            val committed = editor.commit()
             activeAccessToken = if (committed) access else null
             committed
         }
@@ -109,6 +121,7 @@ class TokenStore internal constructor(
                     .remove(KEY_ACCOUNT_ID)
                     .remove(KEY_REFRESH_TOKEN)
                     .remove(KEY_SESSION_INCARNATION)
+                    .remove(KEY_MOBILE_DEVICE_ID)
                     .commit(),
             ) { "Unable to clear MEDTRACK credentials." }
         }
@@ -122,6 +135,7 @@ class TokenStore internal constructor(
                 .remove(KEY_ACCOUNT_ID)
                 .remove(KEY_REFRESH_TOKEN)
                 .remove(KEY_SESSION_INCARNATION)
+                .remove(KEY_MOBILE_DEVICE_ID)
                 .commit(),
         ) { "Unable to clear MEDTRACK credentials." }
         true
@@ -136,6 +150,7 @@ class TokenStore internal constructor(
         const val KEY_ACCOUNT_ID = "account_id"
         const val KEY_REFRESH_TOKEN = "refresh_token"
         const val KEY_SESSION_INCARNATION = "session_incarnation"
+        const val KEY_MOBILE_DEVICE_ID = "mobile_device_id"
         val MUTATION_LOCK = Any()
 
         fun encryptedPrefs(context: Context): SharedPreferences {

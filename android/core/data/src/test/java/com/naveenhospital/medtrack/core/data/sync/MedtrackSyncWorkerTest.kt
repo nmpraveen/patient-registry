@@ -337,7 +337,12 @@ class MedtrackSyncWorkerTest {
                 expectedGeneration = expectedGeneration,
                 tokenStore = tokenStore,
                 invalidator = testInvalidator(tokenStore, lockStore),
-                refreshSession = { AuthSessionDto("candidate-access", "rotated-refresh") },
+                refreshSession = {
+                    AuthSessionDto(
+                        jwt(ACCOUNT_ID, "candidate-access"),
+                        jwt(ACCOUNT_ID, "rotated-refresh"),
+                    )
+                },
                 verifyProfile = {
                     UserProfileDto(2, "other", "Other", emptyList(), emptyMap())
                 },
@@ -349,6 +354,46 @@ class MedtrackSyncWorkerTest {
         assertEquals(WorkerAuthenticationResult.Invalidated, result)
         assertNull(repository.activeAccountId())
         assertTrue(repository.cases.first().isEmpty())
+        assertOwnerPurged(tokenStore, lockStore)
+    }
+
+    @Test
+    fun targetedWorkerRefreshWithoutApprovedMobileClaimInvalidatesSession() = runTest {
+        val tokenStore = TokenStore(authPrefs)
+        val lockStore = LockStore(lockPrefs)
+        database.activateAccount(ACCOUNT_ID)
+        seedTrustedOwnerState(tokenStore, lockStore)
+        assertTrue(
+            tokenStore.commitVerifiedSession(
+                ACCOUNT_ID,
+                "old-access",
+                "old-refresh",
+                MOBILE_DEVICE_ID,
+            ),
+        )
+        val expectedSession = requireNotNull(tokenStore.sessionIdentityFor(ACCOUNT_ID))
+        val expectedGeneration = requireNotNull(database.activeAccountGeneration(ACCOUNT_ID))
+        var verifyCalls = 0
+
+        val result = authenticateWorkerAccount(
+            expectedSession = expectedSession,
+            expectedGeneration = expectedGeneration,
+            tokenStore = tokenStore,
+            invalidator = testInvalidator(tokenStore, lockStore),
+            refreshSession = {
+                AuthSessionDto(
+                    jwt(ACCOUNT_ID, "access-without-device"),
+                    jwt(ACCOUNT_ID, "refresh-without-device"),
+                )
+            },
+            verifyProfile = {
+                verifyCalls += 1
+                UserProfileDto(1, "same", "Same", emptyList(), emptyMap())
+            },
+        )
+
+        assertEquals(WorkerAuthenticationResult.Invalidated, result)
+        assertEquals(0, verifyCalls)
         assertOwnerPurged(tokenStore, lockStore)
     }
 
@@ -462,7 +507,10 @@ class MedtrackSyncWorkerTest {
                     tokenStore,
                     lockStore,
                 )
-                AuthSessionDto("stale-candidate", "stale-rotated")
+                AuthSessionDto(
+                    jwt(ACCOUNT_ID, "stale-candidate"),
+                    jwt(ACCOUNT_ID, "stale-rotated"),
+                )
             },
             verifyProfile = {
                 verifyCalls += 1
@@ -576,6 +624,7 @@ class MedtrackSyncWorkerTest {
 
     private companion object {
         const val ACCOUNT_ID = "1"
+        const val MOBILE_DEVICE_ID = "11111111-1111-4111-8111-111111111111"
     }
 
     private fun conflictError(message: String): HttpException =
@@ -585,6 +634,14 @@ class MedtrackSyncWorkerTest {
                 message.toResponseBody("text/plain".toMediaType()),
             ),
         )
+}
+
+private fun jwt(accountId: String, marker: String, mobileDeviceId: String? = null): String {
+    val mobileClaim = mobileDeviceId?.let { ",\"mobile_device_id\":\"$it\"" }.orEmpty()
+    val payload = """{"user_id":"$accountId","marker":"$marker"$mobileClaim}"""
+    val encoded = java.util.Base64.getUrlEncoder().withoutPadding()
+        .encodeToString(payload.toByteArray(Charsets.UTF_8))
+    return "header.$encoded.signature"
 }
 
 private class FakeSyncApi(
@@ -632,7 +689,7 @@ private class FakeSyncApi(
         )
     }
 
-    override suspend fun login(request: LoginRequestDto): AuthSessionDto = unused()
+    override suspend fun login(request: LoginRequestDto): retrofit2.Response<com.naveenhospital.medtrack.core.network.model.LoginResponseDto> = unused()
     override suspend fun refresh(request: RefreshTokenRequestDto): AuthSessionDto = unused()
     override suspend fun logout(request: RefreshTokenRequestDto): ApiMessageDto = unused()
     override suspend fun me(): UserProfileDto = unused()

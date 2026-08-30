@@ -5,6 +5,7 @@ import com.naveenhospital.medtrack.core.data.auth.AuthRepository
 import com.naveenhospital.medtrack.core.data.auth.AccountSessionInvalidator
 import com.naveenhospital.medtrack.core.data.auth.AccountVisibilityInvalidations
 import com.naveenhospital.medtrack.core.data.auth.LockStore
+import com.naveenhospital.medtrack.core.data.auth.MobileDeviceCredentialStore
 import com.naveenhospital.medtrack.core.data.auth.TokenStore
 import com.naveenhospital.medtrack.core.data.local.MedtrackDatabase
 import com.naveenhospital.medtrack.core.data.repository.MedtrackRepository
@@ -20,6 +21,7 @@ import javax.inject.Singleton
 class MedtrackAppContainer @Inject constructor(@ApplicationContext context: Context) {
     private val appContext = context.applicationContext
     private val tokenStore = TokenStore(appContext)
+    private val mobileDeviceCredentials = MobileDeviceCredentialStore(appContext)
     private val apiBaseUrl = BuildConfig.MEDTRACK_API_BASE_URL
     private val database = MedtrackDatabase.build(appContext)
     private val accountApis = ConcurrentHashMap<String, MedtrackApi>()
@@ -67,6 +69,7 @@ class MedtrackAppContainer @Inject constructor(@ApplicationContext context: Cont
         },
         apiForAccount = ::apiForAccount,
         tokenStore = tokenStore,
+        mobileDeviceCredentials = mobileDeviceCredentials,
         onBeforeAccountCommit = { previousSession, newAccountId ->
             medtrackRepository.deactivateAccount()
             previousSession?.let { accountApis.remove(it.accountId) }
@@ -104,6 +107,7 @@ class MedtrackAppContainer @Inject constructor(@ApplicationContext context: Cont
                 expectedAccountIdProvider = {
                     accountId.takeIf { tokenStore.accountId() == accountId }
                 },
+                expectedMobileDeviceIdProvider = { sessionIdentity.mobileDeviceId },
                 sessionIncarnationProvider = {
                     tokenStore.sessionIdentityFor(accountId)?.incarnation
                 },

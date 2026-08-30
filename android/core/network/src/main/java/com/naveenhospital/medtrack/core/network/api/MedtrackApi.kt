@@ -18,6 +18,7 @@ import com.naveenhospital.medtrack.core.network.model.UpdateTaskRequestDto
 import com.naveenhospital.medtrack.core.network.model.VitalsUpdateRequestDto
 import com.naveenhospital.medtrack.core.network.model.PatientSearchResponseDto
 import com.naveenhospital.medtrack.core.network.model.LoginRequestDto
+import com.naveenhospital.medtrack.core.network.model.LoginResponseDto
 import com.naveenhospital.medtrack.core.network.model.NotificationsResponseDto
 import com.naveenhospital.medtrack.core.network.model.RefreshTokenRequestDto
 import com.naveenhospital.medtrack.core.network.model.RegisterPushTokenRequestDto
@@ -33,10 +34,11 @@ import retrofit2.http.PATCH
 import retrofit2.http.POST
 import retrofit2.http.Path
 import retrofit2.http.Query
+import retrofit2.Response
 
 interface MedtrackApi {
     @POST("api/auth/token/")
-    suspend fun login(@Body request: LoginRequestDto): AuthSessionDto
+    suspend fun login(@Body request: LoginRequestDto): Response<LoginResponseDto>
 
     @POST("api/auth/token/refresh/")
     suspend fun refresh(@Body request: RefreshTokenRequestDto): AuthSessionDto

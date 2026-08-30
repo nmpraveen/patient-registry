@@ -13,6 +13,7 @@ import com.naveenhospital.medtrack.core.network.model.CategoriesResponseDto
 import com.naveenhospital.medtrack.core.network.model.ClientWriteRequestDto
 import com.naveenhospital.medtrack.core.network.model.LogCallRequestDto
 import com.naveenhospital.medtrack.core.network.model.LoginRequestDto
+import com.naveenhospital.medtrack.core.network.model.LoginResponseDto
 import com.naveenhospital.medtrack.core.network.model.NotificationsResponseDto
 import com.naveenhospital.medtrack.core.network.model.RefreshTokenRequestDto
 import com.naveenhospital.medtrack.core.network.model.RegisterPushTokenRequestDto
@@ -23,6 +24,7 @@ import com.naveenhospital.medtrack.core.network.model.VitalsThresholdsDto
 import com.naveenhospital.medtrack.core.network.model.VitalsWriteResponseDto
 import java.io.IOException
 import java.net.SocketTimeoutException
+import java.util.UUID
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -41,19 +43,23 @@ import retrofit2.Response
 @RunWith(RobolectricTestRunner::class)
 class AuthRepositoryTest {
     private lateinit var prefs: SharedPreferences
+    private lateinit var mobilePrefs: SharedPreferences
     private lateinit var tokenStore: TokenStore
 
     @Before
     fun setUp() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         prefs = context.getSharedPreferences("test_medtrack_auth_repository", Context.MODE_PRIVATE)
+        mobilePrefs = context.getSharedPreferences("test_medtrack_mobile_auth", Context.MODE_PRIVATE)
         prefs.edit().clear().commit()
+        mobilePrefs.edit().clear().commit()
         tokenStore = TokenStore(prefs)
     }
 
     @After
     fun tearDown() {
         prefs.edit().clear().commit()
+        mobilePrefs.edit().clear().commit()
     }
 
     @Test
@@ -65,10 +71,128 @@ class AuthRepositoryTest {
 
         assertEquals("admin", api.lastLoginRequest?.username)
         assertEquals("pass", api.lastLoginRequest?.password)
-        assertEquals("access-token", tokenStore.accessToken)
-        assertEquals("refresh-token", tokenStore.refreshToken())
+        assertEquals(jwt("1", "access"), tokenStore.accessToken)
+        assertEquals(jwt("1", "refresh"), tokenStore.refreshToken())
         assertEquals("1", tokenStore.accountId())
         assertEquals("admin", profile.username)
+    }
+
+    @Test
+    fun targetedFirstLoginStoresOneTimeSecretAndApprovedRetryBindsJwtToDevice() = runTest {
+        val deviceId = UUID.randomUUID().toString()
+        val credentialStore = MobileDeviceCredentialStore(mobilePrefs, "Ward Android")
+        val pendingApi = FakeAuthApi(
+            loginResponse = Response.success(
+                202,
+                LoginResponseDto(
+                    deviceApprovalRequired = true,
+                    status = "PENDING",
+                    deviceId = deviceId,
+                    deviceSecret = "one-time-secret",
+                ),
+            ),
+        )
+        val pendingRepository = AuthRepository(
+            anonymousApi = pendingApi,
+            verificationApiForAccessToken = { pendingApi },
+            apiForAccount = { pendingApi },
+            tokenStore = tokenStore,
+            mobileDeviceCredentials = credentialStore,
+        )
+
+        val pendingFailure = runCatching { pendingRepository.login("admin", "pass") }.exceptionOrNull()
+
+        assertTrue(pendingFailure is MobileDeviceApprovalPendingException)
+        assertNull(tokenStore.accountId())
+        assertNull(pendingApi.lastLoginRequest?.deviceId)
+        assertNull(pendingApi.lastLoginRequest?.deviceSecret)
+        assertEquals("Ward Android", pendingApi.lastLoginRequest?.deviceLabel)
+        assertEquals(
+            MobileDeviceCredential(deviceId, "one-time-secret"),
+            credentialStore.credentialFor("admin"),
+        )
+
+        val approvedApi = FakeAuthApi(
+            loginResponse = Response.success(
+                LoginResponseDto(
+                    access = jwt("1", "approved-access", deviceId),
+                    refresh = jwt("1", "approved-refresh", deviceId),
+                ),
+            ),
+        )
+        val approvedRepository = AuthRepository(
+            anonymousApi = approvedApi,
+            verificationApiForAccessToken = { approvedApi },
+            apiForAccount = { approvedApi },
+            tokenStore = tokenStore,
+            mobileDeviceCredentials = credentialStore,
+        )
+
+        val profile = approvedRepository.login("admin", "pass")
+
+        assertEquals("admin", profile.username)
+        assertEquals(deviceId, approvedApi.lastLoginRequest?.deviceId)
+        assertEquals("one-time-secret", approvedApi.lastLoginRequest?.deviceSecret)
+        assertEquals(deviceId, tokenStore.sessionIdentity()?.mobileDeviceId)
+    }
+
+    @Test
+    fun pendingRevokedAndMalformedMobileResponsesNeverCommitSession() = runTest {
+        val deviceId = UUID.randomUUID().toString()
+        val credentialStore = MobileDeviceCredentialStore(mobilePrefs, "Ward Android")
+
+        val malformedPending = FakeAuthApi(
+            loginResponse = Response.success(
+                202,
+                LoginResponseDto(
+                    deviceApprovalRequired = true,
+                    status = "PENDING",
+                    deviceId = deviceId,
+                ),
+            ),
+        )
+        val malformedRepository = AuthRepository(
+            anonymousApi = malformedPending,
+            verificationApiForAccessToken = { malformedPending },
+            apiForAccount = { malformedPending },
+            tokenStore = tokenStore,
+            mobileDeviceCredentials = credentialStore,
+        )
+        assertTrue(runCatching { malformedRepository.login("admin", "pass") }.isFailure)
+        assertNull(tokenStore.accountId())
+        assertNull(credentialStore.credentialFor("admin"))
+
+        assertTrue(credentialStore.save("admin", MobileDeviceCredential(deviceId, "stored-secret")))
+        val revokedApi = FakeAuthApi(loginResponse = errorLoginResponse(403))
+        val revokedRepository = AuthRepository(
+            anonymousApi = revokedApi,
+            verificationApiForAccessToken = { revokedApi },
+            apiForAccount = { revokedApi },
+            tokenStore = tokenStore,
+            mobileDeviceCredentials = credentialStore,
+        )
+        assertTrue(runCatching { revokedRepository.login("admin", "pass") }.isFailure)
+        assertNull(tokenStore.accountId())
+        assertNull(credentialStore.credentialFor("admin"))
+
+        assertTrue(credentialStore.save("admin", MobileDeviceCredential(deviceId, "stored-secret")))
+        val missingClaimApi = FakeAuthApi(
+            loginResponse = Response.success(
+                LoginResponseDto(
+                    access = jwt("1", "missing-claim-access"),
+                    refresh = jwt("1", "missing-claim-refresh"),
+                ),
+            ),
+        )
+        val missingClaimRepository = AuthRepository(
+            anonymousApi = missingClaimApi,
+            verificationApiForAccessToken = { missingClaimApi },
+            apiForAccount = { missingClaimApi },
+            tokenStore = tokenStore,
+            mobileDeviceCredentials = credentialStore,
+        )
+        assertTrue(runCatching { missingClaimRepository.login("admin", "pass") }.isFailure)
+        assertNull(tokenStore.accountId())
     }
 
     @Test
@@ -87,7 +211,10 @@ class AuthRepositoryTest {
     fun restoreSessionRejectsDifferentAccountBeforeCommitOrNavigationCallback() = runTest {
         assertTrue(tokenStore.commitVerifiedSession("1", access = "old-access", refresh = "stored-refresh"))
         val api = FakeAuthApi(
-            refreshSession = AuthSessionDto(access = "account-two-access", refresh = "account-two-refresh"),
+            refreshSession = AuthSessionDto(
+                access = jwt("2", "account-two-access"),
+                refresh = jwt("2", "account-two-refresh"),
+            ),
             profile = userProfile(id = 2, username = "other"),
         )
         var committedAccountId: String? = null
@@ -109,17 +236,17 @@ class AuthRepositoryTest {
     }
 
     @Test
-    fun restoreSessionRefreshesAccessAndPreservesRefreshWhenNoRotatedRefreshIsReturned() = runTest {
+    fun restoreSessionFailsClosedWhenRotatedRefreshIsMissing() = runTest {
         assertTrue(tokenStore.commitVerifiedSession("1", access = "old-access", refresh = "stored-refresh"))
-        val api = FakeAuthApi(refreshSession = AuthSessionDto(access = "new-access", refresh = null))
+        val api = FakeAuthApi(refreshSession = AuthSessionDto(access = jwt("1", "new-access"), refresh = null))
         val repository = AuthRepository(api = api, tokenStore = tokenStore)
 
         val restored = repository.restoreSession()
 
-        assertEquals("admin", (restored as SessionRestoreResult.Verified).profile.username)
+        assertTrue(restored is SessionRestoreResult.NoSession)
         assertEquals("stored-refresh", api.lastRefreshRequest?.refresh)
-        assertEquals("new-access", tokenStore.accessToken)
-        assertEquals("stored-refresh", tokenStore.refreshToken())
+        assertNull(tokenStore.accessToken)
+        assertNull(tokenStore.refreshToken())
     }
 
     @Test
@@ -241,8 +368,13 @@ class AuthRepositoryTest {
 }
 
 private class FakeAuthApi(
-    private val loginSession: AuthSessionDto = AuthSessionDto(access = "access-token", refresh = "refresh-token"),
-    private val refreshSession: AuthSessionDto = AuthSessionDto(access = "refreshed-access", refresh = "rotated-refresh"),
+    private val loginResponse: Response<LoginResponseDto> = Response.success(
+        LoginResponseDto(access = jwt("1", "access"), refresh = jwt("1", "refresh")),
+    ),
+    private val refreshSession: AuthSessionDto = AuthSessionDto(
+        access = jwt("1", "refreshed-access"),
+        refresh = jwt("1", "rotated-refresh"),
+    ),
     private val refreshError: Throwable? = null,
     private val meError: Throwable? = null,
     private val profile: UserProfileDto = userProfile(),
@@ -254,9 +386,9 @@ private class FakeAuthApi(
     var lastLogoutRequest: RefreshTokenRequestDto? = null
         private set
 
-    override suspend fun login(request: LoginRequestDto): AuthSessionDto {
+    override suspend fun login(request: LoginRequestDto): Response<LoginResponseDto> {
         lastLoginRequest = request
-        return loginSession
+        return loginResponse
     }
 
     override suspend fun refresh(request: RefreshTokenRequestDto): AuthSessionDto {
@@ -333,8 +465,23 @@ private fun userProfile(
 
 private fun httpError(status: Int): HttpException =
     HttpException(
-        Response.error<Any>(
-            status,
-            "error".toResponseBody("text/plain".toMediaType()),
-        ),
+        errorLoginResponse<Any>(status),
     )
+
+private fun <T> errorLoginResponse(status: Int): Response<T> =
+    Response.error(
+        status,
+        "error".toResponseBody("text/plain".toMediaType()),
+    )
+
+private fun jwt(
+    accountId: String,
+    marker: String,
+    mobileDeviceId: String? = null,
+): String {
+    val mobileClaim = mobileDeviceId?.let { ",\"mobile_device_id\":\"$it\"" }.orEmpty()
+    val payload = """{"user_id":$accountId,"marker":"$marker"$mobileClaim}"""
+    val encoded = java.util.Base64.getUrlEncoder().withoutPadding()
+        .encodeToString(payload.toByteArray(Charsets.UTF_8))
+    return "header.$encoded.signature"
+}

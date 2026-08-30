@@ -35,6 +35,11 @@ MANIFEST_FILENAME = "manifest.json"
 BACKUP_FILENAME_PREFIX = "patient-data-bundle"
 DEFAULT_BACKUP_KEEP = 30
 IMPORT_CONFIRMATION_PHRASE = "REPLACE PATIENT DATA"
+MAX_BUNDLE_COMPRESSED_BYTES = 32 * 1024 * 1024
+MAX_BUNDLE_ENTRY_COUNT = 2
+MAX_BUNDLE_MEMBER_BYTES = 128 * 1024 * 1024
+MAX_BUNDLE_EXPANDED_BYTES = 128 * 1024 * 1024
+MAX_BUNDLE_COMPRESSION_RATIO = 100
 BACKUP_KIND_DAILY = "daily"
 BACKUP_KIND_MONTHLY = "monthly"
 BACKUP_KIND_YEARLY = "yearly"
@@ -167,14 +172,50 @@ def _backup_glob_pattern(backup_kind=None):
 
 
 def load_bundle_archive(bundle_bytes):
+    if len(bundle_bytes) > MAX_BUNDLE_COMPRESSED_BYTES:
+        raise BundleValidationError(
+            f"Backup archive exceeds the {MAX_BUNDLE_COMPRESSED_BYTES // (1024 * 1024)} MiB compressed limit."
+        )
     try:
         with zipfile.ZipFile(io.BytesIO(bundle_bytes)) as bundle_zip:
-            names = set(bundle_zip.namelist())
             required_names = {PATIENT_DATA_FILENAME, MANIFEST_FILENAME}
-            missing_names = required_names - names
-            if missing_names:
+            entries = bundle_zip.infolist()
+            if len(entries) > MAX_BUNDLE_ENTRY_COUNT:
                 raise BundleValidationError(
-                    f"Backup archive is missing required file(s): {', '.join(sorted(missing_names))}."
+                    f"Backup archive contains too many entries; expected exactly {MAX_BUNDLE_ENTRY_COUNT}."
+                )
+            names = [entry.filename for entry in entries]
+            if len(names) != len(set(names)):
+                raise BundleValidationError("Backup archive contains duplicate entry names.")
+            if set(names) != required_names:
+                missing_names = required_names - set(names)
+                unexpected_names = set(names) - required_names
+                details = []
+                if missing_names:
+                    details.append(f"missing: {', '.join(sorted(missing_names))}")
+                if unexpected_names:
+                    details.append(f"unexpected: {', '.join(sorted(unexpected_names))}")
+                raise BundleValidationError(
+                    f"Backup archive entries are invalid ({'; '.join(details)})."
+                )
+            expanded_size = 0
+            for entry in entries:
+                if entry.is_dir() or entry.flag_bits & 0x1:
+                    raise BundleValidationError("Backup archive may not contain directories or encrypted entries.")
+                if entry.file_size > MAX_BUNDLE_MEMBER_BYTES:
+                    raise BundleValidationError(
+                        f"Backup member {entry.filename} exceeds the "
+                        f"{MAX_BUNDLE_MEMBER_BYTES // (1024 * 1024)} MiB expanded limit."
+                    )
+                expanded_size += entry.file_size
+                compressed_size = max(entry.compress_size, 1)
+                if entry.file_size > compressed_size * MAX_BUNDLE_COMPRESSION_RATIO:
+                    raise BundleValidationError(
+                        f"Backup member {entry.filename} exceeds the allowed compression ratio."
+                    )
+            if expanded_size > MAX_BUNDLE_EXPANDED_BYTES:
+                raise BundleValidationError(
+                    f"Backup archive exceeds the {MAX_BUNDLE_EXPANDED_BYTES // (1024 * 1024)} MiB expanded limit."
                 )
             patient_data_bytes = bundle_zip.read(PATIENT_DATA_FILENAME)
             manifest_bytes = bundle_zip.read(MANIFEST_FILENAME)
@@ -193,6 +234,20 @@ def load_bundle_archive(bundle_bytes):
 
     _validate_manifest_and_payload(manifest, payload, patient_data_bytes)
     return manifest, payload
+
+
+def read_uploaded_bundle(uploaded_file):
+    declared_size = getattr(uploaded_file, "size", None)
+    if declared_size is not None and declared_size > MAX_BUNDLE_COMPRESSED_BYTES:
+        raise BundleValidationError(
+            f"Backup archive exceeds the {MAX_BUNDLE_COMPRESSED_BYTES // (1024 * 1024)} MiB upload limit."
+        )
+    bundle_bytes = uploaded_file.read(MAX_BUNDLE_COMPRESSED_BYTES + 1)
+    if len(bundle_bytes) > MAX_BUNDLE_COMPRESSED_BYTES:
+        raise BundleValidationError(
+            f"Backup archive exceeds the {MAX_BUNDLE_COMPRESSED_BYTES // (1024 * 1024)} MiB upload limit."
+        )
+    return bundle_bytes
 
 
 def build_patient_data_payload():

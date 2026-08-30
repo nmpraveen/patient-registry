@@ -15,11 +15,17 @@ services:
       retries: 5
 
   web:
-    build: .
+    image: ${MEDTRACK_APP_IMAGE:-medtrack-app:local}
+    build:
+      context: .
+      args:
+        VCS_REF: ${MEDTRACK_BUILD_REVISION:-unknown}
+        MEDTRACK_GIT_TREE: ${MEDTRACK_BUILD_GIT_TREE:-unknown}
+        MEDTRACK_CONTEXT_POLICY: ${MEDTRACK_CONTEXT_POLICY:-unverified}
     restart: unless-stopped
-    command: sh -c "python manage.py migrate && python manage.py collectstatic --noinput && gunicorn patient_registry.wsgi:application --bind 0.0.0.0:8000 --workers ${GUNICORN_WORKERS:-3} --timeout ${GUNICORN_TIMEOUT:-60}"
+    command: sh -c "python manage.py collectstatic --noinput && gunicorn patient_registry.wsgi:application --bind 0.0.0.0:8000 --workers ${GUNICORN_WORKERS:-3} --timeout ${GUNICORN_TIMEOUT:-60}"
     env_file:
-      - .env
+      - ${MEDTRACK_ENV_FILE:-.env}
     environment:
       DEBUG: ${DEBUG:-False}
       ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1,0.0.0.0}
@@ -39,6 +45,31 @@ services:
       timeout: 5s
       retries: 12
       start_period: 30s
+
+  migrate:
+    image: ${MEDTRACK_APP_IMAGE:-medtrack-app:local}
+    build:
+      context: .
+      args:
+        VCS_REF: ${MEDTRACK_BUILD_REVISION:-unknown}
+        MEDTRACK_GIT_TREE: ${MEDTRACK_BUILD_GIT_TREE:-unknown}
+        MEDTRACK_CONTEXT_POLICY: ${MEDTRACK_CONTEXT_POLICY:-unverified}
+    restart: "no"
+    command: python manage.py migrate --noinput
+    profiles: ["deploy"]
+    env_file:
+      - ${MEDTRACK_ENV_FILE:-.env}
+    environment:
+      DEBUG: ${DEBUG:-False}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1,0.0.0.0}
+      CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-}
+      POSTGRES_HOST: db
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - "${BACKUP_HOST_DIR:-./backups}:/app/backups"
 
 volumes:
   postgres_data:

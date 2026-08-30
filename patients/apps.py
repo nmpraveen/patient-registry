@@ -10,6 +10,3 @@ class PatientsConfig(AppConfig):
 
         install_user_audit_boundary()
         from . import signals  # noqa: F401
-        from .backup_scheduler import start_background_scheduler
-
-        start_background_scheduler()

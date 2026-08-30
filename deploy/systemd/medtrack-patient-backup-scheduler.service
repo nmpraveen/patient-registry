@@ -1,0 +1,20 @@
+[Unit]
+Description=Run due MEDTRACK patient-data backup schedules once
+Documentation=file:///srv/medtrack/app/RUNBOOK.md
+Requires=docker.service
+After=docker.service
+ConditionPathExists=/srv/medtrack/app/docker-compose.yml
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=/srv/medtrack/app
+ExecStart=/usr/bin/docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T web python manage.py run_due_patient_backups
+UMask=0077
+TimeoutStartSec=30m
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=/srv/medtrack/backups

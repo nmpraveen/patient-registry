@@ -47,8 +47,10 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 Run migrations:
 
 ```powershell
-docker compose exec web python manage.py migrate
+docker compose --profile deploy run --rm migrate
 ```
+
+Web startup does not run migrations. In production, use the reviewed plan/apply gate below instead of invoking this job directly.
 
 Run tests:
 
@@ -82,15 +84,42 @@ Routine patient-data backup:
 docker compose exec -T web python manage.py backup_patient_data --output-dir /app/backups --keep 30
 ```
 
-Restore a full backup:
+Verify an encrypted full-recovery backup without changing production:
 
-```powershell
-.\scripts\restore.sh backups\<timestamp>
-docker compose up -d
-docker compose exec web python manage.py migrate
+```bash
+./scripts/restore.sh verify \
+  --archive /absolute/path/medtrack-prod-<tier>-<timestamp>.tar.age \
+  --checksum /absolute/path/medtrack-prod-<tier>-<timestamp>.tar.age.sha256 \
+  --identity /offline/path/age-identity.txt \
+  --expected-commit <full-git-sha> \
+  --receipt-dir /absolute/path/restore-receipt
 ```
 
-Never run `docker compose down -v` unless deleting the database volume is intentional.
+Verification checks the ciphertext checksum, safe archive paths, regular-file/directory-only member types, every internal manifest hash, PostgreSQL catalog, recorded PostgreSQL version, exact clean Git commit, the running web image and prepared web/migrate image revision labels, a new isolated database restore, migration state, Django deployment checks, ORM access, and `/login/`. Decrypted material and the scratch database are removed on exit. Images must be built with `MEDTRACK_GIT_COMMIT=<exact-full-sha>`; the controlled deployment plan does this automatically.
+
+Production activation is an emergency operation, not the default restore mode. It additionally requires `MEDTRACK_ALLOW_PRODUCTION_RESTORE=1`, the exact `ACTIVATE_VERIFIED_MEDTRACK_RESTORE` confirmation token, an empty absolute rollback directory, and the same root-owned authenticated-login hook used by deployment. Before any switch it creates a fresh custom-format snapshot of the current production database, verifies its catalog, scratch-restores it, and runs the same Django checks. It then quiesces writes and renames databases rather than dropping production. Activation is accepted only after DB/web/Caddy health, exact running image identity, origin-bypassed and public HTTPS login-page checks, and the authenticated-login hook; a failed gate restores the retained database. Run activation as:
+
+```bash
+MEDTRACK_ALLOW_PRODUCTION_RESTORE=1 ./scripts/restore.sh activate \
+  --archive /absolute/path/medtrack-prod-<tier>-<timestamp>.tar.age \
+  --checksum /absolute/path/medtrack-prod-<tier>-<timestamp>.tar.age.sha256 \
+  --identity /offline/path/age-identity.txt \
+  --expected-commit <full-git-sha> \
+  --receipt-dir /absolute/path/restore-receipt \
+  --rollback-dir /absolute/empty/path/restore-rollback \
+  --login-smoke-hook /root/medtrack-authenticated-login-smoke \
+  --confirm ACTIVATE_VERIFIED_MEDTRACK_RESTORE
+```
+
+The retained activation receipt supports:
+
+```bash
+MEDTRACK_ALLOW_PRODUCTION_RESTORE=1 ./scripts/restore.sh rollback \
+  --receipt-dir /absolute/path/restore-receipt \
+  --confirm ROLLBACK_MEDTRACK_RESTORE
+```
+
+Never reverse a destructive data migration in production. `patients.0028` now fails closed in reverse because reversal would delete master-patient records and unlink every case. Roll back with a verified database snapshot plus its matching application commit. Never run `docker compose down -v` unless deleting the database volume is intentional.
 
 ## Production VPS Deployment
 
@@ -108,11 +137,37 @@ git rev-parse HEAD
 docker compose -f docker-compose.yml -f docker-compose.prod.yml config --quiet
 ```
 
-Deploy only the reviewed full commit:
+Create a fresh encrypted pre-deployment backup and capture its receipt:
 
 ```bash
-./scripts/deploy-production.sh <expected-full-git-commit>
+MEDTRACK_BACKUP_CONFIG=/etc/medtrack-backup/backup.env ./scripts/backup-offsite.sh --tier pre-deployment
+systemctl start medtrack-nas-export.service
+test "$(systemctl show medtrack-nas-export.service --property=Result --value)" = success
 ```
+
+Generate the read-only migration plan and rollback-preparation evidence:
+
+```bash
+evidence_dir=/srv/medtrack/deploy-evidence/<deployment-id>
+./scripts/deploy-production.sh plan <expected-full-git-commit> \
+  --backup-receipt /srv/medtrack/offsite-backups/state/latest-pre-deployment.receipt \
+  --evidence-dir "$evidence_dir"
+sha256sum "$evidence_dir/migration-plan.txt"
+```
+
+The plan command requires the existing `db` container to already report healthy. It builds commit-labeled web/migrate images and runs read-only Django planning in a disposable `--no-deps` container; it never pulls, starts, stops, or recreates `db`, `web`, or Caddy.
+
+Review the migration plan. Then apply only the exact approved hash, using a root-owned executable login-smoke hook that obtains credentials outside the repository and emits no secrets or PHI:
+
+```bash
+./scripts/deploy-production.sh apply <expected-full-git-commit> \
+  --backup-receipt /srv/medtrack/offsite-backups/state/latest-pre-deployment.receipt \
+  --evidence-dir "$evidence_dir" \
+  --approve-plan-sha256 <reviewed-plan-sha256> \
+  --login-smoke-hook /root/medtrack-authenticated-login-smoke
+```
+
+Apply revalidates the fresh ciphertext triplet, exact commit-labeled images and migration plan, creates a new custom-format rollback dump, restores it into an isolated scratch database, retains a database clone and prior web image, runs the one-shot migration, requires DB/web/Caddy health, origin-bypassed and public HTTPS login-page checks, Django deployment checks, and the authenticated login hook. The recovery trap is installed before the first stop: failures while stopping, terminating connections, or creating the rollback clone restart the prior release, while failures after the clone is ready restore the retained database and image. The deployment receipt documents the manual rollback inputs; use `deploy-production.sh rollback` only with explicit operator approval.
 
 Acceptance:
 
@@ -165,6 +220,8 @@ install -m 0600 deploy/backup/backup.env.example /etc/medtrack-backup/backup.env
 install -m 0644 deploy/systemd/medtrack-offsite-backup@.service /etc/systemd/system/
 install -m 0644 deploy/systemd/medtrack-offsite-backup-*.timer /etc/systemd/system/
 install -m 0644 deploy/systemd/medtrack-offsite-backup-health.service /etc/systemd/system/
+install -m 0644 deploy/systemd/medtrack-patient-backup-scheduler.service /etc/systemd/system/
+install -m 0644 deploy/systemd/medtrack-patient-backup-scheduler.timer /etc/systemd/system/
 systemd-analyze verify /etc/systemd/system/medtrack-offsite-backup@.service /etc/systemd/system/medtrack-offsite-backup-*.timer /etc/systemd/system/medtrack-offsite-backup-health.service
 systemctl daemon-reload
 ```
@@ -210,6 +267,18 @@ systemctl start medtrack-offsite-backup-health.service
 systemctl status --no-pager medtrack-offsite-backup-health.service
 journalctl -u 'medtrack-offsite-backup*' --since '24 hours ago' --no-pager
 ```
+
+Every health pass now requires complete archive/checksum/marker triplets for each retained set, cross-checks marker and checksum metadata, and streams the newest ciphertext in every tier through SHA-256 (`MEDTRACK_HEALTH_HASH_MODE=all` verifies every retained ciphertext). `MEDTRACK_SCRATCH_RESTORE_HOOK` can point to an absolute executable on an independent scratch host; set `MEDTRACK_REQUIRE_SCRATCH_RESTORE_HOOK=1` there to fail health when the periodic isolated restore hook is missing or fails. Keep the private `age` identity off the VPS and NAS.
+
+Enable the single-owner patient-data schedule runner after installing its units:
+
+```bash
+systemctl enable --now medtrack-patient-backup-scheduler.timer
+systemctl start medtrack-patient-backup-scheduler.service
+systemctl status --no-pager medtrack-patient-backup-scheduler.service
+```
+
+Gunicorn workers and management-command startup do not create scheduler threads. Saving schedule settings records policy only; the supervised one-shot service owns execution.
 
 Before each production deployment:
 

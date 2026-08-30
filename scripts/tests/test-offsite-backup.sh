@@ -16,11 +16,27 @@ set -Eeuo pipefail
 joined="$*"
 if [[ "$1" == "--version" ]]; then
   echo "Docker version test"
+elif [[ "$1" == "image" && "$2" == "inspect" && "$joined" == *"org.opencontainers.image.revision"* ]]; then
+  echo "${FAKE_SOURCE_COMMIT:?set FAKE_SOURCE_COMMIT}"
+elif [[ "$1" == "image" && "$2" == "inspect" && "$joined" == *"medtrack.git-tree"* ]]; then
+  echo "${FAKE_SOURCE_TREE:?set FAKE_SOURCE_TREE}"
+elif [[ "$1" == "image" && "$2" == "inspect" && "$joined" == *"medtrack.build-context"* ]]; then
+  echo "git-archive-allowlist-v1"
+elif [[ "$1" == "image" && "$2" == "inspect" && "$joined" == *"medtrack.context-policy"* ]]; then
+  echo "${FAKE_CONTEXT_POLICY:?set FAKE_CONTEXT_POLICY}"
+elif [[ "$1" == "inspect" && "$joined" == *"{{.Image}}"* ]]; then
+  echo "sha256:synthetic-live-source-image"
+elif [[ "$joined" == *" ps -q web"* ]]; then
+  echo "synthetic-live-web-container"
 elif [[ "$joined" == *"pg_dump"* ]]; then
   printf 'PGDMP-test-database\n'
 elif [[ "$joined" == *"pg_restore"* ]]; then
   cat >/dev/null
   printf '; Archive created for test\n1; 0 0 TABLE public.test postgres\n'
+elif [[ "$joined" == *"SHOW server_version"* ]]; then
+  echo "16.14"
+elif [[ "$joined" == *"COPY (SELECT app"* ]]; then
+  printf 'contenttypes.0001_initial\npatients.0001_initial\n'
 elif [[ "$joined" == *" compose "* || "$1" == "compose" ]]; then
   if [[ "$joined" == *" version"* ]]; then
     echo "Docker Compose version test"
@@ -159,6 +175,9 @@ export MEDTRACK_BACKUP_STATE_ROOT="$backup_root/state"
 export RCLONE_CONFIG="$test_root/rclone.conf"
 export RCLONE_REMOTE="medtrack-drive:medtrack/test"
 export AGE_RECIPIENT_FILE="$test_root/recipient.txt"
+export FAKE_SOURCE_COMMIT="$(git -C "$repo_root" rev-parse HEAD)"
+export FAKE_SOURCE_TREE="$(git -C "$repo_root" rev-parse "$FAKE_SOURCE_COMMIT^{tree}")"
+export FAKE_CONTEXT_POLICY="$(printf '%s\n%s\n' "$(git -C "$repo_root" rev-parse "$FAKE_SOURCE_COMMIT:Dockerfile")" "$(git -C "$repo_root" rev-parse "$FAKE_SOURCE_COMMIT:.dockerignore")" | sha256sum | awk '{print $1}')"
 
 MEDTRACK_BACKUP_TIMESTAMP=20260811T010000Z "$repo_root/scripts/backup-offsite.sh" --tier canary
 MEDTRACK_BACKUP_TIMESTAMP=20260811T020000Z "$repo_root/scripts/backup-offsite.sh" --tier canary
@@ -171,6 +190,12 @@ remote_dir="$fake_remote/medtrack/test/canary"
 [[ -f "$remote_dir/medtrack-prod-canary-20260811T020000Z.tar.age.complete" ]]
 [[ ! -e "$local_dir/medtrack-prod-canary-20260811T010000Z.tar.age" ]]
 [[ -s "$backup_root/state/last-success-canary.epoch" ]]
+[[ -s "$backup_root/state/latest-canary.receipt" ]]
+grep -Fxq 'receipt_format=medtrack-offsite-receipt-v2' "$backup_root/state/latest-canary.receipt"
+grep -Fxq 'tier=canary' "$backup_root/state/latest-canary.receipt"
+grep -Fxq "source_commit=$FAKE_SOURCE_COMMIT" "$backup_root/state/latest-canary.receipt"
+grep -Fxq "target_commit=$FAKE_SOURCE_COMMIT" "$backup_root/state/latest-canary.receipt"
+grep -Fxq 'source_image_id=sha256:synthetic-live-source-image' "$backup_root/state/latest-canary.receipt"
 [[ -z "$(find "$backup_root/staging" -mindepth 1 -print -quit)" ]]
 
 echo "OFFSITE_BACKUP_TEST_OK"

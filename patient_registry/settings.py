@@ -97,6 +97,12 @@ else:
 
 DATABASES["default"]["ATOMIC_REQUESTS"] = True
 
+# Bound request metadata in memory and spool larger uploads to disk. Patient-data
+# imports have a stricter 32 MiB application ceiling in patients.database_bundle.
+DATA_UPLOAD_MAX_MEMORY_SIZE = env.int("DATA_UPLOAD_MAX_MEMORY_SIZE", default=2_621_440)
+FILE_UPLOAD_MAX_MEMORY_SIZE = env.int("FILE_UPLOAD_MAX_MEMORY_SIZE", default=2_621_440)
+DATA_UPLOAD_MAX_NUMBER_FILES = 1
+
 AUTH_PASSWORD_VALIDATORS = [
     {
         "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",

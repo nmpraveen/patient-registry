@@ -41,7 +41,6 @@ from django.utils.text import Truncator
 from django.views import View
 from django.views.generic import CreateView, DetailView, ListView, UpdateView
 
-from . import backup_scheduler
 from . import database_bundle
 from .audit import record_audit_event
 from .auth_security import bind_authenticated_session, clear_auth_attempts, consume_auth_attempt
@@ -6778,8 +6777,9 @@ class DatabaseManagementSettingsView(LoginRequiredMixin, View):
                 messages.error(request, "Database import has errors.")
                 return render(request, self.template_name, self._build_context(import_form=import_form))
             try:
+                bundle_bytes = database_bundle.read_uploaded_bundle(import_form.cleaned_data["bundle_file"])
                 with transaction.atomic():
-                    result = database_bundle.import_bundle_bytes(import_form.cleaned_data["bundle_file"].read())
+                    result = database_bundle.import_bundle_bytes(bundle_bytes)
                     record_audit_event(
                         category=AuditEvent.Category.DATA,
                         action="patient_data.imported",
@@ -6836,9 +6836,8 @@ class DatabaseManagementSettingsView(LoginRequiredMixin, View):
                 object_id=schedule.pk,
                 metadata={"enabled": schedule.enabled},
             )
-            backup_scheduler.run_due_scheduled_backup()
             if schedule.enabled:
-                messages.success(request, "Automatic backup schedules saved.")
+                messages.success(request, "Automatic backup schedules saved for the supervised backup runner.")
             else:
                 messages.success(request, "Automatic backup schedules disabled.")
             return redirect("patients:settings_database")

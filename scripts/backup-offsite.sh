@@ -4,15 +4,18 @@ set -Eeuo pipefail
 umask 077
 
 usage() {
-  echo "Usage: scripts/backup-offsite.sh --tier rapid|daily|weekly|monthly|pre-deployment|canary" >&2
+  echo "Usage: scripts/backup-offsite.sh --tier rapid|daily|weekly|monthly|pre-deployment|canary [--target-commit <full-sha>]" >&2
 }
 
-if [[ $# -ne 2 || "$1" != "--tier" ]]; then
-  usage
-  exit 2
-fi
-
-tier="$2"
+tier=""
+target_commit=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --tier) tier="${2:-}"; shift 2 ;;
+    --target-commit) target_commit="${2:-}"; shift 2 ;;
+    *) usage; exit 2 ;;
+  esac
+done
 case "$tier" in
   rapid) keep_count=28 ;;
   daily) keep_count=30 ;;
@@ -126,6 +129,38 @@ trap cleanup EXIT
 
 compose=(docker compose -f "$repo_root/docker-compose.yml" -f "$repo_root/docker-compose.prod.yml")
 
+web_container_id="$("${compose[@]}" ps -q web)"
+if [[ -z "$web_container_id" ]]; then
+  echo "A running web container is required to bind backup provenance" >&2
+  exit 1
+fi
+source_image_id="$(docker inspect --format '{{.Image}}' "$web_container_id")"
+source_commit="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$source_image_id")"
+source_git_tree="$(docker image inspect --format '{{ index .Config.Labels "net.naveenhospital.medtrack.git-tree" }}' "$source_image_id")"
+source_build_context="$(docker image inspect --format '{{ index .Config.Labels "net.naveenhospital.medtrack.build-context" }}' "$source_image_id")"
+source_context_policy="$(docker image inspect --format '{{ index .Config.Labels "net.naveenhospital.medtrack.context-policy" }}' "$source_image_id")"
+if [[ ! "$source_commit" =~ ^[0-9a-f]{40}$ || ! "$source_git_tree" =~ ^[0-9a-f]{40}$ ||
+  "$source_build_context" != "git-archive-allowlist-v1" || ! "$source_context_policy" =~ ^[0-9a-f]{64}$ ]]; then
+  echo "The running web image lacks committed allowlisted-context attestation" >&2
+  exit 1
+fi
+if [[ -z "$target_commit" ]]; then
+  if [[ "$tier" == "pre-deployment" ]]; then
+    echo "Pre-deployment backups require --target-commit for the intended deployment" >&2
+    exit 1
+  fi
+  target_commit="$source_commit"
+fi
+if [[ ! "$target_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  echo "Target commit must be a full lowercase Git SHA" >&2
+  exit 1
+fi
+if [[ "$tier" == "pre-deployment" && ( "$(git -C "$repo_root" rev-parse HEAD)" != "$target_commit" ||
+  -n "$(git -C "$repo_root" status --porcelain --untracked-files=no)" ) ]]; then
+  echo "Pre-deployment target checkout must be clean and match --target-commit" >&2
+  exit 1
+fi
+
 echo "[1/8] Creating PostgreSQL custom-format dump"
 "${compose[@]}" exec -T db sh -ceu 'exec pg_dump --format=custom --compress=6 --no-owner --no-privileges --username="$POSTGRES_USER" --dbname="$POSTGRES_DB"' > "$payload_dir/database.dump"
 if [[ ! -s "$payload_dir/database.dump" ]]; then
@@ -141,6 +176,14 @@ if [[ ! -s "$payload_dir/database.list" ]]; then
 fi
 
 echo "[3/8] Collecting recovery configuration and runtime identity"
+"${compose[@]}" exec -T db sh -ceu \
+  'exec psql --tuples-only --no-align --username="$POSTGRES_USER" --dbname="$POSTGRES_DB" --command="COPY (SELECT app || '\''.'\'' || name FROM django_migrations ORDER BY app, name) TO STDOUT"' \
+  > "$payload_dir/schema-migrations.txt"
+if [[ ! -s "$payload_dir/schema-migrations.txt" ]]; then
+  echo "Could not capture the live migration schema identity" >&2
+  exit 1
+fi
+schema_migration_sha256="$(sha256sum "$payload_dir/schema-migrations.txt" | awk '{print $1}')"
 install -m 0600 "$production_env" "$payload_dir/config/environment.env"
 for relative_path in docker-compose.yml docker-compose.prod.yml deploy/Caddyfile; do
   if [[ -f "$repo_root/$relative_path" ]]; then
@@ -155,11 +198,17 @@ if [[ -f /etc/audit/rules.d/medtrack-app.rules ]]; then
 fi
 
 {
-  printf 'backup_format=medtrack-offsite-v1\n'
+  printf 'backup_format=medtrack-offsite-v2\n'
   printf 'created_utc=%s\n' "$stamp"
   printf 'tier=%s\n' "$tier"
-  printf 'git_commit=%s\n' "$(git -C "$repo_root" rev-parse HEAD)"
-  printf 'git_tracked_clean=%s\n' "$(git -C "$repo_root" diff --quiet && git -C "$repo_root" diff --cached --quiet && echo true || echo false)"
+  printf 'source_commit=%s\n' "$source_commit"
+  printf 'source_image_id=%s\n' "$source_image_id"
+  printf 'source_git_tree=%s\n' "$source_git_tree"
+  printf 'source_build_context=%s\n' "$source_build_context"
+  printf 'source_context_policy_sha256=%s\n' "$source_context_policy"
+  printf 'source_schema_migration_sha256=%s\n' "$schema_migration_sha256"
+  printf 'intended_target_commit=%s\n' "$target_commit"
+  printf 'postgres_server_version=%s\n' "$("${compose[@]}" exec -T db sh -ceu 'exec psql --tuples-only --no-align --username="$POSTGRES_USER" --dbname="$POSTGRES_DB" --command="SHOW server_version"')"
   docker --version
   docker compose version
   "${compose[@]}" images
@@ -202,6 +251,8 @@ rclone --config "$rclone_config" check "$local_tier_dir" "$remote_tier" \
   printf 'archive=%s\n' "$archive_name"
   printf 'sha256=%s\n' "$(cut -d ' ' -f 1 "$local_tier_dir/$checksum_name")"
   printf 'completed_utc=%s\n' "$stamp"
+  printf 'source_commit=%s\n' "$source_commit"
+  printf 'intended_target_commit=%s\n' "$target_commit"
 } > "$local_tier_dir/$marker_name.tmp"
 mv "$local_tier_dir/$marker_name.tmp" "$local_tier_dir/$marker_name"
 rclone --config "$rclone_config" copyto "$local_tier_dir/$marker_name" "$remote_tier/$marker_name" --immutable
@@ -255,8 +306,37 @@ echo "[8/8] Applying exact tier retention (Drive deletions use Trash)"
 prune_remote
 prune_local
 
+completed_epoch="$(date -u +%s)"
 state_tmp="$(mktemp "$state_root/.last-success-${tier}.XXXXXX")"
-date -u +%s > "$state_tmp"
+printf '%s\n' "$completed_epoch" > "$state_tmp"
 mv "$state_tmp" "$state_root/last-success-$tier.epoch"
 
-printf 'OFFSITE_BACKUP_OK tier=%s archive=%s keep=%s\n' "$tier" "$archive_name" "$keep_count"
+receipt_path="$state_root/receipt-${tier}-${stamp}.env"
+receipt_tmp="$(mktemp "$state_root/.receipt-${tier}-${stamp}.XXXXXX")"
+{
+  printf 'receipt_format=medtrack-offsite-receipt-v2\n'
+  printf 'tier=%s\n' "$tier"
+  printf 'archive=%s\n' "$archive_name"
+  printf 'sha256=%s\n' "$(cut -d ' ' -f 1 "$local_tier_dir/$checksum_name")"
+  printf 'source_commit=%s\n' "$source_commit"
+  printf 'source_image_id=%s\n' "$source_image_id"
+  printf 'source_git_tree=%s\n' "$source_git_tree"
+  printf 'source_build_context=%s\n' "$source_build_context"
+  printf 'source_context_policy_sha256=%s\n' "$source_context_policy"
+  printf 'source_schema_migration_sha256=%s\n' "$schema_migration_sha256"
+  printf 'target_commit=%s\n' "$target_commit"
+  printf 'completed_epoch=%s\n' "$completed_epoch"
+  printf 'local_archive=%s\n' "$local_tier_dir/$archive_name"
+  printf 'local_checksum=%s\n' "$local_tier_dir/$checksum_name"
+  printf 'local_marker=%s\n' "$local_tier_dir/$marker_name"
+  printf 'remote_tier=%s\n' "$remote_tier"
+} > "$receipt_tmp"
+chmod 0600 "$receipt_tmp"
+mv "$receipt_tmp" "$receipt_path"
+latest_receipt_tmp="$(mktemp "$state_root/.latest-${tier}.XXXXXX")"
+cp "$receipt_path" "$latest_receipt_tmp"
+chmod 0600 "$latest_receipt_tmp"
+mv "$latest_receipt_tmp" "$state_root/latest-${tier}.receipt"
+
+printf 'OFFSITE_BACKUP_OK tier=%s archive=%s keep=%s receipt=%s\n' \
+  "$tier" "$archive_name" "$keep_count" "$receipt_path"

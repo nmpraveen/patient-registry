@@ -857,7 +857,10 @@
       ["shell__link_hover", "shell__surface_bg", 4.5],
       ["nav__text", "nav__bg", 4.5],
       ["nav__control_text", "nav__control_bg", 4.5],
+      ["nav__control_text", "nav__control_hover_bg", 4.5],
+      ["nav__text", "nav__control_hover_bg", 4.5],
       ["nav__logout_text", "nav__logout_bg", 4.5],
+      ["shell__surface_bg", "case_header__bg", 4.5],
       ["search__dropdown_text", "search__dropdown_bg", 4.5],
       ["search__dropdown_text", "search__result_hover_bg", 4.5],
       ["search__tag_text", "search__tag_bg", 4.5],
@@ -925,6 +928,9 @@
       ["shell__focus_indicator", "shell__surface_bg", 3.0],
       ["shell__focus_indicator", "nav__bg", 3.0],
     ];
+    const mixedTextContrastRules = [
+      ["shell__surface_bg", "case_header__bg", "shell__page_text", 0.12, 4.5],
+    ];
 
     function normalizeHex(value) {
       const normalized = String(value || "").trim().toLowerCase();
@@ -990,6 +996,30 @@
           issueCount += 1;
           markContrastInvalid(textInput);
           markContrastInvalid(backgroundInput);
+        }
+      });
+
+      mixedTextContrastRules.forEach(([
+        textName,
+        backgroundName,
+        mixTargetName,
+        mixRatio,
+        minimum,
+      ]) => {
+        const textInput = document.querySelector(`[name="${textName}"]`);
+        const backgroundInput = document.querySelector(`[name="${backgroundName}"]`);
+        const mixTargetInput = document.querySelector(`[name="${mixTargetName}"]`);
+        const textColor = normalizeHex(textInput?.value);
+        const backgroundColor = normalizeHex(backgroundInput?.value);
+        const mixTargetColor = normalizeHex(mixTargetInput?.value);
+        const interactionBackground = textColor && backgroundColor && mixTargetColor
+          ? mixColors(backgroundColor, mixTargetColor, mixRatio)
+          : "";
+        if (interactionBackground && contrastRatio(textColor, interactionBackground) < minimum) {
+          issueCount += 1;
+          markContrastInvalid(textInput);
+          markContrastInvalid(backgroundInput);
+          markContrastInvalid(mixTargetInput);
         }
       });
 

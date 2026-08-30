@@ -45,7 +45,7 @@ PACKAGES = [
         "version": "1.9.12",
         "source": "https://registry.npmjs.org/htmx.org/-/htmx.org-1.9.12.tgz",
         "archive_integrity": "sha512-VZAohXyF7xPGS52IM8d1T1283y+X4D+Owf3qY1NZ9RuBypyu9l8cGsxUMAG5fEAb/DhT7rDoJ9Hpu5/HxFD3cw==",
-        "license": "BSD-2-Clause",
+        "license": "0BSD",
         "license_file": "htmx/1.9.12/LICENSE",
     },
     {

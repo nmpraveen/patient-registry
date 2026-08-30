@@ -7,7 +7,7 @@ MEDTRACK serves these pinned assets locally so authenticated clinical pages do n
 | Bootstrap | 5.3.3 | `bootstrap` | `patients/static/patients/vendor/bootstrap/5.3.3/LICENSE` |
 | Freshworks Crayons | 4.1.0 | `@freshworks/crayons` | `patients/static/patients/vendor/crayons/4.1.0/LICENSE.md` |
 | Freshworks Crayons icons | 4.2.0-beta.0 | `@freshworks/crayons-icon` | `patients/static/patients/vendor/crayons-icons/4.2.0-beta.0/LICENSE.md` |
-| htmx | 1.9.12 | `htmx.org` | `patients/static/patients/vendor/htmx/1.9.12/LICENSE` |
+| htmx | 1.9.12 | `htmx.org` | 0BSD; `patients/static/patients/vendor/htmx/1.9.12/LICENSE` |
 | Chart.js | 4.4.4 | `chart.js` | `patients/static/patients/vendor/chartjs/4.4.4/LICENSE.md` |
 | Inter | 5.2.8 | `@fontsource/inter` | `patients/static/patients/vendor/inter/5.2.8/LICENSE` |
 
@@ -22,6 +22,8 @@ py -3 scripts\verify_web_vendor_integrity.py
 ```
 
 Never regenerate the manifest merely to make a failing check green. Review the upstream archive, selected files, license, local changes, CSP behavior, and browser suite first; then regenerate it deliberately with `--write` in the same reviewed change.
+
+Git treats the entire vendored subtree as byte-preserving (`-text`) in `.gitattributes`. The manifest is generated from those exact runtime bytes, so fresh Windows and Linux checkouts must produce identical hashes regardless of `core.autocrlf`.
 
 ## Reproducible extraction and local changes
 

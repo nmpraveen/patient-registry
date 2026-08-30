@@ -33,6 +33,25 @@ async function expectNoHorizontalDocumentOverflow(page) {
   expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth + 1);
 }
 
+async function renderedContrast(locator) {
+  return locator.evaluate((element) => {
+    const parseRgb = (value) => (value.match(/[\d.]+/g) || []).slice(0, 3).map(Number);
+    const luminance = (value) => {
+      const channels = parseRgb(value).map((channel) => {
+        const normalized = channel / 255;
+        return normalized <= 0.04045
+          ? normalized / 12.92
+          : ((normalized + 0.055) / 1.055) ** 2.4;
+      });
+      return (0.2126 * channels[0]) + (0.7152 * channels[1]) + (0.0722 * channels[2]);
+    };
+    const styles = getComputedStyle(element);
+    const foreground = luminance(styles.color);
+    const background = luminance(styles.backgroundColor);
+    return (Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05);
+  });
+}
+
 test.beforeEach(async ({ page }, testInfo) => {
   testInfo.errorsFromPage = [];
   page.on("console", (message) => {
@@ -286,6 +305,34 @@ test("CSP loads only local pinned assets and theme contrast preview remains acti
   const focusIndicatorInput = page.locator('[name="shell__focus_indicator"]');
   await focusIndicatorInput.fill("#959595");
   await expect(focusIndicatorInput).toHaveAttribute("aria-invalid", "true");
+  await expect(page.locator("[data-theme-save]")).toBeDisabled();
+
+  await page.reload({ waitUntil: "networkidle" });
+  const renderedPairs = [
+    page.locator(".theme-preview-nav .btn-outline-light"),
+    page.locator(".theme-preview-nav .nav-icon-button:not(.nav-icon-button--logout)"),
+    page.locator(".theme-preview-nav .app-nav-action--new-case"),
+  ];
+  for (const renderedPair of renderedPairs) {
+    await expect.poll(() => renderedContrast(renderedPair)).toBeGreaterThanOrEqual(4.5);
+    await renderedPair.hover();
+    await expect.poll(() => renderedContrast(renderedPair)).toBeGreaterThanOrEqual(4.5);
+  }
+
+  const reproducedActionFailure = {
+    nav__text: "#000000",
+    nav__control_text: "#000000",
+    nav__control_bg: "#ffffff",
+    nav__control_hover_bg: "#000000",
+    case_header__bg: "#ffffff",
+    shell__surface_bg: "#ffffff",
+  };
+  for (const [name, value] of Object.entries(reproducedActionFailure)) {
+    await page.locator(`[name="${name}"]`).fill(value);
+  }
+  await expect(page.locator('[name="nav__control_text"]')).toHaveAttribute("aria-invalid", "true");
+  await expect(page.locator('[name="nav__text"]')).toHaveAttribute("aria-invalid", "true");
+  await expect(page.locator('[name="shell__surface_bg"]')).toHaveAttribute("aria-invalid", "true");
   await expect(page.locator("[data-theme-save]")).toBeDisabled();
   expect(externalRequests).toEqual([]);
 });

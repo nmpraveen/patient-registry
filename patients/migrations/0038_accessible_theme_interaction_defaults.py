@@ -5,6 +5,7 @@ from django.db import migrations
 
 TOKEN_UPDATES = (
     (("shell", "link"), "#1e88e5", "#0b5cad"),
+    (("nav", "control_text"), "#656d7b", "#646c7a"),
     (("buttons", "primary", "text"), "#0d47a1", "#073763"),
     (("buttons", "warning", "text"), "#bf360c", "#7f1d1d"),
     (("buttons", "danger", "text"), "#b71c1c", "#7f1d1d"),

@@ -35,10 +35,12 @@ from .theme import (
     THEME_DERIVED_TEXT_CONTRAST_RULES,
     THEME_DEFAULTS,
     THEME_FOCUS_CONTRAST_RULES,
+    THEME_MIXED_TEXT_CONTRAST_RULES,
     contrast_safe_hover_color,
     contrast_ratio,
     flatten_theme_tokens,
     merge_theme_tokens,
+    mix_colors,
     theme_field_definitions,
 )
 
@@ -469,6 +471,42 @@ class FrontendAccessibilityRegressionTests(TestCase):
                     4.5,
                 )
 
+        for (
+            text_field,
+            background_field,
+            mix_target_field,
+            mix_ratio,
+            minimum_ratio,
+            label,
+        ) in THEME_MIXED_TEXT_CONTRAST_RULES:
+            with self.subTest(mixed_pair=label):
+                interaction_background = mix_colors(
+                    default_color(background_field),
+                    default_color(mix_target_field),
+                    mix_ratio,
+                )
+                self.assertGreaterEqual(
+                    contrast_ratio(default_color(text_field), interaction_background),
+                    minimum_ratio,
+                )
+
+        reproduced_action_failure = dict(form_data)
+        reproduced_action_failure.update(
+            {
+                "nav__text": "#000000",
+                "nav__control_text": "#000000",
+                "nav__control_bg": "#ffffff",
+                "nav__control_hover_bg": "#000000",
+                "case_header__bg": "#ffffff",
+                "shell__surface_bg": "#ffffff",
+            }
+        )
+        reproduced_form = ThemeSettingsForm(reproduced_action_failure, instance=theme_settings)
+        self.assertFalse(reproduced_form.is_valid())
+        self.assertIn("minimum 4.5:1", " ".join(reproduced_form.errors["nav__control_text"]))
+        self.assertIn("minimum 4.5:1", " ".join(reproduced_form.errors["nav__text"]))
+        self.assertIn("minimum 4.5:1", " ".join(reproduced_form.errors["shell__surface_bg"]))
+
         department_form = DepartmentThemeForm(
             {"theme_bg_color": "#ffffff", "theme_text_color": "#ffffff"},
             instance=self.department,
@@ -481,6 +519,7 @@ class FrontendAccessibilityRegressionTests(TestCase):
         self.assertContains(response, "data-theme-save")
         self.assertContains(response, "const textContrastRules")
         self.assertContains(response, "const derivedTextContrastRules")
+        self.assertContains(response, "const mixedTextContrastRules")
         self.assertContains(response, "const focusContrastRules")
         self.assertContains(response, "shell__focus_indicator")
 
@@ -518,6 +557,16 @@ class ThirdPartyAssetPinningTests(TestCase):
         for package in manifest["packages"]:
             self.assertTrue((vendor / package["license_file"]).is_file(), package["name"])
             self.assertTrue(package["archive_integrity"].startswith("sha512-"), package["name"])
+
+        packages = {package["name"]: package for package in manifest["packages"]}
+        self.assertEqual(packages["htmx.org"]["version"], "1.9.12")
+        self.assertEqual(packages["htmx.org"]["license"], "0BSD")
+        self.assertEqual(
+            packages["htmx.org"]["source"],
+            "https://registry.npmjs.org/htmx.org/-/htmx.org-1.9.12.tgz",
+        )
+        license_text = (vendor / packages["htmx.org"]["license_file"]).read_text(encoding="utf-8")
+        self.assertIn("Permission to use, copy, modify, and/or distribute", license_text)
 
     def test_expected_vendor_assets_and_licenses_are_present(self):
         vendor = Path(settings.BASE_DIR) / "patients" / "static" / "patients" / "vendor"

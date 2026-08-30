@@ -15,6 +15,11 @@
 - Centralized explicit role, intake-search, and patient-selection policy; removed role-name grants and blocked hidden identity disclosure and stale merged-patient case writes.
 - Added bounded one-time patient-merge recovery, transaction-coupled clinical/IAM/data audits, immutable PostgreSQL evidence, and least-privilege migration and mock-seed behavior.
 
+## 2026.08.30.01.28
+- Made all 577 integrity-covered web-vendor files byte-stable across Windows and Linux checkouts, regenerated the manifest from the canonical runtime bytes, and corrected htmx 1.9.12 provenance to its shipped 0BSD license.
+- Extended server and live-preview theme validation to the rendered navigation-control, navigation-icon, and New Case resting/hover text pairs at 4.5:1, while retaining a separate 3:1 focus-indicator boundary.
+- Added exact custom-palette and computed browser-contrast regressions for the newly covered interactions.
+
 ## 2026.08.30.00.34
 - Self-hosted and version-pinned the authenticated website's Bootstrap, Crayons, Crayons icons, Inter, HTMX, and Chart.js assets; added a byte-level integrity manifest, a native-import Crayons CSP adapter, per-response CSP nonces, the required Crayons style hash, restrictive browser security headers, and private no-store caching for every dynamic response including anonymous auth/device flows.
 - Added unique create/edit user and role form prefixes, accessible call/search/filter labels, a keyboard-operable ARIA universal-search combobox with live state and stale-response cancellation, and a skip-to-content link.

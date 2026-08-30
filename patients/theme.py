@@ -28,7 +28,7 @@ THEME_DEFAULTS = {
     "nav": {
         "bg": "#fffdf8",
         "text": "#1e3a5f",
-        "control_text": "#656d7b",
+        "control_text": "#646c7a",
         "control_border": "#dfe4ea",
         "control_bg": "#f3f5f7",
         "control_hover_bg": "#e9edf2",
@@ -144,7 +144,10 @@ THEME_CONTRAST_RULES = (
     ("shell__link_hover", "shell__surface_bg", 4.5, "Surface link hover text"),
     ("nav__text", "nav__bg", 4.5, "Navigation text"),
     ("nav__control_text", "nav__control_bg", 4.5, "Navigation control text"),
+    ("nav__control_text", "nav__control_hover_bg", 4.5, "Navigation control hover text"),
+    ("nav__text", "nav__control_hover_bg", 4.5, "Navigation icon hover text"),
     ("nav__logout_text", "nav__logout_bg", 4.5, "Logout control text"),
+    ("shell__surface_bg", "case_header__bg", 4.5, "New case action text"),
     ("search__dropdown_text", "search__dropdown_bg", 4.5, "Search result text"),
     ("search__dropdown_text", "search__result_hover_bg", 4.5, "Selected search result text"),
     ("search__tag_text", "search__tag_bg", 4.5, "Search tag text"),
@@ -179,6 +182,17 @@ THEME_DERIVED_TEXT_CONTRAST_RULES = tuple(
         f"{section_name.replace('_', ' ').title()} {token_name.replace('_', ' ').title()} hover/active",
     )
     for section_name, token_name in PAIR_GROUPS
+)
+
+THEME_MIXED_TEXT_CONTRAST_RULES = (
+    (
+        "shell__surface_bg",
+        "case_header__bg",
+        "shell__page_text",
+        0.12,
+        4.5,
+        "New case action hover text",
+    ),
 )
 
 THEME_FOCUS_CONTRAST_RULES = (

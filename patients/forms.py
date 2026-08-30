@@ -44,11 +44,13 @@ from .theme import (
     THEME_CONTRAST_RULES,
     THEME_DERIVED_TEXT_CONTRAST_RULES,
     THEME_FOCUS_CONTRAST_RULES,
+    THEME_MIXED_TEXT_CONTRAST_RULES,
     contrast_safe_hover_color,
     contrast_ratio,
     field_name_to_css_var,
     flatten_theme_tokens,
     merge_theme_tokens,
+    mix_colors,
     normalize_hex_color,
     theme_field_definitions,
     unflatten_theme_tokens,
@@ -1209,6 +1211,26 @@ class ThemeSettingsForm(forms.Form):
             if not text_color or not background_color:
                 continue
             interaction_background = contrast_safe_hover_color(background_color, text_color, mix_ratio)
+            ratio = contrast_ratio(text_color, interaction_background)
+            if ratio < minimum_ratio:
+                self.add_error(
+                    text_field,
+                    f"{label} contrast is {ratio:.2f}:1; minimum {minimum_ratio:.1f}:1.",
+                )
+        for (
+            text_field,
+            background_field,
+            mix_target_field,
+            mix_ratio,
+            minimum_ratio,
+            label,
+        ) in THEME_MIXED_TEXT_CONTRAST_RULES:
+            text_color = cleaned_data.get(text_field)
+            background_color = cleaned_data.get(background_field)
+            mix_target_color = cleaned_data.get(mix_target_field)
+            if not text_color or not background_color or not mix_target_color:
+                continue
+            interaction_background = mix_colors(background_color, mix_target_color, mix_ratio)
             ratio = contrast_ratio(text_color, interaction_background)
             if ratio < minimum_ratio:
                 self.add_error(

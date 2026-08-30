@@ -705,14 +705,18 @@ class CaseIntakeSelectionSecurityTests(SecurityFixtureMixin, TestCase):
         )
         api_client = APIClient()
         api_client.force_authenticate(self.other)
-        api_search = api_client.get(reverse("api:patient_search"), {"q": patient.first_name})
+        api_search = api_client.post(
+            reverse("api:patient_search"),
+            {"query": patient.first_name},
+            format="json",
+        )
 
         self.assertEqual(identity_check.status_code, 200)
         self.assertNotContains(identity_check, patient.uhid)
         self.assertNotContains(identity_check, patient.phone_number)
         self.assertEqual(web_search.json()["results"], [])
         self.assertEqual(api_search.status_code, 200)
-        self.assertEqual(api_search.json()["count"], 0)
+        self.assertEqual(api_search.json()["results"], [])
         self.assertNotIn(patient.uhid, api_search.content.decode())
         self.assertNotIn(patient.phone_number, api_search.content.decode())
 

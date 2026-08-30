@@ -15,7 +15,7 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.models import Group
 from django.contrib.auth.views import LoginView
 from django.core.management import call_command
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import OperationalError, ProgrammingError, transaction
 from django.db.models import (
     BooleanField,
@@ -43,6 +43,8 @@ from django.views.generic import CreateView, DetailView, ListView, UpdateView
 
 from . import backup_scheduler
 from . import database_bundle
+from .audit import record_audit_event
+from .auth_security import bind_authenticated_session, clear_auth_attempts, consume_auth_attempt
 from .forms import (
     ActivityLogForm,
     CallLogForm,
@@ -68,11 +70,13 @@ from .forms import (
 )
 from .models import (
     ActivityEventType,
+    AuditEvent,
     AncHighRiskReason,
     CallCommunicationStatus,
     CallLog,
     CallOutcome,
     Case,
+    CaseDataScope,
     CaseActivityLog,
     CaseSubcategory,
     CaseStatus,
@@ -568,6 +572,9 @@ def _user_role_settings(user):
         cached_settings = list(
             _user_role_settings_queryset(user).only(
                 "role_name",
+                "case_data_scope",
+                "can_access_call_queue",
+                "can_intake_patient_lookup",
                 "can_case_create",
                 "can_case_edit",
                 "can_task_create",
@@ -605,6 +612,41 @@ def is_doctor_admin(user):
     return user.groups.filter(name__in=["Doctor", "Admin"]).exists()
 
 
+def _case_data_scope(user):
+    if user.is_superuser:
+        return CaseDataScope.ALL
+    scopes = {role.case_data_scope for role in _user_role_settings(user)}
+    if CaseDataScope.ALL in scopes:
+        return CaseDataScope.ALL
+    if CaseDataScope.ASSIGNED in scopes:
+        return CaseDataScope.ASSIGNED
+    return CaseDataScope.NONE
+
+
+def _has_call_queue_scope(user):
+    if user.is_superuser:
+        return True
+    return any(role.can_access_call_queue for role in _user_role_settings(user))
+
+
+def _has_intake_lookup_scope(user):
+    if user.is_superuser:
+        return True
+    return any(role.can_intake_patient_lookup for role in _user_role_settings(user))
+
+
+def has_all_case_scope(user):
+    return getattr(user, "is_authenticated", False) and _case_data_scope(user) == CaseDataScope.ALL
+
+
+def role_data_scope_payload(user):
+    return {
+        "case_data_scope": _case_data_scope(user),
+        "call_queue": _has_call_queue_scope(user),
+        "intake_patient_lookup": _has_intake_lookup_scope(user),
+    }
+
+
 def delete_seeded_mock_data():
     seeded_cases = Case.objects.filter(metadata__source="seed_mock_data")
     CallLog.objects.filter(case__in=seeded_cases).delete()
@@ -614,16 +656,9 @@ def delete_seeded_mock_data():
 
 
 def can_access_case_data(user):
-    if user.is_superuser:
-        return True
-    return _user_role_settings_queryset(user).filter(
-        Q(can_case_create=True)
-        | Q(can_case_edit=True)
-        | Q(can_task_create=True)
-        | Q(can_task_edit=True)
-        | Q(can_note_add=True)
-        | Q(can_manage_settings=True)
-    ).exists()
+    if not getattr(user, "is_authenticated", False):
+        return False
+    return _case_data_scope(user) != CaseDataScope.NONE or _has_call_queue_scope(user)
 
 
 def create_case_activity(*, case, note, user=None, task=None, event_type=ActivityEventType.SYSTEM):
@@ -637,16 +672,36 @@ def create_case_activity(*, case, note, user=None, task=None, event_type=Activit
 
 
 def _merge_patient_records(*, source_patient, target_patient, actor):
-    if source_patient.pk == target_patient.pk:
-        raise ValidationError("Choose a different patient to merge into.")
-    if source_patient.merged_into_id:
-        raise ValidationError("This patient has already been merged.")
-    if target_patient.merged_into_id:
-        raise ValidationError("You cannot merge into a patient record that is already merged.")
-
     with transaction.atomic():
-        affected_cases = list(source_patient.cases.select_related("category").order_by("id"))
-        for case in affected_cases:
+        patient_ids = sorted({source_patient.pk, target_patient.pk})
+        if len(patient_ids) != 2:
+            raise ValidationError("Choose a different patient to merge into.")
+        locked_patients = {
+            patient.pk: patient
+            for patient in Patient.objects.select_for_update().filter(pk__in=patient_ids).order_by("pk")
+        }
+        if len(locked_patients) != 2:
+            raise ValidationError("One of the patient records no longer exists.")
+        source_patient = locked_patients[source_patient.pk]
+        target_patient = locked_patients[target_patient.pk]
+        if source_patient.merged_into_id:
+            raise ValidationError("This patient has already been merged.")
+        if target_patient.merged_into_id:
+            raise ValidationError("You cannot merge into a patient record that is already merged.")
+        if Patient.objects.select_for_update().filter(merged_into_id=source_patient.pk).exists():
+            raise ValidationError("This patient is already the terminal record for an earlier merge and cannot be merged again.")
+
+        affected_cases = list(
+            Case.objects.select_for_update()
+            .filter(patient_id__in=patient_ids)
+            .select_related("category")
+            .order_by("id")
+        )
+        if not _can_access_all_cases(actor, affected_cases):
+            raise PermissionDenied("You do not have permission for every case affected by this merge.")
+
+        moved_cases = [case for case in affected_cases if case.patient_id == source_patient.pk]
+        for case in moved_cases:
             previous_uhid = case.uhid
             case.patient = target_patient
             case.sync_identity_from_patient()
@@ -678,7 +733,21 @@ def _merge_patient_records(*, source_patient, target_patient, actor):
         source_patient.merged_into = target_patient
         source_patient.save(update_fields=["merged_into", "updated_at"])
 
-    return len(affected_cases)
+        record_audit_event(
+            category=AuditEvent.Category.CLINICAL,
+            action="patient.merged",
+            actor=actor,
+            object_type="patient",
+            object_id=source_patient.pk,
+            patient_id=target_patient.pk,
+            metadata={
+                "source_patient_id": source_patient.pk,
+                "target_patient_id": target_patient.pk,
+                "moved_case_count": len(moved_cases),
+            },
+        )
+
+    return len(moved_cases)
 
 
 def _request_wants_json(request):
@@ -772,7 +841,7 @@ def _can_edit_recent_cases(user):
 
 
 def _can_access_upcoming_calls(user):
-    return can_access_case_data(user) and has_capability(user, "note_add")
+    return can_access_case_data(user) and _has_call_queue_scope(user)
 
 
 def _can_reopen_tasks(user):
@@ -818,7 +887,7 @@ def _call_queue_scope_end():
 
 def _accessible_case_queryset(user, queryset=None, *, include_archived=False):
     queryset = queryset if queryset is not None else Case.objects.all()
-    has_full_scope = is_doctor_admin(user) if getattr(user, "is_authenticated", False) else False
+    has_full_scope = _case_data_scope(user) == CaseDataScope.ALL if getattr(user, "is_authenticated", False) else False
     if not include_archived or not has_full_scope:
         queryset = _visible_case_queryset(queryset)
     if not getattr(user, "is_authenticated", False):
@@ -826,7 +895,9 @@ def _accessible_case_queryset(user, queryset=None, *, include_archived=False):
     if has_full_scope:
         return queryset
 
-    scope = Q(created_by=user) | Q(tasks__assigned_user=user)
+    scope = Q(pk__in=[])
+    if _case_data_scope(user) == CaseDataScope.ASSIGNED:
+        scope |= Q(created_by=user) | Q(tasks__assigned_user=user)
     if _can_access_upcoming_calls(user):
         scope |= Q(
             tasks__status=TaskStatus.SCHEDULED,
@@ -845,7 +916,7 @@ def _accessible_patient_queryset(user, queryset=None):
     queryset = _visible_patient_queryset(queryset)
     if not getattr(user, "is_authenticated", False):
         return queryset.none()
-    if is_doctor_admin(user):
+    if _case_data_scope(user) == CaseDataScope.ALL:
         return queryset
     accessible_case_ids = _accessible_case_queryset(user).values("pk")
     return queryset.filter(Q(created_by=user) | Q(cases__in=accessible_case_ids)).distinct()
@@ -871,7 +942,7 @@ def _parse_patient_search_date(raw_value):
 
 def _patient_search_queryset(query="", *, user=None, allow_intake_lookup=False):
     patient_queryset = Patient.objects.all()
-    if user is not None and not (allow_intake_lookup and has_capability(user, "case_create")):
+    if user is not None and not (allow_intake_lookup and _has_intake_lookup_scope(user)):
         patient_queryset = _accessible_patient_queryset(user, patient_queryset)
     queryset = _visible_patient_queryset(
         patient_queryset.annotate(
@@ -900,6 +971,24 @@ def _patient_search_queryset(query="", *, user=None, allow_intake_lookup=False):
             filters |= Q(date_of_birth=parsed_date)
         queryset = queryset.filter(filters)
     return queryset
+
+
+def _can_access_all_cases(user, cases):
+    case_ids = {case.pk for case in cases}
+    if not case_ids:
+        return True
+    if _case_data_scope(user) == CaseDataScope.ALL:
+        return True
+    accessible_ids = set(
+        _accessible_case_queryset(user, Case.objects.filter(pk__in=case_ids)).values_list("pk", flat=True)
+    )
+    return accessible_ids == case_ids
+
+
+def _can_manage_patient_identity(user, patient, *, capability):
+    if not has_capability(user, capability):
+        return False
+    return _can_access_all_cases(user, list(patient.cases.only("pk", "is_archived", "created_by_id")))
 
 
 def _patient_active_cases(patient, *, include_archived=False, limit=None):
@@ -3586,8 +3675,12 @@ class PatientDetailView(LoginRequiredMixin, CaseDataAccessMixin, DetailView):
         )
         context["active_cases"] = [case for case in visible_cases if case.status == CaseStatus.ACTIVE]
         context["closed_cases"] = [case for case in visible_cases if case.status != CaseStatus.ACTIVE]
-        context["can_edit_patient"] = has_capability(self.request.user, "case_edit")
-        context["can_merge_patient"] = has_capability(self.request.user, "patient_merge")
+        context["can_edit_patient"] = _can_manage_patient_identity(
+            self.request.user, patient, capability="case_edit"
+        )
+        context["can_merge_patient"] = _can_manage_patient_identity(
+            self.request.user, patient, capability="patient_merge"
+        )
         context["merge_form"] = PatientMergeForm(source_patient=patient)
         return context
 
@@ -3605,34 +3698,38 @@ class PatientUpdateView(LoginRequiredMixin, CaseDataAccessMixin, UpdateView):
     def get_queryset(self):
         return _accessible_patient_queryset(self.request.user, Patient.objects.all())
 
+    def get_object(self, queryset=None):
+        patient = super().get_object(queryset)
+        if not _can_manage_patient_identity(self.request.user, patient, capability="case_edit"):
+            raise PermissionDenied("You do not have permission for every case affected by this patient edit.")
+        return patient
+
     def form_valid(self, form):
-        response = super().form_valid(form)
-        for case in self.object.cases.all():
-            case.save()
-        return response
+        with transaction.atomic():
+            patient = Patient.objects.select_for_update().get(pk=self.object.pk)
+            affected_cases = list(Case.objects.select_for_update().filter(patient=patient).order_by("pk"))
+            if not _can_access_all_cases(self.request.user, affected_cases):
+                raise PermissionDenied("You do not have permission for every case affected by this patient edit.")
+            form.instance = patient
+            self.object = form.save()
+            record_audit_event(
+                category=AuditEvent.Category.CLINICAL,
+                action="patient.identity_updated",
+                actor=self.request.user,
+                request=self.request,
+                object_type="patient",
+                object_id=self.object.pk,
+                patient_id=self.object.pk,
+                metadata={"affected_case_count": len(affected_cases)},
+            )
+        return redirect(self.get_success_url())
 
     def get_success_url(self):
         return reverse("patients:patient_detail", kwargs={"pk": self.object.pk})
 
 
 def _merge_patients(*, source_patient, target_patient, actor):
-    if source_patient.pk == target_patient.pk:
-        raise ValidationError("Choose a different patient to merge into.")
-    if source_patient.is_merged:
-        raise ValidationError("This patient has already been merged.")
-    moved_cases = list(source_patient.cases.select_related("category"))
-    with transaction.atomic():
-        for case in moved_cases:
-            case.patient = target_patient
-            case.save()
-            create_case_activity(
-                case=case,
-                user=actor,
-                event_type=ActivityEventType.SYSTEM,
-                note=f"Patient record merged: {source_patient.uhid} -> {target_patient.uhid}",
-            )
-        source_patient.merged_into = target_patient
-        source_patient.save(update_fields=["merged_into", "updated_at"])
+    return _merge_patient_records(source_patient=source_patient, target_patient=target_patient, actor=actor)
 
 
 class PatientMergeView(LoginRequiredMixin, CaseDataAccessMixin, View):
@@ -5007,8 +5104,12 @@ class PatientDetailView(LoginRequiredMixin, PatientDataAccessMixin, DetailView):
         patient = self.object
         context["patient_age_display"] = _patient_age_number(patient)
         context["patient_cases"] = _patient_case_rows(patient, user=self.request.user)
-        context["can_edit_patient"] = has_capability(self.request.user, "case_edit")
-        context["can_patient_merge"] = has_capability(self.request.user, "patient_merge")
+        context["can_edit_patient"] = _can_manage_patient_identity(
+            self.request.user, patient, capability="case_edit"
+        )
+        context["can_patient_merge"] = _can_manage_patient_identity(
+            self.request.user, patient, capability="patient_merge"
+        )
         context["merge_form"] = PatientMergeForm(
             source_patient=patient,
             target_queryset=_accessible_patient_queryset(self.request.user, Patient.objects.all()),
@@ -5030,11 +5131,31 @@ class PatientUpdateView(LoginRequiredMixin, PatientEditAccessMixin, UpdateView):
             Patient.objects.filter(merged_into__isnull=True),
         )
 
+    def get_object(self, queryset=None):
+        patient = super().get_object(queryset)
+        if not _can_manage_patient_identity(self.request.user, patient, capability="case_edit"):
+            raise PermissionDenied("You do not have permission for every case affected by this patient edit.")
+        return patient
+
     def form_valid(self, form):
-        response = super().form_valid(form)
-        for case in self.object.cases.all():
-            case.save()
-        return response
+        with transaction.atomic():
+            patient = Patient.objects.select_for_update().get(pk=self.object.pk)
+            affected_cases = list(Case.objects.select_for_update().filter(patient=patient).order_by("pk"))
+            if not _can_access_all_cases(self.request.user, affected_cases):
+                raise PermissionDenied("You do not have permission for every case affected by this patient edit.")
+            form.instance = patient
+            self.object = form.save()
+            record_audit_event(
+                category=AuditEvent.Category.CLINICAL,
+                action="patient.identity_updated",
+                actor=self.request.user,
+                request=self.request,
+                object_type="patient",
+                object_id=self.object.pk,
+                patient_id=self.object.pk,
+                metadata={"affected_case_count": len(affected_cases)},
+            )
+        return redirect(self.get_success_url())
 
     def get_success_url(self):
         return reverse("patients:patient_detail", kwargs={"pk": self.object.pk})
@@ -5765,16 +5886,69 @@ class VitalEntryUpdateView(LoginRequiredMixin, View):
 class DeviceAwareLoginView(LoginView):
     template_name = "registration/login.html"
 
+    def _authentication_scope(self):
+        next_url = self.request.POST.get("next") or self.request.GET.get("next") or ""
+        return "admin" if next_url.startswith("/admin/") else "web"
+
+    def dispatch(self, request, *args, **kwargs):
+        self.authentication_scope = self._authentication_scope()
+        self.authentication_identifier = request.POST.get("username", "")
+        if request.method == "POST":
+            retry_after = consume_auth_attempt(
+                scope=self.authentication_scope,
+                request=request,
+                identifier=self.authentication_identifier,
+            )
+            if retry_after:
+                record_audit_event(
+                    category=AuditEvent.Category.IAM,
+                    action=f"authentication.{self.authentication_scope}.throttled",
+                    outcome=AuditEvent.Outcome.DENIED,
+                    request=request,
+                )
+                response = HttpResponse(
+                    "Too many authentication attempts. Try again later.",
+                    status=429,
+                )
+                response["Retry-After"] = str(retry_after)
+                return response
+        return super().dispatch(request, *args, **kwargs)
+
+    def form_invalid(self, form):
+        record_audit_event(
+            category=AuditEvent.Category.IAM,
+            action=f"authentication.{self.authentication_scope}.failed",
+            outcome=AuditEvent.Outcome.DENIED,
+            request=self.request,
+        )
+        return super().form_invalid(form)
+
     def form_valid(self, form):
         user = form.get_user()
-        if not _is_device_approval_target_user(user):
-            return super().form_valid(form)
+        trusted_credential = None
+        if _is_device_approval_target_user(user):
+            trusted_credential = _get_trusted_device_credential(self.request, user)
 
-        trusted_credential = _get_trusted_device_credential(self.request, user)
-        if trusted_credential:
-            trusted_credential.last_used_at = timezone.now()
-            trusted_credential.save(update_fields=["last_used_at"])
-            return super().form_valid(form)
+        if not _is_device_approval_target_user(user) or trusted_credential:
+            if trusted_credential:
+                trusted_credential.last_used_at = timezone.now()
+                trusted_credential.save(update_fields=["last_used_at"])
+            response = super().form_valid(form)
+            bind_authenticated_session(self.request, user, device_credential=trusted_credential)
+            clear_auth_attempts(
+                scope=self.authentication_scope,
+                request=self.request,
+                identifier=self.authentication_identifier,
+            )
+            record_audit_event(
+                category=AuditEvent.Category.IAM,
+                action=f"authentication.{self.authentication_scope}.succeeded",
+                actor=user,
+                request=self.request,
+                object_type="user",
+                object_id=user.pk,
+            )
+            return response
 
         _set_pending_device_login(
             self.request,
@@ -5785,6 +5959,19 @@ class DeviceAwareLoginView(LoginView):
         messages.info(
             self.request,
             "This account requires an approved device. Verify or register this browser to continue.",
+        )
+        clear_auth_attempts(
+            scope=self.authentication_scope,
+            request=self.request,
+            identifier=self.authentication_identifier,
+        )
+        record_audit_event(
+            category=AuditEvent.Category.IAM,
+            action=f"authentication.{self.authentication_scope}.device_required",
+            actor=user,
+            request=self.request,
+            object_type="user",
+            object_id=user.pk,
         )
         return redirect("login_device_verification")
 
@@ -5996,6 +6183,15 @@ class DeviceAuthenticationVerifyView(View):
         backend = login_state.get("backend") or settings.AUTHENTICATION_BACKENDS[0]
         _clear_pending_device_login(request)
         auth_login(request, user, backend=backend)
+        bind_authenticated_session(request, user, device_credential=device)
+        record_audit_event(
+            category=AuditEvent.Category.IAM,
+            action="authentication.device.succeeded",
+            actor=user,
+            request=request,
+            object_type="staff_device_credential",
+            object_id=device.pk,
+        )
         response = JsonResponse({"message": "Device verified.", "redirect_url": redirect_to})
         _set_trusted_device_cookie(response, device)
         return response
@@ -6445,6 +6641,14 @@ class DatabaseManagementSettingsView(LoginRequiredMixin, View):
         action = request.POST.get("action")
         if action == "export":
             archive_bytes, _, filename = database_bundle.create_bundle_archive()
+            record_audit_event(
+                category=AuditEvent.Category.DATA,
+                action="patient_data.exported",
+                actor=request.user,
+                request=request,
+                object_type="patient_data_bundle",
+                metadata={"archive_size_bytes": len(archive_bytes)},
+            )
             response = HttpResponse(archive_bytes, content_type="application/zip")
             response["Content-Disposition"] = f'attachment; filename="{filename}"'
             response["Content-Length"] = str(len(archive_bytes))
@@ -6458,8 +6662,25 @@ class DatabaseManagementSettingsView(LoginRequiredMixin, View):
                     error=str(exc),
                     trigger=PatientDataBackupTrigger.MANUAL,
                 )
+                record_audit_event(
+                    category=AuditEvent.Category.DATA,
+                    action="patient_data.backup_failed",
+                    outcome=AuditEvent.Outcome.FAILURE,
+                    actor=request.user,
+                    request=request,
+                    object_type="patient_data_bundle",
+                    metadata={"error_type": type(exc).__name__},
+                )
                 messages.error(request, f"Backup failed: {exc}")
                 return redirect("patients:settings_database")
+            record_audit_event(
+                category=AuditEvent.Category.DATA,
+                action="patient_data.backup_created",
+                actor=request.user,
+                request=request,
+                object_type="patient_data_bundle",
+                object_id=bundle_path.name,
+            )
             messages.success(request, f"Saved patient-data backup to {bundle_path}.")
             return redirect("patients:settings_database")
 
@@ -6469,11 +6690,38 @@ class DatabaseManagementSettingsView(LoginRequiredMixin, View):
                 messages.error(request, "Database import has errors.")
                 return render(request, self.template_name, self._build_context(import_form=import_form))
             try:
-                result = database_bundle.import_bundle_bytes(import_form.cleaned_data["bundle_file"].read())
+                with transaction.atomic():
+                    result = database_bundle.import_bundle_bytes(import_form.cleaned_data["bundle_file"].read())
+                    record_audit_event(
+                        category=AuditEvent.Category.DATA,
+                        action="patient_data.imported",
+                        actor=request.user,
+                        request=request,
+                        object_type="patient_data_bundle",
+                        metadata={"counts": result["counts"]},
+                    )
             except database_bundle.BundleValidationError as exc:
+                record_audit_event(
+                    category=AuditEvent.Category.DATA,
+                    action="patient_data.import_rejected",
+                    outcome=AuditEvent.Outcome.DENIED,
+                    actor=request.user,
+                    request=request,
+                    object_type="patient_data_bundle",
+                    metadata={"error_type": type(exc).__name__},
+                )
                 messages.error(request, str(exc))
                 return render(request, self.template_name, self._build_context(import_form=import_form))
             except Exception as exc:
+                record_audit_event(
+                    category=AuditEvent.Category.DATA,
+                    action="patient_data.import_failed",
+                    outcome=AuditEvent.Outcome.FAILURE,
+                    actor=request.user,
+                    request=request,
+                    object_type="patient_data_bundle",
+                    metadata={"error_type": type(exc).__name__},
+                )
                 messages.error(request, f"Database import failed: {exc}")
                 return render(request, self.template_name, self._build_context(import_form=import_form))
 
@@ -6491,6 +6739,15 @@ class DatabaseManagementSettingsView(LoginRequiredMixin, View):
                 messages.error(request, "Backup schedule has errors.")
                 return render(request, self.template_name, self._build_context(schedule_form=schedule_form))
             schedule = schedule_form.save()
+            record_audit_event(
+                category=AuditEvent.Category.DATA,
+                action="patient_data.backup_schedule_updated",
+                actor=request.user,
+                request=request,
+                object_type="patient_data_backup_schedule",
+                object_id=schedule.pk,
+                metadata={"enabled": schedule.enabled},
+            )
             backup_scheduler.run_due_scheduled_backup()
             if schedule.enabled:
                 messages.success(request, "Automatic backup schedules saved.")
@@ -6604,6 +6861,17 @@ class CaseManagementSettingsView(LoginRequiredMixin, View):
             case_label = str(case)
             delete_summary = _case_delete_summary(case)
             with transaction.atomic():
+                record_audit_event(
+                    category=AuditEvent.Category.DATA,
+                    action="case.permanently_deleted",
+                    actor=request.user,
+                    request=request,
+                    object_type="case",
+                    object_id=case.pk,
+                    patient_id=case.patient_id,
+                    case_id=case.pk,
+                    metadata=delete_summary,
+                )
                 case.delete()
             self._clear_delete_confirmation(request)
             messages.success(

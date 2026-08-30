@@ -54,6 +54,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "patients.middleware.AuditAndSessionSecurityMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -120,13 +121,18 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        "api.authentication.AuthVersionJWTAuthentication",
     ),
     "DEFAULT_PERMISSION_CLASSES": (
         "rest_framework.permissions.IsAuthenticated",
     ),
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
 }
+
+AUTH_THROTTLE_ACCOUNT_LIMIT = env.int("AUTH_THROTTLE_ACCOUNT_LIMIT", default=5)
+AUTH_THROTTLE_IP_LIMIT = env.int("AUTH_THROTTLE_IP_LIMIT", default=30)
+AUTH_THROTTLE_WINDOW_SECONDS = env.int("AUTH_THROTTLE_WINDOW_SECONDS", default=900)
+AUTH_THROTTLE_BLOCK_SECONDS = env.int("AUTH_THROTTLE_BLOCK_SECONDS", default=900)
 
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=15),

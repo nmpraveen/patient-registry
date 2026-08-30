@@ -1,8 +1,12 @@
+from urllib.parse import urlencode
+
 from django.conf import settings
 from django.contrib import admin
 from django.contrib.auth import views as auth_views
 from django.contrib.staticfiles.urls import staticfiles_urlpatterns
 from django.urls import include, path
+from django.shortcuts import redirect
+from django.urls import reverse
 from django.views.generic import RedirectView
 from drf_spectacular.views import SpectacularAPIView
 
@@ -15,7 +19,13 @@ from patients.views import (
     DeviceVerificationView,
 )
 
+
+def admin_login_redirect(request):
+    next_url = request.GET.get("next") or "/admin/"
+    return redirect(f"{reverse('login')}?{urlencode({'next': next_url})}")
+
 urlpatterns = [
+    path("admin/login/", admin_login_redirect, name="admin_login_redirect"),
     path("admin/", admin.site.urls),
     path("login/", DeviceAwareLoginView.as_view(), name="login"),
     path("login/device/", DeviceVerificationView.as_view(), name="login_device_verification"),

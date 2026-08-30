@@ -3,7 +3,20 @@ from decimal import Decimal
 from django.utils import timezone
 from rest_framework import serializers
 
-from patients.models import CallOutcome, VitalEntry
+from patients.models import (
+    CallOutcome,
+    VitalEntry,
+    VITAL_BP_DIASTOLIC_MAX,
+    VITAL_BP_DIASTOLIC_MIN,
+    VITAL_BP_SYSTOLIC_MAX,
+    VITAL_BP_SYSTOLIC_MIN,
+    VITAL_PR_MAX,
+    VITAL_PR_MIN,
+    VITAL_SPO2_MAX,
+    VITAL_SPO2_MIN,
+    VITAL_WEIGHT_KG_MAX,
+    VITAL_WEIGHT_KG_MIN,
+)
 
 
 class LogoutSerializer(serializers.Serializer):
@@ -45,11 +58,11 @@ class CallOutcomeSerializer(ClientWriteSerializer):
 
 class VitalEntryCreateSerializer(ClientWriteSerializer):
     recorded_at = serializers.DateTimeField(required=False)
-    bp_systolic = serializers.IntegerField(required=False, allow_null=True, min_value=70, max_value=240)
-    bp_diastolic = serializers.IntegerField(required=False, allow_null=True, min_value=40, max_value=140)
-    pr = serializers.IntegerField(required=False, allow_null=True, min_value=30, max_value=220)
-    spo2 = serializers.IntegerField(required=False, allow_null=True, min_value=50, max_value=100)
-    weight_kg = serializers.DecimalField(required=False, allow_null=True, max_digits=5, decimal_places=2, min_value=Decimal("30.0"), max_value=Decimal("120.0"))
+    bp_systolic = serializers.IntegerField(required=False, allow_null=True, min_value=VITAL_BP_SYSTOLIC_MIN, max_value=VITAL_BP_SYSTOLIC_MAX)
+    bp_diastolic = serializers.IntegerField(required=False, allow_null=True, min_value=VITAL_BP_DIASTOLIC_MIN, max_value=VITAL_BP_DIASTOLIC_MAX)
+    pr = serializers.IntegerField(required=False, allow_null=True, min_value=VITAL_PR_MIN, max_value=VITAL_PR_MAX)
+    spo2 = serializers.IntegerField(required=False, allow_null=True, min_value=VITAL_SPO2_MIN, max_value=VITAL_SPO2_MAX)
+    weight_kg = serializers.DecimalField(required=False, allow_null=True, max_digits=5, decimal_places=2, min_value=VITAL_WEIGHT_KG_MIN, max_value=VITAL_WEIGHT_KG_MAX)
     hemoglobin = serializers.DecimalField(required=False, allow_null=True, max_digits=4, decimal_places=1)
 
     metric_fields = ["bp_systolic", "bp_diastolic", "pr", "spo2", "weight_kg", "hemoglobin"]

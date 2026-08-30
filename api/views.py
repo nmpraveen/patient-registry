@@ -17,6 +17,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from patients.models import (
     ActivityEventType,
+    AuditEvent,
     AncHighRiskReason,
     BloodGroup,
     CallLog,
@@ -39,6 +40,7 @@ from patients.models import (
     frequency_to_days,
     is_anc_case,
 )
+from patients.audit import record_audit_event
 from patients.theme import build_theme_category_colors, resolve_category_theme
 from patients.vitals_thresholds import vitals_thresholds_payload
 from patients.forms import CaseForm, TaskForm
@@ -62,8 +64,10 @@ from patients.views import (
     _save_task_note_inline,
     _visible_case_queryset,
     create_case_activity,
+    has_all_case_scope,
     has_capability,
     is_doctor_admin,
+    role_data_scope_payload,
 )
 
 from .models import MobileDeviceToken, MobileNotification, MobileWriteReceipt
@@ -111,6 +115,7 @@ class MeView(APIView):
                     "note_add": has_capability(request.user, "note_add"),
                     "manage_settings": has_capability(request.user, "manage_settings"),
                 },
+                "data_scope": role_data_scope_payload(request.user),
             }
         )
 
@@ -129,6 +134,15 @@ class LogoutView(APIView):
         try:
             RefreshToken(serializer.validated_data["refresh"]).blacklist()
         except TokenError:
+            record_audit_event(
+                category=AuditEvent.Category.IAM,
+                action="authentication.jwt.logout_failed",
+                outcome=AuditEvent.Outcome.DENIED,
+                actor=request.user,
+                request=request,
+                object_type="user",
+                object_id=request.user.pk,
+            )
             return Response(
                 {
                     "message": "Refresh token is invalid or already expired.",
@@ -136,6 +150,15 @@ class LogoutView(APIView):
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        record_audit_event(
+            category=AuditEvent.Category.IAM,
+            action="authentication.jwt.logged_out",
+            actor=request.user,
+            request=request,
+            object_type="user",
+            object_id=request.user.pk,
+            metadata={"deactivated_device_count": deactivated_count},
+        )
         return Response(
             {"message": "Logged out.", "deactivated_devices": deactivated_count},
             status=status.HTTP_200_OK,
@@ -163,7 +186,7 @@ def _case_search_query(raw_query):
 
 
 def _default_assigned_to_scope(user):
-    return "all" if is_doctor_admin(user) else "me"
+    return "all" if has_all_case_scope(user) else "me"
 
 
 def _assigned_to_scope(request):
@@ -173,7 +196,7 @@ def _assigned_to_scope(request):
 
 
 def _can_use_all_assigned_scope(request):
-    if is_doctor_admin(request.user):
+    if has_all_case_scope(request.user):
         return True
     scope_context = request.GET.get("scope_context", "").strip()
     return scope_context == "calls" and _can_access_upcoming_calls(request.user)

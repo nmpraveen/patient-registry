@@ -1,8 +1,11 @@
 from datetime import datetime, time as dt_time, timedelta
+from decimal import Decimal
+import uuid
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.db import models
+from django.core.validators import MaxValueValidator, MinValueValidator
+from django.db import models, transaction
 from django.utils import timezone
 
 from .theme import get_default_category_theme, normalize_hex_color, normalize_theme_tokens
@@ -47,6 +50,25 @@ STAFF_ROLE_NAME = "Staff"
 STAFF_PILOT_ROLE_NAME = "Staff Pilot"
 DEVICE_APPROVAL_MAX_APPROVED = 3
 
+VITAL_BP_SYSTOLIC_MIN = 70
+VITAL_BP_SYSTOLIC_MAX = 240
+VITAL_BP_DIASTOLIC_MIN = 40
+VITAL_BP_DIASTOLIC_MAX = 140
+VITAL_PR_MIN = 30
+VITAL_PR_MAX = 220
+VITAL_SPO2_MIN = 50
+VITAL_SPO2_MAX = 100
+VITAL_WEIGHT_KG_MIN = Decimal("30.0")
+VITAL_WEIGHT_KG_MAX = Decimal("120.0")
+
+
+class TemporaryPatientIDSequence(models.Model):
+    allocation_date = models.DateField(unique=True)
+    last_value = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["allocation_date"]
+
 
 def normalize_backup_schedule_time(value):
     if value in (None, ""):
@@ -74,12 +96,17 @@ def normalize_category_name(value):
 def generate_temporary_patient_uhid(today=None):
     quick_entry_day = today or timezone.localdate()
     prefix = f"{TEMP_PATIENT_ID_PREFIX}-{quick_entry_day:%Y%m%d}-"
-    existing_uhids = set(Patient.objects.filter(uhid__startswith=prefix).values_list("uhid", flat=True))
-    next_sequence = 1
-    candidate = f"{prefix}{next_sequence:03d}"
-    while candidate in existing_uhids:
-        next_sequence += 1
+    with transaction.atomic():
+        sequence, _ = TemporaryPatientIDSequence.objects.select_for_update().get_or_create(
+            allocation_date=quick_entry_day
+        )
+        next_sequence = sequence.last_value + 1
         candidate = f"{prefix}{next_sequence:03d}"
+        while Patient.objects.filter(uhid=candidate).exists():
+            next_sequence += 1
+            candidate = f"{prefix}{next_sequence:03d}"
+        sequence.last_value = next_sequence
+        sequence.save(update_fields=["last_value"])
     return candidate
 
 
@@ -281,8 +308,21 @@ class DepartmentConfig(models.Model):
         super().save(*args, **kwargs)
 
 
+class CaseDataScope(models.TextChoices):
+    NONE = "NONE", "No case data"
+    ASSIGNED = "ASSIGNED", "Created or assigned cases"
+    ALL = "ALL", "All cases"
+
+
 class RoleSetting(models.Model):
     role_name = models.CharField(max_length=50, unique=True)
+    case_data_scope = models.CharField(
+        max_length=16,
+        choices=CaseDataScope.choices,
+        default=CaseDataScope.NONE,
+    )
+    can_access_call_queue = models.BooleanField(default=False)
+    can_intake_patient_lookup = models.BooleanField(default=False)
     can_case_create = models.BooleanField(default=False)
     can_case_edit = models.BooleanField(default=False)
     can_task_create = models.BooleanField(default=False)
@@ -309,6 +349,9 @@ class RoleSetting(models.Model):
 
     def field_capabilities(self):
         return {
+            "case_data_scope": self.case_data_scope,
+            "can_access_call_queue": self.can_access_call_queue,
+            "can_intake_patient_lookup": self.can_intake_patient_lookup,
             "can_case_create": self.can_case_create,
             "can_case_edit": self.can_case_edit,
             "can_task_create": self.can_task_create,
@@ -760,6 +803,11 @@ class StaffDeviceCredential(models.Model):
         self.trusted_token_hash = ""
         self.trusted_token_created_at = None
 
+    def save(self, *args, **kwargs):
+        if self.status == StaffDeviceCredentialStatus.REVOKED:
+            self.clear_trusted_token()
+        super().save(*args, **kwargs)
+
     def __str__(self) -> str:
         return f"{self.user} - {self.device_label}"
 
@@ -784,6 +832,9 @@ DEFAULT_DEPARTMENTS = [
 
 DEFAULT_ROLE_SETTINGS = {
     "Admin": {
+        "case_data_scope": CaseDataScope.ALL,
+        "can_access_call_queue": True,
+        "can_intake_patient_lookup": True,
         "can_case_create": True,
         "can_case_edit": True,
         "can_task_create": True,
@@ -794,6 +845,9 @@ DEFAULT_ROLE_SETTINGS = {
         "can_manage_settings": True,
     },
     "Doctor": {
+        "case_data_scope": CaseDataScope.ALL,
+        "can_access_call_queue": True,
+        "can_intake_patient_lookup": True,
         "can_case_create": True,
         "can_case_edit": True,
         "can_task_create": True,
@@ -802,16 +856,23 @@ DEFAULT_ROLE_SETTINGS = {
         "can_note_add": True,
     },
     "Reception": {
+        "case_data_scope": CaseDataScope.ASSIGNED,
+        "can_access_call_queue": True,
+        "can_intake_patient_lookup": True,
         "can_case_create": True,
         "can_case_edit": True,
         "can_task_create": True,
         "can_note_add": True,
     },
     "Nurse": {
+        "case_data_scope": CaseDataScope.ASSIGNED,
+        "can_access_call_queue": True,
         "can_task_edit": True,
         "can_note_add": True,
     },
     "Caller": {
+        "case_data_scope": CaseDataScope.ASSIGNED,
+        "can_access_call_queue": True,
         "can_note_add": True,
     },
 }
@@ -1325,11 +1386,33 @@ class Task(models.Model):
 class VitalEntry(models.Model):
     case = models.ForeignKey(Case, on_delete=models.CASCADE, related_name="vitals")
     recorded_at = models.DateTimeField(default=timezone.now)
-    bp_systolic = models.PositiveSmallIntegerField(blank=True, null=True)
-    bp_diastolic = models.PositiveSmallIntegerField(blank=True, null=True)
-    pr = models.PositiveSmallIntegerField(blank=True, null=True)
-    spo2 = models.PositiveSmallIntegerField(blank=True, null=True)
-    weight_kg = models.DecimalField(max_digits=5, decimal_places=2, blank=True, null=True)
+    bp_systolic = models.PositiveSmallIntegerField(
+        blank=True,
+        null=True,
+        validators=[MinValueValidator(VITAL_BP_SYSTOLIC_MIN), MaxValueValidator(VITAL_BP_SYSTOLIC_MAX)],
+    )
+    bp_diastolic = models.PositiveSmallIntegerField(
+        blank=True,
+        null=True,
+        validators=[MinValueValidator(VITAL_BP_DIASTOLIC_MIN), MaxValueValidator(VITAL_BP_DIASTOLIC_MAX)],
+    )
+    pr = models.PositiveSmallIntegerField(
+        blank=True,
+        null=True,
+        validators=[MinValueValidator(VITAL_PR_MIN), MaxValueValidator(VITAL_PR_MAX)],
+    )
+    spo2 = models.PositiveSmallIntegerField(
+        blank=True,
+        null=True,
+        validators=[MinValueValidator(VITAL_SPO2_MIN), MaxValueValidator(VITAL_SPO2_MAX)],
+    )
+    weight_kg = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        blank=True,
+        null=True,
+        validators=[MinValueValidator(VITAL_WEIGHT_KG_MIN), MaxValueValidator(VITAL_WEIGHT_KG_MAX)],
+    )
     hemoglobin = models.DecimalField(max_digits=4, decimal_places=1, blank=True, null=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -1352,6 +1435,32 @@ class VitalEntry(models.Model):
         ordering = ["-recorded_at", "-id"]
         indexes = [
             models.Index(fields=["case", "-recorded_at"], name="pat_vitals_case_recorded_idx"),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(bp_systolic__isnull=True)
+                | models.Q(bp_systolic__range=(VITAL_BP_SYSTOLIC_MIN, VITAL_BP_SYSTOLIC_MAX)),
+                name="vital_bp_sys_range",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(bp_diastolic__isnull=True)
+                | models.Q(bp_diastolic__range=(VITAL_BP_DIASTOLIC_MIN, VITAL_BP_DIASTOLIC_MAX)),
+                name="vital_bp_dia_range",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(pr__isnull=True) | models.Q(pr__range=(VITAL_PR_MIN, VITAL_PR_MAX)),
+                name="vital_pr_range",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(spo2__isnull=True)
+                | models.Q(spo2__range=(VITAL_SPO2_MIN, VITAL_SPO2_MAX)),
+                name="vital_spo2_range",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(weight_kg__isnull=True)
+                | models.Q(weight_kg__range=(VITAL_WEIGHT_KG_MIN, VITAL_WEIGHT_KG_MAX)),
+                name="vital_weight_range",
+            ),
         ]
 
     @property
@@ -1376,6 +1485,89 @@ class CaseActivityLog(models.Model):
         ordering = ["-created_at"]
         indexes = [
             models.Index(fields=["case", "event_type", "-created_at"], name="pat_act_case_type_created_idx"),
+        ]
+
+
+class AuditEventQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        raise ValidationError("Audit events are append-only and cannot be updated.")
+
+    def delete(self):
+        raise ValidationError("Audit events are append-only and cannot be deleted.")
+
+
+class AuditEvent(models.Model):
+    class Category(models.TextChoices):
+        CLINICAL = "CLINICAL", "Clinical"
+        IAM = "IAM", "Identity and access"
+        DATA = "DATA", "Data operation"
+
+    class Outcome(models.TextChoices):
+        SUCCESS = "SUCCESS", "Success"
+        FAILURE = "FAILURE", "Failure"
+        DENIED = "DENIED", "Denied"
+
+    event_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    category = models.CharField(max_length=16, choices=Category.choices)
+    action = models.CharField(max_length=80)
+    outcome = models.CharField(max_length=16, choices=Outcome.choices, default=Outcome.SUCCESS)
+    actor_user_id = models.PositiveBigIntegerField(null=True, blank=True)
+    actor_username = models.CharField(max_length=150, blank=True)
+    source = models.CharField(max_length=32, default="system")
+    request_id = models.CharField(max_length=64, blank=True)
+    session_key_hash = models.CharField(max_length=64, blank=True)
+    source_ip_hash = models.CharField(max_length=64, blank=True)
+    device_credential_id = models.PositiveBigIntegerField(null=True, blank=True)
+    object_type = models.CharField(max_length=80, blank=True)
+    object_id = models.CharField(max_length=80, blank=True)
+    patient_id = models.PositiveBigIntegerField(null=True, blank=True)
+    case_id = models.PositiveBigIntegerField(null=True, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    occurred_at = models.DateTimeField(auto_now_add=True)
+
+    objects = AuditEventQuerySet.as_manager()
+
+    class Meta:
+        ordering = ["-occurred_at", "-id"]
+        indexes = [
+            models.Index(fields=["category", "action", "-occurred_at"], name="pat_audit_cat_action_idx"),
+            models.Index(fields=["actor_user_id", "-occurred_at"], name="pat_audit_actor_idx"),
+            models.Index(fields=["case_id", "-occurred_at"], name="pat_audit_case_idx"),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk is not None or not self._state.adding:
+            raise ValidationError("Audit events are append-only and cannot be updated.")
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Audit events are append-only and cannot be deleted.")
+
+
+class UserSecurityState(models.Model):
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="security_state",
+    )
+    auth_version = models.PositiveBigIntegerField(default=1)
+    updated_at = models.DateTimeField(auto_now=True)
+
+
+class AuthenticationThrottleBucket(models.Model):
+    scope = models.CharField(max_length=24)
+    key_hash = models.CharField(max_length=64)
+    failure_count = models.PositiveIntegerField(default=0)
+    window_started_at = models.DateTimeField(default=timezone.now)
+    blocked_until = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["scope", "key_hash"], name="uniq_auth_throttle_scope_key"),
+        ]
+        indexes = [
+            models.Index(fields=["scope", "blocked_until"], name="pat_auth_scope_blocked_idx"),
         ]
 
 
@@ -1497,15 +1689,14 @@ def cancel_open_rch_reminders(case: Case, exclude_task_ids=None) -> int:
     reminder_queryset = open_rch_reminder_queryset(case)
     if exclude_task_ids:
         reminder_queryset = reminder_queryset.exclude(id__in=list(exclude_task_ids))
-    reminder_ids = list(reminder_queryset.values_list("id", flat=True))
-    if not reminder_ids:
+    reminders = list(reminder_queryset.order_by("pk"))
+    if not reminders:
         return 0
-    Task.objects.filter(id__in=reminder_ids).update(
-        status=TaskStatus.CANCELLED,
-        completed_at=None,
-        updated_at=timezone.now(),
-    )
-    return len(reminder_ids)
+    for reminder in reminders:
+        reminder.status = TaskStatus.CANCELLED
+        reminder.completed_at = None
+        reminder.save(update_fields=["status", "completed_at", "updated_at"])
+    return len(reminders)
 
 
 def infer_starter_task_type(title):

@@ -3,8 +3,9 @@ from decimal import Decimal, InvalidOperation
 
 from django import forms
 from django.utils import timezone
-from django.contrib.auth import get_user_model
+from django.contrib.auth import get_user_model, password_validation
 from django.contrib.auth.models import Group
+from django.core.exceptions import ValidationError
 from django.db.models import Q
 from django.forms import formset_factory, modelformset_factory
 
@@ -838,6 +839,9 @@ class RoleSettingForm(StyledModelForm):
         model = RoleSetting
         fields = [
             "role_name",
+            "case_data_scope",
+            "can_access_call_queue",
+            "can_intake_patient_lookup",
             "can_case_create",
             "can_case_edit",
             "can_task_create",
@@ -848,6 +852,9 @@ class RoleSettingForm(StyledModelForm):
             "can_manage_settings",
         ]
         widgets = {
+            "case_data_scope": forms.Select(),
+            "can_access_call_queue": forms.CheckboxInput(),
+            "can_intake_patient_lookup": forms.CheckboxInput(),
             "can_case_create": forms.CheckboxInput(),
             "can_case_edit": forms.CheckboxInput(),
             "can_task_create": forms.CheckboxInput(),
@@ -857,6 +864,13 @@ class RoleSettingForm(StyledModelForm):
             "can_patient_merge": forms.CheckboxInput(),
             "can_manage_settings": forms.CheckboxInput(),
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["case_data_scope"].label = "Case data scope"
+        self.fields["case_data_scope"].help_text = "Controls which case records this role can open."
+        self.fields["can_access_call_queue"].help_text = "Adds unassigned cases currently due in the calling queue."
+        self.fields["can_intake_patient_lookup"].help_text = "Allows identity lookup during new-case intake."
 
 
 class RoleSettingUpdateForm(RoleSettingForm):
@@ -1276,6 +1290,16 @@ class UserManagementCreateForm(UserManagementBaseForm):
         password2 = cleaned_data.get("password2")
         if password1 and password2 and password1 != password2:
             self.add_error("password2", "Passwords do not match.")
+        if password1:
+            candidate = User(
+                username=cleaned_data.get("username", ""),
+                first_name=cleaned_data.get("first_name", ""),
+                last_name=cleaned_data.get("last_name", ""),
+            )
+            try:
+                password_validation.validate_password(password1, user=candidate)
+            except ValidationError as exc:
+                self.add_error("password1", exc)
         return cleaned_data
 
     def save(self, commit=True, actor=None):
@@ -1332,6 +1356,17 @@ class UserManagementUpdateForm(UserManagementBaseForm):
         if password1 or password2:
             if password1 != password2:
                 self.add_error("password2", "Passwords do not match.")
+            elif password1:
+                candidate = User(
+                    pk=self.instance.pk,
+                    username=cleaned_data.get("username", self.instance.username),
+                    first_name=cleaned_data.get("first_name", self.instance.first_name),
+                    last_name=cleaned_data.get("last_name", self.instance.last_name),
+                )
+                try:
+                    password_validation.validate_password(password1, user=candidate)
+                except ValidationError as exc:
+                    self.add_error("password1", exc)
 
         role = cleaned_data.get("role")
         is_active = cleaned_data.get("is_active")

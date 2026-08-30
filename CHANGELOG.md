@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026.08.30.00.20
+- Replaced implicit role-name data access with explicit case, call-queue, and intake-lookup scopes enforced across website and API policy.
+- Hardened patient identity edits and merges with complete affected-set authorization, deterministic database locks, and terminal-target validation.
+- Added Django password validation, database-backed web/admin/JWT throttling, auth-version session and refresh-token revocation, and device-aware admin login.
+- Added shared vital-sign validators plus PostgreSQL range constraints, a concurrent-safe temporary-UHID allocator, and append-only clinical/IAM/data audit events.
+
 ## 2026.08.29.17.26
 - Changed website sessions to a sliding 12-hour inactivity timeout so normal authenticated activity refreshes the expiry instead of logging staff out roughly 30 minutes after login.
 - Documented the explicit production session settings and the shared-workstation logout precaution.

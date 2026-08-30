@@ -13,7 +13,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient, APITestCase
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from patients.models import CallLog, Case, DepartmentConfig, RoleSetting, Task, TaskStatus, VitalEntry
+from patients.models import CaseDataScope, CallLog, Case, DepartmentConfig, RoleSetting, Task, TaskStatus, VitalEntry
 
 from .admin import MobileDeviceTokenAdmin
 from .models import MobileDeviceToken, MobileNotification, MobileNotificationType, MobileWriteReceipt
@@ -121,7 +121,11 @@ class MobileApiTests(APITestCase):
 
     def test_case_api_scopes_real_jwt_non_doctor_with_case_data_role_to_assigned_tasks(self):
         mobile_user = get_user_model().objects.create_user(username="mobile-role", password="pass")
-        RoleSetting.objects.create(role_name="Mobile Staff", can_task_edit=True)
+        RoleSetting.objects.create(
+            role_name="Mobile Staff",
+            case_data_scope=CaseDataScope.ASSIGNED,
+            can_task_edit=True,
+        )
         group = Group.objects.create(name="Mobile Staff")
         mobile_user.groups.add(group)
         assigned_case = Case.objects.create(
@@ -160,7 +164,10 @@ class MobileApiTests(APITestCase):
 
     def test_case_list_blank_assigned_to_uses_default_scope_for_non_doctor_role(self):
         mobile_user = get_user_model().objects.create_user(username="blank-scope-mobile", password="pass")
-        RoleSetting.objects.update_or_create(role_name="Blank Scope Staff", defaults={"can_task_edit": True})
+        RoleSetting.objects.update_or_create(
+            role_name="Blank Scope Staff",
+            defaults={"case_data_scope": CaseDataScope.ASSIGNED, "can_task_edit": True},
+        )
         staff_group, _ = Group.objects.get_or_create(name="Blank Scope Staff")
         mobile_user.groups.add(staff_group)
         assigned_case = Case.objects.create(
@@ -212,7 +219,14 @@ class MobileApiTests(APITestCase):
 
     def test_case_list_calls_context_allows_note_add_role_to_use_all_scope(self):
         caller = get_user_model().objects.create_user(username="calls-scope-mobile", password="pass")
-        RoleSetting.objects.update_or_create(role_name="Calls Scope", defaults={"can_note_add": True})
+        RoleSetting.objects.update_or_create(
+            role_name="Calls Scope",
+            defaults={
+                "case_data_scope": CaseDataScope.ASSIGNED,
+                "can_access_call_queue": True,
+                "can_note_add": True,
+            },
+        )
         calls_group, _ = Group.objects.get_or_create(name="Calls Scope")
         caller.groups.add(calls_group)
         unassigned_case = Case.objects.create(
@@ -288,7 +302,10 @@ class MobileApiTests(APITestCase):
 
     def test_case_list_calls_context_does_not_bypass_scope_without_note_add_permission(self):
         mobile_user = get_user_model().objects.create_user(username="calls-scope-blocked", password="pass")
-        RoleSetting.objects.update_or_create(role_name="No Calls Scope", defaults={"can_task_edit": True})
+        RoleSetting.objects.update_or_create(
+            role_name="No Calls Scope",
+            defaults={"case_data_scope": CaseDataScope.ASSIGNED, "can_task_edit": True},
+        )
         staff_group, _ = Group.objects.get_or_create(name="No Calls Scope")
         mobile_user.groups.add(staff_group)
         assigned_case = Case.objects.create(
@@ -373,7 +390,10 @@ class MobileApiTests(APITestCase):
 
     def test_case_list_defaults_to_me_scope_for_non_doctor_role(self):
         mobile_user = get_user_model().objects.create_user(username="staff-mobile", password="pass")
-        RoleSetting.objects.update_or_create(role_name="Mobile Staff", defaults={"can_task_edit": True})
+        RoleSetting.objects.update_or_create(
+            role_name="Mobile Staff",
+            defaults={"case_data_scope": CaseDataScope.ASSIGNED, "can_task_edit": True},
+        )
         staff_group, _ = Group.objects.get_or_create(name="Mobile Staff")
         mobile_user.groups.add(staff_group)
         assigned_case = Case.objects.create(
@@ -424,7 +444,11 @@ class MobileApiTests(APITestCase):
 
     def test_direct_case_task_vitals_and_patient_routes_enforce_case_scope(self):
         scoped_user = get_user_model().objects.create_user(username="scoped-api-user", password="pass")
-        RoleSetting.objects.create(role_name="Scoped API Staff", can_task_edit=True)
+        RoleSetting.objects.create(
+            role_name="Scoped API Staff",
+            case_data_scope=CaseDataScope.ASSIGNED,
+            can_task_edit=True,
+        )
         scoped_group = Group.objects.create(name="Scoped API Staff")
         scoped_user.groups.add(scoped_group)
         Task.objects.create(
@@ -492,7 +516,12 @@ class MobileApiTests(APITestCase):
 
     def test_direct_case_route_allows_only_current_call_queue_for_callers(self):
         caller = get_user_model().objects.create_user(username="scoped-api-caller", password="pass")
-        RoleSetting.objects.create(role_name="Scoped API Caller", can_note_add=True)
+        RoleSetting.objects.create(
+            role_name="Scoped API Caller",
+            case_data_scope=CaseDataScope.NONE,
+            can_access_call_queue=True,
+            can_note_add=True,
+        )
         caller_group = Group.objects.create(name="Scoped API Caller")
         caller.groups.add(caller_group)
         queue_case = Case.objects.create(

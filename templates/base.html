@@ -123,7 +123,7 @@
       .page-link:focus,
       .form-check-input:focus,
       .btn:focus-visible {
-        border-color: var(--theme-shell-link);
+        border-color: var(--theme-shell-focus-indicator);
         box-shadow: 0 0 0 0.25rem var(--theme-shell-focus-shadow);
       }
 
@@ -243,7 +243,7 @@
       }
 
       .btn-outline-primary {
-        color: var(--theme-buttons-primary-bg);
+        color: var(--theme-buttons-primary-outline-text);
         border-color: var(--theme-buttons-primary-border);
       }
 
@@ -255,8 +255,21 @@
         border-color: var(--theme-buttons-primary-border) !important;
       }
 
+      .btn-outline-success {
+        color: var(--theme-buttons-success-outline-text);
+        border-color: var(--theme-buttons-success-border);
+      }
+
+      .btn-outline-success:hover,
+      .btn-outline-success:focus-visible,
+      .btn-outline-success:active {
+        color: var(--theme-buttons-success-text) !important;
+        background-color: var(--theme-buttons-success-bg) !important;
+        border-color: var(--theme-buttons-success-border) !important;
+      }
+
       .btn-outline-secondary {
-        color: var(--theme-buttons-secondary-bg);
+        color: var(--theme-buttons-secondary-outline-text);
         border-color: var(--theme-buttons-secondary-border);
       }
 
@@ -269,7 +282,7 @@
       }
 
       .btn-outline-warning {
-        color: var(--theme-buttons-warning-bg);
+        color: var(--theme-buttons-warning-outline-text);
         border-color: var(--theme-buttons-warning-border);
       }
 
@@ -282,7 +295,7 @@
       }
 
       .btn-outline-danger {
-        color: var(--theme-buttons-danger-bg);
+        color: var(--theme-buttons-danger-outline-text);
         border-color: var(--theme-buttons-danger-border);
       }
 
@@ -295,7 +308,7 @@
       }
 
       .btn-outline-light {
-        color: var(--theme-buttons-light-text);
+        color: var(--theme-buttons-light-outline-text);
         border-color: var(--theme-buttons-light-border);
       }
 
@@ -1395,6 +1408,11 @@
           font-size: 0.95rem;
         }
       }
+
+      body.app-shell :focus-visible {
+        outline: 2px solid var(--theme-shell-focus-indicator);
+        outline-offset: 2px;
+      }
     </style>
     {% block extra_head %}{% endblock %}
   </head>
@@ -1560,7 +1578,7 @@
     <script src="{% static 'patients/vendor/bootstrap/5.3.3/bootstrap.bundle.min.js' %}"></script>
     <script
       type="module"
-      src="{% static 'patients/vendor/crayons/4.1.0/dist/crayons/crayons.esm.js' %}"
+      src="{% static 'patients/vendor/crayons/4.1.0/dist/crayons/crayons-csp-loader.js' %}"
     ></script>
     <script
       nomodule
@@ -1589,7 +1607,8 @@
 
           let activeIndex = -1;
           let currentResults = [];
-          let requestId = 0;
+          let requestGeneration = 0;
+          let activeSearchController = null;
           let filterOpen = false;
           let optionSequence = 0;
           const defaultPlaceholder = "Search patients or cases...";
@@ -1916,17 +1935,14 @@
             announce(`${results.length} matching result${results.length === 1 ? "" : "s"} available.`);
           };
 
-          const performSearch = async () => {
-            const query = input.value.trim();
-            if (query.length < 2) {
-              closeResults();
-              announce("");
+          const performSearch = async (generation, query, categories) => {
+            if (generation !== requestGeneration || input.value.trim() !== query) {
               return;
             }
-            const categories = selectedCategories();
             const params = new URLSearchParams({ q: query });
             categories.forEach((category) => params.append("category", category));
-            const myRequest = ++requestId;
+            const controller = new AbortController();
+            activeSearchController = controller;
             input.setAttribute("aria-busy", "true");
             dropdown.setAttribute("aria-busy", "true");
             announce("Searching patients and cases.");
@@ -1934,12 +1950,13 @@
             try {
               const response = await fetch(`{% url 'patients:universal_case_search' %}?${params.toString()}`, {
                 headers: { "X-Requested-With": "XMLHttpRequest" },
+                signal: controller.signal,
               });
               if (!response.ok) {
                 throw new Error("Search request failed.");
               }
               const payload = await response.json();
-              if (myRequest !== requestId) {
+              if (generation !== requestGeneration || input.value.trim() !== query) {
                 return;
               }
               let results = payload.results || [];
@@ -1951,14 +1968,20 @@
               }
               renderResults(results, query, categories);
             } catch (error) {
-              if (myRequest === requestId) {
+              if (error?.name === "AbortError") {
+                return;
+              }
+              if (generation === requestGeneration && input.value.trim() === query) {
                 closeResults();
                 announce("Search is unavailable. Try again.");
               }
             } finally {
-              if (myRequest === requestId) {
+              if (generation === requestGeneration) {
                 input.removeAttribute("aria-busy");
                 dropdown.removeAttribute("aria-busy");
+                if (activeSearchController === controller) {
+                  activeSearchController = null;
+                }
               }
             }
           };
@@ -1966,9 +1989,34 @@
           let timer = null;
           const debouncedSearch = () => {
             clearTimeout(timer);
+            requestGeneration += 1;
+            activeSearchController?.abort();
+            activeSearchController = null;
+            input.removeAttribute("aria-busy");
+            dropdown.removeAttribute("aria-busy");
+            closeResults();
+
+            const generation = requestGeneration;
+            const query = input.value.trim();
+            const categories = selectedCategories();
+            if (query.length < 2) {
+              announce("");
+              return;
+            }
             timer = setTimeout(() => {
-              performSearch();
+              performSearch(generation, query, categories);
             }, 180);
+          };
+
+          const cancelSearch = () => {
+            clearTimeout(timer);
+            requestGeneration += 1;
+            activeSearchController?.abort();
+            activeSearchController = null;
+            input.removeAttribute("aria-busy");
+            dropdown.removeAttribute("aria-busy");
+            closeResults();
+            announce("");
           };
 
           input.addEventListener("input", () => {
@@ -1998,7 +2046,7 @@
             }
             if (event.key === "Escape") {
               setFilterOpen(false);
-              closeResults();
+              cancelSearch();
               return;
             }
             const options = availableOptions();
@@ -2079,7 +2127,7 @@
           document.addEventListener("click", (event) => {
             if (!container.contains(event.target)) {
               setFilterOpen(false);
-              closeResults();
+              cancelSearch();
               searchField?.classList.remove("is-focused");
             }
           });

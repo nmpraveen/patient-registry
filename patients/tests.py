@@ -73,6 +73,7 @@ from .models import (
     plan_default_tasks,
 )
 from .theme import (
+    contrast_safe_hover_color,
     field_name_to_css_var,
     flatten_theme_tokens,
     merge_theme_tokens,
@@ -490,7 +491,10 @@ class ThemeSystemTests(TestCase):
         )
 
         self.assertEqual(merged["buttons"]["primary"]["border"], mix_colors("#112233", "#ffffff", 0.20))
-        self.assertEqual(merged["buttons"]["primary"]["hover_bg"], mix_colors("#112233", "#ffffff", 0.10))
+        self.assertEqual(
+            merged["buttons"]["primary"]["hover_bg"],
+            contrast_safe_hover_color("#112233", "#ffffff", 0.10),
+        )
         self.assertEqual(merged["buttons"]["success"]["bg"], "#80cbc4")
         self.assertEqual(merged["vitals_chart"]["blood_pressure_fill"], rgba_string("#112233", 0.18))
 
@@ -526,7 +530,7 @@ class ThemeSystemTests(TestCase):
         custom = DepartmentConfig.objects.create(name="Custom Clinic")
 
         self.assertEqual(anc.theme_bg_color, "#ffe0b2")
-        self.assertEqual(anc.theme_text_color, "#bf360c")
+        self.assertEqual(anc.theme_text_color, "#b8320a")
         self.assertEqual(custom.theme_bg_color, "#e2e3e5")
         self.assertEqual(custom.theme_text_color, "#41464b")
 
@@ -6470,7 +6474,7 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(theme_settings.tokens["nav"]["bg"], "#fffdf8")
         self.assertEqual(theme_settings.tokens["dashboard"]["recent"]["bg"], "#d1c4e9")
         self.assertEqual(anc.theme_bg_color, "#ffe0b2")
-        self.assertEqual(anc.theme_text_color, "#bf360c")
+        self.assertEqual(anc.theme_text_color, "#b8320a")
         self.assertEqual(surgery.theme_bg_color, "#b2dfdb")
         self.assertEqual(surgery.theme_text_color, "#004d40")
         self.assertEqual(medicine.theme_bg_color, "#c5cae9")

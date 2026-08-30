@@ -20,7 +20,7 @@ class BrowserSecurityMiddleware:
             "object-src 'none'",
             "frame-ancestors 'none'",
             "form-action 'self'",
-            f"script-src 'self' blob: 'nonce-{nonce}'",
+            f"script-src 'self' 'nonce-{nonce}'",
             "script-src-attr 'none'",
             "style-src 'self' 'unsafe-inline'",
             (
@@ -45,11 +45,12 @@ class BrowserSecurityMiddleware:
         response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
         response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
 
-        user = getattr(request, "user", None)
-        if getattr(user, "is_authenticated", False):
-            response.headers["Cache-Control"] = "private, no-store, max-age=0"
-            response.headers["Pragma"] = "no-cache"
-            response.headers["Expires"] = "0"
-            patch_vary_headers(response, ("Cookie", "Authorization"))
+        # Responses can contain PHI, bearer tokens, or pending-device state
+        # before Django considers the caller logged in. Keep every dynamic
+        # response private and non-cacheable, including errors and redirects.
+        response.headers["Cache-Control"] = "private, no-store, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        patch_vary_headers(response, ("Cookie", "Authorization"))
 
         return response

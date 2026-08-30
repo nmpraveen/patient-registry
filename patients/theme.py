@@ -7,7 +7,7 @@ HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 NEUTRAL_CATEGORY_THEME = {"bg": "#e2e3e5", "text": "#41464b"}
 
 CATEGORY_THEME_DEFAULTS = {
-    "ANC": {"bg": "#ffe0b2", "text": "#bf360c"},
+    "ANC": {"bg": "#ffe0b2", "text": "#b8320a"},
     "SURGERY": {"bg": "#b2dfdb", "text": "#004d40"},
     "MEDICINE": {"bg": "#c5cae9", "text": "#1a237e"},
 }
@@ -20,8 +20,9 @@ THEME_DEFAULTS = {
         "surface_text": "#1f2430",
         "surface_border": "#e5dfd4",
         "muted_text": "#6d6a63",
-        "link": "#1e88e5",
+        "link": "#0b5cad",
         "link_hover": "#0d47a1",
+        "focus_indicator": "#0b5cad",
         "shadow": "#1a237e",
     },
     "nav": {
@@ -38,17 +39,17 @@ THEME_DEFAULTS = {
         "bg": "#3949ab",
     },
     "buttons": {
-        "primary": {"bg": "#64b5f6", "text": "#0d47a1"},
-        "success": {"bg": "#80cbc4", "text": "#004d40"},
-        "secondary": {"bg": "#b39ddb", "text": "#4a148c"},
-        "warning": {"bg": "#ffab91", "text": "#bf360c"},
-        "danger": {"bg": "#ef9a9a", "text": "#b71c1c"},
-        "light": {"bg": "#f7f4ef", "text": "#1a237e"},
+        "primary": {"bg": "#64b5f6", "text": "#073763", "outline_text": "#0b5cad"},
+        "success": {"bg": "#80cbc4", "text": "#004d40", "outline_text": "#00695c"},
+        "secondary": {"bg": "#b39ddb", "text": "#4a148c", "outline_text": "#4a148c"},
+        "warning": {"bg": "#ffab91", "text": "#7f1d1d", "outline_text": "#8a2c0b"},
+        "danger": {"bg": "#ef9a9a", "text": "#7f1d1d", "outline_text": "#8b1e1e"},
+        "light": {"bg": "#f7f4ef", "text": "#1a237e", "outline_text": "#1a237e"},
     },
     "alerts": {
         "info": {"bg": "#bbdefb", "text": "#0d47a1"},
         "success": {"bg": "#dcedc8", "text": "#33691e"},
-        "warning": {"bg": "#ffe0b2", "text": "#bf360c"},
+        "warning": {"bg": "#ffe0b2", "text": "#b8320a"},
         "danger": {"bg": "#ffcdd2", "text": "#b71c1c"},
         "light": {"bg": "#f7f4ef", "text": "#5f5a52"},
     },
@@ -66,14 +67,14 @@ THEME_DEFAULTS = {
     },
     "task_status": {
         "scheduled": {"bg": "#bbdefb", "text": "#0d47a1"},
-        "awaiting_reports": {"bg": "#ffe0b2", "text": "#bf360c"},
+        "awaiting_reports": {"bg": "#ffe0b2", "text": "#b8320a"},
         "completed": {"bg": "#dcedc8", "text": "#33691e"},
         "cancelled": {"bg": "#ffcdd2", "text": "#b71c1c"},
     },
     "vitals_status": {
         "low": {"bg": "#ffcdd2", "text": "#b71c1c"},
         "normal": {"bg": "#dcedc8", "text": "#33691e"},
-        "high": {"bg": "#ffe0b2", "text": "#bf360c"},
+        "high": {"bg": "#ffe0b2", "text": "#b8320a"},
         "neutral": {"bg": "#bbdefb", "text": "#0d47a1"},
         "na": {"bg": "#c5cae9", "text": "#1a237e"},
     },
@@ -90,9 +91,9 @@ THEME_DEFAULTS = {
         "result_hover_bg": "#bbdefb",
         "tag_bg": "#d1c4e9",
         "tag_text": "#4a148c",
-        "gender_female": {"bg": "#fdf0ec", "text": "#d06f67"},
-        "gender_male": {"bg": "#e8f0f7", "text": "#5b8db8"},
-        "gender_other": {"bg": "#f5f0ea", "text": "#7a7067"},
+        "gender_female": {"bg": "#fdf0ec", "text": "#9c3f3f"},
+        "gender_male": {"bg": "#e8f0f7", "text": "#315f86"},
+        "gender_other": {"bg": "#f5f0ea", "text": "#655c55"},
     },
 }
 
@@ -130,15 +131,17 @@ PAIR_GROUPS = (
     ("search", "gender_other"),
 )
 
+BUTTON_OUTLINE_GROUPS = ("primary", "success", "secondary", "warning", "danger", "light")
+
 THEME_CONTRAST_RULES = (
     ("shell__page_text", "shell__page_bg", 4.5, "Page text"),
     ("shell__surface_text", "shell__surface_bg", 4.5, "Surface text"),
     ("shell__muted_text", "shell__page_bg", 4.5, "Muted text on page"),
     ("shell__muted_text", "shell__surface_bg", 4.5, "Muted text on surfaces"),
-    ("shell__link", "shell__page_bg", 3.0, "Page link and focus color"),
-    ("shell__link", "shell__surface_bg", 3.0, "Surface link and focus color"),
-    ("shell__link_hover", "shell__page_bg", 3.0, "Page link hover color"),
-    ("shell__link_hover", "shell__surface_bg", 3.0, "Surface link hover color"),
+    ("shell__link", "shell__page_bg", 4.5, "Page link text"),
+    ("shell__link", "shell__surface_bg", 4.5, "Surface link text"),
+    ("shell__link_hover", "shell__page_bg", 4.5, "Page link hover text"),
+    ("shell__link_hover", "shell__surface_bg", 4.5, "Surface link hover text"),
     ("nav__text", "nav__bg", 4.5, "Navigation text"),
     ("nav__control_text", "nav__control_bg", 4.5, "Navigation control text"),
     ("nav__logout_text", "nav__logout_bg", 4.5, "Logout control text"),
@@ -149,10 +152,39 @@ THEME_CONTRAST_RULES = (
     (
         f"{section_name}__{token_name}__text",
         f"{section_name}__{token_name}__bg",
-        3.0,
+        4.5,
         f"{section_name.replace('_', ' ').title()} {token_name.replace('_', ' ').title()}",
     )
     for section_name, token_name in PAIR_GROUPS
+ ) + tuple(
+    (
+        f"buttons__{token_name}__outline_text",
+        background_field,
+        4.5,
+        f"{token_name.replace('_', ' ').title()} outline button text on {surface_name}",
+    )
+    for token_name in BUTTON_OUTLINE_GROUPS
+    for background_field, surface_name in (
+        ("shell__page_bg", "page"),
+        ("shell__surface_bg", "surface"),
+    )
+)
+
+THEME_DERIVED_TEXT_CONTRAST_RULES = tuple(
+    (
+        f"{section_name}__{token_name}__text",
+        f"{section_name}__{token_name}__bg",
+        0.10,
+        4.5,
+        f"{section_name.replace('_', ' ').title()} {token_name.replace('_', ' ').title()} hover/active",
+    )
+    for section_name, token_name in PAIR_GROUPS
+)
+
+THEME_FOCUS_CONTRAST_RULES = (
+    ("shell__focus_indicator", "shell__page_bg", 3.0, "Page focus indicator"),
+    ("shell__focus_indicator", "shell__surface_bg", 3.0, "Surface focus indicator"),
+    ("shell__focus_indicator", "nav__bg", 3.0, "Navigation focus indicator"),
 )
 
 CHART_FIELDS = (
@@ -175,6 +207,7 @@ THEME_FORM_SECTIONS = [
             {"label": "Muted Text", "fields": [{"name": "shell__muted_text", "label": "Color"}]},
             {"label": "Link", "fields": [{"name": "shell__link", "label": "Color"}]},
             {"label": "Link Hover", "fields": [{"name": "shell__link_hover", "label": "Color"}]},
+            {"label": "Focus Indicator", "fields": [{"name": "shell__focus_indicator", "label": "Color"}]},
             {"label": "Shadow", "fields": [{"name": "shell__shadow", "label": "Color"}]},
             {"label": "Nav Background", "fields": [{"name": "nav__bg", "label": "Color"}]},
             {"label": "Nav Text", "fields": [{"name": "nav__text", "label": "Color"}]},
@@ -190,12 +223,12 @@ THEME_FORM_SECTIONS = [
     {
         "title": "Buttons & Alerts",
         "rows": [
-            {"label": "Primary Button", "fields": [{"name": "buttons__primary__bg", "label": "Background"}, {"name": "buttons__primary__text", "label": "Text"}]},
-            {"label": "Success Button", "fields": [{"name": "buttons__success__bg", "label": "Background"}, {"name": "buttons__success__text", "label": "Text"}]},
-            {"label": "Secondary Button", "fields": [{"name": "buttons__secondary__bg", "label": "Background"}, {"name": "buttons__secondary__text", "label": "Text"}]},
-            {"label": "Warning Button", "fields": [{"name": "buttons__warning__bg", "label": "Background"}, {"name": "buttons__warning__text", "label": "Text"}]},
-            {"label": "Danger Button", "fields": [{"name": "buttons__danger__bg", "label": "Background"}, {"name": "buttons__danger__text", "label": "Text"}]},
-            {"label": "Light Button", "fields": [{"name": "buttons__light__bg", "label": "Background"}, {"name": "buttons__light__text", "label": "Text"}]},
+            {"label": "Primary Button", "fields": [{"name": "buttons__primary__bg", "label": "Background"}, {"name": "buttons__primary__text", "label": "Text"}, {"name": "buttons__primary__outline_text", "label": "Outline Text"}]},
+            {"label": "Success Button", "fields": [{"name": "buttons__success__bg", "label": "Background"}, {"name": "buttons__success__text", "label": "Text"}, {"name": "buttons__success__outline_text", "label": "Outline Text"}]},
+            {"label": "Secondary Button", "fields": [{"name": "buttons__secondary__bg", "label": "Background"}, {"name": "buttons__secondary__text", "label": "Text"}, {"name": "buttons__secondary__outline_text", "label": "Outline Text"}]},
+            {"label": "Warning Button", "fields": [{"name": "buttons__warning__bg", "label": "Background"}, {"name": "buttons__warning__text", "label": "Text"}, {"name": "buttons__warning__outline_text", "label": "Outline Text"}]},
+            {"label": "Danger Button", "fields": [{"name": "buttons__danger__bg", "label": "Background"}, {"name": "buttons__danger__text", "label": "Text"}, {"name": "buttons__danger__outline_text", "label": "Outline Text"}]},
+            {"label": "Light Button", "fields": [{"name": "buttons__light__bg", "label": "Background"}, {"name": "buttons__light__text", "label": "Text"}, {"name": "buttons__light__outline_text", "label": "Outline Text"}]},
             {"label": "Info Alert", "fields": [{"name": "alerts__info__bg", "label": "Background"}, {"name": "alerts__info__text", "label": "Text"}]},
             {"label": "Success Alert", "fields": [{"name": "alerts__success__bg", "label": "Background"}, {"name": "alerts__success__text", "label": "Text"}]},
             {"label": "Warning Alert", "fields": [{"name": "alerts__warning__bg", "label": "Background"}, {"name": "alerts__warning__text", "label": "Text"}]},
@@ -326,6 +359,16 @@ def mix_colors(base_color, target_color, ratio):
     return rgb_to_hex(*mixed)
 
 
+def contrast_safe_hover_color(background_color, text_color, ratio=0.10):
+    """Derive an interaction background that increases text contrast."""
+    lighter_hover = mix_colors(background_color, "#ffffff", ratio)
+    darker_hover = mix_colors(background_color, "#000000", ratio)
+    return max(
+        (lighter_hover, darker_hover),
+        key=lambda color: contrast_ratio(text_color, color),
+    )
+
+
 def rgba_string(hex_color, alpha):
     red, green, blue = hex_to_rgb(hex_color)
     return f"rgba({red}, {green}, {blue}, {alpha})"
@@ -391,7 +434,7 @@ def add_theme_derivatives(tokens):
         resolved["shell"]["surface_text"],
         0.10,
     )
-    resolved["shell"]["page_focus_shadow"] = rgba_string(resolved["shell"]["link"], 0.25)
+    resolved["shell"]["page_focus_shadow"] = rgba_string(resolved["shell"]["focus_indicator"], 0.25)
     resolved["search"]["dropdown_border"] = mix_colors(
         resolved["search"]["dropdown_bg"],
         resolved["search"]["dropdown_text"],
@@ -406,7 +449,7 @@ def add_theme_derivatives(tokens):
     for section_name, token_name in PAIR_GROUPS:
         pair = resolved[section_name][token_name]
         pair["border"] = mix_colors(pair["bg"], pair["text"], 0.20)
-        pair["hover_bg"] = mix_colors(pair["bg"], pair["text"], 0.10)
+        pair["hover_bg"] = contrast_safe_hover_color(pair["bg"], pair["text"], 0.10)
         pair["focus_shadow"] = rgba_string(pair["bg"], 0.25)
 
     for chart_name in CHART_FIELDS:
@@ -431,6 +474,7 @@ def build_theme_css_vars(theme_tokens):
         "--theme-shell-muted-text": theme_tokens["shell"]["muted_text"],
         "--theme-shell-link": theme_tokens["shell"]["link"],
         "--theme-shell-link-hover": theme_tokens["shell"]["link_hover"],
+        "--theme-shell-focus-indicator": theme_tokens["shell"]["focus_indicator"],
         "--theme-shell-shadow-color": theme_tokens["shell"]["shadow"],
         "--theme-shell-shadow": theme_tokens["shell"]["shadow_rgba"],
         "--theme-shell-surface-hover-bg": theme_tokens["shell"]["surface_hover_bg"],
@@ -458,6 +502,8 @@ def build_theme_css_vars(theme_tokens):
         prefix = f"--theme-{section_name.replace('_', '-')}-{token_name.replace('_', '-')}"
         variables[f"{prefix}-bg"] = pair["bg"]
         variables[f"{prefix}-text"] = pair["text"]
+        if section_name == "buttons":
+            variables[f"{prefix}-outline-text"] = pair["outline_text"]
         variables[f"{prefix}-border"] = pair["border"]
         variables[f"{prefix}-hover-bg"] = pair["hover_bg"]
         variables[f"{prefix}-focus-shadow"] = pair["focus_shadow"]
@@ -474,7 +520,9 @@ def build_theme_category_colors(categories):
         "bg": NEUTRAL_CATEGORY_THEME["bg"],
         "text": NEUTRAL_CATEGORY_THEME["text"],
         "border": mix_colors(NEUTRAL_CATEGORY_THEME["bg"], NEUTRAL_CATEGORY_THEME["text"], 0.20),
-        "hover_bg": mix_colors(NEUTRAL_CATEGORY_THEME["bg"], NEUTRAL_CATEGORY_THEME["text"], 0.10),
+        "hover_bg": contrast_safe_hover_color(
+            NEUTRAL_CATEGORY_THEME["bg"], NEUTRAL_CATEGORY_THEME["text"], 0.10
+        ),
     }
     theme_map = {
         "by_id": {},
@@ -491,7 +539,7 @@ def build_theme_category_colors(categories):
             "bg": bg_color,
             "text": text_color,
             "border": mix_colors(bg_color, text_color, 0.20),
-            "hover_bg": mix_colors(bg_color, text_color, 0.10),
+            "hover_bg": contrast_safe_hover_color(bg_color, text_color, 0.10),
         }
         if getattr(category, "id", None) is not None:
             theme_map["by_id"][category.id] = color_pair

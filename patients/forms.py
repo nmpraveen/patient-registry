@@ -42,6 +42,9 @@ from .models import (
 from .theme import (
     THEME_FORM_SECTIONS,
     THEME_CONTRAST_RULES,
+    THEME_DERIVED_TEXT_CONTRAST_RULES,
+    THEME_FOCUS_CONTRAST_RULES,
+    contrast_safe_hover_color,
     contrast_ratio,
     field_name_to_css_var,
     flatten_theme_tokens,
@@ -1189,6 +1192,29 @@ class ThemeSettingsForm(forms.Form):
                     text_field,
                     f"{label} contrast is {ratio:.2f}:1; minimum {minimum_ratio:.1f}:1.",
                 )
+        for indicator_field, background_field, minimum_ratio, label in THEME_FOCUS_CONTRAST_RULES:
+            indicator_color = cleaned_data.get(indicator_field)
+            background_color = cleaned_data.get(background_field)
+            if not indicator_color or not background_color:
+                continue
+            ratio = contrast_ratio(indicator_color, background_color)
+            if ratio < minimum_ratio:
+                self.add_error(
+                    indicator_field,
+                    f"{label} contrast is {ratio:.2f}:1; minimum {minimum_ratio:.1f}:1.",
+                )
+        for text_field, background_field, mix_ratio, minimum_ratio, label in THEME_DERIVED_TEXT_CONTRAST_RULES:
+            text_color = cleaned_data.get(text_field)
+            background_color = cleaned_data.get(background_field)
+            if not text_color or not background_color:
+                continue
+            interaction_background = contrast_safe_hover_color(background_color, text_color, mix_ratio)
+            ratio = contrast_ratio(text_color, interaction_background)
+            if ratio < minimum_ratio:
+                self.add_error(
+                    text_field,
+                    f"{label} contrast is {ratio:.2f}:1; minimum {minimum_ratio:.1f}:1.",
+                )
         return cleaned_data
 
     def save(self):
@@ -1229,11 +1255,17 @@ class DepartmentThemeForm(forms.ModelForm):
         background_color = cleaned_data.get("theme_bg_color")
         text_color = cleaned_data.get("theme_text_color")
         if background_color and text_color:
-            ratio = contrast_ratio(background_color, text_color)
-            if ratio < 3.0:
+            ratios = (
+                contrast_ratio(background_color, text_color),
+                contrast_ratio(
+                    contrast_safe_hover_color(background_color, text_color, 0.10),
+                    text_color,
+                ),
+            )
+            if min(ratios) < 4.5:
                 self.add_error(
                     "theme_text_color",
-                    f"Category contrast is {ratio:.2f}:1; minimum 3.0:1.",
+                    f"Category text and hover contrast must each be at least 4.5:1 (lowest {min(ratios):.2f}:1).",
                 )
         return cleaned_data
 

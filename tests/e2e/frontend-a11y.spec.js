@@ -16,6 +16,7 @@ async function login(page) {
     page.waitForURL(/\/patients\/$/),
     page.getByRole("button", { name: /log in|sign in/i }).click(),
   ]);
+  await page.waitForLoadState("networkidle");
 }
 
 async function firstHref(page, selector) {
@@ -41,7 +42,11 @@ test.beforeEach(async ({ page }, testInfo) => {
   });
   page.on("pageerror", (error) => testInfo.errorsFromPage.push(`pageerror: ${error.message}`));
   page.on("requestfailed", (request) => {
-    testInfo.errorsFromPage.push(`requestfailed: ${request.method()} ${request.url()} ${request.failure()?.errorText || ""}`);
+    const errorText = request.failure()?.errorText || "";
+    if (request.url().includes("/patients/cases/universal-search/") && errorText.includes("ERR_ABORTED")) {
+      return;
+    }
+    testInfo.errorsFromPage.push(`requestfailed: ${request.method()} ${request.url()} ${errorText}`);
   });
   await login(page);
 });
@@ -52,8 +57,10 @@ test.afterEach(async ({}, testInfo) => {
 
 test("case and patient detail layouts do not overflow the required viewport", async ({ page }, testInfo) => {
   await page.goto("/patients/cases/");
+  await page.waitForLoadState("networkidle");
   const caseHref = await firstHref(page, 'tbody a[href^="/patients/cases/"]');
   await page.goto(caseHref);
+  await page.waitForLoadState("networkidle");
   await expect(page.getByTestId("case-detail-shell")).toBeVisible();
   await expectNoHorizontalDocumentOverflow(page);
   const taskActionBoxes = await page.locator(".case-task-card__actions .case-task-action:visible").evaluateAll((buttons) => (
@@ -79,8 +86,10 @@ test("case and patient detail layouts do not overflow the required viewport", as
   }
 
   await page.goto("/patients/patients/");
+  await page.waitForLoadState("networkidle");
   const patientHref = await firstHref(page, 'tbody a[href^="/patients/patients/"]');
   await page.goto(patientHref);
+  await page.waitForLoadState("networkidle");
   await expectNoHorizontalDocumentOverflow(page);
 
   const mergeSelect = page.getByLabel("Merge into patient");
@@ -114,6 +123,68 @@ test("universal search exposes keyboard-operable combobox and live state", async
   await expect(page.locator("#global-search-status")).not.toHaveText("");
   await search.press("Escape");
   await expect(search).toHaveAttribute("aria-expanded", "false");
+});
+
+test("universal search discards aborted and out-of-order PHI responses", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "chromium-desktop", "Async race behavior is covered once at desktop width.");
+
+  let releaseShortened;
+  let markShortenedRequested;
+  const shortenedRequested = new Promise((resolve) => { markShortenedRequested = resolve; });
+  let releaseChanged;
+  let markChangedRequested;
+  const changedRequested = new Promise((resolve) => { markChangedRequested = resolve; });
+
+  await page.route("**/patients/cases/universal-search/**", async (route) => {
+    const query = new URL(route.request().url()).searchParams.get("q");
+    if (query === "Alpha") {
+      markShortenedRequested();
+      await new Promise((resolve) => { releaseShortened = resolve; });
+    } else if (query === "First") {
+      markChangedRequested();
+      await new Promise((resolve) => { releaseChanged = resolve; });
+    }
+    const name = query === "Second" ? "CURRENT RESULT" : `STALE PHI ${query}`;
+    try {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          results: [{
+            name,
+            uhid: `UH-${query}`,
+            detail_url: "/patients/patients/1/",
+            tags: [{ kind: "record_type", label: "Patient" }],
+          }],
+        }),
+      });
+    } catch (error) {
+      if (!String(error).includes("aborted")) throw error;
+    }
+  });
+
+  await page.goto("/patients/");
+  const search = page.getByRole("combobox", { name: "Search patients or cases" });
+  const listbox = page.getByRole("listbox", { name: "Patient and case search results" });
+
+  await search.fill("Alpha");
+  await shortenedRequested;
+  await search.fill("A");
+  await expect(listbox).toBeHidden();
+  await expect(search).toHaveAttribute("aria-expanded", "false");
+  releaseShortened();
+  await page.waitForTimeout(100);
+  await expect(page.getByText("STALE PHI Alpha")).toHaveCount(0);
+  await expect(listbox).toBeHidden();
+
+  await search.fill("First");
+  await changedRequested;
+  await search.fill("Second");
+  await expect(page.getByText("CURRENT RESULT")).toBeVisible();
+  releaseChanged();
+  await page.waitForTimeout(100);
+  await expect(page.getByText("STALE PHI First")).toHaveCount(0);
+  await expect(page.getByText("CURRENT RESULT")).toBeVisible();
 });
 
 test("form IDs and call-sheet selections expose unique accessible names", async ({ page }, testInfo) => {
@@ -156,7 +227,11 @@ test("merge review names both UHIDs, affected cases, and stays within its contai
   await expect(page.getByRole("heading", { name: "Review Patient Merge" })).toBeVisible();
   await expect(page.getByText("Source UHID", { exact: true })).toBeVisible();
   await expect(page.getByText("Target UHID", { exact: true })).toBeVisible();
-  await expect(page.getByText("Affected cases", { exact: true })).toBeVisible();
+  await expect(page.getByText("Source cases", { exact: true })).toBeVisible();
+  await expect(page.getByText("Target cases", { exact: true })).toBeVisible();
+  await expect(page.getByText("Complete affected set", { exact: true })).toBeVisible();
+  await expect(page.getByText("Source - will move", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("Target - remains", { exact: true }).first()).toBeVisible();
   await expect(page.getByLabel("Type target UHID to confirm")).toBeVisible();
   await expectNoHorizontalDocumentOverflow(page);
   await page.screenshot({
@@ -170,6 +245,7 @@ test("CSP loads only local pinned assets and theme contrast preview remains acti
   const externalRequests = [];
   page.on("request", (request) => {
     if (request.url().startsWith("blob:")) {
+      externalRequests.push(request.url());
       return;
     }
     const requestUrl = new URL(request.url());
@@ -180,20 +256,36 @@ test("CSP loads only local pinned assets and theme contrast preview remains acti
 
   const response = await page.goto("/patients/cases/new/");
   const csp = response.headers()["content-security-policy"];
-  expect(csp).toContain("script-src 'self' blob:");
+  expect(csp).toContain("script-src 'self' 'nonce-");
+  expect(csp).not.toContain("script-src 'self' blob:");
   expect(csp).toContain("script-src-attr 'none'");
   await page.waitForFunction(() => customElements.get("fw-datepicker"));
   await expect(page.locator('script[src*="vendor/crayons/4.1.0"]')).toHaveCount(2);
+  await expect(page.locator('script[src*="crayons-csp-loader.js"]')).toHaveCount(1);
   await expect(page.locator('script[src*="cdn.jsdelivr.net"]')).toHaveCount(0);
 
   await page.goto("/patients/settings/theme/");
   const contrastSummary = page.locator("[data-contrast-summary]");
   await expect(contrastSummary).toBeVisible();
   await expect(contrastSummary).toContainText(/contrast/i);
-  const pageTextInput = page.locator('[name="shell__page_text"]');
-  const pageBackground = await page.locator('[name="shell__page_bg"]').inputValue();
-  await pageTextInput.fill(pageBackground);
-  await expect(pageTextInput).toHaveAttribute("aria-invalid", "true");
+  await expect(contrastSummary).toContainText("Pass");
+  const primaryTextInput = page.locator('[name="buttons__primary__text"]');
+  await primaryTextInput.fill("#0d47a1");
+  await expect(primaryTextInput).toHaveAttribute("aria-invalid", "true");
+  await expect(page.locator("[data-theme-save]")).toBeDisabled();
+  await primaryTextInput.fill("#073763");
+  await expect(contrastSummary).toContainText("Pass");
+
+  const primaryOutlineInput = page.locator('[name="buttons__primary__outline_text"]');
+  await primaryOutlineInput.fill("#64b5f6");
+  await expect(primaryOutlineInput).toHaveAttribute("aria-invalid", "true");
+  await expect(page.locator("[data-theme-save]")).toBeDisabled();
+  await primaryOutlineInput.fill("#0b5cad");
+  await expect(contrastSummary).toContainText("Pass");
+
+  const focusIndicatorInput = page.locator('[name="shell__focus_indicator"]');
+  await focusIndicatorInput.fill("#959595");
+  await expect(focusIndicatorInput).toHaveAttribute("aria-invalid", "true");
   await expect(page.locator("[data-theme-save]")).toBeDisabled();
   expect(externalRequests).toEqual([]);
 });

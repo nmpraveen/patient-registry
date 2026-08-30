@@ -80,7 +80,7 @@ If `docker-compose.override.yml` exists locally, the local-dev PowerShell wrappe
 - Live encrypted canary `medtrack-prod-canary-20260811T165254Z.tar.age`, independently downloaded, checksum-verified, decrypted off VPS, restored into PostgreSQL 16.14, and validated by the exact deployed Django commit.
 - Pull-only Synology mirror at `Home/Backups/MEDTRACK` with a read-only SFTP export, networked incoming-only fetcher, network-disabled archive promoter, hard space/transfer ceilings, and no automatic deletion.
 - NAS-sourced restore proof for the same canary: external and internal checksums, PostgreSQL restore, exact-commit Django checks, ORM queries, and login HTTP 200 all passed; decrypted scratch material was removed.
-- Unreleased website frontend hardening: locally pinned authenticated-page assets, nonce/hash CSP and browser headers, authenticated no-store caching, unique form IDs, labeled controls, combobox semantics, explicit merge review, theme contrast enforcement, responsive overflow fixes, and browser regressions.
+- Unreleased website frontend hardening: hash-verified locally pinned assets, nonce/hash CSP without blob scripts, browser headers, universal dynamic-response no-store caching, unique form IDs, labeled controls, race-safe combobox semantics, complete affected-set merge review, text/interaction/focus contrast enforcement, responsive overflow fixes, and browser regressions.
 
 ## Not Done
 
@@ -106,7 +106,7 @@ If `docker-compose.override.yml` exists locally, the local-dev PowerShell wrappe
 - `MarkUS_Latest_API37` can appear attached while stuck behind a locked/black SystemUI state. For quick manual starts, switch to `MarkUS_Local` instead of debugging the APK.
 - Firebase readiness depends on external console configuration and local secrets that are intentionally excluded from Git.
 - The website-side authorization containment is live, but overall MEDTRACK production readiness remains NO-GO for Android until account isolation, generic push payloads, and the remaining release/recovery gates are completed.
-- The unreleased CSP still permits inline style attributes because the existing theme system applies per-category CSS variables that way. Executable scripts require a nonce, and the one runtime-generated Crayons style block is limited to a pinned SHA-256 hash; upgrading Crayons requires revalidating that hash and the browser suite.
+- The unreleased CSP still permits inline style attributes because the existing theme system applies per-category CSS variables that way. Executable scripts are self-hosted and nonce-bound, and the one runtime-generated Crayons style block is limited to a pinned SHA-256 hash; upgrading Crayons requires reviewing the vendor integrity manifest, revalidating that hash, and rerunning the browser suite.
 
 ## Important Generated Outputs
 

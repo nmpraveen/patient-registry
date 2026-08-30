@@ -846,52 +846,84 @@
       "weight",
       "hemoglobin",
     ];
-    const contrastRules = [
+    const textContrastRules = [
       ["shell__page_text", "shell__page_bg", 4.5],
       ["shell__surface_text", "shell__surface_bg", 4.5],
       ["shell__muted_text", "shell__page_bg", 4.5],
       ["shell__muted_text", "shell__surface_bg", 4.5],
-      ["shell__link", "shell__page_bg", 3.0],
-      ["shell__link", "shell__surface_bg", 3.0],
-      ["shell__link_hover", "shell__page_bg", 3.0],
-      ["shell__link_hover", "shell__surface_bg", 3.0],
+      ["shell__link", "shell__page_bg", 4.5],
+      ["shell__link", "shell__surface_bg", 4.5],
+      ["shell__link_hover", "shell__page_bg", 4.5],
+      ["shell__link_hover", "shell__surface_bg", 4.5],
       ["nav__text", "nav__bg", 4.5],
       ["nav__control_text", "nav__control_bg", 4.5],
       ["nav__logout_text", "nav__logout_bg", 4.5],
       ["search__dropdown_text", "search__dropdown_bg", 4.5],
       ["search__dropdown_text", "search__result_hover_bg", 4.5],
       ["search__tag_text", "search__tag_bg", 4.5],
-      ["buttons__primary__text", "buttons__primary__bg", 3.0],
-      ["buttons__success__text", "buttons__success__bg", 3.0],
-      ["buttons__secondary__text", "buttons__secondary__bg", 3.0],
-      ["buttons__warning__text", "buttons__warning__bg", 3.0],
-      ["buttons__danger__text", "buttons__danger__bg", 3.0],
-      ["buttons__light__text", "buttons__light__bg", 3.0],
-      ["alerts__info__text", "alerts__info__bg", 3.0],
-      ["alerts__success__text", "alerts__success__bg", 3.0],
-      ["alerts__warning__text", "alerts__warning__bg", 3.0],
-      ["alerts__danger__text", "alerts__danger__bg", 3.0],
-      ["alerts__light__text", "alerts__light__bg", 3.0],
-      ["dashboard__today__text", "dashboard__today__bg", 3.0],
-      ["dashboard__recent__text", "dashboard__recent__bg", 3.0],
-      ["dashboard__upcoming__text", "dashboard__upcoming__bg", 3.0],
-      ["dashboard__overdue__text", "dashboard__overdue__bg", 3.0],
-      ["case_status__active__text", "case_status__active__bg", 3.0],
-      ["case_status__completed__text", "case_status__completed__bg", 3.0],
-      ["case_status__cancelled__text", "case_status__cancelled__bg", 3.0],
-      ["case_status__loss_to_follow_up__text", "case_status__loss_to_follow_up__bg", 3.0],
-      ["task_status__scheduled__text", "task_status__scheduled__bg", 3.0],
-      ["task_status__awaiting_reports__text", "task_status__awaiting_reports__bg", 3.0],
-      ["task_status__completed__text", "task_status__completed__bg", 3.0],
-      ["task_status__cancelled__text", "task_status__cancelled__bg", 3.0],
-      ["vitals_status__low__text", "vitals_status__low__bg", 3.0],
-      ["vitals_status__normal__text", "vitals_status__normal__bg", 3.0],
-      ["vitals_status__high__text", "vitals_status__high__bg", 3.0],
-      ["vitals_status__neutral__text", "vitals_status__neutral__bg", 3.0],
-      ["vitals_status__na__text", "vitals_status__na__bg", 3.0],
-      ["search__gender_female__text", "search__gender_female__bg", 3.0],
-      ["search__gender_male__text", "search__gender_male__bg", 3.0],
-      ["search__gender_other__text", "search__gender_other__bg", 3.0],
+      ["buttons__primary__text", "buttons__primary__bg", 4.5],
+      ["buttons__success__text", "buttons__success__bg", 4.5],
+      ["buttons__secondary__text", "buttons__secondary__bg", 4.5],
+      ["buttons__warning__text", "buttons__warning__bg", 4.5],
+      ["buttons__danger__text", "buttons__danger__bg", 4.5],
+      ["buttons__light__text", "buttons__light__bg", 4.5],
+      ["buttons__primary__outline_text", "shell__page_bg", 4.5],
+      ["buttons__primary__outline_text", "shell__surface_bg", 4.5],
+      ["buttons__success__outline_text", "shell__page_bg", 4.5],
+      ["buttons__success__outline_text", "shell__surface_bg", 4.5],
+      ["buttons__secondary__outline_text", "shell__page_bg", 4.5],
+      ["buttons__secondary__outline_text", "shell__surface_bg", 4.5],
+      ["buttons__warning__outline_text", "shell__page_bg", 4.5],
+      ["buttons__warning__outline_text", "shell__surface_bg", 4.5],
+      ["buttons__danger__outline_text", "shell__page_bg", 4.5],
+      ["buttons__danger__outline_text", "shell__surface_bg", 4.5],
+      ["buttons__light__outline_text", "shell__page_bg", 4.5],
+      ["buttons__light__outline_text", "shell__surface_bg", 4.5],
+      ["alerts__info__text", "alerts__info__bg", 4.5],
+      ["alerts__success__text", "alerts__success__bg", 4.5],
+      ["alerts__warning__text", "alerts__warning__bg", 4.5],
+      ["alerts__danger__text", "alerts__danger__bg", 4.5],
+      ["alerts__light__text", "alerts__light__bg", 4.5],
+      ["dashboard__today__text", "dashboard__today__bg", 4.5],
+      ["dashboard__recent__text", "dashboard__recent__bg", 4.5],
+      ["dashboard__upcoming__text", "dashboard__upcoming__bg", 4.5],
+      ["dashboard__overdue__text", "dashboard__overdue__bg", 4.5],
+      ["case_status__active__text", "case_status__active__bg", 4.5],
+      ["case_status__completed__text", "case_status__completed__bg", 4.5],
+      ["case_status__cancelled__text", "case_status__cancelled__bg", 4.5],
+      ["case_status__loss_to_follow_up__text", "case_status__loss_to_follow_up__bg", 4.5],
+      ["task_status__scheduled__text", "task_status__scheduled__bg", 4.5],
+      ["task_status__awaiting_reports__text", "task_status__awaiting_reports__bg", 4.5],
+      ["task_status__completed__text", "task_status__completed__bg", 4.5],
+      ["task_status__cancelled__text", "task_status__cancelled__bg", 4.5],
+      ["vitals_status__low__text", "vitals_status__low__bg", 4.5],
+      ["vitals_status__normal__text", "vitals_status__normal__bg", 4.5],
+      ["vitals_status__high__text", "vitals_status__high__bg", 4.5],
+      ["vitals_status__neutral__text", "vitals_status__neutral__bg", 4.5],
+      ["vitals_status__na__text", "vitals_status__na__bg", 4.5],
+      ["search__gender_female__text", "search__gender_female__bg", 4.5],
+      ["search__gender_male__text", "search__gender_male__bg", 4.5],
+      ["search__gender_other__text", "search__gender_other__bg", 4.5],
+    ];
+    const derivedTextSections = [
+      "buttons__",
+      "alerts__",
+      "dashboard__",
+      "case_status__",
+      "task_status__",
+      "vitals_status__",
+      "search__gender_",
+    ];
+    const derivedTextContrastRules = textContrastRules
+      .filter(([textName, backgroundName]) => (
+        derivedTextSections.some((prefix) => textName.startsWith(prefix))
+        && backgroundName === textName.replace(/__text$/, "__bg")
+      ))
+      .map(([textName, backgroundName]) => [textName, backgroundName, 0.10, 4.5]);
+    const focusContrastRules = [
+      ["shell__focus_indicator", "shell__page_bg", 3.0],
+      ["shell__focus_indicator", "shell__surface_bg", 3.0],
+      ["shell__focus_indicator", "nav__bg", 3.0],
     ];
 
     function normalizeHex(value) {
@@ -934,7 +966,7 @@
       });
 
       let issueCount = 0;
-      contrastRules.forEach(([textName, backgroundName, minimum]) => {
+      [...textContrastRules, ...focusContrastRules].forEach(([textName, backgroundName, minimum]) => {
         const textInput = document.querySelector(`[name="${textName}"]`);
         const backgroundInput = document.querySelector(`[name="${backgroundName}"]`);
         const textColor = normalizeHex(textInput?.value);
@@ -946,12 +978,37 @@
         }
       });
 
+      derivedTextContrastRules.forEach(([textName, backgroundName, mixRatio, minimum]) => {
+        const textInput = document.querySelector(`[name="${textName}"]`);
+        const backgroundInput = document.querySelector(`[name="${backgroundName}"]`);
+        const textColor = normalizeHex(textInput?.value);
+        const backgroundColor = normalizeHex(backgroundInput?.value);
+        const interactionBackground = textColor && backgroundColor
+          ? contrastSafeHoverColor(backgroundColor, textColor, mixRatio)
+          : "";
+        if (interactionBackground && contrastRatio(textColor, interactionBackground) < minimum) {
+          issueCount += 1;
+          markContrastInvalid(textInput);
+          markContrastInvalid(backgroundInput);
+        }
+      });
+
       document.querySelectorAll(".theme-category-row").forEach((row) => {
         const backgroundInput = row.querySelector('[data-category-role="bg"]');
         const textInput = row.querySelector('[data-category-role="text"]');
         const backgroundColor = normalizeHex(backgroundInput?.value);
         const textColor = normalizeHex(textInput?.value);
-        if (textColor && backgroundColor && contrastRatio(textColor, backgroundColor) < 3) {
+        const hoverBackground = textColor && backgroundColor
+          ? contrastSafeHoverColor(backgroundColor, textColor, 0.10)
+          : "";
+        if (
+          textColor
+          && backgroundColor
+          && (
+            contrastRatio(textColor, backgroundColor) < 4.5
+            || contrastRatio(textColor, hoverBackground) < 4.5
+          )
+        ) {
           issueCount += 1;
           markContrastInvalid(textInput);
           markContrastInvalid(backgroundInput);
@@ -978,6 +1035,12 @@
       const target = hexToRgb(targetColor);
       const mixed = base.map((channel, index) => Math.round(channel + ((target[index] - channel) * ratio)));
       return rgbToHex(mixed);
+    }
+
+    function contrastSafeHoverColor(backgroundColor, textColor, ratio) {
+      const lighter = mixColors(backgroundColor, "#ffffff", ratio);
+      const darker = mixColors(backgroundColor, "#000000", ratio);
+      return contrastRatio(textColor, lighter) >= contrastRatio(textColor, darker) ? lighter : darker;
     }
 
     function rgbaString(hexColor, alpha) {
@@ -1011,7 +1074,7 @@
       const shadowColor = normalizeHex(readVar("--theme-shell-shadow-color"));
       const surfaceBg = normalizeHex(readVar("--theme-shell-surface-bg"));
       const surfaceText = normalizeHex(readVar("--theme-shell-surface-text"));
-      const shellLink = normalizeHex(readVar("--theme-shell-link"));
+      const focusIndicator = normalizeHex(readVar("--theme-shell-focus-indicator"));
       const searchDropdownBg = normalizeHex(readVar("--theme-search-dropdown-bg"));
       const searchDropdownText = normalizeHex(readVar("--theme-search-dropdown-text"));
       const searchTagBg = normalizeHex(readVar("--theme-search-tag-bg"));
@@ -1023,8 +1086,8 @@
       if (surfaceBg && surfaceText) {
         setVar("--theme-shell-surface-hover-bg", mixColors(surfaceBg, surfaceText, 0.10));
       }
-      if (shellLink) {
-        setVar("--theme-shell-focus-shadow", rgbaString(shellLink, 0.25));
+      if (focusIndicator) {
+        setVar("--theme-shell-focus-shadow", rgbaString(focusIndicator, 0.25));
       }
       if (searchDropdownBg && searchDropdownText) {
         setVar("--theme-search-dropdown-border", mixColors(searchDropdownBg, searchDropdownText, 0.20));
@@ -1040,7 +1103,7 @@
           return;
         }
         setVar(`--theme-${prefix}-border`, mixColors(bg, text, 0.20));
-        setVar(`--theme-${prefix}-hover-bg`, mixColors(bg, text, 0.10));
+        setVar(`--theme-${prefix}-hover-bg`, contrastSafeHoverColor(bg, text, 0.10));
         setVar(`--theme-${prefix}-focus-shadow`, rgbaString(bg, 0.25));
       });
 
@@ -1070,7 +1133,7 @@
         return;
       }
       const borderColor = mixColors(bgColor, textColor, 0.20);
-      const hoverBg = mixColors(bgColor, textColor, 0.10);
+      const hoverBg = contrastSafeHoverColor(bgColor, textColor, 0.10);
       previewEl.style.setProperty("--theme-category-bg", bgColor);
       previewEl.style.setProperty("--theme-category-text", textColor);
       previewEl.style.setProperty("--theme-category-border", borderColor);

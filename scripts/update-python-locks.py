@@ -9,9 +9,11 @@ import subprocess
 import sys
 
 
-PYTHON_LOCK_IMAGE = (
-    "python:3.12.13-slim-bookworm@"
-    "sha256:4766d8b510c428e595d74b9cc5bbb2fae8e26316fffb4adc89908d79aacd58a2"
+RUNTIME_LOCK_IMAGE = "python:3.12.13-alpine3.23@sha256:601d3d3797e90e2534782e69c85fafb7971b43f24c7b1b079b7e48dd435e458d"
+CI_LOCK_IMAGE = "python:3.12.13-slim-bookworm@sha256:4766d8b510c428e595d74b9cc5bbb2fae8e26316fffb4adc89908d79aacd58a2"
+LOCK_TARGETS = (
+    ("requirements.in", "requirements.txt", RUNTIME_LOCK_IMAGE),
+    ("requirements-ci.in", "requirements-ci.txt", CI_LOCK_IMAGE),
 )
 PIP_TOOLS_VERSION = "7.6.1"
 
@@ -19,45 +21,44 @@ PIP_TOOLS_VERSION = "7.6.1"
 def main() -> int:
     repo_root = Path(__file__).resolve().parent.parent
     mount = f"type=bind,source={repo_root},target=/workspace"
-    command = ["docker", "run", "--rm", "--mount", mount, "--workdir", "/workspace"]
-    if os.name != "nt" and hasattr(os, "getuid"):
-        command.extend(["--user", f"{os.getuid()}:{os.getgid()}"])
-    command.extend(
-        [
-            "--env",
-            "HOME=/tmp/medtrack-lock-home",
-            "--env",
-            "CUSTOM_COMPILE_COMMAND=python scripts/update-python-locks.py",
-            PYTHON_LOCK_IMAGE,
-            "sh",
-            "-euc",
-            f"""
+    try:
+        for source, output, image in LOCK_TARGETS:
+            command = ["docker", "run", "--rm", "--mount", mount, "--workdir", "/workspace"]
+            if os.name != "nt" and hasattr(os, "getuid"):
+                command.extend(["--user", f"{os.getuid()}:{os.getgid()}"])
+            command.extend(
+                [
+                    "--env",
+                    "HOME=/tmp/medtrack-lock-home",
+                    "--env",
+                    "CUSTOM_COMPILE_COMMAND=python scripts/update-python-locks.py",
+                    image,
+                    "sh",
+                    "-euc",
+                    f"""
 mkdir -p "$HOME"
 python -m venv /tmp/medtrack-lock-venv
 /tmp/medtrack-lock-venv/bin/python -m pip install --quiet --disable-pip-version-check --no-cache-dir pip-tools=={PIP_TOOLS_VERSION}
-for source in requirements.in requirements-ci.in; do
-  output="${{source%.in}}.txt"
-  /tmp/medtrack-lock-venv/bin/pip-compile \
-    --quiet \
-    --generate-hashes \
-    --allow-unsafe \
-    --resolver=backtracking \
-    --strip-extras \
-    --no-emit-index-url \
-    --output-file="$output" \
-    "$source"
-done
+/tmp/medtrack-lock-venv/bin/pip-compile \
+  --quiet \
+  --generate-hashes \
+  --allow-unsafe \
+  --resolver=backtracking \
+  --strip-extras \
+  --no-emit-index-url \
+  --output-file="{output}" \
+  "{source}"
 """,
-        ]
-    )
-    try:
-        subprocess.run(command, cwd=repo_root, check=True)
+                ]
+            )
+            subprocess.run(command, cwd=repo_root, check=True)
+            print(f"PYTHON_LOCK_UPDATED source={source} output={output} image={image}")
     except FileNotFoundError:
         print("Docker is required to regenerate Python lock files.", file=sys.stderr)
         return 2
     except subprocess.CalledProcessError as exc:
         return exc.returncode
-    print(f"PYTHON_LOCKS_UPDATED image={PYTHON_LOCK_IMAGE}")
+    print("PYTHON_LOCKS_UPDATED targets=2")
     return 0
 
 

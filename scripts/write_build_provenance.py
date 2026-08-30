@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
-"""Write an unsigned local in-toto/SLSA provenance statement for CI artifacts."""
+"""Write local provenance for the verified canonical OCI manifest digest."""
 
 from __future__ import annotations
 
 import argparse
 import hashlib
 import json
-import os
 from pathlib import Path
 import subprocess
 
-from build_context_receipt import create_receipt, verify_image
+from build_context_receipt import create_receipt
 
 
 MATERIALS = (
@@ -22,6 +21,10 @@ MATERIALS = (
     "docker-compose.prod.yml",
     "android/gradle/verification-metadata.xml",
     "scripts/build_context_receipt.py",
+    "scripts/build_canonical_image.py",
+    "scripts/verify_canonical_artifact.sh",
+    "scripts/verify_container_vulnerabilities.py",
+    "security/container-vex.json",
 )
 
 
@@ -35,7 +38,8 @@ def sha256(path: Path) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--image", required=True)
+    parser.add_argument("--canonical-metadata", required=True)
+    parser.add_argument("--artifact", required=True)
     parser.add_argument("--revision", default="HEAD")
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
@@ -47,17 +51,21 @@ def main() -> int:
         capture_output=True,
         text=True,
     ).stdout.strip()
-    inspection = json.loads(
-        subprocess.run(
-            ["docker", "image", "inspect", args.image],
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout
-    )[0]
+    metadata_path = Path(args.canonical_metadata)
+    artifact_path = Path(args.artifact)
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    if metadata.get("schema") != "medtrack.canonical-image/v1":
+        raise RuntimeError("canonical image metadata has the wrong schema")
+    if metadata.get("revision") != revision:
+        raise RuntimeError("canonical image metadata revision does not match the requested revision")
+    if metadata.get("artifact_sha256") != f"sha256:{sha256(artifact_path)}":
+        raise RuntimeError("canonical OCI artifact hash does not match its metadata")
     context_receipt = create_receipt(repo_root, revision)
-    verify_image(args.image, context_receipt)
-    image_id = inspection["Id"].removeprefix("sha256:")
+    if metadata.get("build_context_sha256") != context_receipt["build_context_sha256"]:
+        raise RuntimeError("canonical image metadata build-context digest does not match Git")
+    manifest_digest = str(metadata.get("manifest_digest", ""))
+    if not manifest_digest.startswith("sha256:") or len(manifest_digest) != 71:
+        raise RuntimeError("canonical image metadata has an invalid manifest digest")
     materials = []
     for relative in MATERIALS:
         path = repo_root / relative
@@ -70,7 +78,12 @@ def main() -> int:
             )
     statement = {
         "_type": "https://in-toto.io/Statement/v1",
-        "subject": [{"name": args.image, "digest": {"sha256": image_id}}],
+        "subject": [
+            {
+                "name": str(metadata["image_name"]),
+                "digest": {"sha256": manifest_digest.removeprefix("sha256:")},
+            }
+        ],
         "predicateType": "https://slsa.dev/provenance/v1",
         "predicate": {
             "buildDefinition": {
@@ -83,26 +96,26 @@ def main() -> int:
                         "fileCount": context_receipt["file_count"],
                     },
                 },
-                "internalParameters": {"platform": inspection.get("Os") + "/" + inspection.get("Architecture")},
+                "internalParameters": {
+                    "platform": "linux/amd64",
+                    "artifactSha256": metadata["artifact_sha256"],
+                    "platformManifestDigest": metadata["platform_manifest_digest"],
+                    "configDigest": metadata["config_digest"],
+                },
                 "resolvedDependencies": materials,
             },
             "runDetails": {
                 "builder": {
-                    "id": os.environ.get(
-                        "GITHUB_WORKFLOW_REF",
-                        "local://scripts/verify_container_build.py",
-                    )
+                    "id": "https://github.com/nmpraveen/patient-registry/.github/workflows/attest-release.yml"
                 },
-                "metadata": {
-                    "invocationId": os.environ.get("GITHUB_RUN_ID", "local"),
-                },
+                "metadata": {"invocationId": "exact-git-revision"},
             },
         },
     }
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(statement, indent=2) + "\n", encoding="utf-8")
-    print(f"BUILD_PROVENANCE_WRITTEN path={output} image_sha256={image_id}")
+    print(f"BUILD_PROVENANCE_WRITTEN path={output} manifest_digest={manifest_digest}")
     return 0
 
 

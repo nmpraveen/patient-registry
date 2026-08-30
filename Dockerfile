@@ -1,4 +1,4 @@
-ARG PYTHON_BASE_IMAGE=python:3.12.13-slim-bookworm@sha256:4766d8b510c428e595d74b9cc5bbb2fae8e26316fffb4adc89908d79aacd58a2
+ARG PYTHON_BASE_IMAGE=python:3.12.13-alpine3.23@sha256:601d3d3797e90e2534782e69c85fafb7971b43f24c7b1b079b7e48dd435e458d
 FROM ${PYTHON_BASE_IMAGE}
 
 ARG VCS_REF=unknown
@@ -23,9 +23,14 @@ ENV MEDTRACK_IMAGE_REVISION="${VCS_REF}"
 
 WORKDIR /app
 
-RUN groupadd --gid 10001 medtrack \
-    && useradd --create-home --uid 10001 --gid 10001 --shell /usr/sbin/nologin medtrack \
-    && install -d -o 10001 -g 10001 /app/staticfiles /app/backups \
+RUN apk add --no-cache \
+        libcrypto3=3.5.8-r0 \
+        libssl3=3.5.8-r0 \
+        sqlite-libs=3.53.4-r0 \
+    && addgroup -S -g 10001 medtrack \
+    && adduser -S -D -H -u 10001 -G medtrack medtrack \
+    && mkdir -p /app/staticfiles /app/backups \
+    && chown 10001:10001 /app/staticfiles /app/backups \
     && chmod 1777 /tmp
 
 COPY requirements.txt /app/requirements.txt

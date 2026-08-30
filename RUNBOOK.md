@@ -34,19 +34,28 @@ CI with `--no-daemon --max-workers=1`. Review every added artifact/checksum. Do
 not use verification-metadata updates to mask a source compile, unit, lint, or
 release failure.
 
-Build and scan an exact committed revision from a safe Git archive with
-synthetic canaries only:
+Build one canonical OCI artifact for an exact committed revision, load/test
+that same artifact, and scan it with unfixed findings included:
 
 ```powershell
-python .\scripts\verify_container_build.py --revision <full-git-sha> --image medtrack-review:<short-sha>
-python .\scripts\write_build_provenance.py --image medtrack-review:<short-sha> --revision <full-git-sha> --output output\medtrack-provenance.intoto.json
+docker buildx create --name medtrack-canonical --driver docker-container --use
+python .\scripts\build_canonical_image.py --revision <full-git-sha> --image medtrack-review:<short-sha> --builder medtrack-canonical
+bash scripts/verify_canonical_artifact.sh <full-git-sha> output
 ```
 
 This stages the exact Git tree into a temporary directory, adds fake canaries
 at credential/Firebase/backup/age/rclone/output/node-module/override/PHI paths,
-builds a scratch context-audit image and the real runtime image, and scans both
-the immutable layers and exported filesystem. It never reads ignored credential
-values.
+builds a scratch context-audit image and exactly one canonical OCI runtime
+artifact. The verifier derives the archive manifest digest, loads that archive,
+and scans the immutable layers and exported filesystem. It never reads ignored
+credential values. Trivy's JSON, the CycloneDX SBOM, provenance, canonical
+metadata, receipt, and OCI tar remain in `output/`.
+
+`security/container-vex.json` is empty while the image is clean. Any future
+HIGH/CRITICAL residual must match exact CVE, package, installed version, target,
+and canonical image digest and include status, HTTPS source, owner,
+justification, creation time, and unexpired expiry. New, mismatched, stale, or
+expired findings/waivers fail closed; secret findings can never be waived.
 
 The deployment trust contract is `medtrack.build-context/v1`. Its digest is a
 canonical SHA-256 over the Git mode, UTF-8 path, byte length, and blob bytes for

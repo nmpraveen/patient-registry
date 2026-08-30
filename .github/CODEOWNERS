@@ -1,0 +1,3 @@
+# The one-approval protection mode is intentionally infeasible until a second
+# trusted collaborator is added to this global rule and passes installer audit.
+* @nmpraveen

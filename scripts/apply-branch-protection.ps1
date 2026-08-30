@@ -98,7 +98,7 @@ function Assert-TrackedPayload {
         required_linear_history = $true; allow_force_pushes = $false
         allow_deletions = $false; block_creations = $false
         required_conversation_resolution = $true; lock_branch = $false
-        allow_fork_syncing = $true
+        allow_fork_syncing = $false
     }
     foreach ($field in $expected.Keys) {
         if ([bool]$Payload.$field -ne $expected[$field]) {
@@ -151,7 +151,7 @@ function Assert-AppliedProtection {
         required_linear_history = $true; allow_force_pushes = $false
         allow_deletions = $false; block_creations = $false
         required_conversation_resolution = $true; lock_branch = $false
-        allow_fork_syncing = $true
+        allow_fork_syncing = $false
     }
     foreach ($field in $expected.Keys) {
         if ($actual[$field] -ne $expected[$field]) { throw "Applied field $field mismatch." }

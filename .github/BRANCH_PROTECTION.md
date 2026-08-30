@@ -88,7 +88,9 @@ The readback must exactly preserve:
 - pull-request requirement and the selected review policy;
 - no review-bypass actors and no push-restriction bypass actors;
 - administrator enforcement, linear history, and conversation resolution;
-- force-push/deletion/branch-lock/creation/fork-sync fields;
+- force-push/deletion/branch-lock/creation/fork-sync fields; fork syncing is
+  disabled because GitHub only enables it for a locked branch and this policy
+  deliberately leaves `lock_branch` disabled;
 - the explicit signed-commit choice.
 
 Apply refuses when rulesets cannot be audited or any ruleset exists, rather

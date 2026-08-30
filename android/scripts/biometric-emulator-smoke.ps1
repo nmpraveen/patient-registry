@@ -15,15 +15,15 @@ $ErrorActionPreference = "Stop"
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $androidRoot = Split-Path -Parent $scriptRoot
 $repoRoot = Split-Path -Parent $androidRoot
-$packageName = "com.naveenhospital.medtrack"
+$packageName = "com.naveenhospital.medtrack.dev"
 $emulatorExe = Join-Path $env:LOCALAPPDATA "Android\Sdk\emulator\emulator.exe"
 $gradleBuildRoot = if ($env:MEDTRACK_ANDROID_BUILD_DIR) {
     $env:MEDTRACK_ANDROID_BUILD_DIR
 }
 else {
-    Join-Path $env:USERPROFILE ".codex\build\medtrack-android"
+    Join-Path $androidRoot ".build"
 }
-$apkPath = Join-Path $gradleBuildRoot "app\outputs\apk\debug\app-debug.apk"
+$apkPath = Join-Path $gradleBuildRoot "app\outputs\apk\dev\debug\app-dev-debug.apk"
 
 if (-not $EvidenceDir) {
     $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
@@ -78,7 +78,7 @@ function Invoke-ProcessLogged {
     $stdout = if (Test-Path $stdoutPath) { Get-Content -Raw -Path $stdoutPath } else { "" }
     $stderr = if (Test-Path $stderrPath) { Get-Content -Raw -Path $stderrPath } else { "" }
     @(
-        "command: $FilePath $argumentString",
+        "command: $FilePath [arguments redacted]",
         "workingDirectory: $WorkingDirectory",
         "exitCode: $($process.ExitCode)",
         "",
@@ -397,7 +397,7 @@ try {
             -Name "gradle-assemble-debug" `
             -WorkingDirectory $androidRoot `
             -FilePath (Join-Path $androidRoot "gradlew.bat") `
-            -Arguments @("--no-daemon", ":app:assembleDebug", "-PMEDTRACK_API_BASE_URL=http://10.0.2.2:8000/")
+            -Arguments @("--no-daemon", "--max-workers=1", ":app:assembleDevDebug", "-PMEDTRACK_DEV_API_BASE_URL=http://10.0.2.2:8000/")
     }
     if (-not (Test-Path $apkPath)) {
         throw "APK not found at $apkPath"

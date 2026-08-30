@@ -1,6 +1,7 @@
 package com.naveenhospital.medtrack.core.data.sync
 
 import com.naveenhospital.medtrack.core.data.local.PendingWriteEntity
+import com.naveenhospital.medtrack.core.data.local.TaskEntity
 import com.naveenhospital.medtrack.core.network.model.ClientWriteRequestDto
 import com.naveenhospital.medtrack.core.network.model.LogCallRequestDto
 import com.naveenhospital.medtrack.core.network.model.VitalsRequestDto
@@ -24,6 +25,32 @@ class PendingWritePayloadsTest {
         assertEquals("case-1", decoded.caseId)
         assertEquals("task-1", decoded.taskId)
         assertEquals("write-1", decoded.payload.clientWriteId)
+    }
+
+    @Test
+    fun taskCompletePayloadRetainsRollbackAndReissueRotatesIdempotencyIdentity() {
+        val original = TaskEntity(
+            ownerAccountId = "1",
+            id = "task-1",
+            caseId = "case-1",
+            title = "Review",
+            dueDate = null,
+            status = "PENDING",
+            statusLabel = "Pending",
+            canComplete = true,
+            updatedAtMillis = 9L,
+        )
+        val encoded = PendingWriteJson.encodeTaskComplete(
+            ClientWriteRequestDto("write-1"),
+            rollback = original,
+        )
+
+        val reissued = PendingWriteJson.reissue(PendingWriteTypes.TASK_COMPLETE, encoded, "write-2")
+        val decoded = PendingWriteJson.decodeTaskCompletePending(reissued)
+
+        assertEquals("write-2", decoded.request.clientWriteId)
+        assertEquals("PENDING", decoded.rollback?.status)
+        assertEquals(true, decoded.rollback?.canComplete)
     }
 
     @Test

@@ -8,6 +8,9 @@ import com.naveenhospital.medtrack.core.network.model.CaseDetailDto
 import com.naveenhospital.medtrack.core.network.model.CaseEditFormDto
 import com.naveenhospital.medtrack.core.network.model.CaseFormMetadataDto
 import com.naveenhospital.medtrack.core.network.model.CaseListResponseDto
+import com.naveenhospital.medtrack.core.network.model.CaseSearchRequestDto
+import com.naveenhospital.medtrack.core.network.model.CaseSearchResponseDto
+import com.naveenhospital.medtrack.core.network.model.CaseUpdateResponseDto
 import com.naveenhospital.medtrack.core.network.model.ClientWriteRequestDto
 import com.naveenhospital.medtrack.core.network.model.CreateCaseRequestDto
 import com.naveenhospital.medtrack.core.network.model.CreateTaskRequestDto
@@ -15,8 +18,10 @@ import com.naveenhospital.medtrack.core.network.model.LogCallRequestDto
 import com.naveenhospital.medtrack.core.network.model.TaskFormMetadataDto
 import com.naveenhospital.medtrack.core.network.model.TaskNoteRequestDto
 import com.naveenhospital.medtrack.core.network.model.UpdateTaskRequestDto
+import com.naveenhospital.medtrack.core.network.model.UpdateCaseRequestDto
 import com.naveenhospital.medtrack.core.network.model.VitalsUpdateRequestDto
 import com.naveenhospital.medtrack.core.network.model.PatientSearchResponseDto
+import com.naveenhospital.medtrack.core.network.model.PatientSearchRequestDto
 import com.naveenhospital.medtrack.core.network.model.LoginRequestDto
 import com.naveenhospital.medtrack.core.network.model.LoginResponseDto
 import com.naveenhospital.medtrack.core.network.model.NotificationsResponseDto
@@ -56,18 +61,17 @@ interface MedtrackApi {
         @Query("scope_context") scopeContext: String? = null,
         @Query("category") categories: List<String>? = null,
         @Query("subcategory") subcategories: List<String>? = null,
-        @Query("q") query: String? = null,
         @Query("page") page: Int? = null,
     ): CaseListResponseDto
+
+    @POST("api/cases/search/")
+    suspend fun searchCases(@Body request: CaseSearchRequestDto): CaseSearchResponseDto
 
     @POST("api/cases/")
     suspend fun createCase(@Body request: CreateCaseRequestDto): CaseCreateResponseDto
 
-    @GET("api/patients/")
-    suspend fun searchPatients(
-        @Query("q") query: String? = null,
-        @Query("page") page: Int? = null,
-    ): PatientSearchResponseDto
+    @POST("api/patients/")
+    suspend fun searchPatients(@Body request: PatientSearchRequestDto): PatientSearchResponseDto
 
     @GET("api/metadata/case-form/")
     suspend fun caseFormMetadata(): CaseFormMetadataDto
@@ -84,8 +88,8 @@ interface MedtrackApi {
     @PATCH("api/cases/{caseId}/")
     suspend fun updateCase(
         @Path("caseId") caseId: String,
-        @Body request: CreateCaseRequestDto,
-    ): CaseCreateResponseDto
+        @Body request: UpdateCaseRequestDto,
+    ): CaseUpdateResponseDto
 
     @POST("api/cases/{caseId}/tasks/")
     suspend fun createTask(
@@ -136,7 +140,8 @@ interface MedtrackApi {
     suspend fun notifications(
         @Query("type") type: String? = null,
         @Query("unread_only") unreadOnly: Boolean? = null,
-        @Query("page") page: Int? = null,
+        @Query("cursor") cursor: String? = null,
+        @Query("page_size") pageSize: Int? = null,
     ): NotificationsResponseDto
 
     @POST("api/notifications/{notificationId}/read/")

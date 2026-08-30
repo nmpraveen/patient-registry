@@ -35,6 +35,13 @@ data class UserProfileDto(
     @Json(name = "display_name") val displayName: String,
     val roles: List<String>,
     val capabilities: Map<String, Boolean>,
+    @Json(name = "data_scope") val dataScope: DataScopeDto,
+)
+
+data class DataScopeDto(
+    @Json(name = "case_data_scope") val caseDataScope: String,
+    @Json(name = "call_queue") val callQueue: Boolean,
+    @Json(name = "intake_patient_lookup") val intakePatientLookup: Boolean,
 )
 
 data class CaseListResponseDto(
@@ -43,6 +50,23 @@ data class CaseListResponseDto(
     val previous: String?,
     val stats: CaseStatsDto,
     val results: List<CaseSummaryDto>,
+)
+
+data class CaseSearchRequestDto(
+    val query: String,
+    @Json(name = "page_size") val pageSize: Int = 20,
+    val cursor: String? = null,
+    val bucket: String = "today",
+    @Json(name = "assigned_to") val assignedTo: String? = null,
+    @Json(name = "scope_context") val scopeContext: String = "",
+    val category: List<String> = emptyList(),
+    val subcategory: List<String> = emptyList(),
+)
+
+data class CaseSearchResponseDto(
+    @Json(name = "next_cursor") val nextCursor: String? = null,
+    val stats: CaseStatsDto,
+    val results: List<CaseSummaryDto> = emptyList(),
 )
 
 data class CaseStatsDto(
@@ -91,6 +115,7 @@ data class TaskDto(
     @Json(name = "assigned_user") val assignedUser: String? = null,
     @Json(name = "assigned_user_id") val assignedUserId: Long? = null,
     val notes: String? = null,
+    @Json(name = "updated_at") val updatedAt: String,
 )
 
 data class CaseCategoryDto(
@@ -116,6 +141,7 @@ data class VitalDto(
     val spo2: Int?,
     @Json(name = "weight_kg") val weightKg: String?,
     val hemoglobin: String?,
+    @Json(name = "updated_at") val updatedAt: String,
 )
 
 data class CallLogDto(
@@ -176,14 +202,14 @@ data class VitalsThresholdsDto(
 )
 
 data class NotificationsResponseDto(
-    val count: Int,
-    val next: String?,
-    val previous: String?,
+    @Json(name = "dataset_epoch") val datasetEpoch: String,
+    @Json(name = "next_cursor") val nextCursor: String?,
     val results: List<NotificationDto>,
 )
 
 data class NotificationDto(
     val id: Long,
+    @Json(name = "event_id") val eventId: String,
     val type: String,
     val title: String,
     val body: String,
@@ -226,31 +252,21 @@ data class CaseFormMetadataDto(
     @Json(name = "review_frequencies") val reviewFrequencies: List<ChoiceDto> = emptyList(),
 )
 
+data class PatientSearchRequestDto(
+    val query: String,
+    @Json(name = "page_size") val pageSize: Int = 10,
+    val cursor: String? = null,
+)
+
 data class PatientSearchResponseDto(
-    val count: Int = 0,
-    val next: String? = null,
-    val previous: String? = null,
+    @Json(name = "next_cursor") val nextCursor: String? = null,
     val results: List<PatientLookupDto> = emptyList(),
 )
 
 data class PatientLookupDto(
     val id: Long,
     val uhid: String,
-    val name: String?,
-    val prefix: String?,
-    @Json(name = "first_name") val firstName: String?,
-    @Json(name = "last_name") val lastName: String?,
-    val gender: String?,
-    @Json(name = "gender_label") val genderLabel: String?,
-    @Json(name = "blood_group") val bloodGroup: String?,
-    @Json(name = "date_of_birth") val dateOfBirth: String?,
-    val age: Int?,
-    val place: String?,
-    @Json(name = "phone_number") val phoneNumber: String?,
-    @Json(name = "alternate_phone_number") val alternatePhoneNumber: String?,
-    @Json(name = "is_temporary_id") val isTemporaryId: Boolean = false,
-    @Json(name = "active_case_count") val activeCaseCount: Int? = null,
-    @Json(name = "total_case_count") val totalCaseCount: Int? = null,
+    val name: String,
 )
 
 data class CreateCaseRequestDto(
@@ -296,10 +312,69 @@ data class CreateCaseRequestDto(
     @Json(name = "client_write_id") val clientWriteId: String,
 )
 
+sealed interface PatchField<out T> {
+    data object Omitted : PatchField<Nothing>
+    data class Value<T>(val value: T?) : PatchField<T>
+}
+
+/** PATCH payload with a real three-state field model: omitted, value, or explicit JSON null. */
+data class UpdateCaseRequestDto(
+    val baseUpdatedAt: String,
+    val baseValues: Map<String, Any?>,
+    val patientMode: PatchField<String> = PatchField.Omitted,
+    val selectedPatient: PatchField<Long> = PatchField.Omitted,
+    val useTemporaryUhid: PatchField<Boolean> = PatchField.Omitted,
+    val uhid: PatchField<String> = PatchField.Omitted,
+    val prefix: PatchField<String> = PatchField.Omitted,
+    val firstName: PatchField<String> = PatchField.Omitted,
+    val lastName: PatchField<String> = PatchField.Omitted,
+    val gender: PatchField<String> = PatchField.Omitted,
+    val bloodGroup: PatchField<String> = PatchField.Omitted,
+    val dateOfBirth: PatchField<String> = PatchField.Omitted,
+    val place: PatchField<String> = PatchField.Omitted,
+    val age: PatchField<Int> = PatchField.Omitted,
+    val phoneNumber: PatchField<String> = PatchField.Omitted,
+    val alternatePhoneNumber: PatchField<String> = PatchField.Omitted,
+    val category: PatchField<Long> = PatchField.Omitted,
+    val subcategory: PatchField<String> = PatchField.Omitted,
+    val status: PatchField<String> = PatchField.Omitted,
+    val diagnosis: PatchField<String> = PatchField.Omitted,
+    val referredBy: PatchField<String> = PatchField.Omitted,
+    val notes: PatchField<String> = PatchField.Omitted,
+    val highRisk: PatchField<Boolean> = PatchField.Omitted,
+    val ncdFlags: PatchField<List<String>> = PatchField.Omitted,
+    val ancHighRiskReasons: PatchField<List<String>> = PatchField.Omitted,
+    val rchNumber: PatchField<String> = PatchField.Omitted,
+    val rchBypass: PatchField<Boolean> = PatchField.Omitted,
+    val lmp: PatchField<String> = PatchField.Omitted,
+    val edd: PatchField<String> = PatchField.Omitted,
+    val usgEdd: PatchField<String> = PatchField.Omitted,
+    val surgicalPathway: PatchField<String> = PatchField.Omitted,
+    val surgeryDone: PatchField<Boolean> = PatchField.Omitted,
+    val surgeryDate: PatchField<String> = PatchField.Omitted,
+    val reviewFrequency: PatchField<String> = PatchField.Omitted,
+    val reviewDate: PatchField<String> = PatchField.Omitted,
+    val gravida: PatchField<Int> = PatchField.Omitted,
+    val para: PatchField<Int> = PatchField.Omitted,
+    val abortions: PatchField<Int> = PatchField.Omitted,
+    val living: PatchField<Int> = PatchField.Omitted,
+    val ftnd: PatchField<Int> = PatchField.Omitted,
+    val lscs: PatchField<Int> = PatchField.Omitted,
+    val clientWriteId: PatchField<String> = PatchField.Omitted,
+)
+
 data class CaseCreateResponseDto(
     val message: String,
     @Json(name = "case_id") val caseId: Long,
     val case: CaseSummaryDto,
+    @Json(name = "editable_case") val editableCase: CaseEditCaseDto? = null,
+)
+
+data class CaseUpdateResponseDto(
+    val message: String,
+    @Json(name = "case_id") val caseId: Long,
+    val case: CaseSummaryDto,
+    @Json(name = "editable_case") val editableCase: CaseEditCaseDto,
 )
 
 data class CaseCreateErrorDto(
@@ -322,6 +397,7 @@ data class CaseEditFormDto(
 
 data class CaseEditCaseDto(
     val id: Long,
+    @Json(name = "base_updated_at") val baseUpdatedAt: String,
     @Json(name = "patient_mode") val patientMode: String? = null,
     @Json(name = "selected_patient") val selectedPatient: Long? = null,
     @Json(name = "use_temporary_uhid") val useTemporaryUhid: Boolean = false,
@@ -351,6 +427,7 @@ data class CaseEditCaseDto(
     val edd: String? = null,
     @Json(name = "usg_edd") val usgEdd: String? = null,
     @Json(name = "surgical_pathway") val surgicalPathway: String? = null,
+    @Json(name = "surgery_done") val surgeryDone: Boolean,
     @Json(name = "surgery_date") val surgeryDate: String? = null,
     @Json(name = "review_frequency") val reviewFrequency: String? = null,
     @Json(name = "review_date") val reviewDate: String? = null,
@@ -388,13 +465,14 @@ data class CreateTaskRequestDto(
 )
 
 data class UpdateTaskRequestDto(
-    val title: String? = null,
-    @Json(name = "due_date") val dueDate: String? = null,
-    val status: String? = null,
-    @Json(name = "task_type") val taskType: String? = null,
-    // String so the edit form can explicitly clear the assignee (""): a null is omitted
-    // by Moshi and would leave the current assignee unchanged.
-    @Json(name = "assigned_user") val assignedUser: String? = null,
+    val baseUpdatedAt: String,
+    val baseValues: Map<String, Any?>,
+    val title: PatchField<String> = PatchField.Omitted,
+    val dueDate: PatchField<String> = PatchField.Omitted,
+    val status: PatchField<String> = PatchField.Omitted,
+    val taskType: PatchField<String> = PatchField.Omitted,
+    val assignedUser: PatchField<Long> = PatchField.Omitted,
+    val clientWriteId: String,
 )
 
 data class TaskNoteRequestDto(
@@ -402,11 +480,14 @@ data class TaskNoteRequestDto(
 )
 
 data class VitalsUpdateRequestDto(
-    @Json(name = "recorded_at") val recordedAt: String? = null,
-    @Json(name = "bp_systolic") val bpSystolic: Int? = null,
-    @Json(name = "bp_diastolic") val bpDiastolic: Int? = null,
-    val pr: Int? = null,
-    val spo2: Int? = null,
-    @Json(name = "weight_kg") val weightKg: String? = null,
-    val hemoglobin: String? = null,
+    val baseUpdatedAt: String,
+    val baseValues: Map<String, Any?>,
+    val recordedAt: PatchField<String> = PatchField.Omitted,
+    val bpSystolic: PatchField<Int> = PatchField.Omitted,
+    val bpDiastolic: PatchField<Int> = PatchField.Omitted,
+    val pr: PatchField<Int> = PatchField.Omitted,
+    val spo2: PatchField<Int> = PatchField.Omitted,
+    val weightKg: PatchField<String> = PatchField.Omitted,
+    val hemoglobin: PatchField<String> = PatchField.Omitted,
+    val clientWriteId: String,
 )

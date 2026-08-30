@@ -7,12 +7,10 @@ import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.compose.setContent
-import androidx.compose.runtime.mutableStateOf
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.lifecycleScope
-import com.naveenhospital.medtrack.core.push.MedtrackFirebaseMessagingService
 import com.naveenhospital.medtrack.core.push.MedtrackPush
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
@@ -21,12 +19,12 @@ import kotlinx.coroutines.launch
 @AndroidEntryPoint
 class MainActivity : FragmentActivity() {
     @Inject lateinit var container: MedtrackAppContainer
-    private val notificationCaseId = mutableStateOf<String?>(null)
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
-        notificationCaseId.value = intent.notificationCaseId()
+        if (intent.isMedtrackNotificationIntent()) {
+            MedtrackPush.enqueueNotificationRefresh(this)
+        }
         MedtrackPush.createChannels(this)
         setContent {
             MedtrackApp(
@@ -35,8 +33,8 @@ class MainActivity : FragmentActivity() {
                     container.startBackgroundSync()
                     enablePushForAuthenticatedSession()
                 },
-                notificationCaseId = notificationCaseId.value,
-                onNotificationCaseConsumed = { notificationCaseId.value = null },
+                notificationCaseId = null,
+                onNotificationCaseConsumed = {},
             )
         }
     }
@@ -44,7 +42,9 @@ class MainActivity : FragmentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        notificationCaseId.value = intent.notificationCaseId()
+        if (intent.isMedtrackNotificationIntent()) {
+            MedtrackPush.enqueueNotificationRefresh(this)
+        }
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -85,31 +85,13 @@ class MainActivity : FragmentActivity() {
     }
 }
 
-private fun Intent?.notificationCaseId(): String? =
-    this
-        ?.takeIf { it.isMedtrackNotificationIntent() }
-        ?.caseIdExtra()
-
-private fun Intent.isMedtrackNotificationIntent(): Boolean {
-    if (getBooleanExtra(MedtrackFirebaseMessagingService.EXTRA_FROM_NOTIFICATION, false)) {
-        return true
-    }
+private fun Intent?.isMedtrackNotificationIntent(): Boolean {
+    if (this == null) return false
     val keys = extras?.keySet().orEmpty()
     return keys.any { key ->
         key.startsWith("google.") ||
             key.startsWith("gcm.") ||
             key == "from" ||
             key == "message_type"
-    }
-}
-
-private fun Intent.caseIdExtra(): String? {
-    return sequenceOf(
-        getStringExtra(MedtrackFirebaseMessagingService.EXTRA_CASE_ID),
-        getStringExtra("caseId"),
-    ).firstNotNullOfOrNull { value ->
-        value
-            ?.trim()
-            ?.takeUnless { it.isBlank() || it.equals("null", ignoreCase = true) || it.equals("none", ignoreCase = true) }
     }
 }

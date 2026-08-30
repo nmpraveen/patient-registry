@@ -8,7 +8,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -26,7 +26,7 @@ fun MedtrackPullRefreshBox(
     content: @Composable BoxScope.() -> Unit,
 ) {
     val thresholdPx = with(LocalDensity.current) { 72.dp.toPx() }
-    var dragDistance by remember { mutableStateOf(0f) }
+    var dragDistance by remember { mutableFloatStateOf(0f) }
 
     Box(
         modifier = modifier.pointerInput(isRefreshing) {

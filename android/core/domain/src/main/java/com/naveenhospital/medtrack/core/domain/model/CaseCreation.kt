@@ -76,6 +76,7 @@ data class NewCaseInput(
     val edd: String? = null,
     val usgEdd: String? = null,
     val surgicalPathway: String? = null,
+    val surgeryDone: Boolean? = null,
     val surgeryDate: String? = null,
     val reviewFrequency: String? = null,
     val reviewDate: String? = null,

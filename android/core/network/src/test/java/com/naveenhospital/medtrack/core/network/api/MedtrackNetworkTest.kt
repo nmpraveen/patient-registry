@@ -52,7 +52,7 @@ class MedtrackNetworkTest {
         server.enqueue(
             MockResponse()
                 .setHeader("Content-Type", "application/json")
-                .setBody("""{"id":1,"username":"admin","display_name":"Admin","roles":[],"capabilities":{}}"""),
+                .setBody("""{"id":1,"username":"admin","display_name":"Admin","roles":[],"capabilities":{},"data_scope":{"case_data_scope":"ALL","call_queue":true,"intake_patient_lookup":true}}"""),
         )
         server.enqueue(
             MockResponse()
@@ -125,7 +125,7 @@ class MedtrackNetworkTest {
         server.enqueue(
             MockResponse()
                 .setHeader("Content-Type", "application/json")
-                .setBody("""{"id":2,"username":"other","display_name":"Other","roles":[],"capabilities":{}}"""),
+                .setBody("""{"id":2,"username":"other","display_name":"Other","roles":[],"capabilities":{},"data_scope":{"case_data_scope":"ASSIGNED","call_queue":false,"intake_patient_lookup":false}}"""),
         )
 
         assertTrue(runCatching { api.categories() }.isFailure)
@@ -153,7 +153,7 @@ class MedtrackNetworkTest {
         server.enqueue(
             MockResponse()
                 .setHeader("Content-Type", "application/json")
-                .setBody("""{"id":1,"username":"admin","display_name":"Admin","roles":[],"capabilities":{}}"""),
+                .setBody("""{"id":1,"username":"admin","display_name":"Admin","roles":[],"capabilities":{},"data_scope":{"case_data_scope":"ALL","call_queue":true,"intake_patient_lookup":true}}"""),
         )
 
         assertTrue(runCatching { api.categories() }.isFailure)

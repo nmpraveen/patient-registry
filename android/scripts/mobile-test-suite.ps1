@@ -72,7 +72,7 @@ function Invoke-ProcessLogged {
     $stdout = if (Test-Path $stdoutPath) { Get-Content -Raw -Path $stdoutPath } else { "" }
     $stderr = if (Test-Path $stderrPath) { Get-Content -Raw -Path $stderrPath } else { "" }
     @(
-        "command: $FilePath $argumentString",
+        "command: $FilePath [arguments redacted]",
         "workingDirectory: $WorkingDirectory",
         "exitCode: $($process.ExitCode)",
         "",
@@ -131,7 +131,7 @@ try {
         $androidResult = Invoke-ProcessLogged `
             -Name "android-test-debug-unit" `
             -FilePath (Join-Path $androidRoot "gradlew.bat") `
-            -Arguments @("--no-daemon", "testDebugUnitTest") `
+            -Arguments @("--no-daemon", "--max-workers=1", "testDevDebugUnitTest") `
             -WorkingDirectory $androidRoot
     }
 

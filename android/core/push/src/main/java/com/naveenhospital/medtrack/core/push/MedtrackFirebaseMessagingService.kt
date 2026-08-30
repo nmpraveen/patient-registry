@@ -1,17 +1,8 @@
 package com.naveenhospital.medtrack.core.push
 
-import android.Manifest
-import android.app.PendingIntent
-import android.content.Intent
-import android.content.pm.PackageManager
-import android.net.Uri
-import android.os.Build
-import androidx.core.app.NotificationCompat
-import androidx.core.app.NotificationManagerCompat
-import androidx.core.content.ContextCompat
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
-import kotlin.math.absoluteValue
+import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -30,72 +21,16 @@ class MedtrackFirebaseMessagingService : FirebaseMessagingService() {
 
     override fun onMessageReceived(message: RemoteMessage) {
         super.onMessageReceived(message)
-        MedtrackPush.createChannels(this)
-        val title = message.notification?.title ?: message.data["title"] ?: "MEDTRACK"
-        val body = message.notification?.body ?: message.data["body"] ?: "New update"
-        val type = message.data["type"] ?: message.data["notification_type"]
-        val caseId = message.data["case_id"] ?: message.data["caseId"]
-        val phoneNumber = message.data["phone_number"] ?: message.data["phoneNumber"]
-        val channelId = MedtrackPush.channelForType(type)
-        val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
-            ?.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
-            ?.putExtra(EXTRA_CASE_ID, caseId)
-            ?.putExtra(EXTRA_FROM_NOTIFICATION, true)
-        val pendingIntent = launchIntent?.let {
-            PendingIntent.getActivity(
-                this,
-                (message.messageId ?: caseId ?: "$title-$body").hashCode(),
-                it,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-            )
-        }
-        val callIntent = phoneNumber
-            ?.takeIf { it.isNotBlank() }
-            ?.let { number ->
-                Intent(Intent.ACTION_DIAL).apply {
-                    data = Uri.parse("tel:${number.filter { char -> char.isDigit() || char == '+' }}")
-                }
-            }
-        val callPendingIntent = callIntent?.let {
-            PendingIntent.getActivity(
-                this,
-                ("call-${message.messageId ?: caseId ?: phoneNumber}").hashCode(),
-                it,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-            )
-        }
-        val smallIcon = applicationInfo.icon
-        val notification = NotificationCompat.Builder(this, channelId)
-            .setSmallIcon(smallIcon)
-            .setContentTitle(title)
-            .setContentText(body)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
-            .setAutoCancel(true)
-            .setPriority(if (channelId == MedtrackPush.CHANNEL_OVERDUE) NotificationCompat.PRIORITY_DEFAULT else NotificationCompat.PRIORITY_HIGH)
-            .apply {
-                if (pendingIntent != null) {
-                    setContentIntent(pendingIntent)
-                }
-                if (callPendingIntent != null) {
-                    addAction(android.R.drawable.ic_menu_call, "Call patient", callPendingIntent)
-                }
-                if (pendingIntent != null && caseId?.isNotBlank() == true) {
-                    addAction(android.R.drawable.ic_menu_view, "Open case", pendingIntent)
-                }
-            }
-            .build()
-        if (
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
-            PackageManager.PERMISSION_GRANTED
-        ) {
-            return
-        }
-        runCatching {
-            NotificationManagerCompat.from(this).notify(
-                (message.messageId ?: "$title-$body").hashCode().absoluteValue,
-                notification,
-            )
+        val policy = policyForOpaquePush(
+            untrustedData = message.data,
+            untrustedTitle = message.notification?.title,
+            untrustedBody = message.notification?.body,
+            accountMatches = null,
+            sessionAuthorized = false,
+            networkAvailable = false,
+        )
+        if (policy.enqueueAuthenticatedRefresh) {
+            MedtrackPush.enqueueNotificationRefresh(this)
         }
     }
 
@@ -103,9 +38,43 @@ class MedtrackFirebaseMessagingService : FirebaseMessagingService() {
         serviceScope.cancel()
         super.onDestroy()
     }
+}
 
-    companion object {
-        const val EXTRA_CASE_ID = "case_id"
-        const val EXTRA_FROM_NOTIFICATION = "from_notification"
-    }
+internal data class OpaquePushPolicy(
+    val enqueueAuthenticatedRefresh: Boolean,
+    val displaySystemNotification: Boolean,
+    val forwardPayloadToIntent: Boolean,
+)
+
+/**
+ * FCM is only an opaque wake-up signal. Raw push data never reaches a system notification or
+ * intent. Account/session authorization must be proven by the authenticated sync path; until the
+ * the verified account/session-incarnation worker has fetched the authorized snapshot, display
+ * remains suppressed. Clinical content is never sourced from FCM or posted to the lock screen.
+ */
+@Suppress("UNUSED_PARAMETER")
+internal fun policyForOpaquePush(
+    untrustedData: Map<String, String>,
+    untrustedTitle: String?,
+    untrustedBody: String?,
+    accountMatches: Boolean?,
+    sessionAuthorized: Boolean,
+    networkAvailable: Boolean,
+): OpaquePushPolicy {
+    val hasExactDataOnlyEnvelope =
+        untrustedTitle == null &&
+            untrustedBody == null &&
+            untrustedData.keys == setOf("event_id") &&
+            untrustedData["event_id"].isUuid()
+    return OpaquePushPolicy(
+        enqueueAuthenticatedRefresh = hasExactDataOnlyEnvelope,
+        displaySystemNotification = false,
+        forwardPayloadToIntent = false,
+    )
+}
+
+private fun String?.isUuid(): Boolean {
+    val candidate = this ?: return false
+    val canonical = runCatching { UUID.fromString(candidate).toString() }.getOrNull() ?: return false
+    return canonical.equals(candidate, ignoreCase = true)
 }

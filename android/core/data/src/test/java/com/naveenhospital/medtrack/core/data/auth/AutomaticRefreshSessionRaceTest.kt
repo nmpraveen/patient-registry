@@ -79,7 +79,7 @@ class AutomaticRefreshSessionRaceTest {
                     MockResponse()
                         .setHeader("Content-Type", "application/json")
                         .setBody(
-                            """{"id":1,"username":"same","display_name":"Same","roles":[],"capabilities":{}}""",
+                            """{"id":1,"username":"same","display_name":"Same","roles":[],"capabilities":{},"data_scope":{"case_data_scope":"ALL","call_queue":true,"intake_patient_lookup":true}}""",
                         )
                 }
                 else -> MockResponse().setResponseCode(500)

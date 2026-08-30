@@ -78,7 +78,7 @@ function Invoke-ProcessLogged {
     }
 
     @(
-        "command: $FilePath $argumentString"
+        "command: $FilePath [arguments redacted]"
         "workingDirectory: $WorkingDirectory"
         "exitCode: $($process.ExitCode)"
         ""
@@ -176,12 +176,17 @@ function Invoke-MobileApi {
     }
     catch {
         $errorPath = Join-Path $EvidenceDir "$Name.error.txt"
-        $_ | Out-String | Set-Content -Path $errorPath
+        $status = if ($_.Exception.Response) { [int]$_.Exception.Response.StatusCode } else { $null }
+        [ordered]@{
+            request = "$Method $Path"
+            status = $status
+            errorType = $_.Exception.GetType().FullName
+        } | ConvertTo-Json | Set-Content -Path $errorPath
         if ($_.Exception.Response) {
             $responses[$Name] = [ordered]@{
                 method = $Method
                 path = $Path
-                status = [int]$_.Exception.Response.StatusCode
+                status = $status
                 error = $errorPath
             }
         }
@@ -191,10 +196,6 @@ function Invoke-MobileApi {
     $payload = $null
     if ($response.Content) {
         $payload = $response.Content | ConvertFrom-Json
-        Save-Json -Path (Join-Path $EvidenceDir "$Name.json") -Value $payload
-    }
-    else {
-        "" | Set-Content -Path (Join-Path $EvidenceDir "$Name.json")
     }
 
     $responses[$Name] = [ordered]@{
@@ -263,7 +264,7 @@ function New-SmokeNotification {
 
     $safeUsername = $Username.Replace("\", "\\").Replace("'", "\'")
     $safeRunId = $RunId.Replace("\", "\\").Replace("'", "\'")
-    $code = "from django.contrib.auth import get_user_model; from api.models import MobileNotification, MobileNotificationType; from patients.models import Case; user=get_user_model().objects.get(username='$safeUsername'); case=Case.objects.get(pk=$CaseId); n,_=MobileNotification.objects.get_or_create(user=user,dedupe_key='mobile-api-smoke-$safeRunId',defaults={'notification_type': MobileNotificationType.ASSIGNMENT, 'title': 'Mobile API smoke', 'body': 'Local endpoint smoke', 'case': case, 'payload': {'case_id': case.id}}); print(n.id)"
+    $code = "from django.contrib.auth import get_user_model; from api.models import MobileNotification, MobileNotificationType; from patients.models import Case; user=get_user_model().objects.get(username='$safeUsername'); case=Case.objects.get(pk=$CaseId); n,_=MobileNotification.objects.get_or_create(user=user,dedupe_key='mobile-api-smoke-$safeRunId',defaults={'notification_type': MobileNotificationType.ASSIGNMENT, 'title': 'MEDTRACK update', 'body': 'Open MEDTRACK to review this update.', 'case': case, 'payload': {}}); n.payload={'event_id': str(n.event_id)}; n.save(update_fields=['payload']); print(n.id)"
     Invoke-ProcessLogged `
         -Name "create-smoke-notification" `
         -FilePath "docker" `
@@ -304,14 +305,14 @@ try {
         }
     }
 
-    $dashboardSnapshotPath = Join-Path $EvidenceDir "dashboard-snapshot.json"
+    $hasDashboardDiscovery = $false
     $dashboardDeadline = (Get-Date).AddSeconds(45)
     do {
         try {
             $snapshot = Invoke-RestMethod -Uri "http://127.0.0.1:3899/api/snapshot" -TimeoutSec 10
-            Save-Json -Path $dashboardSnapshotPath -Value $snapshot -Depth 8
             $snapshotText = $snapshot | ConvertTo-Json -Depth 8
             Assert-True ($snapshotText -like "*8000*") "Local Server Dashboard snapshot did not include port 8000."
+            $hasDashboardDiscovery = $true
             break
         }
         catch {
@@ -440,7 +441,7 @@ try {
         hasNotificationRead = $notificationRead.id -eq [int]$notificationId
         hasTokenRefresh = [bool]$refresh.access
         hasLogout = $logout.message -like "*Logged out*"
-        hasDashboardDiscovery = Test-Path $dashboardSnapshotPath
+        hasDashboardDiscovery = $hasDashboardDiscovery
     }
 
     $summary = [ordered]@{

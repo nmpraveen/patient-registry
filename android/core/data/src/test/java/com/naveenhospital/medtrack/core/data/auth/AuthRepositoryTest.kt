@@ -413,20 +413,23 @@ private class FakeAuthApi(
         scopeContext: String?,
         categories: List<String>?,
         subcategories: List<String>?,
-        query: String?,
         page: Int?,
     ): CaseListResponseDto = unused()
+
+    override suspend fun searchCases(
+        request: com.naveenhospital.medtrack.core.network.model.CaseSearchRequestDto,
+    ): com.naveenhospital.medtrack.core.network.model.CaseSearchResponseDto = unused()
 
     override suspend fun caseDetail(caseId: String): CaseDetailDto = unused()
 
     override suspend fun createCase(request: com.naveenhospital.medtrack.core.network.model.CreateCaseRequestDto): com.naveenhospital.medtrack.core.network.model.CaseCreateResponseDto = unused()
 
-    override suspend fun searchPatients(query: String?, page: Int?): com.naveenhospital.medtrack.core.network.model.PatientSearchResponseDto = unused()
+    override suspend fun searchPatients(request: com.naveenhospital.medtrack.core.network.model.PatientSearchRequestDto): com.naveenhospital.medtrack.core.network.model.PatientSearchResponseDto = unused()
 
     override suspend fun caseFormMetadata(): com.naveenhospital.medtrack.core.network.model.CaseFormMetadataDto = unused()
     override suspend fun taskFormMetadata(): com.naveenhospital.medtrack.core.network.model.TaskFormMetadataDto = unused()
     override suspend fun caseEditForm(caseId: String): com.naveenhospital.medtrack.core.network.model.CaseEditFormDto = unused()
-    override suspend fun updateCase(caseId: String, request: com.naveenhospital.medtrack.core.network.model.CreateCaseRequestDto): com.naveenhospital.medtrack.core.network.model.CaseCreateResponseDto = unused()
+    override suspend fun updateCase(caseId: String, request: com.naveenhospital.medtrack.core.network.model.UpdateCaseRequestDto): com.naveenhospital.medtrack.core.network.model.CaseUpdateResponseDto = unused()
     override suspend fun createTask(caseId: String, request: com.naveenhospital.medtrack.core.network.model.CreateTaskRequestDto): TaskWriteResponseDto = unused()
     override suspend fun updateTask(taskId: String, request: com.naveenhospital.medtrack.core.network.model.UpdateTaskRequestDto): TaskWriteResponseDto = unused()
     override suspend fun addTaskNote(taskId: String, request: com.naveenhospital.medtrack.core.network.model.TaskNoteRequestDto): TaskWriteResponseDto = unused()
@@ -440,7 +443,7 @@ private class FakeAuthApi(
 
     override suspend fun vitalsThresholds(): VitalsThresholdsDto = unused()
 
-    override suspend fun notifications(type: String?, unreadOnly: Boolean?, page: Int?): NotificationsResponseDto = unused()
+    override suspend fun notifications(type: String?, unreadOnly: Boolean?, cursor: String?, pageSize: Int?): NotificationsResponseDto = unused()
 
     override suspend fun markNotificationRead(notificationId: String): ApiMessageDto = unused()
 
@@ -461,6 +464,11 @@ private fun userProfile(
         displayName = if (id == 1L) "Admin" else "Other",
         roles = listOf("Admin"),
         capabilities = emptyMap(),
+        dataScope = com.naveenhospital.medtrack.core.network.model.DataScopeDto(
+            caseDataScope = "ALL",
+            callQueue = true,
+            intakePatientLookup = true,
+        ),
     )
 
 private fun httpError(status: Int): HttpException =

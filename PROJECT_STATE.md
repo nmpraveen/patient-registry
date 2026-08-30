@@ -6,7 +6,7 @@ MEDTRACK is a runnable Django + Postgres case-follow-up MVP with a native Androi
 
 The web app supports login-based role-aware workflows, case dashboards, case activity logs, configurable roles/categories/theme settings, patient-data import/export, server-side backup bundles, and seeded demo records.
 
-The Android v1 implementation is locally implemented and has local verification evidence from the Test NNH workflow. The release goal is not complete until the external Firebase and physical-device gates pass.
+The Android v1 implementation is locally implemented and has local verification evidence from the Test NNH workflow. The release lane now has API 36 environment flavors, fail-closed case edits, cursor snapshot sync, durable recovery records, opaque push consumption, and auditable unsigned APK/AAB packaging. The release goal is not complete until the amended API PR #99 contract, account-boundary lane, external Firebase, and physical-device gates pass.
 
 Production is deployed on the hardened VPS at commit `a5dff668b23c52e5a71431807a291573f9e0404c`: pinned Python/PostgreSQL/Caddy versions, loopback-only Django exposure, persistent host backup storage, health-gated startup, and exact-commit deployment. Website and API object authorization now enforce created, assigned, or current call-queue scope for restricted staff; Doctor/Admin retain full active-case scope. Non-superusers can no longer modify superusers or grant settings-admin access, and the plaintext temporary-password-note model/table/UI have been removed. Encrypted Google Drive backups and health timers are active, and a pull-only Synology ciphertext mirror provides an independent off-VPS copy.
 
@@ -55,7 +55,7 @@ If `docker-compose.override.yml` exists locally, the local-dev PowerShell wrappe
 - Web MVP: operational and runnable locally.
 - Production website deployment: deployed and healthy on the hardened VPS with the website/API P0 authorization and admin-IAM containment live.
 - Android v1: locally implemented and locally smoke-tested.
-- Release readiness: blocked on external Firebase delivery evidence, a physical Android phone smoke, and a two-user field-test record.
+- Release readiness: local packaging/remediation implemented; blocked on exact API PR #99 integration, account-scoped encrypted Room/outbox handling, external Firebase delivery evidence, a physical Android phone smoke, and a two-user field-test record.
 
 ## Done
 
@@ -71,6 +71,9 @@ If `docker-compose.override.yml` exists locally, the local-dev PowerShell wrappe
 - Android Kotlin/Compose app structure with `app`, `core`, and `feature` modules.
 - Mobile DRF API surface for auth, case lists/details, writes, notifications, and device registration.
 - Android offline write support for task completion, call outcome, and vitals writes.
+- Android sync recovery records preserve structured local/server payloads and provide durable retry/discard actions instead of silently poisoning the WorkManager queue.
+- Android notification sync exhausts opaque cursors and reconciles stale/revoked rows only after a terminal complete snapshot; raw FCM display is suppressed and only triggers authenticated API refresh.
+- Android API 36 dev/stage/prod flavors, external-only signing configuration, dependency locks, third-party notices, and unsigned release APK/AAB audit tooling are implemented.
 - Android screenshot handoff for login, home, filters, red-flag reasons, cases, case detail, vitals entry, notifications, alert detail, calls, dialer handoff, call outcome, profile, quick add, create case, and final home state.
 - Android alert detail, call outcome, and Custom Rehab visual surfaces are locally implemented for review.
 - `MarkUS_Local` is the preferred AVD for quick manual Android start/login checks against Test NNH.
@@ -90,7 +93,8 @@ If `docker-compose.override.yml` exists locally, the local-dev PowerShell wrappe
 - Low-end or representative physical Android phone smoke is not complete.
 - Two-user field-test record is not complete.
 - Final Android v1 audit remains incomplete until `.\android\scripts\medtrack-v1-audit.ps1` reports `goalComplete=true`.
-- Android account-scoped local storage/outbox isolation and PHI-free FCM payloads remain separate production blockers; they were intentionally outside PR #95.
+- Android account-scoped encrypted local storage/outbox isolation remains owned by the account-security lane. The Android push consumer is generic, but the server-side PHI-free FCM producer and real delivery still require integration proof.
+- Android patient-search/notification DTOs target the amended PR #99 cursor contract; final field-for-field validation must use its amended exact SHA before either lane merges.
 
 ## Known Risks
 
@@ -105,7 +109,7 @@ If `docker-compose.override.yml` exists locally, the local-dev PowerShell wrappe
 - The current Test NNH listener can appear LAN-exposed through Docker port publishing; use `adb reverse` for physical-device local testing when possible.
 - `MarkUS_Latest_API37` can appear attached while stuck behind a locked/black SystemUI state. For quick manual starts, switch to `MarkUS_Local` instead of debugging the APK.
 - Firebase readiness depends on external console configuration and local secrets that are intentionally excluded from Git.
-- The website-side authorization containment is live, but overall MEDTRACK production readiness remains NO-GO for Android until account isolation, generic push payloads, and the remaining release/recovery gates are completed.
+- The website-side authorization containment and Android account/session boundaries are implemented, but overall MEDTRACK production readiness remains NO-GO until the final mobile API-contract integration and release/recovery gates are proven together.
 - The unreleased CSP still permits inline style attributes because the existing theme system applies per-category CSS variables that way. Executable scripts are self-hosted and nonce-bound, and the one runtime-generated Crayons style block is limited to a pinned SHA-256 hash; upgrading Crayons requires reviewing the vendor integrity manifest, revalidating that hash, and rerunning the browser suite.
 
 ## Important Generated Outputs
@@ -116,11 +120,12 @@ If `docker-compose.override.yml` exists locally, the local-dev PowerShell wrappe
 - `output/android-claude-handoff-final-20260531-105420/` - current screenshot handoff for style and workflow review.
 - Synology `Home/Backups/MEDTRACK/archive/` - encrypted NAS recovery archive; no private `age` key and no automatic deletion.
 - `C:\Users\prave\Documents\NNH umich\MEDTRACK Recovery\2026-08-11-nas-restore\` - local encrypted NAS restore evidence and verification report; no retained plaintext.
-- `%USERPROFILE%\.codex\build\medtrack-android\app\outputs\apk\debug\app-debug.apk` - default debug APK output.
+- `android/.build/` - per-worktree Gradle build outputs.
+- `android/release-artifacts/<version>/<git-sha>/` - audited unsigned APK/AAB, SHA-256 manifest, CycloneDX SBOM, provenance, and credential-entry audit.
 - `test_nnh_state` - Docker volume for the Test NNH demo SQLite database.
 
 ## Next 3 Actions
 
 1. Review and merge the website frontend/privacy/accessibility hardening PR, then deploy only through the normal backup, exact-commit, and live-acceptance gates.
 2. Rotate temporary production credentials and resolve the HostDZire browser-console recovery issue; keep Drive/NAS health and monthly scratch restores monitored.
-3. Before enabling Android/FCM in production, implement account-scoped encrypted local state and PHI-free push payloads, then complete physical-device and two-user field tests.
+3. Before enabling Android/FCM in production, validate the amended PR #99 schema at its exact SHA, merge the account-scoped encrypted local-state lane, prove opaque server push delivery, then complete physical-device and two-user field tests.

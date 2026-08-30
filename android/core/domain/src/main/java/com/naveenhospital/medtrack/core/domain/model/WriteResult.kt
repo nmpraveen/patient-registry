@@ -14,4 +14,9 @@ data class SyncConflict(
     val taskId: String?,
     val message: String,
     val createdAtMillis: Long,
+    val failureKind: String,
+    val localPayloadJson: String?,
+    val serverPayloadJson: String?,
+    val httpStatus: Int?,
+    val resolutionState: String,
 )

@@ -1,6 +1,7 @@
 package com.naveenhospital.medtrack.core.data.sync
 
 import com.naveenhospital.medtrack.core.data.local.PendingWriteEntity
+import com.naveenhospital.medtrack.core.data.local.TaskEntity
 import com.naveenhospital.medtrack.core.network.model.ClientWriteRequestDto
 import com.naveenhospital.medtrack.core.network.model.LogCallRequestDto
 import com.naveenhospital.medtrack.core.network.model.VitalsRequestDto
@@ -21,11 +22,31 @@ data class NotificationReadPayload(
     val clientWriteId: String,
 )
 
+data class TaskRollbackSnapshot(
+    val title: String,
+    val dueDate: String?,
+    val status: String,
+    val statusLabel: String,
+    val canComplete: Boolean,
+    val taskType: String? = null,
+    val taskTypeLabel: String? = null,
+    val assignedUserId: Long? = null,
+    val assignedUser: String? = null,
+    val notes: String? = null,
+    val updatedAtMillis: Long,
+)
+
+data class TaskCompletePendingPayload(
+    val request: ClientWriteRequestDto,
+    val rollback: TaskRollbackSnapshot? = null,
+)
+
 sealed class DecodedPendingWrite {
     data class TaskComplete(
         val caseId: String,
         val taskId: String,
         val payload: ClientWriteRequestDto,
+        val rollback: TaskRollbackSnapshot?,
     ) : DecodedPendingWrite()
 
     data class CallOutcome(
@@ -49,16 +70,30 @@ object PendingWriteJson {
         .add(KotlinJsonAdapterFactory())
         .build()
 
-    private val taskCompleteAdapter = moshi.adapter(ClientWriteRequestDto::class.java)
+    private val legacyTaskCompleteAdapter = moshi.adapter(ClientWriteRequestDto::class.java)
+    private val taskCompleteAdapter = moshi.adapter(TaskCompletePendingPayload::class.java)
     private val callOutcomeAdapter = moshi.adapter(LogCallRequestDto::class.java)
     private val vitalsAdapter = moshi.adapter(VitalsRequestDto::class.java)
     private val notificationReadAdapter = moshi.adapter(NotificationReadPayload::class.java)
 
-    fun encodeTaskComplete(payload: ClientWriteRequestDto): String =
-        taskCompleteAdapter.toJson(payload)
+    fun encodeTaskComplete(payload: ClientWriteRequestDto, rollback: TaskEntity? = null): String =
+        taskCompleteAdapter.toJson(
+            TaskCompletePendingPayload(
+                request = payload,
+                rollback = rollback?.toRollbackSnapshot(),
+            ),
+        )
 
     fun decodeTaskComplete(json: String): ClientWriteRequestDto =
-        requireNotNull(taskCompleteAdapter.fromJson(json))
+        decodeTaskCompletePending(json).request
+
+    fun decodeTaskCompletePending(json: String): TaskCompletePendingPayload =
+        runCatching { taskCompleteAdapter.fromJson(json) }
+            .getOrNull()
+            ?.takeIf { it.request.clientWriteId.isNotBlank() }
+            ?: TaskCompletePendingPayload(
+                request = requireNotNull(legacyTaskCompleteAdapter.fromJson(json)),
+            )
 
     fun encodeCallOutcome(payload: LogCallRequestDto): String =
         callOutcomeAdapter.toJson(payload)
@@ -78,12 +113,33 @@ object PendingWriteJson {
     fun decodeNotificationRead(json: String): NotificationReadPayload =
         requireNotNull(notificationReadAdapter.fromJson(json))
 
+    fun reissue(writeType: String, json: String, clientWriteId: String): String =
+        when (writeType) {
+            PendingWriteTypes.TASK_COMPLETE -> {
+                val pending = decodeTaskCompletePending(json)
+                taskCompleteAdapter.toJson(
+                    pending.copy(request = pending.request.copy(clientWriteId = clientWriteId)),
+                )
+            }
+            PendingWriteTypes.CALL_OUTCOME -> encodeCallOutcome(
+                decodeCallOutcome(json).copy(clientWriteId = clientWriteId),
+            )
+            PendingWriteTypes.VITALS_CREATE -> encodeVitals(
+                decodeVitals(json).copy(clientWriteId = clientWriteId),
+            )
+            PendingWriteTypes.NOTIFICATION_READ -> encodeNotificationRead(
+                decodeNotificationRead(json).copy(clientWriteId = clientWriteId),
+            )
+            else -> throw MalformedPendingWriteException("Unsupported pending write type: $writeType")
+        }
+
     fun decodeForSync(write: PendingWriteEntity): DecodedPendingWrite =
         when (write.writeType) {
             PendingWriteTypes.TASK_COMPLETE -> DecodedPendingWrite.TaskComplete(
                 caseId = write.caseId.requiredId("case id"),
                 taskId = write.taskId.requiredId("task id"),
-                payload = decodePayload(write) { decodeTaskComplete(write.payloadJson) },
+                payload = decodePayload(write) { decodeTaskCompletePending(write.payloadJson) }.request,
+                rollback = decodePayload(write) { decodeTaskCompletePending(write.payloadJson) }.rollback,
             )
             PendingWriteTypes.CALL_OUTCOME -> DecodedPendingWrite.CallOutcome(
                 caseId = write.caseId.requiredId("case id"),
@@ -117,3 +173,40 @@ object PendingWriteJson {
         takeIf { !it.isNullOrBlank() }
             ?: throw MalformedPendingWriteException("Missing $label for pending write.")
 }
+
+internal fun TaskRollbackSnapshot.toEntity(
+    ownerAccountId: String,
+    caseId: String,
+    taskId: String,
+): TaskEntity =
+    TaskEntity(
+        ownerAccountId = ownerAccountId,
+        id = taskId,
+        caseId = caseId,
+        title = title,
+        dueDate = dueDate,
+        status = status,
+        statusLabel = statusLabel,
+        canComplete = canComplete,
+        taskType = taskType,
+        taskTypeLabel = taskTypeLabel,
+        assignedUserId = assignedUserId,
+        assignedUser = assignedUser,
+        notes = notes,
+        updatedAtMillis = updatedAtMillis,
+    )
+
+private fun TaskEntity.toRollbackSnapshot(): TaskRollbackSnapshot =
+    TaskRollbackSnapshot(
+        title = title,
+        dueDate = dueDate,
+        status = status,
+        statusLabel = statusLabel,
+        canComplete = canComplete,
+        taskType = taskType,
+        taskTypeLabel = taskTypeLabel,
+        assignedUserId = assignedUserId,
+        assignedUser = assignedUser,
+        notes = notes,
+        updatedAtMillis = updatedAtMillis,
+    )

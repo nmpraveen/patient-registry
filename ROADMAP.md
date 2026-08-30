@@ -8,8 +8,8 @@
 | Local demo workflow | Done | Test NNH server runs at `http://localhost:8000` with `admin` / `pass` through the `local-dev` wrappers. |
 | Mobile API | Done locally | DRF endpoints support Android auth, worklists, case detail, writes, notifications, and device registration. |
 | Android v1 app | Done locally | Kotlin/Compose app, offline writes, notifications surface, local smoke scripts, and screenshot/style handoff evidence exist. |
-| Android release readiness | In progress | Screenshot handoff is captured; Firebase delivery, create-case persistence, lock-flow routing, field-test evidence, release signing, and final v1 audit remain. |
-| Production hardening | Website operational; overall NO-GO | Website/API P0 authorization and admin-IAM containment are live at `a5dff668`; HTTPS, encrypted Drive timers, isolated Synology mirror, and restore evidence are verified. Android account isolation/FCM PHI, credential rotation, and provider-console recovery remain follow-ups. |
+| Android release readiness | In progress | API 36 flavors, unsigned AAB/APK production packaging, external signing, dependency locks, hashes/SBOM/provenance, PHI-redacted networking, and opaque push consumption are implemented locally; server-contract integration, account isolation, Firebase/device evidence, and final audit remain. |
+| Production hardening | Website operational; overall NO-GO | Website/API P0 authorization and admin-IAM containment are live at `a5dff668`; HTTPS, encrypted Drive timers, isolated Synology mirror, and restore evidence are verified. Android account isolation, server-side opaque FCM proof, credential rotation, and provider-console recovery remain follow-ups. |
 
 ## Near-Term Roadmap
 
@@ -37,6 +37,7 @@
    - Configure host-only Firebase Admin SDK credentials.
    - Set `FCM_ENABLED=True`, `FCM_CREDENTIALS_FILE`, and project id if needed.
    - Run `.\android\scripts\mobile-push-preflight.ps1 -RequireReady`.
+   - Verify the server sends only data-only opaque event/type wake-up data; Android suppresses raw-FCM display, ignores untrusted title/body/patient/case/phone fields, and refetches after authentication.
 
 5. Decide Android create-case and lock-flow scope.
    - Current create-case wizard is a native mock/draft-style flow, not a persisted backend write.
@@ -63,7 +64,7 @@
 
 ## Later Work
 
-- Decide whether the Android app needs a signed release build and distribution checklist.
+- Provision Play App Signing/external upload-key secrets and run the documented signed `bundleProdForPlay` gate; never commit signing material.
 - Add recurring independent scratch-restore verification after the first manual restore proof.
 - Design the permanent mobile worklist scope policy so elevated users can choose the operational queue intentionally instead of relying on the temporary `assigned_to=all` default.
 - Keep the app scoped as case-based follow-up tracking, not a full EHR.

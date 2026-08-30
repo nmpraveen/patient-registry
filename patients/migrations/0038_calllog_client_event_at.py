@@ -9,7 +9,7 @@ def backfill_client_event_time(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("patients", "0036_remove_plaintext_password_notes"),
+        ("patients", "0037_backend_auth_clinical_security"),
     ]
 
     operations = [

@@ -13,7 +13,7 @@ def purge_legacy_phi_mobile_state(apps, schema_editor):
 class Migration(migrations.Migration):
     dependencies = [
         ("api", "0003_mobilewritereceipt_response_status"),
-        ("patients", "0037_calllog_client_event_at"),
+        ("patients", "0038_calllog_client_event_at"),
     ]
 
     operations = [

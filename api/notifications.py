@@ -194,7 +194,10 @@ def notification_is_authorized(notification):
 
 
 def purge_stale_notifications_for_user(user):
-    authorized_ids = authorized_notification_queryset(user).values("pk")
+    # Materialize the authorized set before deleting from the same table. This
+    # keeps the revocation decision stable and avoids a self-referential
+    # subquery changing underneath the delete statement.
+    authorized_ids = list(authorized_notification_queryset(user).values_list("pk", flat=True))
     deleted = MobileNotification.objects.filter(user=user).exclude(pk__in=authorized_ids).delete()[0]
     if deleted:
         bump_notification_epochs([user.pk])

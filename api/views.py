@@ -722,7 +722,7 @@ class CaseDetailView(APIView):
             case = get_object_or_404(
                 _accessible_case_queryset(
                     request.user,
-                    Case.objects.select_for_update().select_related("category", "patient"),
+                    Case.objects.select_for_update(of=("self",)).select_related("category", "patient"),
                 ),
                 pk=pk,
             )
@@ -1454,7 +1454,7 @@ class TaskDetailView(APIView):
             task = get_object_or_404(
                 _accessible_task_queryset(
                     request.user,
-                    Task.objects.select_for_update().select_related(
+                    Task.objects.select_for_update(of=("self",)).select_related(
                         "case", "case__category", "assigned_user"
                     ),
                 ),
@@ -1637,7 +1637,7 @@ class VitalsDetailView(APIView):
             vital = get_object_or_404(
                 _accessible_vital_queryset(
                     request.user,
-                    VitalEntry.objects.select_for_update().select_related("case", "case__category"),
+                    VitalEntry.objects.select_for_update(of=("self",)).select_related("case", "case__category"),
                 ),
                 pk=pk,
             )
@@ -2098,10 +2098,15 @@ class NotificationReadView(APIView):
     )
     def post(self, request, pk):
         purge_stale_notifications_for_user(request.user)
-        notification = get_object_or_404(
-            authorized_notification_queryset(request.user),
-            pk=pk,
-        )
+        notification = authorized_notification_queryset(request.user).filter(pk=pk).first()
+        if notification is None:
+            # Return a normal 404 response instead of raising after the purge.
+            # With ATOMIC_REQUESTS an exception would roll back the revocation
+            # delete and leave the stale PHI-bearing row behind.
+            return Response(
+                {"code": "not_found", "message": "Notification not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
         if notification.read_at is None:
             notification.read_at = timezone.now()
             notification.save(update_fields=["read_at"])
@@ -2351,7 +2356,7 @@ class PatientSearchView(APIView):
         queryset = _patient_search_queryset(
             "",
             user=request.user,
-            allow_intake_lookup=True,
+            allow_intake_lookup=bool(scope.get("intake_patient_lookup")),
         )
         if normalized_phone:
             prefix_filters = Q(phone_number=normalized_phone) | Q(

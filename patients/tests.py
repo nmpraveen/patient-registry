@@ -893,7 +893,7 @@ class MedtrackViewTests(TestCase):
             )
 
         response = self.assert_max_queries(
-            15,  # Includes sliding-session refresh plus auth-version and device-policy checks.
+            16,  # Includes sliding-session refresh plus auth-version, device, and explicit role-policy checks.
             reverse("patients:case_list"),
             {
                 "q": "Perf",
@@ -1377,15 +1377,17 @@ class MedtrackViewTests(TestCase):
         self.assertNotIn(">Expand<", section_html)
 
     def test_dashboard_recent_cases_panel_is_hidden_for_non_recent_roles(self):
-        self.login_as_role("Nurse", username="nurse_recent_panel")
+        RoleSetting.objects.update_or_create(
+            role_name="No Case Data",
+            defaults={"case_data_scope": CaseDataScope.NONE},
+        )
+        self.login_as_role("No Case Data", username="no_case_data_recent_panel")
         self.create_recent_case()
 
         response = self.client.get(reverse("patients:dashboard"))
 
-        self.assertEqual(response.status_code, 200)
-        self.assertFalse(response.context["show_recent_cases_panel"])
-        self.assertFalse(response.context["can_edit_recent_cases"])
-        self.assertNotContains(response, "Recently Added")
+        self.assertEqual(response.status_code, 403)
+        self.assertNotContains(response, "Recently Added", status_code=403)
 
     def test_dashboard_recent_cases_panel_is_read_only_for_reception(self):
         reception_user = self.login_as_role("Reception", username="reception_recent_panel")
@@ -1525,7 +1527,11 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(len(all_response.json()["results"]), 12)
 
     def test_recent_cases_api_is_forbidden_for_non_recent_roles(self):
-        self.login_as_role("Nurse", username="nurse_recent_api")
+        RoleSetting.objects.update_or_create(
+            role_name="No Case Data",
+            defaults={"case_data_scope": CaseDataScope.NONE},
+        )
+        self.login_as_role("No Case Data", username="no_case_data_recent_api")
 
         response = self.client.get(
             reverse("patients:recent_cases"),
@@ -9726,7 +9732,6 @@ class PatientDataBundleTests(TestCase):
             title="MEDTRACK priority update",
             body="Open MEDTRACK to review a priority update.",
             case=source_case,
-            payload={"type": MobileNotificationType.RED_FLAG},
         )
         MobileWriteReceipt.objects.create(
             user=self.user,

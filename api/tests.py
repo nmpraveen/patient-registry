@@ -18,6 +18,7 @@ from drf_spectacular.generators import SchemaGenerator
 from rest_framework.test import APIClient, APITestCase
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from patients.auth_security import current_auth_version
 from patients.models import (
     AuditEvent,
     CallLog,
@@ -100,6 +101,13 @@ class MobileApiTests(APITestCase):
             created_by=self.user,
         )
         MobileNotification.objects.all().delete()
+
+    def _bound_refresh(self, user):
+        mobile_device_id = str(uuid.uuid4())
+        refresh = RefreshToken.for_user(user)
+        refresh["auth_version"] = current_auth_version(user)
+        refresh["mobile_device_id"] = mobile_device_id
+        return refresh, {"mobile_device_id": mobile_device_id}
 
     def test_me_returns_user_and_capabilities(self):
         response = self.client.get(reverse("api:me"))
@@ -600,7 +608,8 @@ class MobileApiTests(APITestCase):
         self.assertEqual(self.client.get(reverse("api:case_detail", args=[future_case.pk])).status_code, 404)
 
     def test_logout_returns_json_contract_for_android_client(self):
-        refresh = RefreshToken.for_user(self.user)
+        refresh, access_claims = self._bound_refresh(self.user)
+        self.client.force_authenticate(self.user, token=access_claims)
 
         response = self.client.post(
             reverse("api:logout"),
@@ -612,7 +621,8 @@ class MobileApiTests(APITestCase):
         self.assertEqual(response.json()["message"], "Logged out.")
 
     def test_logout_deactivates_mobile_device_tokens(self):
-        refresh = RefreshToken.for_user(self.user)
+        refresh, access_claims = self._bound_refresh(self.user)
+        self.client.force_authenticate(self.user, token=access_claims)
         MobileDeviceToken.objects.create(user=self.user, token="active-token-1")
         MobileDeviceToken.objects.create(user=self.user, token="active-token-2")
 
@@ -627,7 +637,8 @@ class MobileApiTests(APITestCase):
         self.assertFalse(MobileDeviceToken.objects.filter(user=self.user, is_active=True).exists())
 
     def test_logout_can_deactivate_single_mobile_device_token(self):
-        refresh = RefreshToken.for_user(self.user)
+        refresh, access_claims = self._bound_refresh(self.user)
+        self.client.force_authenticate(self.user, token=access_claims)
         MobileDeviceToken.objects.create(user=self.user, token="logout-this")
         MobileDeviceToken.objects.create(user=self.user, token="keep-this")
 
@@ -646,7 +657,9 @@ class MobileApiTests(APITestCase):
         from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken
 
         other = get_user_model().objects.create_user(username="logout-other", password="pass")
-        other_refresh = RefreshToken.for_user(other)
+        _own_refresh, own_access_claims = self._bound_refresh(self.user)
+        other_refresh, _other_access_claims = self._bound_refresh(other)
+        self.client.force_authenticate(self.user, token=own_access_claims)
         own_token = MobileDeviceToken.objects.create(user=self.user, token="own-active-token")
         other_token = MobileDeviceToken.objects.create(user=other, token="other-active-token")
 

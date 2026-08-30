@@ -24,15 +24,15 @@ python .\scripts\check_image_digests.py --update
 Android dependency verification metadata must be updated serially, only after
 the owning application lanes have made all three Android gates green:
 
-```powershell
-Set-Location android
-.\gradlew.bat --no-daemon --max-workers=1 --write-verification-metadata sha256 testDebugUnitTest lintRelease assembleRelease
-Set-Location ..
-git diff -- android\gradle\verification-metadata.xml
+```bash
+bash scripts/update-android-verification-metadata.sh
+git diff -- android/gradle/verification-metadata.xml
 ```
 
-Review every added artifact/checksum. Do not use verification-metadata updates
-to mask a source compile, unit, lint, or release failure.
+The script uses a fresh temporary Linux Gradle home and the same three tasks as
+CI with `--no-daemon --max-workers=1`. Review every added artifact/checksum. Do
+not use verification-metadata updates to mask a source compile, unit, lint, or
+release failure.
 
 Build and scan an exact committed revision from a safe Git archive with
 synthetic canaries only:
@@ -72,6 +72,13 @@ build argument, reads the labels back before startup, and emits a single receipt
 line: `MEDTRACK_BUILD_RECEIPT revision=<sha>
 build_context_sha256=<digest> image=<image-id>`. Ops must store that line with
 the reviewed deployment record and reject an image that fails the verifier.
+
+The web image runs as the fixed non-root UID/GID `10001:10001`. Before the first
+deployment of this image, the host backup directory named by `BACKUP_HOST_DIR`
+must exist and be writable only by the intended operator and UID/GID 10001. The
+deployment script tests both `/app/backups` and `/app/staticfiles` before it
+starts or replaces the web service, also verifies `/tmp`, and fails closed if
+any runtime write location is not writable.
 
 GitHub Actions tests the pull request head SHA directly. The required checks are
 listed in `.github/BRANCH_PROTECTION.md`. Branch protection is a post-merge

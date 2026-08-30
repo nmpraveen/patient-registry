@@ -23,6 +23,11 @@ ENV MEDTRACK_IMAGE_REVISION="${VCS_REF}"
 
 WORKDIR /app
 
+RUN groupadd --gid 10001 medtrack \
+    && useradd --create-home --uid 10001 --gid 10001 --shell /usr/sbin/nologin medtrack \
+    && install -d -o 10001 -g 10001 /app/staticfiles /app/backups \
+    && chmod 1777 /tmp
+
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
@@ -39,6 +44,8 @@ LABEL org.opencontainers.image.source="https://github.com/nmpraveen/patient-regi
       org.opencontainers.image.revision="${VCS_REF}" \
       org.medtrack.build-context.schema="medtrack.build-context/v1" \
       org.medtrack.build-context.digest="${BUILD_CONTEXT_SHA256}"
+
+USER 10001:10001
 
 EXPOSE 8000
 

@@ -157,11 +157,20 @@ jobs:
           git diff --exit-code -- requirements.txt requirements-ci.txt
       - name: Verify immutable image pins
         run: python scripts/check_image_digests.py --remote
+      - name: Image secret-detector regression
+        run: python -m unittest scripts.tests.test_scan_container_image
+      - name: Stage exact committed tree for repository scan
+        run: |
+          set -euo pipefail
+          scan_root="${RUNNER_TEMP}/medtrack-source-scan"
+          mkdir -p "$scan_root"
+          git archive --format=tar "${EXPECTED_SHA}" | tar -xf - -C "$scan_root"
+          echo "MEDTRACK_SOURCE_SCAN_ROOT=$scan_root" >> "$GITHUB_ENV"
       - name: Filesystem vulnerability, secret, and misconfiguration scan
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
-          scan-ref: .
+          scan-ref: ${{ env.MEDTRACK_SOURCE_SCAN_ROOT }}
           version: v0.74.0
           scanners: vuln,secret,misconfig
           severity: HIGH,CRITICAL
@@ -326,6 +335,7 @@ jobs:
       - name: Run Android gate
         working-directory: android
         env:
+          GRADLE_USER_HOME: ${{ runner.temp }}/gradle-user-home-${{ matrix.gate }}
           MEDTRACK_ANDROID_BUILD_DIR: ${{ runner.temp }}/medtrack-android-${{ matrix.gate }}
         run: bash ./gradlew --no-daemon --max-workers=1 --stacktrace ${{ matrix.task }}
 

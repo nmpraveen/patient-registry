@@ -7,6 +7,7 @@ from .auth_security import (
     AUTH_VERSION_SESSION_KEY,
     DEVICE_CREDENTIAL_SESSION_KEY,
     current_auth_version,
+    parse_positive_auth_version,
 )
 from .models import AuditEvent, DeviceApprovalPolicy, StaffDeviceCredential, StaffDeviceCredentialStatus
 
@@ -36,17 +37,19 @@ class AuditAndSessionSecurityMiddleware:
             return None
 
         current_version = current_auth_version(user)
-        bound_version = request.session.get(AUTH_VERSION_SESSION_KEY)
+        raw_bound_version = request.session.get(AUTH_VERSION_SESSION_KEY)
         device_policy_targets_user = self._device_policy_targets(user)
-        if bound_version is None and not device_policy_targets_user:
-            request.session[AUTH_VERSION_SESSION_KEY] = current_version
-            bound_version = current_version
 
         device_id = request.session.get(DEVICE_CREDENTIAL_SESSION_KEY)
         invalid_reason = ""
-        if bound_version != current_version:
+        try:
+            bound_version = parse_positive_auth_version(raw_bound_version)
+        except ValueError:
+            invalid_reason = "auth_version_missing_or_invalid"
+            bound_version = None
+        if not invalid_reason and bound_version != current_version:
             invalid_reason = "auth_version_changed"
-        elif device_policy_targets_user:
+        elif not invalid_reason and device_policy_targets_user:
             approved = StaffDeviceCredential.objects.filter(
                 pk=device_id,
                 user=user,

@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026.08.30.01.35
+- Made legacy sessions and JWTs fail closed, added rotating refresh-token replay response, and revoked delivery tokens atomically on every authentication-version change.
+- Enforced direct-user and group device-approval targets with distinct approved browser and server-issued mobile authentication credentials.
+- Hardened trusted-proxy authentication throttling with bounded identifiers, coarse-IP-first lockout, cleanup, and concurrency-safe counters.
+- Centralized explicit role, intake-search, and patient-selection policy; removed role-name grants and blocked hidden identity disclosure and stale merged-patient case writes.
+- Added bounded one-time patient-merge recovery, transaction-coupled clinical/IAM/data audits, immutable PostgreSQL evidence, and least-privilege migration and mock-seed behavior.
+
 ## 2026.08.30.00.20
 - Replaced implicit role-name data access with explicit case, call-queue, and intake-lookup scopes enforced across website and API policy.
 - Hardened patient identity edits and merges with complete affected-set authorization, deterministic database locks, and terminal-target validation.

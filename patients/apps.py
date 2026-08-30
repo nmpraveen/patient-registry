@@ -6,6 +6,9 @@ class PatientsConfig(AppConfig):
     name = "patients"
 
     def ready(self):
+        from .audit import install_user_audit_boundary
+
+        install_user_audit_boundary()
         from . import signals  # noqa: F401
         from .backup_scheduler import start_background_scheduler
 

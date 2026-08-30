@@ -1,8 +1,10 @@
 from datetime import datetime, time as dt_time, timedelta
 from decimal import Decimal
+from functools import wraps
 import uuid
 
 from django.conf import settings
+from django.contrib.auth.hashers import check_password, make_password
 from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models, transaction
@@ -60,6 +62,30 @@ VITAL_SPO2_MIN = 50
 VITAL_SPO2_MAX = 100
 VITAL_WEIGHT_KG_MIN = Decimal("30.0")
 VITAL_WEIGHT_KG_MAX = Decimal("120.0")
+
+
+def mandatory_audit_atomic(method):
+    @wraps(method)
+    def wrapped(self, *args, **kwargs):
+        if transaction.get_connection().in_atomic_block:
+            return method(self, *args, **kwargs)
+        with transaction.atomic():
+            return method(self, *args, **kwargs)
+
+    return wrapped
+
+
+class MandatoryAuditModelMixin(models.Model):
+    class Meta:
+        abstract = True
+
+    @mandatory_audit_atomic
+    def save(self, *args, **kwargs):
+        return super().save(*args, **kwargs)
+
+    @mandatory_audit_atomic
+    def delete(self, *args, **kwargs):
+        return super().delete(*args, **kwargs)
 
 
 class TemporaryPatientIDSequence(models.Model):
@@ -314,7 +340,7 @@ class CaseDataScope(models.TextChoices):
     ALL = "ALL", "All cases"
 
 
-class RoleSetting(models.Model):
+class RoleSetting(MandatoryAuditModelMixin, models.Model):
     role_name = models.CharField(max_length=50, unique=True)
     case_data_scope = models.CharField(
         max_length=16,
@@ -376,7 +402,7 @@ class ThemeSettings(models.Model):
         return cls.objects.get_or_create(pk=1)[0]
 
 
-class Patient(models.Model):
+class Patient(MandatoryAuditModelMixin, models.Model):
     uhid = models.CharField(max_length=64, unique=True)
     is_temporary_id = models.BooleanField(default=False)
     merged_into = models.ForeignKey(
@@ -450,7 +476,29 @@ class Patient(models.Model):
     def sync_case_mirrors(self):
         if not self.pk:
             return
-        self.cases.update(
+        from .audit import audited_bulk_update
+
+        changed_fields = {
+            "uhid",
+            "prefix",
+            "first_name",
+            "last_name",
+            "patient_name",
+            "gender",
+            "blood_group",
+            "date_of_birth",
+            "place",
+            "age",
+            "phone_number",
+            "alternate_phone_number",
+            "updated_at",
+        }
+        audited_bulk_update(
+            self.cases.all(),
+            category=AuditEvent.Category.CLINICAL,
+            action="patients.case.identity_mirrored",
+            changed_fields=changed_fields,
+            patient_id=self.pk,
             uhid=self.uhid,
             prefix=self.prefix,
             first_name=self.first_name,
@@ -466,6 +514,7 @@ class Patient(models.Model):
             updated_at=timezone.now(),
         )
 
+    @mandatory_audit_atomic
     def save(self, *args, **kwargs):
         self.uhid = " ".join((self.uhid or "").split()).upper()
         self.is_temporary_id = is_temporary_patient_uhid(self.uhid)
@@ -480,6 +529,131 @@ class Patient(models.Model):
 
     def __str__(self) -> str:
         return f"{self.uhid} - {self.full_name or self.patient_name}"
+
+
+def patient_merge_recovery_expires_at():
+    return timezone.now() + timedelta(
+        hours=max(1, getattr(settings, "PATIENT_MERGE_RECOVERY_HOURS", 72))
+    )
+
+
+class PatientMergeRecoveryQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        raise ValidationError("Patient merge recovery records cannot be bulk-updated.")
+
+    def delete(self):
+        raise ValidationError("Patient merge recovery records cannot be deleted.")
+
+
+class PatientMergeRecovery(MandatoryAuditModelMixin, models.Model):
+    recovery_id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
+    source_patient = models.ForeignKey(
+        Patient,
+        on_delete=models.PROTECT,
+        related_name="merge_recoveries_as_source",
+    )
+    target_patient = models.ForeignKey(
+        Patient,
+        on_delete=models.PROTECT,
+        related_name="merge_recoveries_as_target",
+    )
+    moved_case_ids = models.JSONField(default=list)
+    merge_audit_event = models.ForeignKey(
+        "AuditEvent",
+        on_delete=models.PROTECT,
+        related_name="patient_merge_recovery_records",
+    )
+    merge_request_id = models.CharField(max_length=64, blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="created_patient_merge_recoveries",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField(default=patient_merge_recovery_expires_at)
+    consumed_at = models.DateTimeField(null=True, blank=True)
+    consumed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="consumed_patient_merge_recoveries",
+    )
+    recovery_audit_event = models.ForeignKey(
+        "AuditEvent",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="patient_merge_recovery_consumptions",
+    )
+
+    objects = PatientMergeRecoveryQuerySet.as_manager()
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["source_patient", "created_at"], name="pat_merge_src_created_idx"),
+            models.Index(fields=["target_patient", "created_at"], name="pat_merge_tgt_created_idx"),
+            models.Index(fields=["expires_at", "consumed_at"], name="pat_merge_exp_used_idx"),
+        ]
+
+    @property
+    def is_consumed(self):
+        return self.consumed_at is not None
+
+    @mandatory_audit_atomic
+    def save(self, *args, **kwargs):
+        if self.source_patient_id == self.target_patient_id:
+            raise ValidationError("Merge recovery source and target must differ.")
+        normalized_case_ids = []
+        for case_id in self.moved_case_ids or []:
+            if type(case_id) is not int or case_id <= 0:
+                raise ValidationError("Merge recovery case IDs must be positive integers.")
+            normalized_case_ids.append(case_id)
+        if len(normalized_case_ids) != len(set(normalized_case_ids)):
+            raise ValidationError("Merge recovery case IDs must be unique.")
+        self.moved_case_ids = sorted(normalized_case_ids)
+
+        if self.pk:
+            previous = type(self).objects.filter(pk=self.pk).values(
+                "recovery_id",
+                "source_patient_id",
+                "target_patient_id",
+                "moved_case_ids",
+                "merge_audit_event_id",
+                "merge_request_id",
+                "created_by_id",
+                "created_at",
+                "expires_at",
+                "consumed_at",
+                "consumed_by_id",
+                "recovery_audit_event_id",
+            ).get()
+            immutable_fields = (
+                "recovery_id",
+                "source_patient_id",
+                "target_patient_id",
+                "moved_case_ids",
+                "merge_audit_event_id",
+                "merge_request_id",
+                "created_by_id",
+                "created_at",
+                "expires_at",
+            )
+            if any(previous[field] != getattr(self, field) for field in immutable_fields):
+                raise ValidationError("Patient merge recovery evidence is immutable.")
+            if previous["consumed_at"] is not None:
+                raise ValidationError("A consumed patient merge recovery cannot be changed.")
+            if self.consumed_at is not None and (
+                self.consumed_by_id is None or self.recovery_audit_event_id is None
+            ):
+                raise ValidationError("Recovery consumption requires actor and audit evidence.")
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Patient merge recovery records cannot be deleted.")
 
 
 class PatientDataBackupScheduleMode(models.TextChoices):
@@ -728,12 +902,13 @@ class PatientDataBackupSchedule(models.Model):
         )
 
 
-class DeviceApprovalPolicy(models.Model):
+class DeviceApprovalPolicy(MandatoryAuditModelMixin, models.Model):
     enabled = models.BooleanField(default=False)
     target_users = models.ManyToManyField(settings.AUTH_USER_MODEL, blank=True, related_name="device_approval_policies")
     target_groups = models.ManyToManyField("auth.Group", blank=True, related_name="device_approval_policies")
     updated_at = models.DateTimeField(auto_now=True)
 
+    @mandatory_audit_atomic
     def save(self, *args, **kwargs):
         self.pk = 1
         super().save(*args, **kwargs)
@@ -745,7 +920,9 @@ class DeviceApprovalPolicy(models.Model):
     def targets_user(self, user) -> bool:
         if not self.enabled or not getattr(user, "is_authenticated", False):
             return False
-        return self.target_users.filter(pk=user.pk).exists()
+        return self.target_users.filter(pk=user.pk).exists() or self.target_groups.filter(
+            pk__in=user.groups.values_list("pk", flat=True)
+        ).exists()
 
 
 class StaffDeviceCredentialStatus(models.TextChoices):
@@ -754,7 +931,7 @@ class StaffDeviceCredentialStatus(models.TextChoices):
     REVOKED = "REVOKED", "Revoked"
 
 
-class StaffDeviceCredential(models.Model):
+class StaffDeviceCredential(MandatoryAuditModelMixin, models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="device_credentials")
     status = models.CharField(
         max_length=16,
@@ -803,6 +980,7 @@ class StaffDeviceCredential(models.Model):
         self.trusted_token_hash = ""
         self.trusted_token_created_at = None
 
+    @mandatory_audit_atomic
     def save(self, *args, **kwargs):
         if self.status == StaffDeviceCredentialStatus.REVOKED:
             self.clear_trusted_token()
@@ -810,6 +988,62 @@ class StaffDeviceCredential(models.Model):
 
     def __str__(self) -> str:
         return f"{self.user} - {self.device_label}"
+
+
+class StaffMobileDeviceCredential(MandatoryAuditModelMixin, models.Model):
+    """Server-issued authentication credential for a single mobile installation.
+
+    This identity is deliberately separate from any FCM delivery token. Delivery
+    registrations may rotate or be reassigned without changing the authentication
+    credential that is approved here.
+    """
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="mobile_device_credentials",
+    )
+    device_id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
+    secret_hash = models.CharField(max_length=128)
+    status = models.CharField(
+        max_length=16,
+        choices=StaffDeviceCredentialStatus.choices,
+        default=StaffDeviceCredentialStatus.PENDING,
+    )
+    device_label = models.CharField(max_length=120, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    approved_at = models.DateTimeField(null=True, blank=True)
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="approved_mobile_device_credentials",
+    )
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    revoked_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="revoked_mobile_device_credentials",
+    )
+    last_used_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["user__username", "status", "-created_at"]
+        indexes = [
+            models.Index(fields=["user", "status"], name="pat_mob_user_status_idx"),
+        ]
+
+    def set_secret(self, raw_secret):
+        self.secret_hash = make_password(raw_secret)
+
+    def check_secret(self, raw_secret):
+        return bool(raw_secret) and check_password(raw_secret, self.secret_hash)
+
+    def __str__(self) -> str:
+        return f"{self.user} - {self.device_label or self.device_id}"
 
 
 DEFAULT_DEPARTMENTS = [
@@ -909,7 +1143,7 @@ def clone_role_setting(source_role_name=STAFF_ROLE_NAME, target_role_name=STAFF_
     )
     return target
 
-class Case(models.Model):
+class Case(MandatoryAuditModelMixin, models.Model):
     patient = models.ForeignKey(Patient, on_delete=models.PROTECT, related_name="cases", null=True, blank=True)
     uhid = models.CharField(max_length=64, blank=True, db_index=True)
     prefix = models.CharField(max_length=3, choices=CasePrefix.choices, blank=True, default="")
@@ -1001,7 +1235,13 @@ class Case(models.Model):
 
     def ensure_patient_link(self):
         if self.patient_id:
-            return self.patient
+            patient = Patient.objects.select_for_update().filter(pk=self.patient_id).first()
+            if patient is None:
+                raise ValidationError({"patient": "Patient record no longer exists."})
+            if patient.merged_into_id is not None:
+                raise ValidationError({"patient": "Merged patients cannot receive case writes."})
+            self.patient = patient
+            return patient
 
         normalized_uhid = " ".join((self.uhid or "").split()).upper()
         if not normalized_uhid:
@@ -1022,8 +1262,13 @@ class Case(models.Model):
             "created_by": self.created_by,
             "is_temporary_id": is_temporary_patient_uhid(normalized_uhid),
         }
-        patient, created = Patient.objects.get_or_create(uhid=normalized_uhid, defaults=patient_defaults)
+        patient, created = Patient.objects.select_for_update().get_or_create(
+            uhid=normalized_uhid,
+            defaults=patient_defaults,
+        )
         if not created:
+            if patient.merged_into_id is not None:
+                raise ValidationError({"patient": "Merged patients cannot receive new cases."})
             changed = False
             if self.created_by_id and not patient.created_by_id:
                 patient.created_by = self.created_by
@@ -1049,6 +1294,8 @@ class Case(models.Model):
         if not self.patient_id:
             return None
         patient = self.patient
+        if patient.merged_into_id is not None:
+            raise ValidationError({"patient": "Merged patients cannot receive case writes."})
         patient.uhid = self.uhid
         patient.prefix = self.prefix
         patient.first_name = self.first_name
@@ -1180,6 +1427,7 @@ class Case(models.Model):
         if category_name in ["MEDICINE", "NON SURGICAL", "NON-SURGICAL", "NONSURGICAL"] and not self.review_date:
             raise ValidationError({"review_date": "Medicine cases require a review date."})
 
+    @mandatory_audit_atomic
     def save(self, *args, **kwargs):
         tracked_name_fields = {"prefix", "first_name", "last_name", "patient_name", "place"}
         patient_mirror_fields = {
@@ -1349,7 +1597,7 @@ class Case(models.Model):
         return f"{self.uhid} - {self.full_name}"
 
 
-class Task(models.Model):
+class Task(MandatoryAuditModelMixin, models.Model):
     case = models.ForeignKey(Case, on_delete=models.CASCADE, related_name="tasks")
     title = models.CharField(max_length=200)
     due_date = models.DateField()
@@ -1383,7 +1631,7 @@ class Task(models.Model):
         return self.title
 
 
-class VitalEntry(models.Model):
+class VitalEntry(MandatoryAuditModelMixin, models.Model):
     case = models.ForeignKey(Case, on_delete=models.CASCADE, related_name="vitals")
     recorded_at = models.DateTimeField(default=timezone.now)
     bp_systolic = models.PositiveSmallIntegerField(
@@ -1473,7 +1721,7 @@ class VitalEntry(models.Model):
         return f"Vitals for {self.case.uhid} @ {self.recorded_at:%Y-%m-%d %H:%M}"
 
 
-class CaseActivityLog(models.Model):
+class CaseActivityLog(MandatoryAuditModelMixin, models.Model):
     case = models.ForeignKey(Case, on_delete=models.CASCADE, related_name="activity_logs")
     task = models.ForeignKey(Task, on_delete=models.CASCADE, null=True, blank=True, related_name="activity_logs")
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
@@ -1535,6 +1783,7 @@ class AuditEvent(models.Model):
             models.Index(fields=["case_id", "-occurred_at"], name="pat_audit_case_idx"),
         ]
 
+    @mandatory_audit_atomic
     def save(self, *args, **kwargs):
         if self.pk is not None or not self._state.adding:
             raise ValidationError("Audit events are append-only and cannot be updated.")
@@ -1568,10 +1817,11 @@ class AuthenticationThrottleBucket(models.Model):
         ]
         indexes = [
             models.Index(fields=["scope", "blocked_until"], name="pat_auth_scope_blocked_idx"),
+            models.Index(fields=["updated_at"], name="pat_auth_updated_idx"),
         ]
 
 
-class CallLog(models.Model):
+class CallLog(MandatoryAuditModelMixin, models.Model):
     case = models.ForeignKey(Case, on_delete=models.CASCADE, related_name="call_logs")
     task = models.ForeignKey(Task, on_delete=models.SET_NULL, null=True, blank=True, related_name="call_logs")
     outcome = models.CharField(max_length=40, choices=CallOutcome.choices)

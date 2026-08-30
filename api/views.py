@@ -9,6 +9,7 @@ from django.db.models import Max, Min, Prefetch, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import permissions, status
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -44,6 +45,7 @@ from patients.audit import record_audit_event
 from patients.theme import build_theme_category_colors, resolve_category_theme
 from patients.vitals_thresholds import vitals_thresholds_payload
 from patients.forms import CaseForm, TaskForm
+from patients.intake_access import resolve_case_intake_patient
 from patients.views import (
     CASE_CATEGORY_GROUP_FILTERS,
     _blood_pressure_display,
@@ -66,7 +68,7 @@ from patients.views import (
     create_case_activity,
     has_all_case_scope,
     has_capability,
-    is_doctor_admin,
+    can_transition_grey_tasks,
     role_data_scope_payload,
 )
 
@@ -440,8 +442,29 @@ class CaseListView(APIView):
         if replay_response is not None:
             return replay_response
 
-        form = CaseForm(data=request.data)
-        form.actor = request.user
+        if request.data.get("patient_mode") == "existing" and request.data.get("selected_patient"):
+            if resolve_case_intake_patient(
+                actor=request.user,
+                patient_id=request.data.get("selected_patient"),
+            ) is None:
+                scope = role_data_scope_payload(request.user)
+                record_audit_event(
+                    category=AuditEvent.Category.CLINICAL,
+                    action="case.intake_patient_selection_denied",
+                    outcome=AuditEvent.Outcome.DENIED,
+                    actor=request.user,
+                    request=request,
+                    metadata={
+                        "case_data_scope": scope["case_data_scope"],
+                        "intake_patient_lookup": scope["intake_patient_lookup"],
+                    },
+                )
+                return Response(
+                    {"message": "Existing patient selection is not permitted."},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
+        form = CaseForm(data=request.data, actor=request.user)
         form.instance.created_by = request.user
         if not form.is_valid():
             return Response(
@@ -451,6 +474,13 @@ class CaseListView(APIView):
 
         def apply_write():
             with transaction.atomic():
+                if form.cleaned_data.get("patient_mode") == "existing":
+                    try:
+                        form.revalidate_intake_selection(lock=True)
+                    except ValidationError as exc:
+                        raise PermissionDenied(
+                            "Existing patient selection is not permitted."
+                        ) from exc
                 case = form.save()
                 if case.review_frequency and not case.review_date:
                     case.review_date = timezone.localdate() + timedelta(
@@ -549,9 +579,9 @@ class CaseDetailView(APIView):
         if (
             has_grey_tasks
             and new_status in [CaseStatus.LOSS_TO_FOLLOW_UP, CaseStatus.ACTIVE]
-            and not is_doctor_admin(request.user)
+            and not can_transition_grey_tasks(request.user)
         ):
-            message = "Only Doctor/Admin can set Grey List cases to Active or Loss to Follow-up."
+            message = "Your role does not allow this Grey List status transition."
             return Response(
                 {"message": message, "errors": {"status": [message]}},
                 status=status.HTTP_400_BAD_REQUEST,

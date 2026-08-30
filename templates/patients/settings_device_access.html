@@ -4,7 +4,7 @@
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
   <div>
     <h1 class="h4 mb-1">Device Access</h1>
-    <p class="text-muted mb-0">Pilot device approval for selected users, with room to expand to role-based targeting later.</p>
+    <p class="text-muted mb-0">Approved browser and mobile authentication for selected users or roles.</p>
   </div>
   <div class="d-flex flex-wrap gap-2">
     <a class="btn btn-outline-secondary btn-sm" href="{% url 'patients:settings' %}">Back to Settings</a>
@@ -32,6 +32,16 @@
             {% endif %}
             {% if policy_form.target_users.errors %}
               <div class="text-danger small mt-1">{{ policy_form.target_users.errors|striptags }}</div>
+            {% endif %}
+          </div>
+          <div class="mb-2">
+            {{ policy_form.target_groups.label_tag }}
+            {{ policy_form.target_groups }}
+            {% if policy_form.target_groups.help_text %}
+              <div class="form-text">{{ policy_form.target_groups.help_text }}</div>
+            {% endif %}
+            {% if policy_form.target_groups.errors %}
+              <div class="text-danger small mt-1">{{ policy_form.target_groups.errors|striptags }}</div>
             {% endif %}
           </div>
           <button class="btn btn-primary btn-sm">Save Device Policy</button>
@@ -150,6 +160,44 @@
               <td colspan="5" class="text-muted">No approved devices yet.</td>
             </tr>
           {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="card mt-3">
+  <div class="card-body">
+    <h2 class="h6">Mobile Authentication Devices</h2>
+    <p class="text-muted small">These server-issued credentials authenticate the app and are separate from FCM delivery tokens.</p>
+    <div class="table-responsive">
+      <table class="table table-sm align-middle mb-0">
+        <thead><tr><th>User</th><th>Device</th><th>Status</th><th>Last Used</th><th class="text-end">Action</th></tr></thead>
+        <tbody>
+          {% for credential in pending_mobile_devices %}
+            <tr>
+              <td>{{ credential.user.username }}</td>
+              <td>{{ credential.device_label|default:"Mobile device" }}</td>
+              <td>Pending</td>
+              <td>{{ credential.last_used_at|date:"Y-m-d H:i"|default:"-" }}</td>
+              <td class="text-end">
+                <form method="post" class="d-inline">{% csrf_token %}<input type="hidden" name="action" value="approve_mobile_device" /><input type="hidden" name="mobile_credential_id" value="{{ credential.pk }}" /><button class="btn btn-primary btn-sm">Approve</button></form>
+                <form method="post" class="d-inline">{% csrf_token %}<input type="hidden" name="action" value="revoke_mobile_device" /><input type="hidden" name="mobile_credential_id" value="{{ credential.pk }}" /><button class="btn btn-outline-danger btn-sm">Revoke</button></form>
+              </td>
+            </tr>
+          {% endfor %}
+          {% for credential in approved_mobile_devices %}
+            <tr>
+              <td>{{ credential.user.username }}</td>
+              <td>{{ credential.device_label|default:"Mobile device" }}</td>
+              <td>Approved</td>
+              <td>{{ credential.last_used_at|date:"Y-m-d H:i"|default:"-" }}</td>
+              <td class="text-end"><form method="post" class="d-inline">{% csrf_token %}<input type="hidden" name="action" value="revoke_mobile_device" /><input type="hidden" name="mobile_credential_id" value="{{ credential.pk }}" /><button class="btn btn-outline-danger btn-sm">Revoke</button></form></td>
+            </tr>
+          {% endfor %}
+          {% if not pending_mobile_devices and not approved_mobile_devices %}
+            <tr><td colspan="5" class="text-muted">No mobile authentication devices registered.</td></tr>
+          {% endif %}
         </tbody>
       </table>
     </div>

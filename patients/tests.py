@@ -80,6 +80,10 @@ from .theme import (
     normalize_hex_color,
     rgba_string,
 )
+from .test_client import AuthVersionTestClient
+
+
+TestCase.client_class = AuthVersionTestClient
 
 
 class MedtrackModelTests(TestCase):
@@ -537,6 +541,7 @@ class ThemeSystemTests(TestCase):
         )
 
 
+@override_settings(ALLOW_MOCK_DATA_SEEDING=True)
 class MedtrackViewTests(TestCase):
     def setUp(self):
         ensure_default_role_settings()
@@ -9661,6 +9666,7 @@ class PatientDataBundleTests(TestCase):
             self.assertEqual(len(list(temp_path.glob("patient-data-bundle-yearly-*.zip"))), 1)
 
 
+@override_settings(ALLOW_MOCK_DATA_SEEDING=True)
 class SeedMockDataCommandTests(TestCase):
     def _seeded_vitals_snapshot(self):
         snapshot = {}
@@ -9784,7 +9790,7 @@ class SeedMockDataCommandTests(TestCase):
         }
         for username, role_name in expected_demo_users.items():
             demo_staff = User.objects.get(username=username)
-            self.assertTrue(demo_staff.check_password("pass"))
+            self.assertFalse(demo_staff.has_usable_password())
             self.assertTrue(demo_staff.groups.filter(name=role_name).exists())
 
         today = timezone.localdate()

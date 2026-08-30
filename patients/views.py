@@ -45,6 +45,17 @@ from . import backup_scheduler
 from . import database_bundle
 from .audit import record_audit_event
 from .auth_security import bind_authenticated_session, clear_auth_attempts, consume_auth_attempt
+from .intake_access import case_intake_patient_queryset, resolve_case_intake_patient
+from .policy import (
+    can_access_case_data,
+    can_transition_grey_tasks,
+    case_data_scope as _case_data_scope,
+    has_all_case_scope,
+    has_call_queue_scope as _has_call_queue_scope,
+    has_capability,
+    has_intake_lookup_scope as _has_intake_lookup_scope,
+    role_data_scope_payload,
+)
 from .forms import (
     ActivityLogForm,
     CallLogForm,
@@ -86,6 +97,7 @@ from .models import (
     Gender,
     NonCommunicableDisease,
     Patient,
+    PatientMergeRecovery,
     PatientDataBackupSchedule,
     PatientDataBackupTrigger,
     QUICK_ENTRY_DETAILS_TASK_TITLE,
@@ -97,6 +109,7 @@ from .models import (
     STAFF_ROLE_NAME,
     StaffDeviceCredential,
     StaffDeviceCredentialStatus,
+    StaffMobileDeviceCredential,
     Task,
     TaskType,
     TaskStatus,
@@ -320,8 +333,6 @@ TASK_NOTE_MARKER = "[Task:"
 LEGACY_TASK_NOTE_PREFIX = "Task note updated:"
 RECENT_CASE_LIMIT_DEFAULT = 10
 RECENT_CASE_LIMIT_MAX = 10
-RECENT_CASE_VIEW_ROLES = ("Doctor", "Admin", "Reception")
-RECENT_CASE_EDIT_ROLES = ("Doctor", "Admin")
 PENDING_DEVICE_LOGIN_SESSION_KEY = "device_access_pending_login"
 DEVICE_REGISTRATION_STATE_SESSION_KEY = "device_access_registration_state"
 DEVICE_AUTHENTICATION_STATE_SESSION_KEY = "device_access_authentication_state"
@@ -546,119 +557,12 @@ def _load_changelog_entries():
 
     return entries
 
-CAPABILITY_FIELD_MAP = {
-    "case_create": "can_case_create",
-    "case_edit": "can_case_edit",
-    "task_create": "can_task_create",
-    "task_edit": "can_task_edit",
-    "task_reopen": "can_task_reopen",
-    "note_add": "can_note_add",
-    "patient_merge": "can_patient_merge",
-    "manage_settings": "can_manage_settings",
-}
-
-
-def _user_role_settings_queryset(user):
-    return RoleSetting.objects.filter(
-        role_name__in=user.groups.values_list("name", flat=True),
-    )
-
-
-def _user_role_settings(user):
-    if user.is_superuser:
-        return []
-    cached_settings = getattr(user, "_cached_role_settings", None)
-    if cached_settings is None:
-        cached_settings = list(
-            _user_role_settings_queryset(user).only(
-                "role_name",
-                "case_data_scope",
-                "can_access_call_queue",
-                "can_intake_patient_lookup",
-                "can_case_create",
-                "can_case_edit",
-                "can_task_create",
-                "can_task_edit",
-                "can_task_reopen",
-                "can_note_add",
-                "can_patient_merge",
-                "can_manage_settings",
-            )
-        )
-        user._cached_role_settings = cached_settings
-    return cached_settings
-
-
-def has_capability(user, capability):
-    if user.is_superuser:
-        return True
-    capability_field = CAPABILITY_FIELD_MAP.get(capability)
-    if not capability_field:
-        return False
-    capability_cache = getattr(user, "_capability_cache", None)
-    if capability_cache is None:
-        capability_cache = {}
-        user._capability_cache = capability_cache
-    if capability in capability_cache:
-        return capability_cache[capability]
-    allowed = any(getattr(role_setting, capability_field) for role_setting in _user_role_settings(user))
-    capability_cache[capability] = allowed
-    return allowed
-
-
-def is_doctor_admin(user):
-    if user.is_superuser:
-        return True
-    return user.groups.filter(name__in=["Doctor", "Admin"]).exists()
-
-
-def _case_data_scope(user):
-    if user.is_superuser:
-        return CaseDataScope.ALL
-    scopes = {role.case_data_scope for role in _user_role_settings(user)}
-    if CaseDataScope.ALL in scopes:
-        return CaseDataScope.ALL
-    if CaseDataScope.ASSIGNED in scopes:
-        return CaseDataScope.ASSIGNED
-    return CaseDataScope.NONE
-
-
-def _has_call_queue_scope(user):
-    if user.is_superuser:
-        return True
-    return any(role.can_access_call_queue for role in _user_role_settings(user))
-
-
-def _has_intake_lookup_scope(user):
-    if user.is_superuser:
-        return True
-    return any(role.can_intake_patient_lookup for role in _user_role_settings(user))
-
-
-def has_all_case_scope(user):
-    return getattr(user, "is_authenticated", False) and _case_data_scope(user) == CaseDataScope.ALL
-
-
-def role_data_scope_payload(user):
-    return {
-        "case_data_scope": _case_data_scope(user),
-        "call_queue": _has_call_queue_scope(user),
-        "intake_patient_lookup": _has_intake_lookup_scope(user),
-    }
-
-
 def delete_seeded_mock_data():
     seeded_cases = Case.objects.filter(metadata__source="seed_mock_data")
     CallLog.objects.filter(case__in=seeded_cases).delete()
     CaseActivityLog.objects.filter(case__in=seeded_cases).delete()
     deleted_count, _ = seeded_cases.delete()
     return deleted_count
-
-
-def can_access_case_data(user):
-    if not getattr(user, "is_authenticated", False):
-        return False
-    return _case_data_scope(user) != CaseDataScope.NONE or _has_call_queue_scope(user)
 
 
 def create_case_activity(*, case, note, user=None, task=None, event_type=ActivityEventType.SYSTEM):
@@ -733,7 +637,7 @@ def _merge_patient_records(*, source_patient, target_patient, actor):
         source_patient.merged_into = target_patient
         source_patient.save(update_fields=["merged_into", "updated_at"])
 
-        record_audit_event(
+        merge_audit_event = record_audit_event(
             category=AuditEvent.Category.CLINICAL,
             action="patient.merged",
             actor=actor,
@@ -745,6 +649,14 @@ def _merge_patient_records(*, source_patient, target_patient, actor):
                 "target_patient_id": target_patient.pk,
                 "moved_case_count": len(moved_cases),
             },
+        )
+        PatientMergeRecovery.objects.create(
+            source_patient=source_patient,
+            target_patient=target_patient,
+            moved_case_ids=[case.pk for case in moved_cases],
+            merge_audit_event=merge_audit_event,
+            merge_request_id=merge_audit_event.request_id,
+            created_by=actor,
         )
 
     return len(moved_cases)
@@ -823,20 +735,10 @@ def _truncate_text(value, max_length=42):
 
 
 def _can_view_recent_cases(user):
-    if user.is_superuser:
-        return True
-    group_names = _user_group_names(user)
-    if group_names & set(RECENT_CASE_VIEW_ROLES):
-        return True
-    return has_capability(user, "case_edit") and has_capability(user, "task_edit")
+    return can_access_case_data(user)
 
 
 def _can_edit_recent_cases(user):
-    if user.is_superuser:
-        return True
-    group_names = _user_group_names(user)
-    if group_names and group_names.issubset({"Reception"}):
-        return False
     return has_capability(user, "case_edit") and has_capability(user, "task_edit")
 
 
@@ -846,16 +748,6 @@ def _can_access_upcoming_calls(user):
 
 def _can_reopen_tasks(user):
     return has_capability(user, "task_edit") and has_capability(user, "task_reopen")
-
-
-def _user_group_names(user):
-    if user.is_superuser:
-        return set()
-    cached_names = getattr(user, "_cached_group_names", None)
-    if cached_names is None:
-        cached_names = {role_setting.role_name for role_setting in _user_role_settings(user)}
-        user._cached_group_names = cached_names
-    return cached_names
 
 
 def _settings_url(view_name, **params):
@@ -942,7 +834,9 @@ def _parse_patient_search_date(raw_value):
 
 def _patient_search_queryset(query="", *, user=None, allow_intake_lookup=False):
     patient_queryset = Patient.objects.all()
-    if user is not None and not (allow_intake_lookup and _has_intake_lookup_scope(user)):
+    if user is not None and allow_intake_lookup:
+        patient_queryset = case_intake_patient_queryset(actor=user, queryset=patient_queryset)
+    elif user is not None:
         patient_queryset = _accessible_patient_queryset(user, patient_queryset)
     queryset = _visible_patient_queryset(
         patient_queryset.annotate(
@@ -3640,7 +3534,9 @@ class PatientSearchView(LoginRequiredMixin, CaseDataAccessMixin, View):
         if category_query:
             queryset = queryset.filter(category_query).distinct()
         patients = list(queryset[: self.max_results])
-        return JsonResponse({"results": [_serialize_patient_search_result(patient) for patient in patients]})
+        return JsonResponse(
+            {"results": [_serialize_patient_search_result(patient, user=request.user) for patient in patients]}
+        )
 
 
 class PatientListView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
@@ -3710,18 +3606,48 @@ class PatientUpdateView(LoginRequiredMixin, CaseDataAccessMixin, UpdateView):
             affected_cases = list(Case.objects.select_for_update().filter(patient=patient).order_by("pk"))
             if not _can_access_all_cases(self.request.user, affected_cases):
                 raise PermissionDenied("You do not have permission for every case affected by this patient edit.")
-            form.instance = patient
-            self.object = form.save()
-            record_audit_event(
-                category=AuditEvent.Category.CLINICAL,
-                action="patient.identity_updated",
-                actor=self.request.user,
-                request=self.request,
-                object_type="patient",
-                object_id=self.object.pk,
-                patient_id=self.object.pk,
-                metadata={"affected_case_count": len(affected_cases)},
+            editable_fields = set(PatientForm.Meta.fields) & set(form.changed_data)
+            before = {
+                field: getattr(patient, field)
+                for field in set(PatientForm.Meta.fields) | {"patient_name", "is_temporary_id"}
+            }
+            for field in editable_fields:
+                if field in form.cleaned_data:
+                    setattr(patient, field, form.cleaned_data[field])
+            patient.uhid = " ".join((patient.uhid or "").split()).upper()
+            if "use_temporary_patient_id" in form.changed_data:
+                patient.is_temporary_id = bool(form.cleaned_data.get("use_temporary_patient_id"))
+            patient._normalize_identity_fields()
+            if patient.date_of_birth:
+                today = timezone.localdate()
+                years = today.year - patient.date_of_birth.year
+                patient.age = years - (
+                    (today.month, today.day) < (patient.date_of_birth.month, patient.date_of_birth.day)
+                )
+            patient.full_clean()
+            changed_fields = sorted(
+                field
+                for field, previous in before.items()
+                if getattr(patient, field) != previous
             )
+            if changed_fields:
+                patient.save(update_fields=[*changed_fields, "updated_at"])
+                self.object = patient
+                record_audit_event(
+                    category=AuditEvent.Category.CLINICAL,
+                    action="patient.identity_updated",
+                    actor=self.request.user,
+                    request=self.request,
+                    object_type="patient",
+                    object_id=self.object.pk,
+                    patient_id=self.object.pk,
+                    metadata={
+                        "affected_case_count": len(affected_cases),
+                        "changed_fields": changed_fields,
+                    },
+                )
+            else:
+                self.object = patient
         return redirect(self.get_success_url())
 
     def get_success_url(self):
@@ -4322,18 +4248,25 @@ def _serialize_task_preview(task_plan):
     }
 
 
-def _build_case_identity_matches(form, *, exclude_case_id=None):
+def _build_case_identity_matches(form, *, actor=None, exclude_case_id=None):
+    if not getattr(actor, "is_authenticated", False):
+        return []
+    identity_queryset = case_intake_patient_queryset(actor=actor, queryset=Patient.objects.all())
     matches = []
     uhid_value = _normalize_optional_text(_bound_form_value(form, "uhid"))
     if len(uhid_value) >= 3:
         patient_matches = list(
-            _visible_patient_queryset(Patient.objects.all())
+            identity_queryset
             .filter(uhid__iexact=uhid_value)
             .order_by("patient_name", "uhid")[:3]
         )
         serialized_patient_matches = []
         for patient in patient_matches:
-            payload = _serialize_patient_search_result(patient, exclude_case_id=exclude_case_id)
+            payload = _serialize_patient_search_result(
+                patient,
+                exclude_case_id=exclude_case_id,
+                user=actor,
+            )
             if payload["case_count"] <= 0:
                 continue
             serialized_patient_matches.append({**payload, "patient": patient})
@@ -4361,7 +4294,7 @@ def _build_case_identity_matches(form, *, exclude_case_id=None):
     if phone_values:
         phone_match_map = OrderedDict((digits_only, []) for digits_only in phone_values.keys())
         patient_matches = (
-            _visible_patient_queryset(Patient.objects.all())
+            identity_queryset
             .filter(Q(phone_number__in=phone_values.keys()) | Q(alternate_phone_number__in=phone_values.keys()))
             .order_by("patient_name", "uhid")
         )
@@ -4381,7 +4314,11 @@ def _build_case_identity_matches(form, *, exclude_case_id=None):
             matching_patients = phone_match_map[digits_only]
             serialized_matching_patients = []
             for patient in matching_patients:
-                payload = _serialize_patient_search_result(patient, exclude_case_id=exclude_case_id)
+                payload = _serialize_patient_search_result(
+                    patient,
+                    exclude_case_id=exclude_case_id,
+                    user=actor,
+                )
                 if payload["case_count"] <= 0:
                     continue
                 serialized_matching_patients.append({**payload, "patient": patient})
@@ -4398,8 +4335,8 @@ def _build_case_identity_matches(form, *, exclude_case_id=None):
     return matches
 
 
-def _build_case_create_identity_matches(form):
-    return _build_case_identity_matches(form)
+def _build_case_create_identity_matches(form, *, actor=None):
+    return _build_case_identity_matches(form, actor=actor)
 
 
 def _build_case_form_state(form, *, include_task_preview):
@@ -4863,6 +4800,11 @@ class CaseCreateAccessMixin:
             return HttpResponseForbidden("You do not have permission to create cases.")
         return super().dispatch(request, *args, **kwargs)
 
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["actor"] = self.request.user
+        return kwargs
+
 
 class CaseCreateContextMixin:
     create_template_name = "patients/case_create.html"
@@ -4872,7 +4814,10 @@ class CaseCreateContextMixin:
     def _build_case_create_context(self, form, *, show_inline_errors=False):
         return {
             "case_create_state": _build_case_create_state(form),
-            "case_create_identity_matches": _build_case_create_identity_matches(form),
+            "case_create_identity_matches": _build_case_create_identity_matches(
+                form,
+                actor=self.request.user,
+            ),
             "show_inline_errors": show_inline_errors,
         }
 
@@ -4898,7 +4843,11 @@ class CaseUpdateContextMixin:
         case_form_state = _build_case_edit_state(form)
         return {
             "case_create_state": case_form_state,
-            "case_create_identity_matches": _build_case_identity_matches(form, exclude_case_id=case.pk),
+            "case_create_identity_matches": _build_case_identity_matches(
+                form,
+                actor=self.request.user,
+                exclude_case_id=case.pk,
+            ),
             "case_edit_summary_state": _build_case_edit_summary_state(form, original_case, case_form_state),
             "show_inline_errors": show_inline_errors,
         }
@@ -4920,7 +4869,10 @@ class CaseCreateView(LoginRequiredMixin, CaseCreateAccessMixin, CaseCreateContex
             raw_patient_id = self.request.GET.get("patient_id") or self.request.GET.get("selected_patient")
         if raw_patient_id in ("", None):
             return None
-        return get_object_or_404(_visible_patient_queryset(Patient.objects.all()), pk=raw_patient_id)
+        return resolve_case_intake_patient(
+            actor=self.request.user,
+            patient_id=raw_patient_id,
+        )
 
     def get_initial(self):
         initial = super().get_initial()
@@ -4961,7 +4913,10 @@ class CaseCreateView(LoginRequiredMixin, CaseCreateAccessMixin, CaseCreateContex
         return context
 
     def form_valid(self, form):
-        form.actor = self.request.user
+        try:
+            form.revalidate_intake_selection(lock=True)
+        except ValidationError as exc:
+            raise PermissionDenied("Existing patient selection is not permitted.") from exc
         form.instance.created_by = self.request.user
         response = super().form_valid(form)
         if self.object.review_frequency and not self.object.review_date:
@@ -4991,7 +4946,7 @@ class CaseCreateView(LoginRequiredMixin, CaseCreateAccessMixin, CaseCreateContex
 
 class CaseCreatePreviewView(LoginRequiredMixin, CaseCreateAccessMixin, CaseCreateContextMixin, View):
     def post(self, request):
-        form = CaseForm(data=request.POST)
+        form = CaseForm(data=request.POST, actor=request.user)
         context = {
             "form": form,
             **self._build_case_create_context(form, show_inline_errors=False),
@@ -5001,7 +4956,7 @@ class CaseCreatePreviewView(LoginRequiredMixin, CaseCreateAccessMixin, CaseCreat
 
 class CaseCreateIdentityCheckView(LoginRequiredMixin, CaseCreateAccessMixin, CaseCreateContextMixin, View):
     def post(self, request):
-        form = CaseForm(data=request.POST)
+        form = CaseForm(data=request.POST, actor=request.user)
         context = {
             "form": form,
             **self._build_case_create_context(form, show_inline_errors=False),
@@ -5143,18 +5098,48 @@ class PatientUpdateView(LoginRequiredMixin, PatientEditAccessMixin, UpdateView):
             affected_cases = list(Case.objects.select_for_update().filter(patient=patient).order_by("pk"))
             if not _can_access_all_cases(self.request.user, affected_cases):
                 raise PermissionDenied("You do not have permission for every case affected by this patient edit.")
-            form.instance = patient
-            self.object = form.save()
-            record_audit_event(
-                category=AuditEvent.Category.CLINICAL,
-                action="patient.identity_updated",
-                actor=self.request.user,
-                request=self.request,
-                object_type="patient",
-                object_id=self.object.pk,
-                patient_id=self.object.pk,
-                metadata={"affected_case_count": len(affected_cases)},
+            editable_fields = set(PatientForm.Meta.fields) & set(form.changed_data)
+            before = {
+                field: getattr(patient, field)
+                for field in set(PatientForm.Meta.fields) | {"patient_name", "is_temporary_id"}
+            }
+            for field in editable_fields:
+                if field in form.cleaned_data:
+                    setattr(patient, field, form.cleaned_data[field])
+            patient.uhid = " ".join((patient.uhid or "").split()).upper()
+            if "use_temporary_patient_id" in form.changed_data:
+                patient.is_temporary_id = bool(form.cleaned_data.get("use_temporary_patient_id"))
+            patient._normalize_identity_fields()
+            if patient.date_of_birth:
+                today = timezone.localdate()
+                years = today.year - patient.date_of_birth.year
+                patient.age = years - (
+                    (today.month, today.day) < (patient.date_of_birth.month, patient.date_of_birth.day)
+                )
+            patient.full_clean()
+            changed_fields = sorted(
+                field
+                for field, previous in before.items()
+                if getattr(patient, field) != previous
             )
+            if changed_fields:
+                patient.save(update_fields=[*changed_fields, "updated_at"])
+                self.object = patient
+                record_audit_event(
+                    category=AuditEvent.Category.CLINICAL,
+                    action="patient.identity_updated",
+                    actor=self.request.user,
+                    request=self.request,
+                    object_type="patient",
+                    object_id=self.object.pk,
+                    patient_id=self.object.pk,
+                    metadata={
+                        "affected_case_count": len(affected_cases),
+                        "changed_fields": changed_fields,
+                    },
+                )
+            else:
+                self.object = patient
         return redirect(self.get_success_url())
 
     def get_success_url(self):
@@ -5365,8 +5350,8 @@ class CaseUpdateView(LoginRequiredMixin, CaseUpdateAccessMixin, CaseUpdateContex
         new_status = form.cleaned_data["status"]
         grey_list_cutoff = timezone.localdate() - timedelta(days=30)
         has_grey_tasks = case.tasks.exclude(status=TaskStatus.COMPLETED).filter(due_date__lt=grey_list_cutoff).exists()
-        if has_grey_tasks and new_status in [CaseStatus.LOSS_TO_FOLLOW_UP, CaseStatus.ACTIVE] and not is_doctor_admin(self.request.user):
-            form.add_error("status", "Only Doctor/Admin can set Grey List cases to Active or Loss to Follow-up.")
+        if has_grey_tasks and new_status in [CaseStatus.LOSS_TO_FOLLOW_UP, CaseStatus.ACTIVE] and not can_transition_grey_tasks(self.request.user):
+            form.add_error("status", "Your role does not allow this Grey List status transition.")
             return self.form_invalid(form)
         if old_status != new_status:
             create_case_activity(
@@ -6431,6 +6416,12 @@ class DeviceAccessSettingsView(LoginRequiredMixin, View):
             "approved_devices": StaffDeviceCredential.objects.select_related("user").filter(
                 status=StaffDeviceCredentialStatus.APPROVED
             ).order_by("user__username", "-approved_at", "-created_at"),
+            "pending_mobile_devices": StaffMobileDeviceCredential.objects.select_related("user").filter(
+                status=StaffDeviceCredentialStatus.PENDING
+            ).order_by("user__username", "-created_at"),
+            "approved_mobile_devices": StaffMobileDeviceCredential.objects.select_related("user").filter(
+                status=StaffDeviceCredentialStatus.APPROVED
+            ).order_by("user__username", "-approved_at", "-created_at"),
             "max_approved_devices": DEVICE_APPROVAL_MAX_APPROVED,
             "staff_role_name": STAFF_ROLE_NAME,
             "staff_pilot_role_name": STAFF_PILOT_ROLE_NAME,
@@ -6467,6 +6458,36 @@ class DeviceAccessSettingsView(LoginRequiredMixin, View):
             else:
                 Group.objects.get_or_create(name=pilot_role.role_name)
                 messages.success(request, f"Created or refreshed the {pilot_role.role_name} role from {STAFF_ROLE_NAME}.")
+            return redirect("patients:settings_device_access")
+
+        if action in {"approve_mobile_device", "revoke_mobile_device"}:
+            mobile_credential = get_object_or_404(
+                StaffMobileDeviceCredential.objects.select_related("user"),
+                pk=request.POST.get("mobile_credential_id"),
+            )
+            if action == "approve_mobile_device":
+                approved_count = StaffMobileDeviceCredential.objects.filter(
+                    user=mobile_credential.user,
+                    status=StaffDeviceCredentialStatus.APPROVED,
+                ).exclude(pk=mobile_credential.pk).count()
+                if approved_count >= DEVICE_APPROVAL_MAX_APPROVED:
+                    messages.error(request, "Revoke an approved mobile device before approving another.")
+                    return redirect("patients:settings_device_access")
+                mobile_credential.status = StaffDeviceCredentialStatus.APPROVED
+                mobile_credential.approved_at = timezone.now()
+                mobile_credential.approved_by = request.user
+                mobile_credential.revoked_at = None
+                mobile_credential.revoked_by = None
+                mobile_credential.save(
+                    update_fields=["status", "approved_at", "approved_by", "revoked_at", "revoked_by"]
+                )
+                messages.success(request, f"Approved mobile device for {mobile_credential.user.username}.")
+            else:
+                mobile_credential.status = StaffDeviceCredentialStatus.REVOKED
+                mobile_credential.revoked_at = timezone.now()
+                mobile_credential.revoked_by = request.user
+                mobile_credential.save(update_fields=["status", "revoked_at", "revoked_by"])
+                messages.success(request, f"Revoked mobile device for {mobile_credential.user.username}.")
             return redirect("patients:settings_device_access")
 
         credential = get_object_or_404(StaffDeviceCredential.objects.select_related("user"), pk=request.POST.get("credential_id"))
@@ -6533,6 +6554,8 @@ class SeedMockDataSettingsView(LoginRequiredMixin, View):
     template_name = "patients/settings_seed_mock_data.html"
 
     def _check_access(self, request):
+        if not settings.ALLOW_MOCK_DATA_SEEDING:
+            return HttpResponseForbidden("Mock-data tools are disabled in this environment.")
         if not has_capability(request.user, "manage_settings"):
             return HttpResponseForbidden("Only admins can access settings.")
         return None
@@ -7233,9 +7256,7 @@ class AdminSettingsView(LoginRequiredMixin, View):
         try:
             allowed = has_capability(request.user, "manage_settings")
         except (OperationalError, ProgrammingError) as exc:
-            if _is_missing_settings_schema_error(exc) and (
-                request.user.is_superuser or request.user.groups.filter(name="Admin").exists()
-            ):
+            if _is_missing_settings_schema_error(exc) and request.user.is_superuser:
                 return None
             raise
         if not allowed:
@@ -7442,6 +7463,7 @@ class AdminSettingsView(LoginRequiredMixin, View):
             ),
             "settings_schema_warnings": list(dict.fromkeys(schema_warnings)),
             "settings_schema_warning_hint": SETTINGS_SCHEMA_WARNING_HINT,
+            "mock_data_seeding_enabled": settings.ALLOW_MOCK_DATA_SEEDING,
             "security_highlights": [
                 {"label": "HTTPS redirect", "enabled": settings.SECURE_SSL_REDIRECT},
                 {"label": "Secure session cookie", "enabled": settings.SESSION_COOKIE_SECURE},

@@ -1,6 +1,17 @@
 from django.contrib import admin
 
-from .models import AuditEvent, CallLog, Case, CaseActivityLog, DepartmentConfig, Patient, RoleSetting, Task, VitalEntry
+from .models import (
+    AuditEvent,
+    CallLog,
+    Case,
+    CaseActivityLog,
+    DepartmentConfig,
+    Patient,
+    RoleSetting,
+    StaffMobileDeviceCredential,
+    Task,
+    VitalEntry,
+)
 
 
 @admin.register(DepartmentConfig)
@@ -25,6 +36,14 @@ class RoleSettingAdmin(admin.ModelAdmin):
         "can_note_add",
         "can_manage_settings",
     )
+
+
+@admin.register(StaffMobileDeviceCredential)
+class StaffMobileDeviceCredentialAdmin(admin.ModelAdmin):
+    list_display = ("user", "device_label", "device_id", "status", "created_at", "last_used_at")
+    list_filter = ("status", "created_at")
+    search_fields = ("user__username", "device_label", "device_id")
+    readonly_fields = ("device_id", "secret_hash", "created_at", "last_used_at")
 
 
 class TaskInline(admin.TabularInline):

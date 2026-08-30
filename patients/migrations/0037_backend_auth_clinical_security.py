@@ -3,6 +3,7 @@
 import django.core.validators
 import django.db.models.deletion
 import django.utils.timezone
+import patients.models
 import uuid
 from decimal import Decimal
 from django.conf import settings
@@ -11,27 +12,32 @@ from django.db import migrations, models
 
 def backfill_role_scopes(apps, schema_editor):
     RoleSetting = apps.get_model("patients", "RoleSetting")
+    built_in_scopes = {
+        "Admin": ("ALL", True, True),
+        "Doctor": ("ALL", True, True),
+        "Reception": ("ASSIGNED", True, True),
+        "Nurse": ("ASSIGNED", True, False),
+        "Caller": ("ASSIGNED", True, False),
+    }
     for role in RoleSetting.objects.all():
-        if role.role_name in {"Admin", "Doctor"}:
-            case_data_scope = "ALL"
-        elif any(
-            [
-                role.can_case_create,
-                role.can_case_edit,
-                role.can_task_create,
-                role.can_task_edit,
-                role.can_note_add,
-                role.can_manage_settings,
-            ]
-        ):
-            case_data_scope = "ASSIGNED"
-        else:
-            case_data_scope = "NONE"
+        case_data_scope, can_access_call_queue, can_intake_patient_lookup = built_in_scopes.get(
+            role.role_name,
+            ("NONE", False, False),
+        )
         RoleSetting.objects.filter(pk=role.pk).update(
             case_data_scope=case_data_scope,
-            can_access_call_queue=role.can_note_add,
-            can_intake_patient_lookup=role.can_case_create,
+            can_access_call_queue=can_access_call_queue,
+            can_intake_patient_lookup=can_intake_patient_lookup,
         )
+
+
+def reset_role_scopes(apps, schema_editor):
+    RoleSetting = apps.get_model("patients", "RoleSetting")
+    RoleSetting.objects.update(
+        case_data_scope="NONE",
+        can_access_call_queue=False,
+        can_intake_patient_lookup=False,
+    )
 
 
 def initialize_user_security_states(apps, schema_editor):
@@ -41,6 +47,25 @@ def initialize_user_security_states(apps, schema_editor):
         [UserSecurityState(user_id=user_id, auth_version=1) for user_id in User.objects.values_list("pk", flat=True)],
         ignore_conflicts=True,
     )
+
+
+def revoke_tokens_for_existing_device_policy_targets(apps, schema_editor):
+    DeviceApprovalPolicy = apps.get_model("patients", "DeviceApprovalPolicy")
+    User = apps.get_model(*settings.AUTH_USER_MODEL.split("."))
+    UserSecurityState = apps.get_model("patients", "UserSecurityState")
+    policy = DeviceApprovalPolicy.objects.filter(pk=1, enabled=True).first()
+    if policy is None:
+        return
+    user_ids = set(policy.target_users.values_list("pk", flat=True))
+    target_group_ids = list(policy.target_groups.values_list("pk", flat=True))
+    if target_group_ids:
+        user_ids.update(
+            User.objects.filter(groups__pk__in=target_group_ids).values_list("pk", flat=True)
+        )
+    if user_ids:
+        UserSecurityState.objects.filter(user_id__in=user_ids).update(
+            auth_version=models.F("auth_version") + 1,
+        )
 
 
 def validate_existing_vitals(apps, schema_editor):
@@ -88,6 +113,100 @@ def drop_audit_append_only_trigger(apps, schema_editor):
         """
         DROP TRIGGER IF EXISTS patients_auditevent_append_only ON patients_auditevent;
         DROP FUNCTION IF EXISTS patients_reject_audit_mutation();
+        """
+    )
+
+
+def create_merge_recovery_immutability_trigger(apps, schema_editor):
+    if schema_editor.connection.vendor != "postgresql":
+        return
+    schema_editor.execute(
+        """
+        CREATE OR REPLACE FUNCTION patients_reject_merge_recovery_mutation()
+        RETURNS trigger AS $$
+        BEGIN
+            IF TG_OP = 'DELETE' THEN
+                RAISE EXCEPTION 'patient merge recovery evidence cannot be deleted';
+            END IF;
+            IF OLD.recovery_id IS DISTINCT FROM NEW.recovery_id
+               OR OLD.source_patient_id IS DISTINCT FROM NEW.source_patient_id
+               OR OLD.target_patient_id IS DISTINCT FROM NEW.target_patient_id
+               OR OLD.moved_case_ids IS DISTINCT FROM NEW.moved_case_ids
+               OR OLD.merge_audit_event_id IS DISTINCT FROM NEW.merge_audit_event_id
+               OR OLD.merge_request_id IS DISTINCT FROM NEW.merge_request_id
+               OR OLD.created_by_id IS DISTINCT FROM NEW.created_by_id
+               OR OLD.created_at IS DISTINCT FROM NEW.created_at
+               OR OLD.expires_at IS DISTINCT FROM NEW.expires_at THEN
+                RAISE EXCEPTION 'patient merge recovery evidence is immutable';
+            END IF;
+            IF OLD.consumed_at IS NOT NULL THEN
+                RAISE EXCEPTION 'consumed patient merge recovery cannot be changed';
+            END IF;
+            IF NEW.consumed_at IS NULL
+               OR NEW.consumed_by_id IS NULL
+               OR NEW.recovery_audit_event_id IS NULL THEN
+                RAISE EXCEPTION 'patient merge recovery consumption requires actor and audit evidence';
+            END IF;
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
+        CREATE TRIGGER patients_merge_recovery_immutable
+        BEFORE UPDATE OR DELETE ON patients_patientmergerecovery
+        FOR EACH ROW EXECUTE FUNCTION patients_reject_merge_recovery_mutation();
+        """
+    )
+
+
+def drop_merge_recovery_immutability_trigger(apps, schema_editor):
+    if schema_editor.connection.vendor != "postgresql":
+        return
+    schema_editor.execute(
+        """
+        DROP TRIGGER IF EXISTS patients_merge_recovery_immutable ON patients_patientmergerecovery;
+        DROP FUNCTION IF EXISTS patients_reject_merge_recovery_mutation();
+        """
+    )
+
+
+def create_terminal_case_patient_trigger(apps, schema_editor):
+    if schema_editor.connection.vendor != "postgresql":
+        return
+    schema_editor.execute(
+        """
+        CREATE OR REPLACE FUNCTION patients_require_terminal_case_patient()
+        RETURNS trigger AS $$
+        DECLARE patient_merge_target bigint;
+        BEGIN
+            IF NEW.patient_id IS NULL THEN
+                RETURN NEW;
+            END IF;
+            SELECT merged_into_id INTO patient_merge_target
+            FROM patients_patient
+            WHERE id = NEW.patient_id
+            FOR UPDATE;
+            IF NOT FOUND THEN
+                RAISE EXCEPTION 'case patient does not exist';
+            END IF;
+            IF patient_merge_target IS NOT NULL THEN
+                RAISE EXCEPTION 'cases cannot attach to a merged patient';
+            END IF;
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
+        CREATE TRIGGER patients_case_terminal_patient
+        BEFORE INSERT OR UPDATE OF patient_id ON patients_case
+        FOR EACH ROW EXECUTE FUNCTION patients_require_terminal_case_patient();
+        """
+    )
+
+
+def drop_terminal_case_patient_trigger(apps, schema_editor):
+    if schema_editor.connection.vendor != "postgresql":
+        return
+    schema_editor.execute(
+        """
+        DROP TRIGGER IF EXISTS patients_case_terminal_patient ON patients_case;
+        DROP FUNCTION IF EXISTS patients_require_terminal_case_patient();
         """
     )
 
@@ -157,6 +276,49 @@ class Migration(migrations.Migration):
                 ('updated_at', models.DateTimeField(auto_now=True)),
             ],
         ),
+        migrations.CreateModel(
+            name='StaffMobileDeviceCredential',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('device_id', models.UUIDField(default=uuid.uuid4, editable=False, unique=True)),
+                ('secret_hash', models.CharField(max_length=128)),
+                ('status', models.CharField(choices=[('PENDING', 'Pending'), ('APPROVED', 'Approved'), ('REVOKED', 'Revoked')], default='PENDING', max_length=16)),
+                ('device_label', models.CharField(blank=True, max_length=120)),
+                ('created_at', models.DateTimeField(auto_now_add=True)),
+                ('approved_at', models.DateTimeField(blank=True, null=True)),
+                ('revoked_at', models.DateTimeField(blank=True, null=True)),
+                ('last_used_at', models.DateTimeField(blank=True, null=True)),
+                ('approved_by', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='approved_mobile_device_credentials', to=settings.AUTH_USER_MODEL)),
+                ('revoked_by', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='revoked_mobile_device_credentials', to=settings.AUTH_USER_MODEL)),
+                ('user', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='mobile_device_credentials', to=settings.AUTH_USER_MODEL)),
+            ],
+            options={
+                'ordering': ['user__username', 'status', '-created_at'],
+                'indexes': [models.Index(fields=['user', 'status'], name='pat_mob_user_status_idx')],
+            },
+        ),
+        migrations.CreateModel(
+            name='PatientMergeRecovery',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('recovery_id', models.UUIDField(default=uuid.uuid4, editable=False, unique=True)),
+                ('moved_case_ids', models.JSONField(default=list)),
+                ('merge_request_id', models.CharField(blank=True, max_length=64)),
+                ('created_at', models.DateTimeField(auto_now_add=True)),
+                ('expires_at', models.DateTimeField(default=patients.models.patient_merge_recovery_expires_at)),
+                ('consumed_at', models.DateTimeField(blank=True, null=True)),
+                ('consumed_by', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='consumed_patient_merge_recoveries', to=settings.AUTH_USER_MODEL)),
+                ('created_by', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='created_patient_merge_recoveries', to=settings.AUTH_USER_MODEL)),
+                ('merge_audit_event', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='patient_merge_recovery_records', to='patients.auditevent')),
+                ('recovery_audit_event', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='patient_merge_recovery_consumptions', to='patients.auditevent')),
+                ('source_patient', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='merge_recoveries_as_source', to='patients.patient')),
+                ('target_patient', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='merge_recoveries_as_target', to='patients.patient')),
+            ],
+            options={
+                'ordering': ['-created_at', '-id'],
+                'indexes': [models.Index(fields=['source_patient', 'created_at'], name='pat_merge_src_created_idx'), models.Index(fields=['target_patient', 'created_at'], name='pat_merge_tgt_created_idx'), models.Index(fields=['expires_at', 'consumed_at'], name='pat_merge_exp_used_idx')],
+            },
+        ),
         migrations.AddField(
             model_name='rolesetting',
             name='can_access_call_queue',
@@ -172,7 +334,7 @@ class Migration(migrations.Migration):
             name='case_data_scope',
             field=models.CharField(choices=[('NONE', 'No case data'), ('ASSIGNED', 'Created or assigned cases'), ('ALL', 'All cases')], default='NONE', max_length=16),
         ),
-        migrations.RunPython(backfill_role_scopes, migrations.RunPython.noop),
+        migrations.RunPython(backfill_role_scopes, reset_role_scopes),
         migrations.AlterField(
             model_name='vitalentry',
             name='bp_diastolic',
@@ -235,6 +397,10 @@ class Migration(migrations.Migration):
             model_name='authenticationthrottlebucket',
             index=models.Index(fields=['scope', 'blocked_until'], name='pat_auth_scope_blocked_idx'),
         ),
+        migrations.AddIndex(
+            model_name='authenticationthrottlebucket',
+            index=models.Index(fields=['updated_at'], name='pat_auth_updated_idx'),
+        ),
         migrations.AddConstraint(
             model_name='authenticationthrottlebucket',
             constraint=models.UniqueConstraint(fields=('scope', 'key_hash'), name='uniq_auth_throttle_scope_key'),
@@ -245,5 +411,8 @@ class Migration(migrations.Migration):
             field=models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, related_name='security_state', to=settings.AUTH_USER_MODEL),
         ),
         migrations.RunPython(initialize_user_security_states, migrations.RunPython.noop),
+        migrations.RunPython(revoke_tokens_for_existing_device_policy_targets, migrations.RunPython.noop),
+        migrations.RunPython(create_terminal_case_patient_trigger, drop_terminal_case_patient_trigger),
+        migrations.RunPython(create_merge_recovery_immutability_trigger, drop_merge_recovery_immutability_trigger),
         migrations.RunPython(create_audit_append_only_trigger, drop_audit_append_only_trigger),
     ]

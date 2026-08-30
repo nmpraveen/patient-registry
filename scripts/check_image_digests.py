@@ -13,7 +13,7 @@ import sys
 
 IMAGE_REFS = (
     ("Dockerfile", "python:3.12.13-alpine3.23"),
-    ("docker-compose.yml", "postgres:16.14-alpine3.24"),
+    ("Dockerfile.postgres", "postgres:16.14-alpine3.24"),
     ("docker-compose.prod.yml", "caddy:2.11.4-alpine"),
     ("scripts/build_canonical_image.py", "quay.io/skopeo/stable:v1.21.0"),
     ("scripts/update-python-locks.py", "python:3.12.13-alpine3.23"),

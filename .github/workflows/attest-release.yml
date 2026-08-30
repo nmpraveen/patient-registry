@@ -49,6 +49,10 @@ jobs:
             --artifact output/medtrack-image.oci.tar \
             --metadata output/medtrack-canonical-image.json
           bash scripts/verify_canonical_artifact.sh "${EXPECTED_SHA}" output
+          python scripts/verify_production_service_images.py \
+            --revision "${EXPECTED_SHA}" \
+            --builder "${{ steps.buildx.outputs.name }}" \
+            --output output/production-images
       - name: Export immutable subject identity
         id: identity
         run: |

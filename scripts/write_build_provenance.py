@@ -15,6 +15,7 @@ from build_context_receipt import create_receipt
 MATERIALS = (
     ".dockerignore",
     "Dockerfile",
+    "Dockerfile.postgres",
     "requirements.in",
     "requirements.txt",
     "docker-compose.yml",
@@ -25,6 +26,8 @@ MATERIALS = (
     "scripts/verify_canonical_artifact.sh",
     "scripts/verify_container_vulnerabilities.py",
     "security/container-vex.json",
+    "security/postgres-vex.json",
+    "security/caddy-vex.json",
 )
 
 

@@ -148,6 +148,8 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
           cache-dependency-path: requirements-ci.txt
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+        id: service-buildx
       - run: python -m pip install --require-hashes -r requirements-ci.txt
       - name: Python vulnerability audit
         run: python -m pip_audit --strict --require-hashes -r requirements.txt
@@ -176,6 +178,19 @@ jobs:
             aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969 \
             fs --scanners vuln,secret,misconfig --severity HIGH,CRITICAL \
             --ignore-unfixed=false --exit-code 1 /source
+      - name: Scan and SBOM every non-web production service image
+        run: |
+          python scripts/verify_production_service_images.py \
+            --revision "${EXPECTED_SHA}" \
+            --builder "${{ steps.service-buildx.outputs.name }}" \
+            --output output/production-images
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: medtrack-production-service-scans-${{ env.EXPECTED_SHA }}
+          path: output/production-images/
+          if-no-files-found: warn
+          retention-days: 30
 
   compose-shell:
     name: Compose and shell

@@ -57,6 +57,22 @@ and canonical image digest and include status, HTTPS source, owner,
 justification, creation time, and unexpired expiry. New, mismatched, stale, or
 expired findings/waivers fail closed; secret findings can never be waived.
 
+The same contract applies to every production service image:
+
+```powershell
+python .\scripts\verify_production_service_images.py --revision <full-git-sha> --builder medtrack-canonical --output output\production-images
+```
+
+This builds the exact committed `Dockerfile.postgres`, copies the Caddy image
+named by the digest-pinned production Compose file into a local OCI archive,
+derives each `linux/amd64` manifest digest, loads/smoke-tests each archive, and
+writes separate Trivy, SBOM, receipt, and VEX-policy hashes. PostgreSQL and
+Caddy use independent empty ledgers in `security/postgres-vex.json` and
+`security/caddy-vex.json`; a finding in either blocks supply-chain CI and the
+trusted post-merge release/attestation workflow. The custom-Caddy lane must
+update only the exact Compose image reference after publishing its reviewed
+manifest; no web-image or waiver contract is relaxed by that rebase.
+
 The deployment trust contract is `medtrack.build-context/v1`. Its digest is a
 canonical SHA-256 over the Git mode, UTF-8 path, byte length, and blob bytes for
 the committed Docker policy files and runtime allowlist. Ignored tests,

@@ -893,7 +893,7 @@ class MedtrackViewTests(TestCase):
             )
 
         response = self.assert_max_queries(
-            16,  # Includes sliding-session refresh plus auth-version, device, and explicit role-policy checks.
+            15,  # Includes sliding-session refresh plus auth-version, device, and canonical role-policy checks.
             reverse("patients:case_list"),
             {
                 "q": "Perf",

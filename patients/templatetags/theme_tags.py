@@ -5,21 +5,11 @@ from django import template
 from django.contrib.staticfiles import finders
 from django.utils.safestring import mark_safe
 
-from patients.models import RoleSetting
+from patients.policy import has_capability as policy_has_capability
 from patients.theme import build_theme_css_vars, resolve_category_theme
 
 
 register = template.Library()
-CAPABILITY_FIELD_MAP = {
-    "case_create": "can_case_create",
-    "case_edit": "can_case_edit",
-    "task_create": "can_task_create",
-    "task_edit": "can_task_edit",
-    "task_reopen": "can_task_reopen",
-    "note_add": "can_note_add",
-    "patient_merge": "can_patient_merge",
-    "manage_settings": "can_manage_settings",
-}
 
 
 @register.simple_tag
@@ -74,27 +64,4 @@ def message_alert_class(tags):
 
 @register.filter
 def has_capability(user, capability):
-    if not getattr(user, "is_authenticated", False):
-        return False
-    if user.is_superuser:
-        return True
-    capability_field = CAPABILITY_FIELD_MAP.get(capability)
-    if not capability_field:
-        return False
-    capability_cache = getattr(user, "_template_capability_cache", None)
-    if capability_cache is None:
-        capability_cache = {}
-        user._template_capability_cache = capability_cache
-    if capability in capability_cache:
-        return capability_cache[capability]
-    role_settings = getattr(user, "_template_role_settings", None)
-    if role_settings is None:
-        role_settings = list(
-            RoleSetting.objects.filter(
-                role_name__in=user.groups.values_list("name", flat=True),
-            ).only("role_name", *CAPABILITY_FIELD_MAP.values())
-        )
-        user._template_role_settings = role_settings
-    allowed = any(getattr(role_setting, capability_field) for role_setting in role_settings)
-    capability_cache[capability] = allowed
-    return allowed
+    return policy_has_capability(user, capability)

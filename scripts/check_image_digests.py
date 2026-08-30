@@ -15,7 +15,7 @@ IMAGE_REFS = (
     ("Dockerfile", "python:3.12.13-alpine3.23"),
     ("Dockerfile.postgres", "postgres:16.14-alpine3.24"),
     ("deploy/Dockerfile.caddy", "caddy:2.11.4-builder-alpine"),
-    ("deploy/Dockerfile.caddy", "caddy:2.11.4-alpine"),
+    ("deploy/Dockerfile.caddy", "alpine:3.24"),
     ("scripts/build_canonical_image.py", "quay.io/skopeo/stable:v1.21.0"),
     ("scripts/update-python-locks.py", "python:3.12.13-alpine3.23"),
     ("scripts/update-python-locks.py", "python:3.12.13-slim-bookworm"),

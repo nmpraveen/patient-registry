@@ -193,7 +193,8 @@ export RCLONE_REMOTE="medtrack-drive:medtrack/test"
 export AGE_RECIPIENT_FILE="$test_root/recipient.txt"
 export MEDTRACK_BUILD_CONTEXT_VERIFIER="$test_root/build-context-verifier.py"
 export PYTHON_COMMAND=python
-export FAKE_SOURCE_COMMIT="$(git -C "$repo_root" rev-parse HEAD)"
+FAKE_SOURCE_COMMIT="$(git -C "$repo_root" rev-parse HEAD)"
+export FAKE_SOURCE_COMMIT
 export MEDTRACK_SECURITY_EVIDENCE_ROOT="$test_root/security-evidence"
 mkdir -p "$MEDTRACK_SECURITY_EVIDENCE_ROOT/segments/segment-00000001-20260829T120000Z" "$MEDTRACK_SECURITY_EVIDENCE_ROOT/state"
 segment_dir="$MEDTRACK_SECURITY_EVIDENCE_ROOT/segments/segment-00000001-20260829T120000Z"

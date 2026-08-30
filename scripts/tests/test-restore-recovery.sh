@@ -164,7 +164,8 @@ export MEDTRACK_BUILD_CONTEXT_VERIFIER="$test_root/build-context-verifier.py"
 export PYTHON_COMMAND=python
 export MEDTRACK_RESTORE_SCRATCH_ROOT="$test_root"
 export FAKE_IMAGE_REVISION="$commit"
-export FAKE_GIT_TREE="$(git -C "$repo_root" rev-parse "$commit^{tree}")"
+FAKE_GIT_TREE="$(git -C "$repo_root" rev-parse "$commit^{tree}")"
+export FAKE_GIT_TREE
 export FAKE_CONTEXT_POLICY="$context_policy"
 export FAKE_DOCKER_LOG="$test_root/restore-docker.log"
 

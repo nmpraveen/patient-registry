@@ -226,8 +226,13 @@ def runtime_smoke(
             'test "$(id -u)" = 10002; test "$(id -g)" = 10001; '
             "caddy list-modules | grep -Fxq http.handlers.rate_limit; "
             "caddy validate --config /etc/caddy/Caddyfile; "
-            "bind_status=0; timeout 1 caddy respond --listen :80 >/tmp/caddy-bind.log 2>&1 || bind_status=$?; "
-            "test \"$bind_status\" = 124; "
+            "caddy respond --listen :80 >/tmp/caddy-bind.log 2>&1 & caddy_pid=$!; "
+            "caddy_ready=0; "
+            "for attempt in 1 2 3 4 5 6 7 8 9 10; do "
+            "if wget -q -O /dev/null http://127.0.0.1/; then caddy_ready=1; break; fi; "
+            "kill -0 \"$caddy_pid\" 2>/dev/null || break; sleep 0.1; done; "
+            "kill \"$caddy_pid\" 2>/dev/null || true; wait \"$caddy_pid\" || true; "
+            "test \"$caddy_ready\" = 1; "
             "printf 'uid=%s gid=%s\\n' \"$(id -u)\" \"$(id -g)\"",
         ]
         subprocess.run(command, check=True)

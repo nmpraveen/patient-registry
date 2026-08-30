@@ -18,6 +18,10 @@ STATIC_ROUTES = (
     "/patients/patients/",
     "/patients/calls/upcoming/",
 )
+DETAIL_ROUTE_SOURCES = (
+    ("/patients/cases/", r"^/patients/cases/\d+/$"),
+    ("/patients/patients/", r"^/patients/patients/\d+/$"),
+)
 
 
 def document_width(page: Page) -> tuple[int, int]:
@@ -45,16 +49,11 @@ def overflowing_elements(page: Page) -> list[str]:
     )
 
 
-def discover_detail_routes(page: Page) -> list[str]:
+def discover_detail_route(page: Page, pattern: str) -> str | None:
     hrefs = page.locator("a[href]").evaluate_all(
         "elements => elements.map((element) => element.getAttribute('href')).filter(Boolean)"
     )
-    routes: list[str] = []
-    for pattern in (r"^/patients/cases/\d+/$", r"^/patients/patients/\d+/$"):
-        match = next((href for href in hrefs if re.match(pattern, href)), None)
-        if match:
-            routes.append(match)
-    return routes
+    return next((href for href in hrefs if re.match(pattern, href)), None)
 
 
 def main() -> int:
@@ -81,8 +80,16 @@ def main() -> int:
         if "/login/" in page.url:
             raise SystemExit("synthetic test-user login failed")
 
-        page.goto(urljoin(args.base_url, "/patients/cases/"), wait_until="networkidle")
-        routes = list(STATIC_ROUTES) + discover_detail_routes(page)
+        detail_routes: list[str] = []
+        for listing_route, pattern in DETAIL_ROUTE_SOURCES:
+            response = page.goto(urljoin(args.base_url, listing_route), wait_until="networkidle")
+            if response is None or response.status >= 400:
+                failures.append(f"detail-route listing was unavailable: {listing_route}")
+                continue
+            route = discover_detail_route(page, pattern)
+            if route:
+                detail_routes.append(route)
+        routes = list(STATIC_ROUTES) + detail_routes
         if len(routes) != len(STATIC_ROUTES) + 2:
             failures.append("seeded case and patient detail routes were not both discoverable")
 

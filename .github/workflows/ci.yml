@@ -345,11 +345,14 @@ jobs:
       - name: Seed synthetic data and run responsive smoke
         env:
           E2E_USERNAME: demo_admin
-          E2E_PASSWORD: pass
+          E2E_PASSWORD: medtrack-ci-responsive-smoke-only-password
+          ALLOW_MOCK_DATA_SEEDING: "true"
         run: |
           set -euo pipefail
           python manage.py migrate --noinput
           python manage.py seed_mock_data --count 8 --reset
+          python manage.py shell -c 'import os; from django.contrib.auth import get_user_model; user = get_user_model().objects.get(username=os.environ["E2E_USERNAME"]); user.set_password(os.environ["E2E_PASSWORD"]); user.save(update_fields=["password"])'
+          python manage.py collectstatic --noinput
           python manage.py runserver 127.0.0.1:8000 > /tmp/medtrack-runserver.log 2>&1 &
           server_pid=$!
           trap 'kill "$server_pid" 2>/dev/null || true' EXIT

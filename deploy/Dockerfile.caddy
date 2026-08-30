@@ -1,17 +1,26 @@
 ARG CADDY_BUILDER=caddy:2.11.4-builder-alpine@sha256:7bac9be4072f7c4db2ccc7350750e0705004bf02da2ac7d96b1469ca4f28bb7c
-ARG CADDY_RUNTIME=caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
+ARG CADDY_RUNTIME=alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
 ARG VCS_REF=unknown
 
 FROM ${CADDY_BUILDER} AS builder
 RUN xcaddy build \
-    --with github.com/mholt/caddy-ratelimit@5625512f24f6f59d6f64fb3aafe5eecff0b286db
+    --with github.com/mholt/caddy-ratelimit@5625512f24f6f59d6f64fb3aafe5eecff0b286db \
+    --replace golang.org/x/net=golang.org/x/net@v0.56.0 \
+    --replace golang.org/x/text=golang.org/x/text@v0.39.0 \
+    --replace google.golang.org/grpc=google.golang.org/grpc@v1.82.1
 
 FROM ${CADDY_RUNTIME}
 ARG VCS_REF
 COPY --from=builder --chown=0:0 --chmod=0755 /usr/bin/caddy /usr/bin/caddy
-RUN addgroup -S -g 10001 medtrack-runtime \
+RUN apk add --no-cache \
+        ca-certificates=20260611-r0 \
+        libcap=2.78-r0 \
+        mailcap=2.1.54-r0 \
+        libcrypto3=3.5.8-r0 \
+        libssl3=3.5.8-r0 \
+    && addgroup -S -g 10001 medtrack-runtime \
     && adduser -S -D -H -u 10002 -G medtrack-runtime medtrack-caddy \
-    && mkdir -p /var/log/medtrack \
+    && mkdir -p /config/caddy /data/caddy /etc/caddy /srv /var/log/medtrack \
     && chown -R 10002:10001 /data /config /var/log/medtrack \
     && setcap cap_net_bind_service=+ep /usr/bin/caddy \
     && caddy list-modules | grep -Fxq http.handlers.rate_limit
@@ -20,4 +29,10 @@ LABEL org.opencontainers.image.source="https://github.com/nmpraveen/patient-regi
       org.opencontainers.image.revision="${VCS_REF}" \
       org.medtrack.runtime.identity="10002:10001"
 
+ENV XDG_CONFIG_HOME=/config \
+    XDG_DATA_HOME=/data
+
+WORKDIR /srv
+EXPOSE 80 443 443/udp 2019
 USER 10002:10001
+CMD ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]

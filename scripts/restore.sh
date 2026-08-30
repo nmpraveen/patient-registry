@@ -138,8 +138,8 @@ receipt_value_from_file() {
 
 wait_for_service_health() {
   local service="$1"
-  local container_id status attempt
-  for attempt in $(seq 1 24); do
+  local container_id status
+  for _ in $(seq 1 24); do
     container_id="$("${compose[@]}" ps -q "$service")"
     status=""
     if [[ -n "$container_id" ]]; then
@@ -630,7 +630,8 @@ if [[ -e "$rollback_dir" && -n "$(find "$rollback_dir" -mindepth 1 -print -quit 
   echo "Rollback directory must be absent or empty" >&2
   exit 1
 fi
-mkdir -p -m 0700 "$rollback_dir"
+mkdir -p "$rollback_dir"
+chmod 0700 "$rollback_dir"
 rollback_dir="$(realpath "$rollback_dir")"
 
 echo "[6/7] Creating and scratch-restoring a fresh production rollback snapshot"

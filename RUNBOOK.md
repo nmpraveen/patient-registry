@@ -110,8 +110,8 @@ listed in `.github/BRANCH_PROTECTION.md`. Branch protection is a post-merge
 administrator action:
 
 ```powershell
-.\scripts\apply-branch-protection.ps1
-.\scripts\apply-branch-protection.ps1 -Apply -ExpectedMainSha <40-character-merged-main-sha>
+.\scripts\apply-branch-protection.ps1 -ReviewerPolicy SoloSafe -SignedCommits NotRequired
+.\scripts\apply-branch-protection.ps1 -Apply -ReviewerPolicy SoloSafe -SignedCommits NotRequired -ExpectedMainSha <40-character-merged-main-sha>
 ```
 
 The first command is read-only. Do not use `-Apply` before the workflow exists

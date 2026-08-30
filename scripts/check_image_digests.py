@@ -12,7 +12,7 @@ import sys
 
 
 IMAGE_REFS = (
-    ("Dockerfile", "python:3.12.13-slim-trixie"),
+    ("Dockerfile", "python:3.12.13-slim-bookworm"),
     ("docker-compose.yml", "postgres:16.14-alpine3.24"),
     ("docker-compose.prod.yml", "caddy:2.11.4-alpine"),
 )

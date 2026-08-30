@@ -55,11 +55,18 @@ def bump_auth_version(user, *, reason, actor=None, request=None):
 
         deactivated_mobile_tokens = 0
         MobileDeviceToken = django_apps.get_model("api", "MobileDeviceToken")
-        if MobileDeviceToken._meta.db_table in connection.introspection.table_names():
+        database_tables = set(connection.introspection.table_names())
+        if MobileDeviceToken._meta.db_table in database_tables:
             deactivated_mobile_tokens = MobileDeviceToken.objects.filter(
                 user_id=user.pk,
                 is_active=True,
             ).update(is_active=False, updated_at=timezone.now())
+
+        MobileNotificationState = django_apps.get_model("api", "MobileNotificationState")
+        if MobileNotificationState._meta.db_table in database_tables:
+            from api.notifications import bump_notification_epochs
+
+            bump_notification_epochs([user.pk])
 
         from .audit import record_audit_event
         from .models import AuditEvent

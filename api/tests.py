@@ -8,7 +8,8 @@ from django.contrib import admin
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.core.management import call_command
-from django.db import transaction
+from django.core.exceptions import ValidationError
+from django.db import IntegrityError, transaction
 from django.test import override_settings
 from django.urls import reverse
 from django.utils import timezone
@@ -36,6 +37,7 @@ from .models import (
     MobileDatasetState,
     MobileDeviceToken,
     MobileNotification,
+    MobileNotificationState,
     MobileNotificationType,
     MobileWriteReceipt,
 )
@@ -47,7 +49,14 @@ from .push import (
     firebase_configured,
     send_mobile_notification,
 )
-from .views import _authorization_hash
+from .views import (
+    _authorization_hash,
+    _case_edit_payload,
+    _idempotency_key_digest,
+    _task_edit_values,
+    _vital_edit_values,
+    _serialize_notification,
+)
 
 
 class MobileApiTests(APITestCase):
@@ -634,6 +643,28 @@ class MobileApiTests(APITestCase):
         self.assertFalse(MobileDeviceToken.objects.get(token="logout-this").is_active)
         self.assertTrue(MobileDeviceToken.objects.get(token="keep-this").is_active)
 
+    def test_logout_rejects_cross_account_refresh_before_any_side_effect(self):
+        from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken
+
+        other = get_user_model().objects.create_user(username="logout-other", password="pass")
+        other_refresh = RefreshToken.for_user(other)
+        own_token = MobileDeviceToken.objects.create(user=self.user, token="own-active-token")
+        other_token = MobileDeviceToken.objects.create(user=other, token="other-active-token")
+
+        response = self.client.post(
+            reverse("api:logout"),
+            {"refresh": str(other_refresh)},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["deactivated_devices"], 0)
+        own_token.refresh_from_db()
+        other_token.refresh_from_db()
+        self.assertTrue(own_token.is_active)
+        self.assertTrue(other_token.is_active)
+        self.assertFalse(BlacklistedToken.objects.filter(token__jti=other_refresh["jti"]).exists())
+
     def test_case_list_returns_stats_and_canva_card_fields(self):
         VitalEntry.objects.create(case=self.case, bp_systolic=138, bp_diastolic=88, pr=84, created_by=self.user)
 
@@ -674,15 +705,26 @@ class MobileApiTests(APITestCase):
             reverse("api:case_list"),
             {"bucket": "today", "assigned_to": "me", "page_size": 1},
         )
-        search = self.client.get(
+        rejected_get = self.client.get(
             reverse("api:case_list"),
-            {"bucket": "today", "assigned_to": "me", "q": "Diabetes"},
+            {"q": "Anita"},
+        )
+        search = self.client.post(
+            reverse("api:case_search"),
+            {
+                "query": "Anita",
+                "bucket": "today",
+                "assigned_to": "me",
+                "page_size": 20,
+            },
+            format="json",
         )
 
         self.assertEqual(page_one.status_code, 200)
         self.assertIsNotNone(page_one.json()["next"])
-        self.assertEqual(search.status_code, 200)
-        self.assertEqual(search.json()["count"], 1)
+        self.assertEqual(rejected_get.status_code, 400)
+        self.assertEqual(search.status_code, 200, search.content)
+        self.assertEqual(set(search.json()), {"next_cursor", "stats", "results"})
         self.assertEqual(search.json()["results"][0]["uhid"], "UH-API-2")
 
     def test_case_list_bucket_all_does_not_filter_by_due_bucket(self):
@@ -712,6 +754,66 @@ class MobileApiTests(APITestCase):
         uhids = {row["uhid"] for row in response.json()["results"]}
         self.assertIn("UH-API-1", uhids)
         self.assertIn("UH-API-FUTURE", uhids)
+
+    def test_case_post_search_binds_filters_and_excludes_mid_snapshot_insert(self):
+        second = Case.objects.create(
+            uhid="UH-SEARCH-2",
+            first_name="Second",
+            last_name="Search",
+            patient_name="Second Search",
+            phone_number="9000000002",
+            category=self.anc,
+            created_by=self.user,
+        )
+        Task.objects.create(
+            case=second,
+            title="Search task",
+            due_date=timezone.localdate(),
+            assigned_user=self.user,
+            created_by=self.user,
+        )
+        url = reverse("api:case_search")
+        body = {
+            "query": "UH-",
+            "page_size": 1,
+            "bucket": "all",
+            "assigned_to": "me",
+            "scope_context": "",
+            "category": [str(self.anc.pk)],
+            "subcategory": [],
+        }
+        first = self.client.post(url, body, format="json")
+        cursor = first.json()["next_cursor"]
+        inserted = Case.objects.create(
+            uhid="UH-AAA-INSERTED",
+            first_name="Inserted",
+            last_name="Search",
+            patient_name="Inserted Search",
+            phone_number="9000000003",
+            category=self.anc,
+            created_by=self.user,
+        )
+        Task.objects.create(
+            case=inserted,
+            title="Inserted task",
+            due_date=timezone.localdate(),
+            assigned_user=self.user,
+            created_by=self.user,
+        )
+        second_page = self.client.post(url, {**body, "cursor": cursor}, format="json")
+        mismatch = self.client.post(
+            url,
+            {**body, "bucket": "today", "cursor": cursor},
+            format="json",
+        )
+
+        self.assertEqual(first.status_code, 200, first.content)
+        self.assertEqual(set(first.json()), {"next_cursor", "stats", "results"})
+        self.assertEqual(second_page.status_code, 200, second_page.content)
+        seen = {row["id"] for row in first.json()["results"] + second_page.json()["results"]}
+        self.assertNotIn(inserted.pk, seen)
+        self.assertEqual(mismatch.status_code, 400)
+        self.assertEqual(mismatch.json()["code"], "invalid_cursor")
 
     def test_category_metadata_includes_subcategories_for_filter_sheet(self):
         DepartmentConfig.objects.get_or_create(name="Surgery", defaults={"auto_follow_up_days": 7})
@@ -759,7 +861,7 @@ class MobileApiTests(APITestCase):
         self.assertEqual(second.status_code, 200)
         self.task.refresh_from_db()
         self.assertEqual(self.task.status, TaskStatus.COMPLETED)
-        self.assertEqual(MobileWriteReceipt.objects.filter(client_write_id="complete-1").count(), 1)
+        self.assertEqual(MobileWriteReceipt.objects.filter(client_write_id=_idempotency_key_digest("complete-1")).count(), 1)
 
     def test_task_complete_rejects_archived_case_tasks(self):
         archived_case = Case.objects.create(
@@ -792,7 +894,7 @@ class MobileApiTests(APITestCase):
         self.assertEqual(response.status_code, 404)
         archived_task.refresh_from_db()
         self.assertNotEqual(archived_task.status, TaskStatus.COMPLETED)
-        self.assertFalse(MobileWriteReceipt.objects.filter(client_write_id="hidden-task-complete").exists())
+        self.assertFalse(MobileWriteReceipt.objects.filter(client_write_id=_idempotency_key_digest("hidden-task-complete")).exists())
 
     def test_failed_idempotent_write_replay_preserves_error_status(self):
         url = reverse("api:task_complete", kwargs={"pk": self.awaiting_task.pk})
@@ -803,7 +905,7 @@ class MobileApiTests(APITestCase):
         self.assertEqual(first.status_code, 400)
         self.assertEqual(second.status_code, 400)
         self.assertEqual(first.json(), second.json())
-        receipt = MobileWriteReceipt.objects.get(client_write_id="future-anc-complete")
+        receipt = MobileWriteReceipt.objects.get(client_write_id=_idempotency_key_digest("future-anc-complete"))
         self.assertEqual(receipt.status, MobileWriteReceipt.STATUS_FAILED)
         self.assertEqual(receipt.response_status, 400)
 
@@ -872,7 +974,7 @@ class MobileApiTests(APITestCase):
         self.assertEqual(second.status_code, 201)
         self.assertEqual(first.json(), second.json())
         self.assertEqual(CallLog.objects.filter(case=self.case, notes="Idempotent call").count(), 1)
-        self.assertEqual(MobileWriteReceipt.objects.filter(client_write_id="call-repeat-1").count(), 1)
+        self.assertEqual(MobileWriteReceipt.objects.filter(client_write_id=_idempotency_key_digest("call-repeat-1")).count(), 1)
 
     def test_vitals_create_and_thresholds_endpoint(self):
         vitals_response = self.client.post(
@@ -909,7 +1011,7 @@ class MobileApiTests(APITestCase):
         self.assertEqual(second.status_code, 201)
         self.assertEqual(first.json(), second.json())
         self.assertEqual(VitalEntry.objects.filter(case=self.case, pr=82).count(), 1)
-        self.assertEqual(MobileWriteReceipt.objects.filter(client_write_id="vital-repeat-1").count(), 1)
+        self.assertEqual(MobileWriteReceipt.objects.filter(client_write_id=_idempotency_key_digest("vital-repeat-1")).count(), 1)
 
     def test_device_token_registers_or_updates(self):
         url = reverse("api:devices")
@@ -940,9 +1042,7 @@ class MobileApiTests(APITestCase):
         notification = MobileNotification.objects.create(
             user=self.user,
             notification_type=MobileNotificationType.RED_FLAG,
-            title="Red flag patient",
             case=self.case,
-            payload={"case_id": self.case.id},
         )
 
         self.assertFalse(firebase_configured())
@@ -1017,19 +1117,32 @@ class MobileApiTests(APITestCase):
             MobileNotificationType.RED_FLAG: "red_flags",
             MobileNotificationType.OVERDUE: "overdue",
         }
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            MobileNotification.objects.bulk_create(
+                [
+                    MobileNotification(
+                        user=self.user,
+                        notification_type=MobileNotificationType.RED_FLAG,
+                        title="Patient Priya Sharma",
+                        body="Sensitive clinical body",
+                        case=self.case,
+                    )
+                ]
+            )
         for notification_type, expected_channel in expected_channels.items():
             with self.subTest(notification_type=notification_type):
+                with self.assertRaises(ValidationError):
+                    MobileNotification.objects.create(
+                        user=self.user,
+                        notification_type=notification_type,
+                        title=sensitive_values[0],
+                        body=f"{sensitive_values[2]}: {sensitive_values[3]}",
+                        case=self.case,
+                    )
                 notification = MobileNotification.objects.create(
                     user=self.user,
                     notification_type=notification_type,
-                    title=sensitive_values[0],
-                    body=f"{sensitive_values[2]}: {sensitive_values[3]}",
                     case=self.case,
-                    payload={
-                        "phone": sensitive_values[1],
-                        "case_id": sensitive_values[4],
-                        "task_detail": sensitive_values[3],
-                    },
                 )
 
                 message = _build_multicast_message(
@@ -1121,8 +1234,6 @@ class MobileApiTests(APITestCase):
         notification = MobileNotification(
             user=self.user,
             notification_type="unexpected",
-            title="Unknown",
-            payload={"channel": "unknown"},
         )
 
         self.assertEqual(_channel_id_for_notification(notification), "overdue")
@@ -1145,8 +1256,9 @@ class MobileApiTests(APITestCase):
         )
         self.assertEqual(notifications.count(), 1)
         notification = notifications.get()
-        self.assertEqual(set(notification.payload), {"event_id", "type", "channel"})
-        self.assertNotIn(self.case.phone_number, str(notification.payload))
+        serialized = _serialize_notification(notification)
+        self.assertEqual(set(serialized["payload"]), {"event_id", "type", "channel"})
+        self.assertNotIn(self.case.phone_number, str(serialized["payload"]))
 
     def test_task_reassignment_notifies_new_assignee(self):
         new_user = get_user_model().objects.create_user(username="new-assignee", password="pass")
@@ -1164,7 +1276,7 @@ class MobileApiTests(APITestCase):
             notification_type=MobileNotificationType.ASSIGNMENT,
             task=self.task,
         )
-        self.assertEqual(notification.payload["type"], MobileNotificationType.ASSIGNMENT)
+        self.assertEqual(_serialize_notification(notification)["payload"]["type"], MobileNotificationType.ASSIGNMENT)
 
     def test_red_flag_signal_notifies_case_assigned_users_once(self):
         case = Case.objects.create(
@@ -1199,8 +1311,54 @@ class MobileApiTests(APITestCase):
             case=case,
         )
         self.assertEqual(notifications.count(), 1)
-        self.assertEqual(notifications.get().payload["channel"], "red_flags")
-        self.assertNotIn("9876543211", str(notifications.get().payload))
+        serialized = _serialize_notification(notifications.get())
+        self.assertEqual(serialized["payload"]["channel"], "red_flags")
+        self.assertNotIn("9876543211", str(serialized["payload"]))
+
+    def test_notification_event_predicates_replace_risk_change_and_revoke_resolved_or_rescheduled(self):
+        state, _ = MobileNotificationState.objects.get_or_create(user=self.user)
+        before_epoch = state.epoch
+
+        self.case.anc_high_risk_reasons = ["PREVIOUS_COMPLICATION"]
+        self.case.save(update_fields=["anc_high_risk_reasons", "updated_at"])
+        original = MobileNotification.objects.get(
+            user=self.user,
+            notification_type=MobileNotificationType.RED_FLAG,
+            case=self.case,
+        )
+        self.case.anc_high_risk_reasons = ["GESTATIONAL_DIABETES"]
+        self.case.save(update_fields=["anc_high_risk_reasons", "updated_at"])
+        replacement = MobileNotification.objects.get(
+            user=self.user,
+            notification_type=MobileNotificationType.RED_FLAG,
+            case=self.case,
+        )
+        state.refresh_from_db()
+        self.assertNotEqual(replacement.event_id, original.event_id)
+        self.assertNotEqual(state.epoch, before_epoch)
+
+        self.case.high_risk = False
+        self.case.anc_high_risk_reasons = []
+        self.case.ncd_flags = []
+        self.case.save(update_fields=["high_risk", "anc_high_risk_reasons", "ncd_flags", "updated_at"])
+        self.assertFalse(MobileNotification.objects.filter(pk=replacement.pk).exists())
+
+        overdue = Task.objects.create(
+            case=self.case,
+            title="Predicate overdue",
+            due_date=timezone.localdate() - timedelta(days=1),
+            assigned_user=self.user,
+            created_by=self.user,
+        )
+        call_command("send_mobile_overdue_notifications", stdout=StringIO())
+        overdue_event = MobileNotification.objects.get(
+            user=self.user,
+            task=overdue,
+            notification_type=MobileNotificationType.OVERDUE,
+        )
+        overdue.due_date = timezone.localdate() + timedelta(days=2)
+        overdue.save(update_fields=["due_date", "updated_at"])
+        self.assertFalse(MobileNotification.objects.filter(pk=overdue_event.pk).exists())
 
     def test_overdue_management_command_creates_deduped_notifications(self):
         overdue_task = Task.objects.create(
@@ -1224,23 +1382,19 @@ class MobileApiTests(APITestCase):
         )
         self.assertEqual(notifications.count(), 1)
         self.assertIn("Processed", output.getvalue())
-        self.assertEqual(set(notifications.get().payload), {"event_id", "type", "channel"})
+        self.assertEqual(set(_serialize_notification(notifications.get())["payload"]), {"event_id", "type", "channel"})
 
     def test_notification_read_marks_only_current_users_notification(self):
         other_user = get_user_model().objects.create_user(username="other-user", password="pass")
         notification = MobileNotification.objects.create(
             user=self.user,
             notification_type=MobileNotificationType.RED_FLAG,
-            title="Open case",
             case=self.case,
-            payload={"type": MobileNotificationType.RED_FLAG},
         )
         other_notification = MobileNotification.objects.create(
             user=other_user,
             notification_type=MobileNotificationType.RED_FLAG,
-            title="Other case",
             case=self.case,
-            payload={"type": MobileNotificationType.RED_FLAG},
         )
 
         response = self.client.post(reverse("api:notification_read", kwargs={"pk": notification.pk}))
@@ -1369,6 +1523,10 @@ class MobileApiTests(APITestCase):
             url,
             {"type": "red_flag", "unread_only": "true", "page_size": 1, "cursor": cursor},
         )
+        page_size_mismatch = self.client.get(
+            url,
+            {"type": "red_flag", "page_size": 2, "cursor": cursor},
+        )
         legacy_page = self.client.get(url, {"page": 2})
 
         self.assertIsNotNone(cursor)
@@ -1376,6 +1534,8 @@ class MobileApiTests(APITestCase):
         self.assertEqual(type_mismatch.json()["code"], "invalid_cursor")
         self.assertEqual(unread_mismatch.status_code, 400)
         self.assertEqual(unread_mismatch.json()["code"], "invalid_cursor")
+        self.assertEqual(page_size_mismatch.status_code, 400)
+        self.assertEqual(page_size_mismatch.json()["code"], "invalid_cursor")
         self.assertEqual(legacy_page.status_code, 400)
         self.assertEqual(legacy_page.json()["code"], "page_not_supported")
 
@@ -1417,9 +1577,8 @@ class MobileApiTests(APITestCase):
         continued = client.get(url, {"page_size": 1, "cursor": cursor})
 
         self.assertIsNotNone(cursor)
-        self.assertEqual(continued.status_code, 200, continued.content)
-        self.assertEqual(continued.json()["results"], [])
-        self.assertIsNone(continued.json()["next_cursor"])
+        self.assertEqual(continued.status_code, 400, continued.content)
+        self.assertEqual(continued.json()["code"], "invalid_cursor")
         self.assertFalse(MobileNotification.objects.filter(pk=revoked_notification_id).exists())
 
     def test_notification_retention_cleanup_is_bounded_and_expired_rows_are_hidden(self):
@@ -1475,7 +1634,6 @@ class MobileApiTests(APITestCase):
             {"client_write_id": "binding-payload", "unexpected": "different"},
             format="json",
         )
-
         self.assertEqual(first.status_code, 200)
         self.assertEqual(mismatch.status_code, 409)
         self.assertEqual(mismatch.json()["code"], "idempotency_mismatch")
@@ -1558,7 +1716,7 @@ class MobileApiTests(APITestCase):
         )
 
         self.assertEqual(response.status_code, 201)
-        receipt = MobileWriteReceipt.objects.get(client_write_id="minimal-receipt")
+        receipt = MobileWriteReceipt.objects.get(client_write_id=_idempotency_key_digest("minimal-receipt"))
         self.assertGreater(receipt.expires_at, timezone.now())
         self.assertEqual(set(receipt.response_metadata), {"message"})
         self.assertNotIn(self.case.full_name, str(receipt.response_metadata))
@@ -1654,7 +1812,7 @@ class MobileApiTests(APITestCase):
         self.case.delete()
 
         self.assertFalse(MobileNotification.objects.exists())
-        self.assertFalse(MobileWriteReceipt.objects.filter(client_write_id="delete-receipt").exists())
+        self.assertFalse(MobileWriteReceipt.objects.filter(client_write_id=_idempotency_key_digest("delete-receipt")).exists())
 
     def test_dataset_invalidation_advances_epoch_and_revokes_all_mobile_state(self):
         MobileDeviceToken.objects.create(user=self.user, token="dataset-token")
@@ -1715,6 +1873,15 @@ class MobileApiTests(APITestCase):
             format="json",
         )
         cursor = first.json()["next_cursor"]
+        inserted = Case.objects.create(
+            uhid="UH-AAAA-INSERTED",
+            first_name="Inserted",
+            last_name="Patient",
+            patient_name="Inserted Patient",
+            phone_number="9876543299",
+            category=self.anc,
+            created_by=self.user,
+        )
         second = self.client.post(
             search_url,
             {"query": "uh-", "page_size": 1, "cursor": cursor},
@@ -1723,6 +1890,11 @@ class MobileApiTests(APITestCase):
         mismatch = self.client.post(
             search_url,
             {"query": "Pri", "page_size": 1, "cursor": cursor},
+            format="json",
+        )
+        page_size_mismatch = self.client.post(
+            search_url,
+            {"query": "UH-", "page_size": 2, "cursor": cursor},
             format="json",
         )
 
@@ -1734,7 +1906,52 @@ class MobileApiTests(APITestCase):
         self.assertIsNone(second.json()["next_cursor"])
         self.assertEqual(mismatch.status_code, 400)
         self.assertEqual(mismatch.json()["code"], "invalid_cursor")
+        self.assertEqual(page_size_mismatch.status_code, 400)
+        self.assertNotEqual(second.json()["results"][0]["id"], inserted.patient_id)
         self.assertNotIn("UH-API", cursor)
+
+    def test_patient_search_shared_throttle_audits_throttled_attempt(self):
+        url = reverse("api:patient_search")
+        responses = [self.client.post(url, {"query": "Pri"}, format="json") for _ in range(31)]
+
+        self.assertTrue(all(response.status_code == 200 for response in responses[:30]))
+        self.assertEqual(responses[30].status_code, 429)
+        events = AuditEvent.objects.filter(action="patient.search_attempt")
+        self.assertEqual(events.count(), 31)
+        throttled = events.filter(metadata__search_class="throttled").get()
+        self.assertEqual(throttled.outcome, AuditEvent.Outcome.DENIED)
+        self.assertNotIn("Pri", str(throttled.metadata))
+
+    def test_patient_search_allows_intake_only_scope_and_phone_is_exact_only(self):
+        role = RoleSetting.objects.create(
+            role_name="Intake Lookup Only",
+            case_data_scope=CaseDataScope.NONE,
+            can_intake_patient_lookup=True,
+        )
+        group = Group.objects.create(name=role.role_name)
+        intake_user = get_user_model().objects.create_user(username="intake-only-api", password="pass")
+        intake_user.groups.add(group)
+        misleading = Case.objects.create(
+            uhid=self.case.phone_number,
+            first_name="Numeric",
+            last_name="Identifier",
+            patient_name="Numeric Identifier",
+            phone_number="9000000000",
+            category=self.anc,
+            created_by=self.user,
+        )
+        client = APIClient()
+        client.force_authenticate(intake_user)
+
+        response = client.post(
+            reverse("api:patient_search"),
+            {"query": self.case.phone_number},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        result_ids = {row["id"] for row in response.json()["results"]}
+        self.assertIn(self.case.patient_id, result_ids)
+        self.assertNotIn(misleading.patient_id, result_ids)
 
     def test_patient_search_audit_is_phi_safe_and_captures_request_context(self):
         credential = StaffDeviceCredential.objects.create(
@@ -1811,11 +2028,29 @@ class MobileApiTests(APITestCase):
         self.assertEqual(future_call.status_code, 400)
         self.assertEqual(old_vital.status_code, 400)
 
+    def test_identical_call_replay_precedes_rolling_timestamp_validation(self):
+        base_now = timezone.now().replace(microsecond=0)
+        payload = {
+            "outcome": "no-answer",
+            "attempted_at": (base_now - timedelta(days=29)).isoformat(),
+            "client_write_id": "rolling-window-replay",
+        }
+        url = reverse("api:case_call_outcome", args=[self.case.pk])
+        first = self.client.post(url, payload, format="json")
+        with patch("api.serializers.timezone.now", return_value=base_now + timedelta(days=2)):
+            replay = self.client.post(url, payload, format="json")
+
+        self.assertEqual(first.status_code, 201, first.content)
+        self.assertEqual(replay.status_code, 201, replay.content)
+        self.assertEqual(first.json()["call_log"]["id"], replay.json()["call_log"]["id"])
+        self.assertEqual(CallLog.objects.filter(case=self.case).count(), 1)
+
     def test_generated_schema_covers_every_mobile_endpoint_and_surgery_done(self):
         schema = SchemaGenerator().get_schema(request=None, public=True)
         expected_paths = {
             "/api/me/",
             "/api/cases/",
+            "/api/cases/search/",
             "/api/cases/{id}/",
             "/api/cases/{id}/edit-form/",
             "/api/patients/",
@@ -1831,8 +2066,11 @@ class MobileApiTests(APITestCase):
             if method in {"get", "post", "patch", "put", "delete"}
         ]
         self.assertEqual(len(operation_ids), len(set(operation_ids)))
-        case_write = schema["components"]["schemas"]["CaseWriteRequest"]
-        self.assertIn("surgery_done", case_write["properties"])
+        case_create = schema["components"]["schemas"]["CaseCreateRequest"]
+        case_patch = schema["components"]["schemas"]["CasePatchRequest"]
+        self.assertIn("surgery_done", case_create["properties"])
+        self.assertIn("surgery_done", case_patch["properties"])
+        self.assertTrue({"base_updated_at", "base_values"}.issubset(case_patch["required"]))
         editable_case = schema["components"]["schemas"]["EditableCaseContract"]
         self.assertIn("surgery_done", editable_case["properties"])
         self.assertNotIn("client_write_id", editable_case["properties"])
@@ -2134,7 +2372,7 @@ class MobileCaseCreateTests(APITestCase):
         self.assertEqual(second.status_code, 201, second.content)
         self.assertEqual(first.json()["case_id"], second.json()["case_id"])
         self.assertEqual(Case.objects.filter(uhid="REAL-IDEM-1").count(), 1)
-        self.assertEqual(MobileWriteReceipt.objects.filter(client_write_id="real-uhid-idem-1").count(), 1)
+        self.assertEqual(MobileWriteReceipt.objects.filter(client_write_id=_idempotency_key_digest("real-uhid-idem-1")).count(), 1)
 
     def test_create_denied_without_case_create_capability(self):
         group = Group.objects.create(name="ReadOnlyRole")
@@ -2276,6 +2514,33 @@ class MobileEditApiTests(APITestCase):
         client.force_authenticate(user)
         return client
 
+    def _case_patch_payload(self, case, changes):
+        case.refresh_from_db()
+        current = _case_edit_payload(case)
+        return {
+            **changes,
+            "base_updated_at": current["base_updated_at"],
+            "base_values": {key: current[key] for key in changes},
+        }
+
+    def _task_patch_payload(self, task, changes):
+        task.refresh_from_db()
+        current = _task_edit_values(task)
+        return {
+            **changes,
+            "base_updated_at": current["base_updated_at"],
+            "base_values": {key: current[key] for key in changes},
+        }
+
+    def _vital_patch_payload(self, vital, changes):
+        vital.refresh_from_db()
+        current = _vital_edit_values(vital)
+        return {
+            **changes,
+            "base_updated_at": current["base_updated_at"],
+            "base_values": {key: current[key] for key in changes},
+        }
+
     # --- Case edit ---
     def test_case_edit_form_returns_prefill_and_metadata(self):
         response = self.client.get(reverse("api:case_edit_form", args=[self.case.id]))
@@ -2303,7 +2568,7 @@ class MobileEditApiTests(APITestCase):
             "review_date": (timezone.localdate() + timedelta(days=30)).isoformat(),
         }
         response = self.client.patch(
-            reverse("api:case_detail", args=[self.case.id]), payload, format="json"
+            reverse("api:case_detail", args=[self.case.id]), self._case_patch_payload(self.case, payload), format="json"
         )
         self.assertEqual(response.status_code, 200, response.content)
         self.case.refresh_from_db()
@@ -2368,7 +2633,7 @@ class MobileEditApiTests(APITestCase):
             "review_date": (timezone.localdate() + timedelta(days=20)).isoformat(),
         }
         response = self.client.patch(
-            reverse("api:case_detail", args=[case.id]), payload, format="json"
+            reverse("api:case_detail", args=[case.id]), self._case_patch_payload(case, payload), format="json"
         )
         self.assertEqual(response.status_code, 200, response.content)
         patient.refresh_from_db()
@@ -2381,7 +2646,7 @@ class MobileEditApiTests(APITestCase):
         clear_payload["alternate_phone_number"] = ""
         clear_payload["date_of_birth"] = ""
         response = self.client.patch(
-            reverse("api:case_detail", args=[case.id]), clear_payload, format="json"
+            reverse("api:case_detail", args=[case.id]), self._case_patch_payload(case, clear_payload), format="json"
         )
         self.assertEqual(response.status_code, 200, response.content)
         patient.refresh_from_db()
@@ -2411,7 +2676,7 @@ class MobileEditApiTests(APITestCase):
         prefill = self.client.get(reverse("api:case_edit_form", args=[surgery_case.pk]))
         response = self.client.patch(
             reverse("api:case_detail", args=[surgery_case.pk]),
-            {"diagnosis": "Post-operative review updated"},
+            self._case_patch_payload(surgery_case, {"diagnosis": "Post-operative review updated"}),
             format="json",
         )
 
@@ -2427,6 +2692,50 @@ class MobileEditApiTests(APITestCase):
             set(response.json()["editable_case"]),
             set(prefill.json()["case"]),
         )
+
+    def test_case_patch_distinct_field_interleaving_and_same_field_conflict(self):
+        base = _case_edit_payload(self.case)
+        first = {
+            "diagnosis": "First concurrent diagnosis",
+            "base_updated_at": base["base_updated_at"],
+            "base_values": {"diagnosis": base["diagnosis"]},
+        }
+        distinct = {
+            "notes": "Independent concurrent note",
+            "base_updated_at": base["base_updated_at"],
+            "base_values": {"notes": base["notes"]},
+        }
+        stale_same = {
+            "diagnosis": "Stale overwrite",
+            "base_updated_at": base["base_updated_at"],
+            "base_values": {"diagnosis": base["diagnosis"]},
+        }
+        url = reverse("api:case_detail", args=[self.case.pk])
+
+        first_response = self.client.patch(url, first, format="json")
+        distinct_response = self.client.patch(url, distinct, format="json")
+        conflict_response = self.client.patch(url, stale_same, format="json")
+
+        self.assertEqual(first_response.status_code, 200, first_response.content)
+        self.assertEqual(distinct_response.status_code, 200, distinct_response.content)
+        self.assertEqual(conflict_response.status_code, 409, conflict_response.content)
+        self.case.refresh_from_db()
+        self.assertEqual(self.case.diagnosis, "First concurrent diagnosis")
+        self.assertEqual(self.case.notes, "Independent concurrent note")
+
+    def test_case_patch_is_idempotent_and_receipt_key_is_digested(self):
+        payload = self._case_patch_payload(self.case, {"diagnosis": "Idempotent patch"})
+        payload["client_write_id"] = "case-patch-idempotency"
+        url = reverse("api:case_detail", args=[self.case.pk])
+
+        first = self.client.patch(url, payload, format="json")
+        replay = self.client.patch(url, payload, format="json")
+
+        self.assertEqual(first.status_code, 200, first.content)
+        self.assertEqual(replay.status_code, 200, replay.content)
+        receipt = MobileWriteReceipt.objects.get(operation="case_update")
+        self.assertNotEqual(receipt.client_write_id, payload["client_write_id"])
+        self.assertEqual(receipt.client_write_id, _idempotency_key_digest(payload["client_write_id"]))
 
     # --- Task metadata + create ---
     def test_task_form_metadata(self):
@@ -2476,7 +2785,7 @@ class MobileEditApiTests(APITestCase):
     def test_task_patch_can_unassign(self):
         self.assertIsNotNone(self.task.assigned_user_id)
         response = self.client.patch(
-            reverse("api:task_detail", args=[self.task.id]), {"assigned_user": ""}, format="json"
+            reverse("api:task_detail", args=[self.task.id]), self._task_patch_payload(self.task, {"assigned_user": ""}), format="json"
         )
         self.assertEqual(response.status_code, 200, response.content)
         self.task.refresh_from_db()
@@ -2486,7 +2795,7 @@ class MobileEditApiTests(APITestCase):
     def test_task_patch_reschedule(self):
         new_date = (timezone.localdate() + timedelta(days=5)).isoformat()
         response = self.client.patch(
-            reverse("api:task_detail", args=[self.task.id]), {"due_date": new_date}, format="json"
+            reverse("api:task_detail", args=[self.task.id]), self._task_patch_payload(self.task, {"due_date": new_date}), format="json"
         )
         self.assertEqual(response.status_code, 200, response.content)
         self.task.refresh_from_db()
@@ -2496,11 +2805,34 @@ class MobileEditApiTests(APITestCase):
         self.task.status = TaskStatus.COMPLETED
         self.task.save()
         response = self.client.patch(
-            reverse("api:task_detail", args=[self.task.id]), {"status": "SCHEDULED"}, format="json"
+            reverse("api:task_detail", args=[self.task.id]), self._task_patch_payload(self.task, {"status": "SCHEDULED"}), format="json"
         )
         self.assertEqual(response.status_code, 200, response.content)
         self.task.refresh_from_db()
         self.assertEqual(self.task.status, TaskStatus.SCHEDULED)
+
+    def test_task_patch_distinct_field_interleaving_and_same_field_conflict(self):
+        base = _task_edit_values(self.task)
+        first_date = (timezone.localdate() + timedelta(days=4)).isoformat()
+        url = reverse("api:task_detail", args=[self.task.pk])
+        first = self.client.patch(
+            url,
+            {"due_date": first_date, "base_updated_at": base["base_updated_at"], "base_values": {"due_date": base["due_date"]}},
+            format="json",
+        )
+        distinct = self.client.patch(
+            url,
+            {"notes": "Concurrent task note", "base_updated_at": base["base_updated_at"], "base_values": {"notes": base["notes"]}},
+            format="json",
+        )
+        stale = self.client.patch(
+            url,
+            {"due_date": (timezone.localdate() + timedelta(days=6)).isoformat(), "base_updated_at": base["base_updated_at"], "base_values": {"due_date": base["due_date"]}},
+            format="json",
+        )
+        self.assertEqual(first.status_code, 200, first.content)
+        self.assertEqual(distinct.status_code, 200, distinct.content)
+        self.assertEqual(stale.status_code, 409, stale.content)
 
     def test_task_note_creates_timeline_entry(self):
         response = self.client.post(
@@ -2517,7 +2849,7 @@ class MobileEditApiTests(APITestCase):
     def test_vitals_patch_updates_values(self):
         payload = {"bp_systolic": 130, "bp_diastolic": 85, "pr": 78}
         response = self.client.patch(
-            reverse("api:vitals_detail", args=[self.vital.id]), payload, format="json"
+            reverse("api:vitals_detail", args=[self.vital.id]), self._vital_patch_payload(self.vital, payload), format="json"
         )
         self.assertEqual(response.status_code, 200, response.content)
         self.vital.refresh_from_db()
@@ -2543,7 +2875,7 @@ class MobileEditApiTests(APITestCase):
         )
         response = self.client.patch(
             reverse("api:vitals_detail", args=[vital.id]),
-            {"bp_systolic": 132, "bp_diastolic": 88},
+            self._vital_patch_payload(vital, {"bp_systolic": 132, "bp_diastolic": 88}),
             format="json",
         )
         self.assertEqual(response.status_code, 200, response.content)
@@ -2552,3 +2884,25 @@ class MobileEditApiTests(APITestCase):
         # Metrics not included in the PATCH must be left untouched, not wiped to null.
         self.assertEqual(vital.pr, 80)
         self.assertEqual(vital.spo2, 98)
+
+    def test_vitals_patch_distinct_field_interleaving_and_same_field_conflict(self):
+        base = _vital_edit_values(self.vital)
+        url = reverse("api:vitals_detail", args=[self.vital.pk])
+        first = self.client.patch(
+            url,
+            {"pr": 81, "base_updated_at": base["base_updated_at"], "base_values": {"pr": base["pr"]}},
+            format="json",
+        )
+        distinct = self.client.patch(
+            url,
+            {"spo2": 97, "base_updated_at": base["base_updated_at"], "base_values": {"spo2": base["spo2"]}},
+            format="json",
+        )
+        stale = self.client.patch(
+            url,
+            {"pr": 82, "base_updated_at": base["base_updated_at"], "base_values": {"pr": base["pr"]}},
+            format="json",
+        )
+        self.assertEqual(first.status_code, 200, first.content)
+        self.assertEqual(distinct.status_code, 200, distinct.content)
+        self.assertEqual(stale.status_code, 409, stale.content)

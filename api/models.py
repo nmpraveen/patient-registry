@@ -25,6 +25,41 @@ class MobileDatasetState(models.Model):
         super().save(*args, **kwargs)
 
 
+class MobileNotificationState(models.Model):
+    """Per-account snapshot generation advanced whenever visible events may change."""
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="mobile_notification_state",
+    )
+    epoch = models.UUIDField(default=uuid.uuid4, editable=False)
+    updated_at = models.DateTimeField(auto_now=True)
+
+
+class MobileOpaqueCursor(models.Model):
+    """Short-lived server-side state addressed by a random, non-reversible token."""
+
+    token_hash = models.CharField(max_length=64, unique=True)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="mobile_opaque_cursors",
+    )
+    kind = models.CharField(max_length=48)
+    binding_hash = models.CharField(max_length=64)
+    context_hash = models.CharField(max_length=64)
+    state = models.JSONField(default=dict)
+    expires_at = models.DateTimeField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["user", "kind", "-created_at"], name="api_cursor_user_kind_idx"),
+            models.Index(fields=["expires_at"], name="api_cursor_expires_idx"),
+        ]
+
+
 class MobileDeviceToken(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="mobile_device_tokens")
     token = models.CharField(max_length=255, unique=True)
@@ -60,7 +95,6 @@ class MobileNotification(models.Model):
     body = models.TextField(blank=True)
     case = models.ForeignKey("patients.Case", on_delete=models.SET_NULL, null=True, blank=True, related_name="mobile_notifications")
     task = models.ForeignKey("patients.Task", on_delete=models.SET_NULL, null=True, blank=True, related_name="mobile_notifications")
-    payload = models.JSONField(default=dict, blank=True)
     dedupe_key = models.CharField(max_length=160, blank=True)
     read_at = models.DateTimeField(null=True, blank=True)
     expires_at = models.DateTimeField(default=mobile_notification_expiry)
@@ -80,10 +114,87 @@ class MobileNotification(models.Model):
                 condition=~models.Q(dedupe_key=""),
                 name="uniq_mobile_notification_user_dedupe",
             ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        notification_type=MobileNotificationType.ASSIGNMENT,
+                        title="MEDTRACK assignment",
+                        body="Open MEDTRACK to review an assignment update.",
+                    )
+                    | models.Q(
+                        notification_type=MobileNotificationType.RED_FLAG,
+                        title="MEDTRACK priority update",
+                        body="Open MEDTRACK to review a priority update.",
+                    )
+                    | models.Q(
+                        notification_type=MobileNotificationType.OVERDUE,
+                        title="MEDTRACK task update",
+                        body="Open MEDTRACK to review a task update.",
+                    )
+                ),
+                name="mobile_notification_generic_copy",
+            ),
         ]
 
     def __str__(self):
         return self.title
+
+    @staticmethod
+    def canonical_copy(notification_type, event_id):
+        copy = {
+            MobileNotificationType.ASSIGNMENT: (
+                "MEDTRACK assignment",
+                "Open MEDTRACK to review an assignment update.",
+                "assignments",
+            ),
+            MobileNotificationType.RED_FLAG: (
+                "MEDTRACK priority update",
+                "Open MEDTRACK to review a priority update.",
+                "red_flags",
+            ),
+            MobileNotificationType.OVERDUE: (
+                "MEDTRACK task update",
+                "Open MEDTRACK to review a task update.",
+                "overdue",
+            ),
+        }
+        title, body, channel = copy[notification_type]
+        return title, body, channel
+
+    def clean(self):
+        super().clean()
+        try:
+            title, body, _channel = self.canonical_copy(self.notification_type, self.event_id)
+        except (KeyError, TypeError, ValueError) as exc:
+            from django.core.exceptions import ValidationError
+
+            raise ValidationError({"notification_type": "Unsupported notification type."}) from exc
+        errors = {}
+        if self.title and self.title != title:
+            errors["title"] = "Notification presentation must use the generic server copy."
+        if self.body and self.body != body:
+            errors["body"] = "Notification presentation must use the generic server copy."
+        if errors:
+            from django.core.exceptions import ValidationError
+
+            raise ValidationError(errors)
+        self.title = title
+        self.body = body
+
+    def save(self, *args, **kwargs):
+        try:
+            generic_title, generic_body, _channel = self.canonical_copy(
+                self.notification_type,
+                self.event_id,
+            )
+        except KeyError:
+            generic_title = generic_body = ""
+        if not self.title:
+            self.title = generic_title
+        if not self.body:
+            self.body = generic_body
+        self.full_clean()
+        super().save(*args, **kwargs)
 
 
 class MobileWriteReceipt(models.Model):
@@ -124,4 +235,4 @@ class MobileWriteReceipt(models.Model):
         ]
 
     def __str__(self):
-        return f"{self.operation}:{self.client_write_id}"
+        return f"{self.operation}:receipt-{self.pk or 'new'}"

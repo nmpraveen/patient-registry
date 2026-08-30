@@ -46,6 +46,19 @@ class PatientSearchSerializer(serializers.Serializer):
     cursor = serializers.CharField(required=False, allow_null=True, allow_blank=False)
 
 
+class CaseSearchSerializer(PatientSearchSerializer):
+    page_size = serializers.IntegerField(required=False, default=20, min_value=1, max_value=20)
+    bucket = serializers.ChoiceField(
+        choices=["all", "today", "upcoming", "overdue", "awaiting", "red"],
+        required=False,
+        default="today",
+    )
+    assigned_to = serializers.ChoiceField(choices=["me", "all"], required=False, allow_blank=True)
+    scope_context = serializers.ChoiceField(choices=["", "calls"], required=False, allow_blank=True, default="")
+    category = serializers.ListField(child=serializers.CharField(max_length=80), required=False, default=list)
+    subcategory = serializers.ListField(child=serializers.CharField(max_length=80), required=False, default=list)
+
+
 class DeviceTokenSerializer(serializers.Serializer):
     token = serializers.CharField(max_length=255)
     platform = serializers.CharField(max_length=32, required=False, default="android")
@@ -54,7 +67,18 @@ class DeviceTokenSerializer(serializers.Serializer):
 
 
 class ClientWriteSerializer(serializers.Serializer):
-    client_write_id = serializers.CharField(max_length=80, required=False, allow_blank=True)
+    client_write_id = serializers.RegexField(
+        regex=r"^[A-Za-z0-9._~-]+$",
+        max_length=80,
+        required=False,
+        allow_blank=True,
+        error_messages={"invalid": "Use an opaque ASCII write identifier."},
+    )
+
+
+class PatchControlSerializer(ClientWriteSerializer):
+    base_updated_at = serializers.DateTimeField()
+    base_values = serializers.DictField()
 
 
 class TaskCompleteSerializer(ClientWriteSerializer):
@@ -123,9 +147,14 @@ class VitalEntryCreateSerializer(ClientWriteSerializer):
 class VitalEntryUpdateSerializer(VitalEntryCreateSerializer):
     """Same validation as create, but applies the values to an existing entry."""
 
+    base_updated_at = serializers.DateTimeField()
+    base_values = serializers.DictField()
+
     def update_vital(self, *, vital, user):
         data = dict(self.validated_data)
         data.pop("client_write_id", None)
+        data.pop("base_updated_at", None)
+        data.pop("base_values", None)
         warning = data.pop("hemoglobin_warning", "")
         recorded_at = data.pop("recorded_at", None)
         # Partial update: only touch metrics the caller actually sent, so editing

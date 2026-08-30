@@ -14,7 +14,9 @@ from .models import (
     MobileDatasetState,
     MobileDeviceToken,
     MobileNotification,
+    MobileNotificationState,
     MobileNotificationType,
+    MobileOpaqueCursor,
     MobileWriteReceipt,
 )
 from .push import send_mobile_notification
@@ -72,7 +74,7 @@ def create_mobile_notification(
     ):
         return None
 
-    generic_title, generic_body, channel = GENERIC_NOTIFICATION_COPY[notification_type]
+    generic_title, generic_body, _channel = GENERIC_NOTIFICATION_COPY[notification_type]
     event_id = uuid.uuid4()
     defaults = {
         "event_id": event_id,
@@ -81,11 +83,6 @@ def create_mobile_notification(
         "body": generic_body,
         "case": case,
         "task": task,
-        "payload": {
-            "event_id": str(event_id),
-            "type": notification_type,
-            "channel": channel,
-        },
     }
 
     try:
@@ -159,6 +156,7 @@ def authorized_notification_queryset(user):
 
     accessible_case_ids = _accessible_case_queryset(user).values("pk")
     inactive_task_statuses = [TaskStatus.COMPLETED, TaskStatus.CANCELLED]
+    current_risk = Q(case__high_risk=True) | ~Q(case__anc_high_risk_reasons=[]) | ~Q(case__ncd_flags=[])
     return (
         MobileNotification.objects.filter(
             user=user,
@@ -166,8 +164,22 @@ def authorized_notification_queryset(user):
             expires_at__gt=timezone.now(),
         )
         .filter(
-            Q(notification_type=MobileNotificationType.RED_FLAG, task__isnull=True)
-            | (Q(task__assigned_user=user) & ~Q(task__status__in=inactive_task_statuses))
+            Q(
+                notification_type=MobileNotificationType.RED_FLAG,
+                task__isnull=True,
+            )
+            & current_risk
+            | Q(
+                notification_type=MobileNotificationType.ASSIGNMENT,
+                task__assigned_user=user,
+            )
+            & ~Q(task__status__in=inactive_task_statuses)
+            | Q(
+                notification_type=MobileNotificationType.OVERDUE,
+                task__assigned_user=user,
+                task__due_date__lt=timezone.localdate(),
+            )
+            & ~Q(task__status__in=inactive_task_statuses)
         )
     )
 
@@ -183,7 +195,30 @@ def notification_is_authorized(notification):
 
 def purge_stale_notifications_for_user(user):
     authorized_ids = authorized_notification_queryset(user).values("pk")
-    return MobileNotification.objects.filter(user=user).exclude(pk__in=authorized_ids).delete()[0]
+    deleted = MobileNotification.objects.filter(user=user).exclude(pk__in=authorized_ids).delete()[0]
+    if deleted:
+        bump_notification_epochs([user.pk])
+    return deleted
+
+
+def notification_epoch_for_user(user, *, lock=False):
+    queryset = MobileNotificationState.objects
+    if lock:
+        queryset = queryset.select_for_update()
+    state, _ = queryset.get_or_create(user=user)
+    return state
+
+
+def bump_notification_epochs(user_ids):
+    normalized_ids = sorted({int(user_id) for user_id in user_ids if user_id})
+    if not normalized_ids:
+        return
+    for user_id in normalized_ids:
+        with transaction.atomic():
+            state, _ = MobileNotificationState.objects.select_for_update().get_or_create(user_id=user_id)
+            state.epoch = uuid.uuid4()
+            state.save(update_fields=["epoch", "updated_at"])
+            MobileOpaqueCursor.objects.filter(user_id=user_id, kind="notification_snapshot").delete()
 
 
 def revoke_user_mobile_state(user_ids, *, purge_receipts=True):
@@ -191,6 +226,7 @@ def revoke_user_mobile_state(user_ids, *, purge_receipts=True):
     if not normalized_ids:
         return
     MobileDeviceToken.objects.filter(user_id__in=normalized_ids, is_active=True).update(is_active=False)
+    bump_notification_epochs(normalized_ids)
     users = get_user_model().objects.filter(pk__in=normalized_ids)
     for user in users:
         purge_stale_notifications_for_user(user)
@@ -223,7 +259,14 @@ def purge_expired_mobile_notifications(*, limit=500, as_of=None):
     )
     if not expired_ids:
         return 0
-    return MobileNotification.objects.filter(pk__in=expired_ids).delete()[0]
+    user_ids = list(
+        MobileNotification.objects.filter(pk__in=expired_ids)
+        .values_list("user_id", flat=True)
+        .distinct()
+    )
+    deleted = MobileNotification.objects.filter(pk__in=expired_ids).delete()[0]
+    bump_notification_epochs(user_ids)
+    return deleted
 
 
 def handle_task_assignment_change(task, previous_user_id):
@@ -231,6 +274,7 @@ def handle_task_assignment_change(task, previous_user_id):
         return
     if previous_user_id:
         MobileNotification.objects.filter(user_id=previous_user_id, task_id=task.pk).delete()
+        bump_notification_epochs([previous_user_id])
         _purge_receipts_for_target_user(previous_user_id, "task", task.pk)
         previous_user = get_user_model().objects.filter(pk=previous_user_id).first()
         if previous_user and not _user_can_access_case(previous_user, task.case):
@@ -242,7 +286,9 @@ def handle_task_assignment_change(task, previous_user_id):
 def purge_mobile_artifacts_for_task(task):
     if _notifications_suspended.get():
         return
+    user_ids = list(MobileNotification.objects.filter(task_id=task.pk).values_list("user_id", flat=True).distinct())
     MobileNotification.objects.filter(task_id=task.pk).delete()
+    bump_notification_epochs(user_ids)
     MobileWriteReceipt.objects.filter(
         Q(target_type="task", target_id=str(task.pk))
         | Q(result_type="task", result_id=str(task.pk))
@@ -252,7 +298,12 @@ def purge_mobile_artifacts_for_task(task):
 def purge_mobile_notifications_for_task(task):
     if _notifications_suspended.get():
         return 0
-    return MobileNotification.objects.filter(task_id=task.pk).delete()[0]
+    notifications = MobileNotification.objects.filter(task_id=task.pk)
+    user_ids = list(notifications.values_list("user_id", flat=True).distinct())
+    deleted = notifications.delete()[0]
+    if deleted:
+        bump_notification_epochs(user_ids)
+    return deleted
 
 
 def purge_mobile_artifacts_for_case(case):
@@ -261,7 +312,9 @@ def purge_mobile_artifacts_for_case(case):
     task_ids = [str(value) for value in case.tasks.values_list("pk", flat=True)]
     vital_ids = [str(value) for value in case.vitals.values_list("pk", flat=True)]
     call_ids = [str(value) for value in case.call_logs.values_list("pk", flat=True)]
+    user_ids = list(MobileNotification.objects.filter(case_id=case.pk).values_list("user_id", flat=True).distinct())
     MobileNotification.objects.filter(case_id=case.pk).delete()
+    bump_notification_epochs(user_ids)
     receipt_query = Q(target_type="case", target_id=str(case.pk)) | Q(
         result_type="case",
         result_id=str(case.pk),
@@ -286,6 +339,10 @@ def invalidate_mobile_dataset():
     state.epoch = uuid.uuid4()
     state.save(update_fields=["epoch", "updated_at"])
     MobileNotification.objects.all().delete()
+    for state in MobileNotificationState.objects.select_for_update().all():
+        state.epoch = uuid.uuid4()
+        state.save(update_fields=["epoch", "updated_at"])
+    MobileOpaqueCursor.objects.all().delete()
     MobileWriteReceipt.objects.all().delete()
     MobileDeviceToken.objects.filter(is_active=True).update(is_active=False)
     return state.epoch
@@ -306,12 +363,17 @@ def _user_can_receive_case_notification(user, case, *, task, notification_type):
     if not _user_can_access_case(user, case):
         return False
     if notification_type in {MobileNotificationType.ASSIGNMENT, MobileNotificationType.OVERDUE}:
-        return bool(
+        task_is_current = bool(
             task
             and task.assigned_user_id == user.pk
             and task.status not in {TaskStatus.COMPLETED, TaskStatus.CANCELLED}
         )
-    return True
+        if notification_type == MobileNotificationType.OVERDUE:
+            return task_is_current and task.due_date < timezone.localdate()
+        return task_is_current
+    if notification_type == MobileNotificationType.RED_FLAG:
+        return bool(case.has_risk_factors)
+    return False
 
 
 def _user_can_access_case(user, case):

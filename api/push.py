@@ -42,7 +42,9 @@ def send_mobile_notification(notification):
         return {"sent": False, "reason": "authorization_revoked"}
 
     tokens = list(
-        notification.user.mobile_device_tokens.filter(is_active=True).values_list("token", flat=True)
+        notification.user.mobile_device_tokens.filter(is_active=True)
+        .order_by("-last_seen_at", "-updated_at", "-pk")
+        .values_list("token", flat=True)[:3]
     )
     if not tokens:
         return {"sent": False, "reason": "no_active_tokens"}

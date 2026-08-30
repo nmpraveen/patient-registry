@@ -6,9 +6,11 @@ from django.dispatch import receiver
 from patients.models import Case, RoleSetting, Task, TaskStatus
 
 from .notifications import (
+    bump_notification_epochs,
     handle_task_assignment_change,
     notify_case_red_flag,
     notify_task_assignment,
+    notify_task_overdue,
     purge_mobile_artifacts_for_case,
     purge_mobile_artifacts_for_task,
     purge_mobile_notifications_for_task,
@@ -21,10 +23,12 @@ def capture_previous_task_assignment(sender, instance, **kwargs):
     if not instance.pk:
         instance._previous_assigned_user_id = None
         instance._previous_status = None
+        instance._previous_due_date = None
         return
-    previous = sender.objects.filter(pk=instance.pk).values("assigned_user_id", "status").first()
+    previous = sender.objects.filter(pk=instance.pk).values("assigned_user_id", "status", "due_date").first()
     instance._previous_assigned_user_id = previous["assigned_user_id"] if previous else None
     instance._previous_status = previous["status"] if previous else None
+    instance._previous_due_date = previous["due_date"] if previous else None
 
 
 @receiver(post_save, sender=Task)
@@ -41,6 +45,11 @@ def notify_mobile_task_assignment(sender, instance, created, raw=False, **kwargs
         purge_mobile_notifications_for_task(instance)
     elif previous_status in terminal_statuses and instance.status not in terminal_statuses:
         notify_task_assignment(instance)
+    previous_due_date = getattr(instance, "_previous_due_date", None)
+    if previous_due_date is not None and previous_due_date != instance.due_date:
+        purge_mobile_notifications_for_task(instance)
+        notify_task_assignment(instance)
+        notify_task_overdue(instance)
 
 
 @receiver(pre_delete, sender=Task)
@@ -53,10 +62,16 @@ def capture_previous_case_state(sender, instance, **kwargs):
     if not instance.pk:
         instance._previous_has_risk_factors = False
         instance._previous_is_archived = False
+        instance._previous_risk_signature = ()
         return
     previous = sender.objects.filter(pk=instance.pk).first()
     instance._previous_has_risk_factors = previous.has_risk_factors if previous else False
     instance._previous_is_archived = previous.is_archived if previous else False
+    instance._previous_risk_signature = (
+        previous.high_risk,
+        tuple(previous.anc_high_risk_reasons or []),
+        tuple(previous.ncd_flags or []),
+    ) if previous else ()
 
 
 @receiver(post_save, sender=Case)
@@ -66,7 +81,20 @@ def notify_mobile_red_flag(sender, instance, raw=False, **kwargs):
     if instance.is_archived and not getattr(instance, "_previous_is_archived", False):
         purge_mobile_artifacts_for_case(instance)
         return
-    if instance.has_risk_factors and not getattr(instance, "_previous_has_risk_factors", False):
+    current_risk_signature = (
+        instance.high_risk,
+        tuple(instance.anc_high_risk_reasons or []),
+        tuple(instance.ncd_flags or []),
+    )
+    if current_risk_signature != getattr(instance, "_previous_risk_signature", ()):
+        notification_users = list(
+            instance.mobile_notifications.filter(notification_type="red_flag")
+            .values_list("user_id", flat=True)
+            .distinct()
+        )
+        instance.mobile_notifications.filter(notification_type="red_flag").delete()
+        bump_notification_epochs(notification_users)
+    if instance.has_risk_factors and current_risk_signature != getattr(instance, "_previous_risk_signature", ()):
         notify_case_red_flag(instance)
 
 

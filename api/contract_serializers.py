@@ -49,6 +49,7 @@ class TaskContractSerializer(serializers.Serializer):
     assigned_user_id = serializers.IntegerField(allow_null=True)
     notes = serializers.CharField(allow_blank=True)
     completed_at = serializers.DateTimeField(allow_null=True)
+    updated_at = serializers.DateTimeField()
     can_complete = serializers.BooleanField()
 
 
@@ -56,6 +57,7 @@ class VitalContractSerializer(serializers.Serializer):
     id = serializers.IntegerField()
     recorded_at = serializers.DateTimeField()
     server_received_at = serializers.DateTimeField()
+    updated_at = serializers.DateTimeField()
     bp_systolic = serializers.IntegerField(allow_null=True)
     bp_diastolic = serializers.IntegerField(allow_null=True)
     blood_pressure_display = serializers.CharField(allow_blank=True)
@@ -148,8 +150,18 @@ class CaseWriteRequestSerializer(serializers.Serializer):
     client_write_id = serializers.CharField(required=False, allow_blank=True, max_length=80)
 
 
+class CaseCreateRequestSerializer(CaseWriteRequestSerializer):
+    pass
+
+
+class CasePatchRequestSerializer(CaseWriteRequestSerializer):
+    base_updated_at = serializers.DateTimeField()
+    base_values = serializers.DictField()
+
+
 class EditableCaseContractSerializer(CaseWriteRequestSerializer):
     id = serializers.IntegerField()
+    base_updated_at = serializers.DateTimeField()
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -165,6 +177,10 @@ class CaseWriteResponseSerializer(serializers.Serializer):
     case_id = serializers.IntegerField()
     case = CaseContractSerializer()
     editable_case = EditableCaseContractSerializer(required=False)
+
+
+class CasePatchResponseSerializer(CaseWriteResponseSerializer):
+    editable_case = EditableCaseContractSerializer()
 
 
 class CallLogContractSerializer(serializers.Serializer):
@@ -211,6 +227,15 @@ class TaskWriteRequestSerializer(serializers.Serializer):
     client_write_id = serializers.CharField(required=False, allow_blank=True, max_length=80)
 
 
+class TaskCreateRequestSerializer(TaskWriteRequestSerializer):
+    pass
+
+
+class TaskPatchRequestSerializer(TaskWriteRequestSerializer):
+    base_updated_at = serializers.DateTimeField()
+    base_values = serializers.DictField()
+
+
 class TaskNoteRequestSerializer(serializers.Serializer):
     note = serializers.CharField(max_length=1000)
 
@@ -232,6 +257,19 @@ class VitalsWriteResponseSerializer(serializers.Serializer):
     latest_vital_id = serializers.IntegerField()
     vital = VitalContractSerializer()
     case = CaseContractSerializer()
+
+
+class VitalsPatchRequestSerializer(serializers.Serializer):
+    recorded_at = serializers.DateTimeField(required=False)
+    bp_systolic = serializers.IntegerField(required=False, allow_null=True)
+    bp_diastolic = serializers.IntegerField(required=False, allow_null=True)
+    pr = serializers.IntegerField(required=False, allow_null=True)
+    spo2 = serializers.IntegerField(required=False, allow_null=True)
+    weight_kg = serializers.DecimalField(required=False, allow_null=True, max_digits=5, decimal_places=2)
+    hemoglobin = serializers.DecimalField(required=False, allow_null=True, max_digits=4, decimal_places=1)
+    client_write_id = serializers.CharField(required=False, allow_blank=True, max_length=80)
+    base_updated_at = serializers.DateTimeField()
+    base_values = serializers.DictField()
 
 
 class VitalsThresholdsResponseSerializer(serializers.Serializer):
@@ -335,6 +373,27 @@ class PatientSearchResponseSerializer(serializers.Serializer):
     results = PatientSearchResultSerializer(many=True)
 
 
+class CaseSearchRequestSerializer(serializers.Serializer):
+    query = serializers.CharField(min_length=3, max_length=80)
+    page_size = serializers.IntegerField(required=False, default=20, min_value=1, max_value=20)
+    cursor = serializers.CharField(required=False, allow_null=True)
+    bucket = serializers.ChoiceField(
+        choices=["all", "today", "upcoming", "overdue", "awaiting", "red"],
+        required=False,
+        default="today",
+    )
+    assigned_to = serializers.ChoiceField(choices=["me", "all"], required=False, allow_blank=True)
+    scope_context = serializers.ChoiceField(choices=["", "calls"], required=False, allow_blank=True)
+    category = serializers.ListField(child=serializers.CharField(), required=False)
+    subcategory = serializers.ListField(child=serializers.CharField(), required=False)
+
+
+class CaseSearchResponseSerializer(serializers.Serializer):
+    next_cursor = serializers.CharField(allow_null=True)
+    stats = CaseStatsContractSerializer()
+    results = CaseContractSerializer(many=True)
+
+
 class MessageResponseSerializer(serializers.Serializer):
     message = serializers.CharField()
 
@@ -342,4 +401,7 @@ class MessageResponseSerializer(serializers.Serializer):
 class ErrorResponseSerializer(serializers.Serializer):
     code = serializers.CharField(required=False)
     message = serializers.CharField()
-    errors = serializers.JSONField(required=False)
+    errors = serializers.DictField(
+        child=serializers.ListField(child=serializers.CharField()),
+        required=False,
+    )

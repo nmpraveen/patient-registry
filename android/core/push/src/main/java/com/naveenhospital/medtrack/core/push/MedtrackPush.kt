@@ -68,10 +68,12 @@ object MedtrackPush {
         val appContext = context.applicationContext
         val baseUrl = apiBaseUrl(appContext) ?: return@withContext false
         val tokenStore = TokenStore(appContext)
-        val refreshToken = tokenStore.refreshToken() ?: return@withContext false
+        val ownerAccountId = tokenStore.accountId() ?: return@withContext false
+        val refreshToken = tokenStore.refreshTokenFor(ownerAccountId) ?: return@withContext false
         val database = MedtrackDatabase.build(appContext)
         database.pushTokenDao().upsertToken(
             PushTokenEntity(
+                ownerAccountId = ownerAccountId,
                 token = token,
                 deviceLabel = deviceLabel,
                 syncedAtMillis = 0L,
@@ -79,23 +81,40 @@ object MedtrackPush {
         )
         val api = MedtrackNetwork.create(
             baseUrl = baseUrl,
-            accessTokenProvider = { tokenStore.accessToken },
-            refreshTokenProvider = { tokenStore.refreshToken() },
-            sessionUpdater = { access, refresh -> tokenStore.saveSession(access = access, refresh = refresh) },
+            accessTokenProvider = { tokenStore.accessTokenFor(ownerAccountId) },
+            refreshTokenProvider = { tokenStore.refreshTokenFor(ownerAccountId) },
+            sessionUpdater = { access, refresh ->
+                tokenStore.updateSessionForAccount(ownerAccountId, access, refresh)
+            },
         )
-        if (tokenStore.accessToken.isNullOrBlank()) {
-            val session = runCatching { api.refresh(RefreshTokenRequestDto(refresh = refreshToken)) }
+        if (tokenStore.accessTokenFor(ownerAccountId).isNullOrBlank()) {
+            val session = runCatching {
+                MedtrackNetwork.create(baseUrl).refresh(RefreshTokenRequestDto(refresh = refreshToken))
+            }
                 .getOrElse { return@withContext false }
-            tokenStore.saveSession(access = session.access, refresh = session.refresh)
+            val profile = runCatching {
+                MedtrackNetwork.create(
+                    baseUrl = baseUrl,
+                    accessTokenProvider = { session.access },
+                ).me()
+            }.getOrElse { return@withContext false }
+            if (profile.id.toString() != ownerAccountId || tokenStore.accountId() != ownerAccountId) {
+                return@withContext false
+            }
+            if (!tokenStore.updateSessionForAccount(ownerAccountId, session.access, session.refresh)) {
+                return@withContext false
+            }
         }
         runCatching {
+            check(tokenStore.accountId() == ownerAccountId) { "Authenticated account changed." }
             api.registerPushToken(
                 RegisterPushTokenRequestDto(
                     token = token,
                     deviceLabel = deviceLabel,
                 ),
             )
-            database.pushTokenDao().markTokenSynced(token, System.currentTimeMillis())
+            check(tokenStore.accountId() == ownerAccountId) { "Authenticated account changed." }
+            database.pushTokenDao().markTokenSynced(ownerAccountId, token, System.currentTimeMillis())
         }.isSuccess
     }
 

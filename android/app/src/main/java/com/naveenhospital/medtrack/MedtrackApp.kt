@@ -106,6 +106,7 @@ import com.naveenhospital.medtrack.core.designsystem.MedtrackTheme
 import com.naveenhospital.medtrack.core.designsystem.MedtrackPage
 import com.naveenhospital.medtrack.core.designsystem.MedtrackSectionTitle
 import com.naveenhospital.medtrack.core.data.sync.PendingWriteTypes
+import com.naveenhospital.medtrack.core.data.auth.LockVerificationResult
 import com.naveenhospital.medtrack.core.domain.model.CategoryFilterOption
 import com.naveenhospital.medtrack.core.domain.model.PatientCase
 import com.naveenhospital.medtrack.core.domain.model.CaseCategory
@@ -479,11 +480,7 @@ fun MedtrackApp(
                             }
                             scope.launch {
                                 if (lockSetupRequiresSessionRestore) {
-                                    val restoredProfile = if (container.authRepository.restoreSession()) {
-                                        runCatching { container.authRepository.currentUser() }.getOrNull()
-                                    } else {
-                                        null
-                                    }
+                                    val restoredProfile = container.authRepository.restoreSession()
                                     if (restoredProfile == null) {
                                         currentUserProfile = null
                                         currentUserDisplayName = null
@@ -515,13 +512,24 @@ fun MedtrackApp(
                         biometricAvailable = biometricStatus.available,
                         biometricMessage = biometricMessage ?: biometricStatus.message,
                         onPatternUnlock = { pattern ->
-                            if (!container.lockStore.verifyPattern(pattern)) {
-                                return@UnlockScreen "Pattern did not match."
-                            }
-                            return@UnlockScreen if (container.authRepository.restoreSession()) {
-                                runCatching {
-                                    setCurrentUser(container.authRepository.currentUser())
+                            when (val verification = container.lockStore.verifyPattern(pattern)) {
+                                LockVerificationResult.Invalid -> return@UnlockScreen "Pattern did not match."
+                                is LockVerificationResult.Throttled -> {
+                                    val seconds = (verification.retryAfterMillis + 999L) / 1_000L
+                                    return@UnlockScreen "Too many attempts. Try again in $seconds seconds."
                                 }
+                                LockVerificationResult.ReauthenticationRequired -> {
+                                    container.abandonLockedSession()
+                                    navController.navigate(Routes.LOGIN) {
+                                        popUpTo(Routes.UNLOCK) { inclusive = true }
+                                    }
+                                    return@UnlockScreen "Local unlock was reset. Sign in again."
+                                }
+                                LockVerificationResult.Success -> Unit
+                            }
+                            val restoredProfile = container.authRepository.restoreSession()
+                            return@UnlockScreen if (restoredProfile != null) {
+                                setCurrentUser(restoredProfile)
                                 onAuthenticated()
                                 navController.navigate(Routes.HOME) {
                                     popUpTo(Routes.UNLOCK) { inclusive = true }
@@ -540,10 +548,9 @@ fun MedtrackApp(
                                 context = context,
                                 onSuccess = {
                                     scope.launch {
-                                        if (container.authRepository.restoreSession()) {
-                                            runCatching {
-                                                setCurrentUser(container.authRepository.currentUser())
-                                            }
+                                        val restoredProfile = container.authRepository.restoreSession()
+                                        if (restoredProfile != null) {
+                                            setCurrentUser(restoredProfile)
                                             onAuthenticated()
                                             navController.navigate(Routes.HOME) {
                                                 popUpTo(Routes.UNLOCK) { inclusive = true }
@@ -563,8 +570,11 @@ fun MedtrackApp(
                             currentUserProfile = null
                             currentUserDisplayName = null
                             lockSetupRequiresSessionRestore = false
-                            navController.navigate(Routes.LOGIN) {
-                                popUpTo(Routes.UNLOCK) { inclusive = true }
+                            scope.launch {
+                                container.abandonLockedSession()
+                                navController.navigate(Routes.LOGIN) {
+                                    popUpTo(Routes.UNLOCK) { inclusive = true }
+                                }
                             }
                         },
                     )

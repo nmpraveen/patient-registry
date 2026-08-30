@@ -38,6 +38,11 @@
 - Published a warning-free complete OpenAPI contract, made case PATCH preserve all omitted fields including `surgery_done`, and returned a complete editable case snapshot for safe client partial edits.
 - Added bounded mobile notification retention, terminal-task purge/reopen behavior, PHI-safe patient-search audit events, sanitized FCM failure categories, and push-token revocation on auth-version security changes.
 
+## 2026.08.30.00.16
+- Bound every Android Room cache, outbox, conflict, push-token, API client, local lock, and WorkManager identity to a verified server account ID, with fail-closed login/restore and safe logout/account-switch cleanup.
+- Migrated Android local storage to an Android Keystore-protected SQLCipher database; schema 11 deliberately discards unowned schema 1-10 cache/outbox rows and resyncs only after `/me` verifies the account.
+- Added secure-window and process-restoration hardening, throttled account-specific pattern unlock, notification permission safety, all-version Room migration coverage, and two-account adversarial tests.
+
 ## 2026.08.29.17.26
 - Changed website sessions to a sliding 12-hour inactivity timeout so normal authenticated activity refreshes the expiry instead of logging staff out roughly 30 minutes after login.
 - Documented the explicit production session settings and the shared-workstation logout precaution.

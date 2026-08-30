@@ -34,10 +34,11 @@ class TokenStoreTest {
     fun refreshTokenPersistsButAccessTokenStaysInMemoryOnly() {
         val tokenStore = TokenStore(prefs)
 
-        tokenStore.saveSession(access = "access-token", refresh = "refresh-token")
+        assertTrue(tokenStore.commitVerifiedSession(ACCOUNT_ID, access = "access-token", refresh = "refresh-token"))
 
         assertEquals("access-token", tokenStore.accessToken)
         assertEquals("refresh-token", tokenStore.refreshToken())
+        assertEquals(ACCOUNT_ID, tokenStore.accountId())
         assertTrue(tokenStore.hasRefreshToken())
 
         val restoredStore = TokenStore(prefs)
@@ -50,8 +51,8 @@ class TokenStoreTest {
     fun saveSessionWithoutRefreshKeepsExistingRefreshToken() {
         val tokenStore = TokenStore(prefs)
 
-        tokenStore.saveSession(access = "access-token-1", refresh = "refresh-token")
-        tokenStore.saveSession(access = "access-token-2", refresh = null)
+        assertTrue(tokenStore.commitVerifiedSession(ACCOUNT_ID, access = "access-token-1", refresh = "refresh-token"))
+        assertTrue(tokenStore.updateSessionForAccount(ACCOUNT_ID, access = "access-token-2", refresh = null))
 
         assertEquals("access-token-2", tokenStore.accessToken)
         assertEquals("refresh-token", tokenStore.refreshToken())
@@ -60,12 +61,27 @@ class TokenStoreTest {
     @Test
     fun clearRemovesRefreshAndAccessTokens() {
         val tokenStore = TokenStore(prefs)
-        tokenStore.saveSession(access = "access-token", refresh = "refresh-token")
+        assertTrue(tokenStore.commitVerifiedSession(ACCOUNT_ID, access = "access-token", refresh = "refresh-token"))
 
         tokenStore.clear()
 
         assertNull(tokenStore.accessToken)
         assertNull(TokenStore(prefs).refreshToken())
         assertFalse(tokenStore.hasRefreshToken())
+    }
+
+    @Test
+    fun accountBoundTokenAccessRejectsAnotherAccount() {
+        val tokenStore = TokenStore(prefs)
+        assertTrue(tokenStore.commitVerifiedSession(ACCOUNT_ID, "access-token", "refresh-token"))
+
+        assertNull(tokenStore.accessTokenFor("2"))
+        assertNull(tokenStore.refreshTokenFor("2"))
+        assertFalse(tokenStore.updateSessionForAccount("2", "attacker-access", "attacker-refresh"))
+        assertEquals("access-token", tokenStore.accessTokenFor(ACCOUNT_ID))
+    }
+
+    private companion object {
+        const val ACCOUNT_ID = "1"
     }
 }

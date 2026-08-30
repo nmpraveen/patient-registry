@@ -31,6 +31,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -65,7 +66,7 @@ fun CallOutcomeSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var selectedOutcome by rememberSaveable { mutableStateOf(outcomeChoices.first().value) }
-    var note by rememberSaveable { mutableStateOf("") }
+    var note by remember { mutableStateOf("") }
 
     ModalBottomSheet(
         sheetState = sheetState,
@@ -132,7 +133,11 @@ fun CallOutcomeSheet(
             )
 
             Button(
-                onClick = { onOutcome(selectedOutcome, note.trim().ifEmpty { null }) },
+                onClick = {
+                    val submittedNote = note.trim().ifEmpty { null }
+                    note = ""
+                    onOutcome(selectedOutcome, submittedNote)
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(50.dp),

@@ -2,11 +2,11 @@ package com.naveenhospital.medtrack.core.data.local
 
 import androidx.room.ColumnInfo
 import androidx.room.Entity
-import androidx.room.PrimaryKey
 
-@Entity(tableName = "cases")
+@Entity(tableName = "cases", primaryKeys = ["ownerAccountId", "id"])
 data class CaseEntity(
-    @PrimaryKey val id: String,
+    val ownerAccountId: String,
+    val id: String,
     val uhid: String,
     val patientName: String,
     val age: Int?,
@@ -27,9 +27,10 @@ data class CaseEntity(
     val updatedAtMillis: Long,
 )
 
-@Entity(tableName = "case_stats")
+@Entity(tableName = "case_stats", primaryKeys = ["ownerAccountId", "cacheKey"])
 data class CaseStatsEntity(
-    @PrimaryKey val cacheKey: String,
+    val ownerAccountId: String,
+    val cacheKey: String,
     val today: Int,
     val upcoming: Int,
     val overdue: Int,
@@ -38,9 +39,10 @@ data class CaseStatsEntity(
     val updatedAtMillis: Long,
 )
 
-@Entity(tableName = "tasks")
+@Entity(tableName = "tasks", primaryKeys = ["ownerAccountId", "id"])
 data class TaskEntity(
-    @PrimaryKey val id: String,
+    val ownerAccountId: String,
+    val id: String,
     val caseId: String,
     val title: String,
     val dueDate: String?,
@@ -55,9 +57,10 @@ data class TaskEntity(
     val updatedAtMillis: Long,
 )
 
-@Entity(tableName = "vitals")
+@Entity(tableName = "vitals", primaryKeys = ["ownerAccountId", "id"])
 data class VitalEntity(
-    @PrimaryKey val id: String,
+    val ownerAccountId: String,
+    val id: String,
     val caseId: String,
     val recordedAt: String,
     val bpSystolic: Int?,
@@ -70,23 +73,26 @@ data class VitalEntity(
     val updatedAtMillis: Long,
 )
 
-@Entity(tableName = "vitals_thresholds")
+@Entity(tableName = "vitals_thresholds", primaryKeys = ["ownerAccountId", "id"])
 data class VitalsThresholdEntity(
-    @PrimaryKey val id: String,
+    val ownerAccountId: String,
+    val id: String,
     val payloadJson: String,
     val updatedAtMillis: Long,
 )
 
-@Entity(tableName = "category_options")
+@Entity(tableName = "category_options", primaryKeys = ["ownerAccountId", "id"])
 data class CategoryOptionsEntity(
-    @PrimaryKey val id: String,
+    val ownerAccountId: String,
+    val id: String,
     val payloadJson: String,
     val updatedAtMillis: Long,
 )
 
-@Entity(tableName = "notifications")
+@Entity(tableName = "notifications", primaryKeys = ["ownerAccountId", "id"])
 data class NotificationEntity(
-    @PrimaryKey val id: String,
+    val ownerAccountId: String,
+    val id: String,
     val type: String,
     val title: String,
     val body: String,
@@ -98,16 +104,18 @@ data class NotificationEntity(
     val payloadJson: String = "{}",
 )
 
-@Entity(tableName = "push_tokens")
+@Entity(tableName = "push_tokens", primaryKeys = ["ownerAccountId", "token"])
 data class PushTokenEntity(
-    @PrimaryKey val token: String,
+    val ownerAccountId: String,
+    val token: String,
     val deviceLabel: String,
     val syncedAtMillis: Long,
 )
 
-@Entity(tableName = "pending_writes")
+@Entity(tableName = "pending_writes", primaryKeys = ["ownerAccountId", "clientWriteId"])
 data class PendingWriteEntity(
-    @PrimaryKey val clientWriteId: String,
+    val ownerAccountId: String,
+    val clientWriteId: String,
     val writeType: String,
     val caseId: String?,
     val taskId: String?,
@@ -118,9 +126,10 @@ data class PendingWriteEntity(
     val updatedAtMillis: Long,
 )
 
-@Entity(tableName = "sync_conflicts")
+@Entity(tableName = "sync_conflicts", primaryKeys = ["ownerAccountId", "clientWriteId"])
 data class SyncConflictEntity(
-    @PrimaryKey val clientWriteId: String,
+    val ownerAccountId: String,
+    val clientWriteId: String,
     val writeType: String,
     val caseId: String?,
     val taskId: String?,
@@ -129,8 +138,9 @@ data class SyncConflictEntity(
     val createdAtMillis: Long,
 )
 
-@Entity(tableName = "cache_metadata")
+@Entity(tableName = "cache_metadata", primaryKeys = ["ownerAccountId", "cacheKey"])
 data class CacheMetadataEntity(
-    @PrimaryKey val cacheKey: String,
+    val ownerAccountId: String,
+    val cacheKey: String,
     val updatedAtMillis: Long,
 )

@@ -42,6 +42,16 @@ Preserve these V2a traits in implementation: search at top, tappable stat strip,
 | Phase 6 - FCM and notifications | Env-gated Firebase token registration, notification channels, Django notification log and push dispatch. | `.\android\scripts\mobile-push-smoke.ps1` verifies missing-config safety; pass `-RequireFirebase` with `MEDTRACK_FCM_TEST_TOKEN` for real delivery. |
 | Phase 7 - Polish and field testing | Empty/loading/error states, pull-to-refresh, low-light Material 3 surface treatment, Crashlytics-gated build support. | Emulator smoke passes; low-end offline-write device smoke and 2-user field test are still field gates. |
 
+## Account security boundary
+
+Room schema 11 makes every cache, push-token, conflict, and pending-write key account-qualified. Background work also carries an account-qualified unique identity and re-verifies `/me` before using a refreshed JWT; a worker stops without deleting or replaying a row if the active account changes.
+
+The schema 10-to-11 ownership transition intentionally discards all unowned local rows. Earlier rows cannot be assigned safely to the next login, so cached server data is downloaded again only after login or restore has atomically completed refresh, `/me`, and stable account-ID verification. The previous plaintext `medtrack.db` and sidecars are deleted; new local PHI is stored in the SQLCipher-backed `medtrack_secure.db` using a random passphrase held in Android Keystore-backed encrypted preferences.
+
+Logout and account switch deactivate the repository, cancel that account's work, clear its local rows and local lock, and remove its bound API client. Pattern and biometric settings never transfer between accounts. Password, pattern, clinical-note, and search text are not placed in Compose saveable state; process restoration retains only non-sensitive route/filter IDs and requires a fresh verified session before PHI navigation.
+
+The account boundary necessarily touches `MedtrackSyncWorker`, repository queue/drain code, push-token registration, and app-container sync startup. Keep those files as explicit merge-review points for concurrent sync/release work; no server endpoint contract, FCM payload shape, build flavor, Docker, or operations behavior changes here.
+
 ## Open
 
 Open the `android/` directory in Android Studio. If you use the command line, run Gradle from this folder with an installed Android SDK:

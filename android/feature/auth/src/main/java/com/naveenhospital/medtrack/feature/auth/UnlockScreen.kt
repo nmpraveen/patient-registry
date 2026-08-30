@@ -23,9 +23,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -47,9 +47,9 @@ fun UnlockScreen(
     onUsePasswordLogin: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var pattern by rememberSaveable { mutableStateOf(emptyList<Int>()) }
-    var isLoading by rememberSaveable { mutableStateOf(false) }
-    var error by rememberSaveable { mutableStateOf<String?>(null) }
+    var pattern by remember { mutableStateOf(emptyList<Int>()) }
+    var isLoading by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
     Box(
@@ -106,7 +106,9 @@ fun UnlockScreen(
                                 scope.launch {
                                     isLoading = true
                                     error = null
-                                    runCatching { onPatternUnlock(pattern) }
+                                    val submittedPattern = pattern
+                                    pattern = emptyList()
+                                    runCatching { onPatternUnlock(submittedPattern) }
                                         .onSuccess { failureMessage ->
                                             if (!failureMessage.isNullOrBlank()) {
                                                 error = failureMessage

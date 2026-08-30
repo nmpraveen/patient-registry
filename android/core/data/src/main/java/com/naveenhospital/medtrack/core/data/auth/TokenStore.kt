@@ -11,26 +11,60 @@ class TokenStore internal constructor(
     constructor(context: Context) : this(encryptedPrefs(context.applicationContext))
 
     @Volatile
-    var accessToken: String? = null
+    private var activeAccessToken: String? = null
+
+    val accessToken: String?
+        get() = activeAccessToken
+
+    fun accountId(): String? = prefs.getString(KEY_ACCOUNT_ID, null)?.takeIf { it.isNotBlank() }
 
     fun refreshToken(): String? = prefs.getString(KEY_REFRESH_TOKEN, null)
 
-    fun hasRefreshToken(): Boolean = !refreshToken().isNullOrBlank()
+    fun hasRefreshToken(): Boolean = accountId() != null && !refreshToken().isNullOrBlank()
 
-    fun saveSession(access: String, refresh: String?) {
-        accessToken = access
+    fun accessTokenFor(accountId: String): String? =
+        activeAccessToken?.takeIf { this.accountId() == accountId }
+
+    fun refreshTokenFor(accountId: String): String? =
+        refreshToken()?.takeIf { this.accountId() == accountId }
+
+    fun commitVerifiedSession(accountId: String, access: String, refresh: String?): Boolean {
+        require(accountId.isNotBlank()) { "Verified account ID is required." }
+        require(access.isNotBlank()) { "Access token is required." }
+        val existingAccountId = this.accountId()
+        val resolvedRefresh = refresh?.takeIf { it.isNotBlank() }
+            ?: refreshToken()?.takeIf { existingAccountId == accountId }
+        if (resolvedRefresh.isNullOrBlank()) return false
+        val committed = prefs.edit()
+            .putString(KEY_ACCOUNT_ID, accountId)
+            .putString(KEY_REFRESH_TOKEN, resolvedRefresh)
+            .commit()
+        activeAccessToken = if (committed) access else null
+        return committed
+    }
+
+    fun updateSessionForAccount(accountId: String, access: String, refresh: String?): Boolean {
+        if (this.accountId() != accountId || access.isBlank()) return false
+        val editor = prefs.edit()
         if (!refresh.isNullOrBlank()) {
-            prefs.edit().putString(KEY_REFRESH_TOKEN, refresh).apply()
+            editor.putString(KEY_REFRESH_TOKEN, refresh)
         }
+        val committed = editor.commit()
+        if (committed) activeAccessToken = access
+        return committed
     }
 
     fun clear() {
-        accessToken = null
-        prefs.edit().remove(KEY_REFRESH_TOKEN).apply()
+        activeAccessToken = null
+        prefs.edit()
+            .remove(KEY_ACCOUNT_ID)
+            .remove(KEY_REFRESH_TOKEN)
+            .commit()
     }
 
     private companion object {
         const val PREFS_NAME = "medtrack_auth"
+        const val KEY_ACCOUNT_ID = "account_id"
         const val KEY_REFRESH_TOKEN = "refresh_token"
 
         fun encryptedPrefs(context: Context): SharedPreferences {

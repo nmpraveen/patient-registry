@@ -30,9 +30,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
@@ -50,10 +50,10 @@ fun LoginScreen(
     onLogin: suspend (username: String, password: String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var username by rememberSaveable { mutableStateOf("") }
-    var password by rememberSaveable { mutableStateOf("") }
-    var isLoading by rememberSaveable { mutableStateOf(false) }
-    var error by rememberSaveable { mutableStateOf<String?>(null) }
+    var username by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var isLoading by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
     Box(
@@ -136,7 +136,9 @@ fun LoginScreen(
                             scope.launch {
                                 isLoading = true
                                 error = null
-                                runCatching { onLogin(username.trim(), password.trim()) }
+                                val submittedPassword = password
+                                password = ""
+                                runCatching { onLogin(username.trim(), submittedPassword) }
                                     .onFailure { error = it.message ?: "Login failed" }
                                 isLoading = false
                             }

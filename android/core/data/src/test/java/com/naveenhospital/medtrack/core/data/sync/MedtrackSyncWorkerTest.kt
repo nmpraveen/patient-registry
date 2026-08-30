@@ -36,6 +36,7 @@ import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -76,11 +77,11 @@ class MedtrackSyncWorkerTest {
             ),
         )
 
-        val canContinue = drainPendingWritesForSync(api = api, database = database)
+        val canContinue = drainPendingWritesForSync(api = api, database = database, ownerAccountId = ACCOUNT_ID)
 
         assertTrue(canContinue)
-        assertTrue(database.pendingWriteDao().pendingWrites().isEmpty())
-        val conflict = database.syncConflictDao().observeConflicts().first().single()
+        assertTrue(database.pendingWriteDao().pendingWrites(ACCOUNT_ID).isEmpty())
+        val conflict = database.syncConflictDao().observeConflicts(ACCOUNT_ID).first().single()
         assertEquals("task-write-1", conflict.clientWriteId)
         assertEquals(PendingWriteTypes.TASK_COMPLETE, conflict.writeType)
         assertEquals("42", conflict.caseId)
@@ -110,11 +111,11 @@ class MedtrackSyncWorkerTest {
             ),
         )
 
-        val canContinue = drainPendingWritesForSync(api = api, database = database)
+        val canContinue = drainPendingWritesForSync(api = api, database = database, ownerAccountId = ACCOUNT_ID)
 
         assertTrue(canContinue)
-        assertTrue(database.pendingWriteDao().pendingWrites().isEmpty())
-        val conflict = database.syncConflictDao().observeConflicts().first().single()
+        assertTrue(database.pendingWriteDao().pendingWrites(ACCOUNT_ID).isEmpty())
+        val conflict = database.syncConflictDao().observeConflicts(ACCOUNT_ID).first().single()
         assertEquals(PendingWriteTypes.CALL_OUTCOME, conflict.writeType)
         assertEquals("42", conflict.caseId)
         assertEquals("7", conflict.taskId)
@@ -127,6 +128,7 @@ class MedtrackSyncWorkerTest {
         val api = FakeSyncApi(addVitalsError = conflictError("Vitals already updated on the server."))
         database.vitalDao().upsertVital(
             VitalEntity(
+                ownerAccountId = ACCOUNT_ID,
                 id = "pending-vitals-write-1",
                 caseId = "42",
                 recordedAt = "2026-05-18T11:11:36Z",
@@ -157,27 +159,73 @@ class MedtrackSyncWorkerTest {
             ),
         )
 
-        val canContinue = drainPendingWritesForSync(api = api, database = database)
+        val canContinue = drainPendingWritesForSync(api = api, database = database, ownerAccountId = ACCOUNT_ID)
 
         assertTrue(canContinue)
-        assertTrue(database.pendingWriteDao().pendingWrites().isEmpty())
-        val conflict = database.syncConflictDao().observeConflicts().first().single()
+        assertTrue(database.pendingWriteDao().pendingWrites(ACCOUNT_ID).isEmpty())
+        val conflict = database.syncConflictDao().observeConflicts(ACCOUNT_ID).first().single()
         assertEquals(PendingWriteTypes.VITALS_CREATE, conflict.writeType)
         assertEquals("42", conflict.caseId)
         assertEquals(null, conflict.taskId)
         assertEquals("Vitals already updated on the server.", conflict.message)
-        val vitals = database.vitalDao().observeVitalsForCase("42").first()
+        val vitals = database.vitalDao().observeVitalsForCase(ACCOUNT_ID, "42").first()
         assertFalse(vitals.any { it.id == "pending-vitals-write-1" })
         assertEquals("200", vitals.single().id)
         assertEquals("PR 76 | SpO2 98", vitals.single().summary)
     }
 
+    @Test
+    fun accountSwitchNeverSendsFirstAccountsQueuedMutation() = runTest {
+        val api = FakeSyncApi()
+        database.pendingWriteDao().upsertPendingWrite(
+            pendingWrite(
+                clientWriteId = "account-a-write",
+                writeType = PendingWriteTypes.TASK_COMPLETE,
+                caseId = "42",
+                taskId = "7",
+                payloadJson = PendingWriteJson.encodeTaskComplete(ClientWriteRequestDto("account-a-write")),
+            ),
+        )
+
+        val canContinue = drainPendingWritesForSync(
+            api = api,
+            database = database,
+            ownerAccountId = ACCOUNT_ID,
+            activeAccountId = { "account-b" },
+        )
+
+        assertTrue(canContinue)
+        assertEquals(0, api.completeTaskCalls)
+        assertEquals(
+            listOf("account-a-write"),
+            database.pendingWriteDao().pendingWrites(ACCOUNT_ID).map { it.clientWriteId },
+        )
+        assertTrue(database.pendingWriteDao().pendingWrites("account-b").isEmpty())
+    }
+
+    @Test
+    fun workIdentityAndInputAreQualifiedByVerifiedAccount() {
+        assertNotEquals(
+            MedtrackSyncWorker.periodicWorkName("account-a"),
+            MedtrackSyncWorker.periodicWorkName("account-b"),
+        )
+        assertNotEquals(
+            MedtrackSyncWorker.oneTimeWorkName("account-a"),
+            MedtrackSyncWorker.oneTimeWorkName("account-b"),
+        )
+        assertEquals(
+            "account-a",
+            MedtrackSyncWorker.oneTimeRequest("https://example.invalid/", "account-a")
+                .workSpec.input.getString("account_id"),
+        )
+    }
+
     private suspend fun assertServerVersionRefreshed() {
-        val case = database.caseDao().caseById("42")
+        val case = database.caseDao().caseById(ACCOUNT_ID, "42")
         assertEquals("Server Patient", case?.patientName)
-        val tasks = database.taskDao().observeTasksForCase("42").first()
+        val tasks = database.taskDao().observeTasksForCase(ACCOUNT_ID, "42").first()
         assertEquals("Server review", tasks.single().title)
-        val vitals = database.vitalDao().observeVitalsForCase("42").first()
+        val vitals = database.vitalDao().observeVitalsForCase(ACCOUNT_ID, "42").first()
         assertEquals("PR 76 | SpO2 98", vitals.single().summary)
     }
 
@@ -189,6 +237,7 @@ class MedtrackSyncWorkerTest {
         payloadJson: String,
     ): PendingWriteEntity =
         PendingWriteEntity(
+            ownerAccountId = ACCOUNT_ID,
             clientWriteId = clientWriteId,
             writeType = writeType,
             caseId = caseId,
@@ -199,6 +248,10 @@ class MedtrackSyncWorkerTest {
             createdAtMillis = 1L,
             updatedAtMillis = 1L,
         )
+
+    private companion object {
+        const val ACCOUNT_ID = "1"
+    }
 
     private fun conflictError(message: String): HttpException =
         HttpException(
@@ -214,7 +267,11 @@ private class FakeSyncApi(
     private val logCallError: Throwable? = null,
     private val addVitalsError: Throwable? = null,
 ) : MedtrackApi {
+    var completeTaskCalls: Int = 0
+        private set
+
     override suspend fun completeTask(taskId: String, request: ClientWriteRequestDto): TaskWriteResponseDto {
+        completeTaskCalls += 1
         completeTaskError?.let { throw it }
         return TaskWriteResponseDto("Task completed.", sampleTask(taskId.toLong()), sampleCase())
     }

@@ -62,6 +62,7 @@ class AuthRepositoryTest {
         assertEquals("pass", api.lastLoginRequest?.password)
         assertEquals("access-token", tokenStore.accessToken)
         assertEquals("refresh-token", tokenStore.refreshToken())
+        assertEquals("1", tokenStore.accountId())
         assertEquals("admin", profile.username)
     }
 
@@ -69,6 +70,7 @@ class AuthRepositoryTest {
     fun currentUserReturnsProfileFromMeEndpoint() = runTest {
         val api = FakeAuthApi()
         val repository = AuthRepository(api = api, tokenStore = tokenStore)
+        assertTrue(tokenStore.commitVerifiedSession("1", access = "access-token", refresh = "refresh-token"))
 
         val profile = repository.currentUser()
 
@@ -77,14 +79,39 @@ class AuthRepositoryTest {
     }
 
     @Test
+    fun restoreSessionRejectsDifferentAccountBeforeCommitOrNavigationCallback() = runTest {
+        assertTrue(tokenStore.commitVerifiedSession("1", access = "old-access", refresh = "stored-refresh"))
+        val api = FakeAuthApi(
+            refreshSession = AuthSessionDto(access = "account-two-access", refresh = "account-two-refresh"),
+            profile = userProfile(id = 2, username = "other"),
+        )
+        var committedAccountId: String? = null
+        val repository = AuthRepository(
+            anonymousApi = api,
+            verificationApiForAccessToken = { api },
+            apiForAccount = { api },
+            tokenStore = tokenStore,
+            onAccountCommitted = { committedAccountId = it },
+        )
+
+        val restored = repository.restoreSession()
+
+        assertNull(restored)
+        assertNull(committedAccountId)
+        assertNull(tokenStore.accountId())
+        assertNull(tokenStore.accessToken)
+        assertNull(tokenStore.refreshToken())
+    }
+
+    @Test
     fun restoreSessionRefreshesAccessAndPreservesRefreshWhenNoRotatedRefreshIsReturned() = runTest {
-        tokenStore.saveSession(access = "old-access", refresh = "stored-refresh")
+        assertTrue(tokenStore.commitVerifiedSession("1", access = "old-access", refresh = "stored-refresh"))
         val api = FakeAuthApi(refreshSession = AuthSessionDto(access = "new-access", refresh = null))
         val repository = AuthRepository(api = api, tokenStore = tokenStore)
 
         val restored = repository.restoreSession()
 
-        assertTrue(restored)
+        assertEquals("admin", restored?.username)
         assertEquals("stored-refresh", api.lastRefreshRequest?.refresh)
         assertEquals("new-access", tokenStore.accessToken)
         assertEquals("stored-refresh", tokenStore.refreshToken())
@@ -92,20 +119,20 @@ class AuthRepositoryTest {
 
     @Test
     fun restoreSessionClearsTokensWhenRefreshFails() = runTest {
-        tokenStore.saveSession(access = "old-access", refresh = "stored-refresh")
+        assertTrue(tokenStore.commitVerifiedSession("1", access = "old-access", refresh = "stored-refresh"))
         val api = FakeAuthApi(refreshError = IOException("expired"))
         val repository = AuthRepository(api = api, tokenStore = tokenStore)
 
         val restored = repository.restoreSession()
 
-        assertFalse(restored)
+        assertNull(restored)
         assertNull(tokenStore.accessToken)
         assertNull(tokenStore.refreshToken())
     }
 
     @Test
     fun logoutBlacklistsStoredRefreshAndClearsTokens() = runTest {
-        tokenStore.saveSession(access = "access-token", refresh = "refresh-token")
+        assertTrue(tokenStore.commitVerifiedSession("1", access = "access-token", refresh = "refresh-token"))
         val api = FakeAuthApi()
         val repository = AuthRepository(api = api, tokenStore = tokenStore)
 
@@ -119,7 +146,7 @@ class AuthRepositoryTest {
 
     @Test
     fun logoutIncludesDeviceTokenWhenAvailable() = runTest {
-        tokenStore.saveSession(access = "access-token", refresh = "refresh-token")
+        assertTrue(tokenStore.commitVerifiedSession("1", access = "access-token", refresh = "refresh-token"))
         val api = FakeAuthApi()
         val repository = AuthRepository(api = api, tokenStore = tokenStore)
 
@@ -136,6 +163,7 @@ private class FakeAuthApi(
     private val loginSession: AuthSessionDto = AuthSessionDto(access = "access-token", refresh = "refresh-token"),
     private val refreshSession: AuthSessionDto = AuthSessionDto(access = "refreshed-access", refresh = "rotated-refresh"),
     private val refreshError: Throwable? = null,
+    private val profile: UserProfileDto = userProfile(),
 ) : MedtrackApi {
     var lastLoginRequest: LoginRequestDto? = null
         private set
@@ -160,14 +188,7 @@ private class FakeAuthApi(
         return ApiMessageDto(message = "Logged out.")
     }
 
-    override suspend fun me(): UserProfileDto =
-        UserProfileDto(
-            id = 1,
-            username = "admin",
-            displayName = "Admin",
-            roles = listOf("Admin"),
-            capabilities = emptyMap(),
-        )
+    override suspend fun me(): UserProfileDto = profile
 
     override suspend fun listCases(
         bucket: String?,
@@ -212,3 +233,15 @@ private class FakeAuthApi(
 
     private fun unused(): Nothing = error("Not used by this test")
 }
+
+private fun userProfile(
+    id: Long = 1,
+    username: String = "admin",
+): UserProfileDto =
+    UserProfileDto(
+        id = id,
+        username = username,
+        displayName = if (id == 1L) "Admin" else "Other",
+        roles = listOf("Admin"),
+        capabilities = emptyMap(),
+    )

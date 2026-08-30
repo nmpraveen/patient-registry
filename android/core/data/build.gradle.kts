@@ -24,6 +24,10 @@ android {
     testOptions {
         unitTests.isIncludeAndroidResources = true
     }
+
+    sourceSets {
+        getByName("test").assets.srcDir("$projectDir/schemas")
+    }
 }
 
 ksp {
@@ -42,6 +46,7 @@ dependencies {
     implementation(libs.moshi.kotlin)
     implementation(libs.paging.runtime)
     implementation(libs.retrofit.core)
+    implementation(libs.sqlcipher.android)
     testImplementation(libs.androidx.room.testing)
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.coroutines.test)

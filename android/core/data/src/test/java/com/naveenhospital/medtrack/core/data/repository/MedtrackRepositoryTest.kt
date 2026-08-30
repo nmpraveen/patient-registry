@@ -74,15 +74,15 @@ class MedtrackRepositoryTest {
     @Test
     fun categoryOptionsAreCachedAndLoadedWithoutNetwork() = runTest {
         val api = FakeMedtrackApi(categoriesResponse = categoryResponse())
-        val repository = MedtrackRepository(api = api, database = database)
+        val repository = repository(api)
 
         repository.refreshCategoryOptions()
 
         assertEquals(1, api.categoryCalls)
-        assertNotNull(database.cacheMetadataDao().updatedAtMillis(CACHE_KEY_CATEGORY_OPTIONS))
+        assertNotNull(database.cacheMetadataDao().updatedAtMillis(ACCOUNT_ID, CACHE_KEY_CATEGORY_OPTIONS))
 
         val offlineApi = FakeMedtrackApi(categoriesError = IOException("offline"))
-        val offlineRepository = MedtrackRepository(api = offlineApi, database = database)
+        val offlineRepository = repository(offlineApi)
 
         offlineRepository.loadCachedCategoryOptions()
 
@@ -99,7 +99,7 @@ class MedtrackRepositoryTest {
     @Test
     fun refreshCasesUsesServerDefaultAssignmentScopeWhenOmitted() = runTest {
         val api = FakeMedtrackApi()
-        val repository = MedtrackRepository(api = api, database = database)
+        val repository = repository(api)
 
         repository.refreshCases()
 
@@ -109,7 +109,7 @@ class MedtrackRepositoryTest {
     @Test
     fun refreshCasesCanSendCallsScopeContext() = runTest {
         val api = FakeMedtrackApi()
-        val repository = MedtrackRepository(api = api, database = database)
+        val repository = repository(api)
 
         repository.refreshCases(bucket = "all", assignedTo = "all", scopeContext = "calls")
 
@@ -139,11 +139,11 @@ class MedtrackRepositoryTest {
                 ),
             ),
         )
-        val repository = MedtrackRepository(api = api, database = database)
+        val repository = repository(api)
 
         repository.refreshNotifications()
 
-        val entity = database.notificationDao().observeNotifications().first().single()
+        val entity = database.notificationDao().observeNotifications(ACCOUNT_ID).first().single()
         val storedJson = JSONObject(entity.payloadJson)
         assertEquals("High risk", storedJson.getJSONArray("reasons").getString(0))
         val item = repository.notifications.first().single()
@@ -153,7 +153,7 @@ class MedtrackRepositoryTest {
     @Test
     fun logCallOutcomeSendsProvidedAttemptedAt() = runTest {
         val api = FakeMedtrackApi()
-        val repository = MedtrackRepository(api = api, database = database)
+        val repository = repository(api)
 
         repository.logCallOutcome(
             caseId = "42",
@@ -174,6 +174,7 @@ class MedtrackRepositoryTest {
     fun pushTokenDaoTracksPendingAndSyncedTokens() = runTest {
         database.pushTokenDao().upsertToken(
             PushTokenEntity(
+                ownerAccountId = ACCOUNT_ID,
                 token = "pending-token",
                 deviceLabel = "Redmi test",
                 syncedAtMillis = 0L,
@@ -181,29 +182,30 @@ class MedtrackRepositoryTest {
         )
         database.pushTokenDao().upsertToken(
             PushTokenEntity(
+                ownerAccountId = ACCOUNT_ID,
                 token = "synced-token",
                 deviceLabel = "Pixel test",
                 syncedAtMillis = 123L,
             ),
         )
 
-        assertEquals(listOf("pending-token"), database.pushTokenDao().pendingTokens().map { it.token })
+        assertEquals(listOf("pending-token"), database.pushTokenDao().pendingTokens(ACCOUNT_ID).map { it.token })
 
-        database.pushTokenDao().markTokenSynced("pending-token", 456L)
+        database.pushTokenDao().markTokenSynced(ACCOUNT_ID, "pending-token", 456L)
 
-        assertEquals(emptyList<String>(), database.pushTokenDao().pendingTokens().map { it.token })
+        assertEquals(emptyList<String>(), database.pushTokenDao().pendingTokens(ACCOUNT_ID).map { it.token })
     }
 
     @Test
     fun registerPushTokenLeavesPendingTokenWhenNetworkFails() = runTest {
         val api = FakeMedtrackApi(registerPushError = IOException("offline"))
-        val repository = MedtrackRepository(api = api, database = database)
+        val repository = repository(api)
 
         runCatching {
             repository.registerPushToken(token = "fcm-token", deviceLabel = "Redmi test")
         }
 
-        val pending = database.pushTokenDao().pendingTokens()
+        val pending = database.pushTokenDao().pendingTokens(ACCOUNT_ID)
         assertEquals(1, pending.size)
         assertEquals("fcm-token", pending.single().token)
         assertEquals("Redmi test", pending.single().deviceLabel)
@@ -214,6 +216,7 @@ class MedtrackRepositoryTest {
         database.notificationDao().upsertNotifications(
             listOf(
                 NotificationEntity(
+                    ownerAccountId = ACCOUNT_ID,
                     id = "99",
                     type = "assignment",
                     title = "New task",
@@ -227,7 +230,7 @@ class MedtrackRepositoryTest {
         )
         val api = FakeMedtrackApi(notificationReadError = IOException("offline"))
         var queuedCallbacks = 0
-        val repository = MedtrackRepository(
+        val repository = repository(
             api = api,
             database = database,
             onPendingWriteQueued = { queuedCallbacks += 1 },
@@ -237,8 +240,8 @@ class MedtrackRepositoryTest {
 
         assertEquals(1, api.notificationReadCalls)
         assertEquals(1, queuedCallbacks)
-        assertEquals(true, database.notificationDao().observeNotifications().first().single().isRead)
-        val pending = database.pendingWriteDao().pendingWrites().single()
+        assertEquals(true, database.notificationDao().observeNotifications(ACCOUNT_ID).first().single().isRead)
+        val pending = database.pendingWriteDao().pendingWrites(ACCOUNT_ID).single()
         assertEquals(PendingWriteTypes.NOTIFICATION_READ, pending.writeType)
         assertEquals("99", pending.taskId)
     }
@@ -247,6 +250,7 @@ class MedtrackRepositoryTest {
     fun completeTaskQueuesAndMarksLocalTaskDoneWhenOffline() = runTest {
         database.taskDao().upsertTask(
             TaskEntity(
+                ownerAccountId = ACCOUNT_ID,
                 id = "7",
                 caseId = "42",
                 title = "Follow-up",
@@ -259,7 +263,7 @@ class MedtrackRepositoryTest {
         )
         val api = FakeMedtrackApi(completeTaskError = IOException("offline"))
         var queuedCallbacks = 0
-        val repository = MedtrackRepository(
+        val repository = repository(
             api = api,
             database = database,
             onPendingWriteQueued = { queuedCallbacks += 1 },
@@ -269,12 +273,12 @@ class MedtrackRepositoryTest {
 
         assertTrue(result.queued)
         assertEquals(1, queuedCallbacks)
-        val pending = database.pendingWriteDao().pendingWrites().single()
+        val pending = database.pendingWriteDao().pendingWrites(ACCOUNT_ID).single()
         assertEquals(PendingWriteTypes.TASK_COMPLETE, pending.writeType)
         assertEquals("42", pending.caseId)
         assertEquals("7", pending.taskId)
         assertEquals(pending.clientWriteId, PendingWriteJson.decodeTaskComplete(pending.payloadJson).clientWriteId)
-        val localTask = database.taskDao().observeTasksForCase("42").first().single()
+        val localTask = database.taskDao().observeTasksForCase(ACCOUNT_ID, "42").first().single()
         assertEquals("COMPLETED", localTask.status)
         assertEquals(false, localTask.canComplete)
     }
@@ -282,14 +286,14 @@ class MedtrackRepositoryTest {
     @Test
     fun completeTaskRecordsConflictWhenServerReturns409() = runTest {
         val api = FakeMedtrackApi(completeTaskError = conflictError("Task was already changed on the server."))
-        val repository = MedtrackRepository(api = api, database = database)
+        val repository = repository(api)
 
         val result = repository.completeTask(taskId = "7", caseId = "42")
 
         assertEquals(false, result.queued)
         assertTrue(result.conflict)
-        assertEquals(emptyList<Any>(), database.pendingWriteDao().pendingWrites())
-        val conflict = database.syncConflictDao().observeConflicts().first().single()
+        assertEquals(emptyList<Any>(), database.pendingWriteDao().pendingWrites(ACCOUNT_ID))
+        val conflict = database.syncConflictDao().observeConflicts(ACCOUNT_ID).first().single()
         assertEquals(PendingWriteTypes.TASK_COMPLETE, conflict.writeType)
         assertEquals("42", conflict.caseId)
         assertEquals("7", conflict.taskId)
@@ -300,7 +304,7 @@ class MedtrackRepositoryTest {
     fun logCallOutcomeQueuesPayloadWhenOffline() = runTest {
         val api = FakeMedtrackApi(logCallError = IOException("offline"))
         var queuedCallbacks = 0
-        val repository = MedtrackRepository(
+        val repository = repository(
             api = api,
             database = database,
             onPendingWriteQueued = { queuedCallbacks += 1 },
@@ -316,7 +320,7 @@ class MedtrackRepositoryTest {
 
         assertTrue(result.queued)
         assertEquals(1, queuedCallbacks)
-        val pending = database.pendingWriteDao().pendingWrites().single()
+        val pending = database.pendingWriteDao().pendingWrites(ACCOUNT_ID).single()
         assertEquals(PendingWriteTypes.CALL_OUTCOME, pending.writeType)
         assertEquals("42", pending.caseId)
         assertEquals("7", pending.taskId)
@@ -331,7 +335,7 @@ class MedtrackRepositoryTest {
     @Test
     fun logCallOutcomeRecordsConflictWhenServerReturns409() = runTest {
         val api = FakeMedtrackApi(logCallError = conflictError("Server version kept for the call log."))
-        val repository = MedtrackRepository(api = api, database = database)
+        val repository = repository(api)
 
         val result = repository.logCallOutcome(
             caseId = "42",
@@ -343,8 +347,8 @@ class MedtrackRepositoryTest {
 
         assertEquals(false, result.queued)
         assertTrue(result.conflict)
-        assertEquals(emptyList<Any>(), database.pendingWriteDao().pendingWrites())
-        val conflict = database.syncConflictDao().observeConflicts().first().single()
+        assertEquals(emptyList<Any>(), database.pendingWriteDao().pendingWrites(ACCOUNT_ID))
+        val conflict = database.syncConflictDao().observeConflicts(ACCOUNT_ID).first().single()
         assertEquals(PendingWriteTypes.CALL_OUTCOME, conflict.writeType)
         assertEquals("42", conflict.caseId)
         assertEquals("7", conflict.taskId)
@@ -355,7 +359,7 @@ class MedtrackRepositoryTest {
     fun addVitalsQueuesAndAddsPendingVitalWhenOffline() = runTest {
         val api = FakeMedtrackApi(addVitalsError = IOException("offline"))
         var queuedCallbacks = 0
-        val repository = MedtrackRepository(
+        val repository = repository(
             api = api,
             database = database,
             onPendingWriteQueued = { queuedCallbacks += 1 },
@@ -373,7 +377,7 @@ class MedtrackRepositoryTest {
 
         assertTrue(result.queued)
         assertEquals(1, queuedCallbacks)
-        val pending = database.pendingWriteDao().pendingWrites().single()
+        val pending = database.pendingWriteDao().pendingWrites(ACCOUNT_ID).single()
         assertEquals(PendingWriteTypes.VITALS_CREATE, pending.writeType)
         assertEquals("42", pending.caseId)
         val payload = PendingWriteJson.decodeVitals(pending.payloadJson)
@@ -384,7 +388,7 @@ class MedtrackRepositoryTest {
         assertEquals(97, payload.spo2)
         assertEquals("54.5", payload.weightKg)
         assertEquals("11.2", payload.hemoglobin)
-        val pendingVital = database.vitalDao().observeVitalsForCase("42").first().single()
+        val pendingVital = database.vitalDao().observeVitalsForCase(ACCOUNT_ID, "42").first().single()
         assertEquals("pending-${pending.clientWriteId}", pendingVital.id)
         assertEquals("BP 121/79 | PR 82 | SpO2 97 | Hb 11.2 | Wt 54.5 kg", pendingVital.summary)
     }
@@ -392,7 +396,7 @@ class MedtrackRepositoryTest {
     @Test
     fun addVitalsRecordsConflictWhenServerReturns409() = runTest {
         val api = FakeMedtrackApi(addVitalsError = conflictError("Vitals were already updated on the server."))
-        val repository = MedtrackRepository(api = api, database = database)
+        val repository = repository(api)
 
         val result = repository.addVitals(
             caseId = "42",
@@ -406,14 +410,62 @@ class MedtrackRepositoryTest {
 
         assertEquals(false, result.queued)
         assertTrue(result.conflict)
-        assertEquals(emptyList<Any>(), database.pendingWriteDao().pendingWrites())
-        assertEquals(emptyList<Any>(), database.vitalDao().observeVitalsForCase("42").first())
-        val conflict = database.syncConflictDao().observeConflicts().first().single()
+        assertEquals(emptyList<Any>(), database.pendingWriteDao().pendingWrites(ACCOUNT_ID))
+        assertEquals(emptyList<Any>(), database.vitalDao().observeVitalsForCase(ACCOUNT_ID, "42").first())
+        val conflict = database.syncConflictDao().observeConflicts(ACCOUNT_ID).first().single()
         assertEquals(PendingWriteTypes.VITALS_CREATE, conflict.writeType)
         assertEquals("42", conflict.caseId)
         assertEquals(null, conflict.taskId)
         assertEquals("Vitals were already updated on the server.", conflict.message)
     }
+
+    @Test
+    fun accountSwitchShowsOnlyNewOwnersCacheAndWipeCannotDeleteIt() = runTest {
+        database.notificationDao().upsertNotifications(
+            listOf(
+                notification(ownerAccountId = "account-a", title = "Account A PHI"),
+                notification(ownerAccountId = "account-b", title = "Account B PHI"),
+            ),
+        )
+        val repository = MedtrackRepository(api = FakeMedtrackApi(), database = database)
+
+        repository.activateAccount("account-a")
+        assertEquals(listOf("Account A PHI"), repository.notifications.first().map { it.title })
+
+        repository.activateAccount("account-b")
+        assertEquals(listOf("Account B PHI"), repository.notifications.first().map { it.title })
+
+        repository.wipeAccountData("account-a")
+        assertTrue(database.notificationDao().observeNotifications("account-a").first().isEmpty())
+        assertEquals(
+            listOf("Account B PHI"),
+            database.notificationDao().observeNotifications("account-b").first().map { it.title },
+        )
+        assertEquals(listOf("Account B PHI"), repository.notifications.first().map { it.title })
+    }
+
+    private fun notification(ownerAccountId: String, title: String): NotificationEntity =
+        NotificationEntity(
+            ownerAccountId = ownerAccountId,
+            id = "same-server-id",
+            type = "assignment",
+            title = title,
+            body = "owner-specific body",
+            caseId = "42",
+            taskId = "7",
+            createdAt = "2026-08-29T12:00:00Z",
+            isRead = false,
+        )
+
+    private fun repository(
+        api: MedtrackApi,
+        database: MedtrackDatabase = this.database,
+        onPendingWriteQueued: (String) -> Unit = {},
+    ): MedtrackRepository = MedtrackRepository(
+        api = api,
+        database = database,
+        onPendingWriteQueued = onPendingWriteQueued,
+    ).also { it.activateAccount(ACCOUNT_ID) }
 
     private fun categoryResponse(): CategoriesResponseDto =
         CategoriesResponseDto(
@@ -440,6 +492,10 @@ class MedtrackRepositoryTest {
                 message.toResponseBody("text/plain".toMediaType()),
             ),
         )
+
+    private companion object {
+        const val ACCOUNT_ID = "1"
+    }
 }
 
 private class FakeMedtrackApi(

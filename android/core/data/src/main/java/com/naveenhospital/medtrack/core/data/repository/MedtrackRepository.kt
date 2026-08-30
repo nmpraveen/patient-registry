@@ -89,7 +89,10 @@ import java.util.UUID
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import retrofit2.HttpException
 
 const val CACHE_TTL_MILLIS: Long = 60 * 60 * 1000L
@@ -98,11 +101,25 @@ const val CACHE_KEY_VITALS_THRESHOLDS = "vitals_thresholds"
 const val CACHE_KEY_NOTIFICATIONS = "notifications"
 private const val CASE_PAGE_SIZE = 20
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class MedtrackRepository(
-    private val api: MedtrackApi,
+    private val apiForAccount: (String) -> MedtrackApi,
     private val database: MedtrackDatabase,
-    private val onPendingWriteQueued: () -> Unit = {},
+    private val onPendingWriteQueued: (String) -> Unit = {},
 ) {
+    constructor(
+        api: MedtrackApi,
+        database: MedtrackDatabase,
+        onPendingWriteQueued: (String) -> Unit = {},
+    ) : this(
+        apiForAccount = { api },
+        database = database,
+        onPendingWriteQueued = onPendingWriteQueued,
+    )
+
+    private data class AccountSession(val ownerAccountId: String, val api: MedtrackApi)
+
+    private val activeAccountId = MutableStateFlow<String?>(null)
     private val _stats = MutableStateFlow(InboxStats())
     val stats: StateFlow<InboxStats> = _stats
     private val _categoryOptions = MutableStateFlow<List<CategoryFilterOption>>(emptyList())
@@ -117,7 +134,46 @@ class MedtrackRepository(
         Moshi.Builder().add(KotlinJsonAdapterFactory()).build().adapter(CaseCreateErrorDto::class.java)
 
     val cases: Flow<List<PatientCase>> =
-        database.caseDao().observeCases().map { entities -> entities.map { it.toDomain() } }
+        activeAccountId.flatMapLatest { ownerAccountId ->
+            if (ownerAccountId == null) flowOf(emptyList())
+            else database.caseDao().observeCases(ownerAccountId).map { entities -> entities.map { it.toDomain() } }
+        }
+
+    fun activateAccount(accountId: String) {
+        require(accountId.isNotBlank()) { "A verified account ID is required." }
+        resetInMemoryState()
+        activeAccountId.value = accountId
+    }
+
+    fun deactivateAccount() {
+        activeAccountId.value = null
+        resetInMemoryState()
+    }
+
+    fun activeAccountId(): String? = activeAccountId.value
+
+    suspend fun wipeAccountData(accountId: String) {
+        database.clearAccountData(accountId)
+        if (activeAccountId.value == accountId) resetInMemoryState()
+    }
+
+    private fun resetInMemoryState() {
+        _stats.value = InboxStats()
+        _categoryOptions.value = emptyList()
+        _vitalsThresholds.value = null
+        _hasMoreCases.value = false
+        nextCasePage = null
+        activeCaseListKey = ""
+    }
+
+    private fun activeSession(): AccountSession {
+        val ownerAccountId = activeAccountId.value ?: error("No verified MEDTRACK account is active.")
+        return AccountSession(ownerAccountId, apiForAccount(ownerAccountId))
+    }
+
+    private fun requireStillActive(ownerAccountId: String) {
+        check(activeAccountId.value == ownerAccountId) { "The authenticated MEDTRACK account changed." }
+    }
 
     @OptIn(ExperimentalPagingApi::class)
     fun pagedCases(
@@ -128,6 +184,7 @@ class MedtrackRepository(
         categories: List<String> = emptyList(),
         subcategories: List<String> = emptyList(),
     ): Flow<PagingData<PatientCase>> {
+        val session = activeSession()
         val cacheKey = caseListCacheKey(bucket, query, assignedTo, scopeContext, categories, subcategories)
         activeCaseListKey = cacheKey
         return Pager(
@@ -137,7 +194,8 @@ class MedtrackRepository(
                 enablePlaceholders = false,
             ),
             remoteMediator = CaseRemoteMediator(
-                api = api,
+                ownerAccountId = session.ownerAccountId,
+                api = session.api,
                 database = database,
                 cacheKey = cacheKey,
                 bucket = bucket,
@@ -147,31 +205,57 @@ class MedtrackRepository(
                 categories = categories,
                 subcategories = subcategories,
                 onStats = { stats -> _stats.value = stats },
+                isAccountActive = { activeAccountId.value == session.ownerAccountId },
             ),
-            pagingSourceFactory = { database.caseDao().pagingSource() },
+            pagingSourceFactory = { database.caseDao().pagingSource(session.ownerAccountId) },
         ).flow.map { pagingData -> pagingData.map { entity -> entity.toDomain() } }
     }
 
     val notifications: Flow<List<NotificationItem>> =
-        database.notificationDao().observeNotifications().map { entities -> entities.map { it.toDomain() } }
+        activeAccountId.flatMapLatest { ownerAccountId ->
+            if (ownerAccountId == null) flowOf(emptyList())
+            else database.notificationDao().observeNotifications(ownerAccountId)
+                .map { entities -> entities.map { it.toDomain() } }
+        }
 
     val pendingWriteCount: Flow<Int> =
-        database.pendingWriteDao().observePendingWriteCount()
+        activeAccountId.flatMapLatest { ownerAccountId ->
+            if (ownerAccountId == null) flowOf(0)
+            else database.pendingWriteDao().observePendingWriteCount(ownerAccountId)
+        }
 
     val syncConflictCount: Flow<Int> =
-        database.syncConflictDao().observeConflictCount()
+        activeAccountId.flatMapLatest { ownerAccountId ->
+            if (ownerAccountId == null) flowOf(0)
+            else database.syncConflictDao().observeConflictCount(ownerAccountId)
+        }
 
     val syncConflicts: Flow<List<SyncConflict>> =
-        database.syncConflictDao().observeConflicts().map { entities -> entities.map { it.toDomain() } }
+        activeAccountId.flatMapLatest { ownerAccountId ->
+            if (ownerAccountId == null) flowOf(emptyList())
+            else database.syncConflictDao().observeConflicts(ownerAccountId)
+                .map { entities -> entities.map { it.toDomain() } }
+        }
 
     fun observeCase(caseId: String): Flow<PatientCase?> =
-        database.caseDao().observeCase(caseId).map { it?.toDomain() }
+        activeAccountId.flatMapLatest { ownerAccountId ->
+            if (ownerAccountId == null) flowOf(null)
+            else database.caseDao().observeCase(ownerAccountId, caseId).map { it?.toDomain() }
+        }
 
     fun observeTasks(caseId: String): Flow<List<PatientTask>> =
-        database.taskDao().observeTasksForCase(caseId).map { entities -> entities.map { it.toDomain() } }
+        activeAccountId.flatMapLatest { ownerAccountId ->
+            if (ownerAccountId == null) flowOf(emptyList())
+            else database.taskDao().observeTasksForCase(ownerAccountId, caseId)
+                .map { entities -> entities.map { it.toDomain() } }
+        }
 
     fun observeVitals(caseId: String): Flow<List<PatientVital>> =
-        database.vitalDao().observeVitalsForCase(caseId).map { entities -> entities.map { it.toDomain() } }
+        activeAccountId.flatMapLatest { ownerAccountId ->
+            if (ownerAccountId == null) flowOf(emptyList())
+            else database.vitalDao().observeVitalsForCase(ownerAccountId, caseId)
+                .map { entities -> entities.map { it.toDomain() } }
+        }
 
     suspend fun refreshCases(
         bucket: String? = "today",
@@ -181,11 +265,12 @@ class MedtrackRepository(
         categories: List<String> = emptyList(),
         subcategories: List<String> = emptyList(),
     ) {
+        val session = activeSession()
         activeCaseListKey = caseListCacheKey(bucket, query, assignedTo, scopeContext, categories, subcategories)
-        database.caseStatsDao().statsForKey(activeCaseListKey)?.let { cachedStats ->
+        database.caseStatsDao().statsForKey(session.ownerAccountId, activeCaseListKey)?.let { cachedStats ->
             _stats.value = cachedStats.toDomain()
         }
-        val response = api.listCases(
+        val response = session.api.listCases(
             bucket = bucket ?: "all",
             query = query?.takeIf { it.isNotBlank() },
             assignedTo = assignedTo,
@@ -194,13 +279,14 @@ class MedtrackRepository(
             subcategories = subcategories.takeIf { it.isNotEmpty() },
             page = 1,
         )
+        requireStillActive(session.ownerAccountId)
         _stats.value = response.stats.toDomain()
         nextCasePage = response.nextPageAfter(1)
         _hasMoreCases.value = nextCasePage != null
-        database.caseDao().clearCases()
-        database.caseDao().upsertCases(response.results.map { it.toEntity() })
-        database.caseStatsDao().upsertStats(response.stats.toEntity(activeCaseListKey))
-        markCacheFresh(caseListCacheKey(bucket, query, assignedTo, scopeContext, categories, subcategories))
+        database.caseDao().clearCases(session.ownerAccountId)
+        database.caseDao().upsertCases(response.results.map { it.toEntity(session.ownerAccountId) })
+        database.caseStatsDao().upsertStats(response.stats.toEntity(session.ownerAccountId, activeCaseListKey))
+        markCacheFresh(session.ownerAccountId, caseListCacheKey(bucket, query, assignedTo, scopeContext, categories, subcategories))
     }
 
     suspend fun loadNextCases(
@@ -211,6 +297,7 @@ class MedtrackRepository(
         categories: List<String> = emptyList(),
         subcategories: List<String> = emptyList(),
     ) {
+        val session = activeSession()
         val requestedKey = caseListCacheKey(bucket, query, assignedTo, scopeContext, categories, subcategories)
         if (requestedKey != activeCaseListKey) {
             refreshCases(
@@ -224,7 +311,7 @@ class MedtrackRepository(
             return
         }
         val page = nextCasePage ?: return
-        val response = api.listCases(
+        val response = session.api.listCases(
             bucket = bucket ?: "all",
             query = query?.takeIf { it.isNotBlank() },
             assignedTo = assignedTo,
@@ -233,25 +320,38 @@ class MedtrackRepository(
             subcategories = subcategories.takeIf { it.isNotEmpty() },
             page = page,
         )
+        requireStillActive(session.ownerAccountId)
         _stats.value = response.stats.toDomain()
         nextCasePage = response.nextPageAfter(page)
         _hasMoreCases.value = nextCasePage != null
-        database.caseDao().upsertCases(response.results.map { it.toEntity() })
-        database.caseStatsDao().upsertStats(response.stats.toEntity(requestedKey))
+        database.caseDao().upsertCases(response.results.map { it.toEntity(session.ownerAccountId) })
+        database.caseStatsDao().upsertStats(response.stats.toEntity(session.ownerAccountId, requestedKey))
     }
 
-    suspend fun loadCaseFormMetadata(): CaseFormMetadata = api.caseFormMetadata().toDomain()
+    suspend fun loadCaseFormMetadata(): CaseFormMetadata {
+        val session = activeSession()
+        val response = session.api.caseFormMetadata()
+        requireStillActive(session.ownerAccountId)
+        return response.toDomain()
+    }
 
-    suspend fun searchPatients(query: String): List<PatientLookup> =
-        api.searchPatients(query = query.trim().ifBlank { null }).results.map { it.toDomain() }
+    suspend fun searchPatients(query: String): List<PatientLookup> {
+        val session = activeSession()
+        val response = session.api.searchPatients(query = query.trim().ifBlank { null })
+        requireStillActive(session.ownerAccountId)
+        return response.results.map { it.toDomain() }
+    }
 
     suspend fun createCase(input: NewCaseInput): CaseCreateOutcome {
+        val session = activeSession()
         val request = input.toRequestDto(newClientWriteId("case"))
         return runCatching {
-            val response = api.createCase(request)
-            database.caseDao().upsertCase(response.case.toEntity())
+            val response = session.api.createCase(request)
+            requireStillActive(session.ownerAccountId)
+            database.caseDao().upsertCase(response.case.toEntity(session.ownerAccountId))
             CaseCreateOutcome.Success(caseId = response.caseId, message = response.message)
         }.getOrElse { throwable ->
+            requireStillActive(session.ownerAccountId)
             if (throwable is HttpException && throwable.code() == 400) {
                 val parsed = runCatching {
                     caseCreateErrorAdapter.fromJson(throwable.response()?.errorBody()?.string().orEmpty())
@@ -266,25 +366,38 @@ class MedtrackRepository(
         }
     }
 
-    suspend fun loadCaseEditForm(caseId: String): CaseEditPrefill =
-        api.caseEditForm(caseId).toDomain()
+    suspend fun loadCaseEditForm(caseId: String): CaseEditPrefill {
+        val session = activeSession()
+        val response = session.api.caseEditForm(caseId)
+        requireStillActive(session.ownerAccountId)
+        return response.toDomain()
+    }
 
     suspend fun updateCase(caseId: String, input: NewCaseInput): CaseEditOutcome {
+        val session = activeSession()
         val request = input.toRequestDto(newClientWriteId("case-edit"))
         return runCatching {
-            val response = api.updateCase(caseId, request)
-            database.caseDao().upsertCase(response.case.toEntity())
+            val response = session.api.updateCase(caseId, request)
+            requireStillActive(session.ownerAccountId)
+            database.caseDao().upsertCase(response.case.toEntity(session.ownerAccountId))
             CaseEditOutcome.Success(caseId = response.caseId, message = response.message)
         }.getOrElse { throwable ->
+            requireStillActive(session.ownerAccountId)
             parseFormErrors(throwable)?.let {
                 CaseEditOutcome.ValidationError(errors = it.errors, message = it.message ?: "Please fix the highlighted fields.")
             } ?: CaseEditOutcome.Failure(throwable.message ?: "Could not save the case. Try again.")
         }
     }
 
-    suspend fun loadTaskFormMetadata(): TaskFormMetadata = api.taskFormMetadata().toDomain()
+    suspend fun loadTaskFormMetadata(): TaskFormMetadata {
+        val session = activeSession()
+        val response = session.api.taskFormMetadata()
+        requireStillActive(session.ownerAccountId)
+        return response.toDomain()
+    }
 
     suspend fun createTask(caseId: String, input: NewTaskInput): TaskWriteOutcome {
+        val session = activeSession()
         val request = CreateTaskRequestDto(
             title = input.title,
             dueDate = input.dueDate,
@@ -295,14 +408,19 @@ class MedtrackRepository(
             clientWriteId = newClientWriteId("task-create"),
         )
         return runCatching {
-            val response = api.createTask(caseId, request)
-            database.caseDao().upsertCase(response.case.toEntity())
-            database.taskDao().upsertTask(response.task.toEntity(caseId))
+            val response = session.api.createTask(caseId, request)
+            requireStillActive(session.ownerAccountId)
+            database.caseDao().upsertCase(response.case.toEntity(session.ownerAccountId))
+            database.taskDao().upsertTask(response.task.toEntity(session.ownerAccountId, caseId))
             TaskWriteOutcome.Success(response.message)
-        }.getOrElse { throwable -> throwable.toTaskOutcome() }
+        }.getOrElse { throwable ->
+            requireStillActive(session.ownerAccountId)
+            throwable.toTaskOutcome()
+        }
     }
 
     suspend fun updateTask(taskId: String, caseId: String, input: TaskEditInput): TaskWriteOutcome {
+        val session = activeSession()
         val assignedUserValue = when {
             input.assignedUserId != null -> input.assignedUserId.toString()
             input.clearAssignee -> "" // explicit unassign
@@ -316,20 +434,29 @@ class MedtrackRepository(
             assignedUser = assignedUserValue,
         )
         return runCatching {
-            val response = api.updateTask(taskId, request)
-            database.caseDao().upsertCase(response.case.toEntity())
-            database.taskDao().upsertTask(response.task.toEntity(caseId))
+            val response = session.api.updateTask(taskId, request)
+            requireStillActive(session.ownerAccountId)
+            database.caseDao().upsertCase(response.case.toEntity(session.ownerAccountId))
+            database.taskDao().upsertTask(response.task.toEntity(session.ownerAccountId, caseId))
             TaskWriteOutcome.Success(response.message)
-        }.getOrElse { throwable -> throwable.toTaskOutcome() }
+        }.getOrElse { throwable ->
+            requireStillActive(session.ownerAccountId)
+            throwable.toTaskOutcome()
+        }
     }
 
     suspend fun addTaskNote(taskId: String, caseId: String, note: String): TaskWriteOutcome {
+        val session = activeSession()
         return runCatching {
-            val response = api.addTaskNote(taskId, TaskNoteRequestDto(note = note))
-            database.caseDao().upsertCase(response.case.toEntity())
-            database.taskDao().upsertTask(response.task.toEntity(caseId))
+            val response = session.api.addTaskNote(taskId, TaskNoteRequestDto(note = note))
+            requireStillActive(session.ownerAccountId)
+            database.caseDao().upsertCase(response.case.toEntity(session.ownerAccountId))
+            database.taskDao().upsertTask(response.task.toEntity(session.ownerAccountId, caseId))
             TaskWriteOutcome.Success(response.message)
-        }.getOrElse { throwable -> throwable.toTaskOutcome() }
+        }.getOrElse { throwable ->
+            requireStillActive(session.ownerAccountId)
+            throwable.toTaskOutcome()
+        }
     }
 
     suspend fun updateVitals(
@@ -342,6 +469,7 @@ class MedtrackRepository(
         weightKg: String?,
         hemoglobin: String?,
     ): VitalsWriteOutcome {
+        val session = activeSession()
         val request = VitalsUpdateRequestDto(
             bpSystolic = bpSystolic,
             bpDiastolic = bpDiastolic,
@@ -351,11 +479,13 @@ class MedtrackRepository(
             hemoglobin = hemoglobin,
         )
         return runCatching {
-            val response = api.updateVitals(vitalId, request)
-            database.caseDao().upsertCase(response.case.toEntity())
-            database.vitalDao().upsertVital(response.vital.toEntity(caseId))
+            val response = session.api.updateVitals(vitalId, request)
+            requireStillActive(session.ownerAccountId)
+            database.caseDao().upsertCase(response.case.toEntity(session.ownerAccountId))
+            database.vitalDao().upsertVital(response.vital.toEntity(session.ownerAccountId, caseId))
             VitalsWriteOutcome.Success(response.message)
         }.getOrElse { throwable ->
+            requireStillActive(session.ownerAccountId)
             parseFormErrors(throwable)?.let {
                 VitalsWriteOutcome.ValidationError(errors = it.errors, message = it.message ?: "Please check the vitals.")
             } ?: VitalsWriteOutcome.Failure(throwable.message ?: "Could not save vitals. Try again.")
@@ -381,66 +511,79 @@ class MedtrackRepository(
     }
 
     suspend fun loadCachedCategoryOptions() {
-        val cached = database.categoryOptionsDao().currentOptions() ?: return
+        val ownerAccountId = activeSession().ownerAccountId
+        val cached = database.categoryOptionsDao().currentOptions(ownerAccountId) ?: return
         _categoryOptions.value = cached.toDomain()
     }
 
     suspend fun refreshCategoryOptions() {
-        val response = api.categories()
+        val session = activeSession()
+        val response = session.api.categories()
+        requireStillActive(session.ownerAccountId)
         _categoryOptions.value = response.categories.map { it.toFilterOption() }
-        database.categoryOptionsDao().upsertOptions(response.toEntity())
-        markCacheFresh(CACHE_KEY_CATEGORY_OPTIONS)
+        database.categoryOptionsDao().upsertOptions(response.toEntity(session.ownerAccountId))
+        markCacheFresh(session.ownerAccountId, CACHE_KEY_CATEGORY_OPTIONS)
     }
 
     suspend fun loadCachedVitalsThresholds() {
-        val cached = database.vitalsThresholdDao().currentThresholds() ?: return
+        val ownerAccountId = activeSession().ownerAccountId
+        val cached = database.vitalsThresholdDao().currentThresholds(ownerAccountId) ?: return
         _vitalsThresholds.value = cached.toDomain()
     }
 
     suspend fun refreshVitalsThresholds() {
-        val response = api.vitalsThresholds()
+        val session = activeSession()
+        val response = session.api.vitalsThresholds()
+        requireStillActive(session.ownerAccountId)
         _vitalsThresholds.value = response.toDomain()
-        database.vitalsThresholdDao().upsertThresholds(response.toEntity())
-        markCacheFresh(CACHE_KEY_VITALS_THRESHOLDS)
+        database.vitalsThresholdDao().upsertThresholds(response.toEntity(session.ownerAccountId))
+        markCacheFresh(session.ownerAccountId, CACHE_KEY_VITALS_THRESHOLDS)
     }
 
     suspend fun refreshCaseDetail(caseId: String) {
-        val response = api.caseDetail(caseId)
-        database.caseDao().upsertCase(response.case.toEntity())
-        database.taskDao().clearTasksForCase(caseId)
-        database.taskDao().upsertTasks(response.tasks.map { it.toEntity(caseId) })
-        database.vitalDao().clearVitalsForCase(caseId)
-        database.vitalDao().upsertVitals(response.vitals.map { it.toEntity(caseId) })
-        markCacheFresh(caseDetailCacheKey(caseId))
+        val session = activeSession()
+        val response = session.api.caseDetail(caseId)
+        requireStillActive(session.ownerAccountId)
+        database.caseDao().upsertCase(response.case.toEntity(session.ownerAccountId))
+        database.taskDao().clearTasksForCase(session.ownerAccountId, caseId)
+        database.taskDao().upsertTasks(response.tasks.map { it.toEntity(session.ownerAccountId, caseId) })
+        database.vitalDao().clearVitalsForCase(session.ownerAccountId, caseId)
+        database.vitalDao().upsertVitals(response.vitals.map { it.toEntity(session.ownerAccountId, caseId) })
+        markCacheFresh(session.ownerAccountId, caseDetailCacheKey(caseId))
     }
 
     suspend fun refreshNotifications(type: String? = null) {
+        val session = activeSession()
         // When a Me-page category is open, fetch that type server-side so paginated
         // matches beyond the untyped first page aren't missed by client-side filtering.
-        val response = api.notifications(type = type)
-        database.notificationDao().upsertNotifications(response.results.map { it.toEntity() })
+        val response = session.api.notifications(type = type)
+        requireStillActive(session.ownerAccountId)
+        database.notificationDao().upsertNotifications(response.results.map { it.toEntity(session.ownerAccountId) })
         // Only a full (untyped) refresh covers every category, so only it may mark the
         // shared cache fresh. A typed refresh must not suppress the global sync, or the
         // Me badge/counts could miss other categories until "All" is opened.
         if (type == null) {
-            markCacheFresh(CACHE_KEY_NOTIFICATIONS)
+            markCacheFresh(session.ownerAccountId, CACHE_KEY_NOTIFICATIONS)
         }
     }
 
     suspend fun markNotificationRead(notificationId: String) {
+        val session = activeSession()
         val clientWriteId = newClientWriteId("notification")
         val payload = NotificationReadPayload(
             notificationId = notificationId,
             clientWriteId = clientWriteId,
         )
-        database.notificationDao().markRead(notificationId)
+        database.notificationDao().markRead(session.ownerAccountId, notificationId)
         runCatching {
-            api.markNotificationRead(notificationId)
+            session.api.markNotificationRead(notificationId)
         }.getOrElse { throwable ->
+            requireStillActive(session.ownerAccountId)
             if (!throwable.shouldQueue()) {
                 throw throwable
             }
             queuePendingWrite(
+                ownerAccountId = session.ownerAccountId,
                 clientWriteId = clientWriteId,
                 writeType = PendingWriteTypes.NOTIFICATION_READ,
                 caseId = null,
@@ -448,41 +591,49 @@ class MedtrackRepository(
                 payloadJson = PendingWriteJson.encodeNotificationRead(payload),
                 lastError = throwable.message,
             )
-            onPendingWriteQueued()
+            onPendingWriteQueued(session.ownerAccountId)
         }
     }
 
     suspend fun registerPushToken(token: String, deviceLabel: String) {
+        val session = activeSession()
         database.pushTokenDao().upsertToken(
             PushTokenEntity(
+                ownerAccountId = session.ownerAccountId,
                 token = token,
                 deviceLabel = deviceLabel,
                 syncedAtMillis = 0L,
             ),
         )
-        api.registerPushToken(RegisterPushTokenRequestDto(token = token, deviceLabel = deviceLabel))
-        database.pushTokenDao().markTokenSynced(token, System.currentTimeMillis())
+        session.api.registerPushToken(RegisterPushTokenRequestDto(token = token, deviceLabel = deviceLabel))
+        requireStillActive(session.ownerAccountId)
+        database.pushTokenDao().markTokenSynced(session.ownerAccountId, token, System.currentTimeMillis())
     }
 
     suspend fun currentPushTokenForLogout(): String? {
+        val ownerAccountId = activeSession().ownerAccountId
         val dao = database.pushTokenDao()
-        return (dao.latestSyncedToken() ?: dao.latestToken())
+        return (dao.latestSyncedToken(ownerAccountId) ?: dao.latestToken(ownerAccountId))
             ?.token
             ?.takeIf { it.isNotBlank() }
     }
 
     suspend fun completeTask(taskId: String, caseId: String): WriteResult {
+        val session = activeSession()
         val clientWriteId = newClientWriteId("task")
         val payload = ClientWriteRequestDto(clientWriteId = clientWriteId)
         return runCatching {
-            val response = api.completeTask(taskId = taskId, request = payload)
-            database.caseDao().upsertCase(response.case.toEntity())
-            database.taskDao().upsertTask(response.task.toEntity(caseId))
+            val response = session.api.completeTask(taskId = taskId, request = payload)
+            requireStillActive(session.ownerAccountId)
+            database.caseDao().upsertCase(response.case.toEntity(session.ownerAccountId))
+            database.taskDao().upsertTask(response.task.toEntity(session.ownerAccountId, caseId))
             WriteResult(clientWriteId = clientWriteId, queued = false, message = response.message)
         }.getOrElse { throwable ->
+            requireStillActive(session.ownerAccountId)
             when {
                 throwable.isConflict() -> {
                     recordConflict(
+                        ownerAccountId = session.ownerAccountId,
                         clientWriteId = clientWriteId,
                         writeType = PendingWriteTypes.TASK_COMPLETE,
                         caseId = caseId,
@@ -498,6 +649,7 @@ class MedtrackRepository(
                 }
                 throwable.shouldQueue() -> {
                     queuePendingWrite(
+                        ownerAccountId = session.ownerAccountId,
                         clientWriteId = clientWriteId,
                         writeType = PendingWriteTypes.TASK_COMPLETE,
                         caseId = caseId,
@@ -505,8 +657,8 @@ class MedtrackRepository(
                         payloadJson = PendingWriteJson.encodeTaskComplete(payload),
                         lastError = throwable.message,
                     )
-                    database.taskDao().markTaskCompletedLocally(taskId, System.currentTimeMillis())
-                    onPendingWriteQueued()
+                    database.taskDao().markTaskCompletedLocally(session.ownerAccountId, taskId, System.currentTimeMillis())
+                    onPendingWriteQueued(session.ownerAccountId)
                     WriteResult(
                         clientWriteId = clientWriteId,
                         queued = true,
@@ -525,6 +677,7 @@ class MedtrackRepository(
         note: String?,
         attemptedAt: String? = null,
     ): WriteResult {
+        val session = activeSession()
         val clientWriteId = newClientWriteId("call")
         val payload = LogCallRequestDto(
             outcome = outcome,
@@ -534,13 +687,16 @@ class MedtrackRepository(
             clientWriteId = clientWriteId,
         )
         return runCatching {
-            val response = api.logCall(caseId = caseId, request = payload)
-            database.caseDao().upsertCase(response.case.toEntity())
+            val response = session.api.logCall(caseId = caseId, request = payload)
+            requireStillActive(session.ownerAccountId)
+            database.caseDao().upsertCase(response.case.toEntity(session.ownerAccountId))
             WriteResult(clientWriteId = clientWriteId, queued = false, message = response.message)
         }.getOrElse { throwable ->
+            requireStillActive(session.ownerAccountId)
             when {
                 throwable.isConflict() -> {
                     recordConflict(
+                        ownerAccountId = session.ownerAccountId,
                         clientWriteId = clientWriteId,
                         writeType = PendingWriteTypes.CALL_OUTCOME,
                         caseId = caseId,
@@ -556,6 +712,7 @@ class MedtrackRepository(
                 }
                 throwable.shouldQueue() -> {
                     queuePendingWrite(
+                        ownerAccountId = session.ownerAccountId,
                         clientWriteId = clientWriteId,
                         writeType = PendingWriteTypes.CALL_OUTCOME,
                         caseId = caseId,
@@ -563,7 +720,7 @@ class MedtrackRepository(
                         payloadJson = PendingWriteJson.encodeCallOutcome(payload),
                         lastError = throwable.message,
                     )
-                    onPendingWriteQueued()
+                    onPendingWriteQueued(session.ownerAccountId)
                     WriteResult(
                         clientWriteId = clientWriteId,
                         queued = true,
@@ -584,6 +741,7 @@ class MedtrackRepository(
         weightKg: String?,
         hemoglobin: String?,
     ): WriteResult {
+        val session = activeSession()
         val clientWriteId = newClientWriteId("vitals")
         val payload = VitalsRequestDto(
             clientWriteId = clientWriteId,
@@ -595,14 +753,17 @@ class MedtrackRepository(
             hemoglobin = hemoglobin,
         )
         return runCatching {
-            val response = api.addVitals(caseId = caseId, request = payload)
-            database.caseDao().upsertCase(response.case.toEntity())
-            database.vitalDao().upsertVital(response.vital.toEntity(caseId))
+            val response = session.api.addVitals(caseId = caseId, request = payload)
+            requireStillActive(session.ownerAccountId)
+            database.caseDao().upsertCase(response.case.toEntity(session.ownerAccountId))
+            database.vitalDao().upsertVital(response.vital.toEntity(session.ownerAccountId, caseId))
             WriteResult(clientWriteId = clientWriteId, queued = false, message = response.message)
         }.getOrElse { throwable ->
+            requireStillActive(session.ownerAccountId)
             when {
                 throwable.isConflict() -> {
                     recordConflict(
+                        ownerAccountId = session.ownerAccountId,
                         clientWriteId = clientWriteId,
                         writeType = PendingWriteTypes.VITALS_CREATE,
                         caseId = caseId,
@@ -618,6 +779,7 @@ class MedtrackRepository(
                 }
                 throwable.shouldQueue() -> {
                     queuePendingWrite(
+                        ownerAccountId = session.ownerAccountId,
                         clientWriteId = clientWriteId,
                         writeType = PendingWriteTypes.VITALS_CREATE,
                         caseId = caseId,
@@ -625,8 +787,8 @@ class MedtrackRepository(
                         payloadJson = PendingWriteJson.encodeVitals(payload),
                         lastError = throwable.message,
                     )
-                    database.vitalDao().upsertVital(payload.toPendingVitalEntity(caseId, clientWriteId))
-                    onPendingWriteQueued()
+                    database.vitalDao().upsertVital(payload.toPendingVitalEntity(session.ownerAccountId, caseId, clientWriteId))
+                    onPendingWriteQueued(session.ownerAccountId)
                     WriteResult(
                         clientWriteId = clientWriteId,
                         queued = true,
@@ -639,10 +801,12 @@ class MedtrackRepository(
     }
 
     suspend fun dismissSyncConflict(clientWriteId: String) {
-        database.syncConflictDao().deleteConflict(clientWriteId)
+        val ownerAccountId = activeSession().ownerAccountId
+        database.syncConflictDao().deleteConflict(ownerAccountId, clientWriteId)
     }
 
     private suspend fun recordConflict(
+        ownerAccountId: String,
         clientWriteId: String,
         writeType: String,
         caseId: String?,
@@ -651,6 +815,7 @@ class MedtrackRepository(
     ) {
         database.syncConflictDao().upsertConflict(
             SyncConflictEntity(
+                ownerAccountId = ownerAccountId,
                 clientWriteId = clientWriteId,
                 writeType = writeType,
                 caseId = caseId,
@@ -664,6 +829,7 @@ class MedtrackRepository(
     }
 
     private suspend fun queuePendingWrite(
+        ownerAccountId: String,
         clientWriteId: String,
         writeType: String,
         caseId: String?,
@@ -674,6 +840,7 @@ class MedtrackRepository(
         val now = System.currentTimeMillis()
         database.pendingWriteDao().upsertPendingWrite(
             PendingWriteEntity(
+                ownerAccountId = ownerAccountId,
                 clientWriteId = clientWriteId,
                 writeType = writeType,
                 caseId = caseId,
@@ -687,9 +854,10 @@ class MedtrackRepository(
         )
     }
 
-    private suspend fun markCacheFresh(cacheKey: String) {
+    private suspend fun markCacheFresh(ownerAccountId: String, cacheKey: String) {
         database.cacheMetadataDao().upsertMetadata(
             CacheMetadataEntity(
+                ownerAccountId = ownerAccountId,
                 cacheKey = cacheKey,
                 updatedAtMillis = System.currentTimeMillis(),
             ),
@@ -699,6 +867,7 @@ class MedtrackRepository(
 
 @OptIn(ExperimentalPagingApi::class)
 private class CaseRemoteMediator(
+    private val ownerAccountId: String,
     private val api: MedtrackApi,
     private val database: MedtrackDatabase,
     private val cacheKey: String,
@@ -709,6 +878,7 @@ private class CaseRemoteMediator(
     private val categories: List<String>,
     private val subcategories: List<String>,
     private val onStats: (InboxStats) -> Unit,
+    private val isAccountActive: () -> Boolean,
 ) : RemoteMediator<Int, CaseEntity>() {
     private var nextPage: Int? = 1
 
@@ -729,17 +899,19 @@ private class CaseRemoteMediator(
                 subcategories = subcategories.takeIf { it.isNotEmpty() },
                 page = page,
             )
+            check(isAccountActive()) { "The authenticated MEDTRACK account changed." }
             val updatedAtMillis = System.currentTimeMillis()
             val upcomingPage = response.nextPageAfter(page)
 
             database.withTransaction {
                 if (loadType == LoadType.REFRESH) {
-                    database.caseDao().clearCases()
+                    database.caseDao().clearCases(ownerAccountId)
                 }
-                database.caseDao().upsertCases(response.results.map { it.toEntity() })
-                database.caseStatsDao().upsertStats(response.stats.toEntity(cacheKey))
+                database.caseDao().upsertCases(response.results.map { it.toEntity(ownerAccountId) })
+                database.caseStatsDao().upsertStats(response.stats.toEntity(ownerAccountId, cacheKey))
                 database.cacheMetadataDao().upsertMetadata(
                     CacheMetadataEntity(
+                        ownerAccountId = ownerAccountId,
                         cacheKey = cacheKey,
                         updatedAtMillis = updatedAtMillis,
                     ),
@@ -952,8 +1124,13 @@ private fun conflictMessage(error: Throwable): String =
         "The server version was kept."
     }
 
-private fun VitalsRequestDto.toPendingVitalEntity(caseId: String, clientWriteId: String): VitalEntity =
+private fun VitalsRequestDto.toPendingVitalEntity(
+    ownerAccountId: String,
+    caseId: String,
+    clientWriteId: String,
+): VitalEntity =
     VitalEntity(
+        ownerAccountId = ownerAccountId,
         id = pendingVitalId(clientWriteId),
         caseId = caseId,
         recordedAt = currentUtcTimestamp(),
@@ -985,8 +1162,9 @@ private fun currentUtcTimestamp(): String =
 
 fun pendingVitalId(clientWriteId: String): String = "pending-$clientWriteId"
 
-private fun CaseSummaryDto.toEntity(): CaseEntity =
+private fun CaseSummaryDto.toEntity(ownerAccountId: String): CaseEntity =
     CaseEntity(
+        ownerAccountId = ownerAccountId,
         id = id.toString(),
         uhid = uhid,
         patientName = name,
@@ -1031,8 +1209,9 @@ private fun CaseEntity.toDomain(): PatientCase =
         highRiskReasons = highRiskReasons.lines().filter { it.isNotBlank() },
     )
 
-private fun TaskDto.toEntity(caseId: String): TaskEntity =
+private fun TaskDto.toEntity(ownerAccountId: String, caseId: String): TaskEntity =
     TaskEntity(
+        ownerAccountId = ownerAccountId,
         id = id.toString(),
         caseId = caseId,
         title = title,
@@ -1064,8 +1243,9 @@ private fun TaskEntity.toDomain(): PatientTask =
         notes = notes,
     )
 
-private fun VitalDto.toEntity(caseId: String): VitalEntity =
+private fun VitalDto.toEntity(ownerAccountId: String, caseId: String): VitalEntity =
     VitalEntity(
+        ownerAccountId = ownerAccountId,
         id = id.toString(),
         caseId = caseId,
         recordedAt = recordedAt,
@@ -1102,8 +1282,9 @@ private fun CaseStatsDto.toDomain(): InboxStats =
         red = red,
     )
 
-private fun CaseStatsDto.toEntity(cacheKey: String): CaseStatsEntity =
+private fun CaseStatsDto.toEntity(ownerAccountId: String, cacheKey: String): CaseStatsEntity =
     CaseStatsEntity(
+        ownerAccountId = ownerAccountId,
         cacheKey = cacheKey,
         today = today,
         upcoming = upcoming,
@@ -1132,8 +1313,9 @@ private fun VitalDto.summary(): String {
     return parts.joinToString(" | ")
 }
 
-private fun NotificationDto.toEntity(): NotificationEntity =
+private fun NotificationDto.toEntity(ownerAccountId: String): NotificationEntity =
     NotificationEntity(
+        ownerAccountId = ownerAccountId,
         id = id.toString(),
         type = type,
         title = title,
@@ -1178,8 +1360,9 @@ private val categoryOptionsJsonAdapter = Moshi.Builder()
     .build()
     .adapter(CategoriesResponseDto::class.java)
 
-private fun CategoriesResponseDto.toEntity(): CategoryOptionsEntity =
+private fun CategoriesResponseDto.toEntity(ownerAccountId: String): CategoryOptionsEntity =
     CategoryOptionsEntity(
+        ownerAccountId = ownerAccountId,
         id = "current",
         payloadJson = categoryOptionsJsonAdapter.toJson(this),
         updatedAtMillis = System.currentTimeMillis(),
@@ -1191,8 +1374,9 @@ private fun CategoryOptionsEntity.toDomain(): List<CategoryFilterOption> =
         ?.map { it.toFilterOption() }
         .orEmpty()
 
-private fun VitalsThresholdsDto.toEntity(): VitalsThresholdEntity =
+private fun VitalsThresholdsDto.toEntity(ownerAccountId: String): VitalsThresholdEntity =
     VitalsThresholdEntity(
+        ownerAccountId = ownerAccountId,
         id = "current",
         payloadJson = vitalsThresholdsJsonAdapter.toJson(this),
         updatedAtMillis = System.currentTimeMillis(),

@@ -22,19 +22,19 @@ class MedtrackDatabaseMigrationTest {
 
     @Test
     fun everySupportedSchemaVersionMigratesToCurrentSchema() {
-        (1..10).forEach { startVersion ->
-            val databaseName = "migration_${startVersion}_to_11"
+        (1..11).forEach { startVersion ->
+            val databaseName = "migration_${startVersion}_to_12"
             helper.createDatabase(databaseName, startVersion).close()
 
             helper.runMigrationsAndValidate(
                 databaseName,
-                11,
+                12,
                 true,
                 *MedtrackDatabase.ALL_MIGRATIONS,
             ).use { database ->
                 database.query("PRAGMA user_version").use { cursor ->
                     assertTrue(cursor.moveToFirst())
-                    assertEquals(11, cursor.getInt(0))
+                    assertEquals(12, cursor.getInt(0))
                 }
             }
         }
@@ -56,7 +56,7 @@ class MedtrackDatabaseMigrationTest {
 
         helper.runMigrationsAndValidate(
             databaseName,
-            11,
+            12,
             true,
             *MedtrackDatabase.ALL_MIGRATIONS,
         ).use { database ->
@@ -85,6 +85,38 @@ class MedtrackDatabaseMigrationTest {
                 assertEquals("account-a", cursor.getString(0))
                 assertTrue(cursor.moveToNext())
                 assertEquals("account-b", cursor.getString(0))
+            }
+        }
+    }
+
+    @Test
+    fun lifecycleUpgradePreservesV11OwnedRowsButRequiresFreshActivation() {
+        val databaseName = "migration_11_to_12_owned_rows"
+        helper.createDatabase(databaseName, 11).use { database ->
+            database.execSQL(
+                """
+                INSERT INTO pending_writes (
+                    ownerAccountId, clientWriteId, writeType, caseId, taskId,
+                    payloadJson, retryCount, lastError, createdAtMillis, updatedAtMillis
+                ) VALUES ('account-a', 'owned-write', 'task_complete', '42', '7', '{}', 0, NULL, 2, 2)
+                """.trimIndent(),
+            )
+        }
+
+        helper.runMigrationsAndValidate(
+            databaseName,
+            12,
+            true,
+            *MedtrackDatabase.ALL_MIGRATIONS,
+        ).use { database ->
+            database.query("SELECT ownerAccountId, clientWriteId FROM pending_writes").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("account-a", cursor.getString(0))
+                assertEquals("owned-write", cursor.getString(1))
+            }
+            database.query("SELECT COUNT(*) FROM account_lifecycle").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(0, cursor.getInt(0))
             }
         }
     }

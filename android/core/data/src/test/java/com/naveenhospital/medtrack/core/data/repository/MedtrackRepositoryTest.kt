@@ -3,6 +3,9 @@ package com.naveenhospital.medtrack.core.data.repository
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.naveenhospital.medtrack.core.data.local.MedtrackDatabase
+import com.naveenhospital.medtrack.core.data.local.CacheMetadataEntity
+import com.naveenhospital.medtrack.core.data.local.PendingWriteEntity
+import com.naveenhospital.medtrack.core.data.local.SyncConflictEntity
 import com.naveenhospital.medtrack.core.data.local.NotificationEntity
 import com.naveenhospital.medtrack.core.data.local.PushTokenEntity
 import com.naveenhospital.medtrack.core.data.local.TaskEntity
@@ -36,6 +39,8 @@ import com.naveenhospital.medtrack.core.network.model.VitalsThresholdsDto
 import com.naveenhospital.medtrack.core.network.model.VitalsWriteResponseDto
 import java.io.IOException
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.ResponseBody.Companion.toResponseBody
@@ -444,6 +449,78 @@ class MedtrackRepositoryTest {
         assertEquals(listOf("Account B PHI"), repository.notifications.first().map { it.title })
     }
 
+    @Test
+    fun staleNetworkCommitCannotResurrectPurgedOwnerAfterSwitch() = runTest {
+        val commitReached = CompletableDeferred<Unit>()
+        val allowCommit = CompletableDeferred<Unit>()
+        val response = CaseListResponseDto(
+            count = 0,
+            next = null,
+            previous = null,
+            stats = CaseStatsDto(today = 1, upcoming = 0, overdue = 0, awaiting = 0, red = 0),
+            results = emptyList(),
+        )
+        val repository = MedtrackRepository(
+            apiForAccount = { FakeMedtrackApi(caseListResponse = response) },
+            database = database,
+            beforeLocalCommit = { accountId ->
+                if (accountId == "account-a") {
+                    commitReached.complete(Unit)
+                    allowCommit.await()
+                }
+            },
+        )
+        repository.activateAccount("account-a")
+        database.pendingWriteDao().upsertPendingWrite(
+            PendingWriteEntity(
+                ownerAccountId = "account-a",
+                clientWriteId = "old-write",
+                writeType = PendingWriteTypes.TASK_COMPLETE,
+                caseId = "42",
+                taskId = "7",
+                payloadJson = "{}",
+                retryCount = 0,
+                lastError = null,
+                createdAtMillis = 1L,
+                updatedAtMillis = 1L,
+            ),
+        )
+        database.syncConflictDao().upsertConflict(
+            SyncConflictEntity(
+                ownerAccountId = "account-a",
+                clientWriteId = "old-conflict",
+                writeType = PendingWriteTypes.TASK_COMPLETE,
+                caseId = "42",
+                taskId = "7",
+                message = "old conflict",
+                serverPayloadJson = null,
+                createdAtMillis = 1L,
+            ),
+        )
+        database.pushTokenDao().upsertToken(PushTokenEntity("account-a", "old-token", "device", 0L))
+        database.notificationDao().upsertNotifications(listOf(notification("account-a", "Old PHI")))
+        database.cacheMetadataDao().upsertMetadata(CacheMetadataEntity("account-a", "seed", 1L))
+
+        val staleRefresh = async { runCatching { repository.refreshCases() } }
+        commitReached.await()
+        repository.deactivateAccount()
+        repository.wipeAccountData("account-a")
+        repository.activateAccount("account-b")
+        allowCommit.complete(Unit)
+
+        assertTrue(staleRefresh.await().isFailure)
+        assertTrue(database.pendingWriteDao().pendingWrites("account-a").isEmpty())
+        assertTrue(database.syncConflictDao().observeConflicts("account-a").first().isEmpty())
+        assertNull(database.pushTokenDao().latestToken("account-a"))
+        assertTrue(database.notificationDao().observeNotifications("account-a").first().isEmpty())
+        assertNull(database.cacheMetadataDao().updatedAtMillis("account-a", "seed"))
+        assertNull(database.caseStatsDao().statsForKey("account-a", caseListCacheKey("today", null, null, null, emptyList(), emptyList())))
+        assertTrue(repository.cases.first().isEmpty())
+        assertTrue(database.pendingWriteDao().pendingWrites("account-b").isEmpty())
+        assertTrue(database.syncConflictDao().observeConflicts("account-b").first().isEmpty())
+        assertNull(database.pushTokenDao().latestToken("account-b"))
+    }
+
     private fun notification(ownerAccountId: String, title: String): NotificationEntity =
         NotificationEntity(
             ownerAccountId = ownerAccountId,
@@ -457,7 +534,7 @@ class MedtrackRepositoryTest {
             isRead = false,
         )
 
-    private fun repository(
+    private suspend fun repository(
         api: MedtrackApi,
         database: MedtrackDatabase = this.database,
         onPendingWriteQueued: (String) -> Unit = {},

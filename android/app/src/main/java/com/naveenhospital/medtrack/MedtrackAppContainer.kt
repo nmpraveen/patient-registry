@@ -2,6 +2,8 @@ package com.naveenhospital.medtrack
 
 import android.content.Context
 import com.naveenhospital.medtrack.core.data.auth.AuthRepository
+import com.naveenhospital.medtrack.core.data.auth.AccountSessionInvalidator
+import com.naveenhospital.medtrack.core.data.auth.AccountVisibilityInvalidations
 import com.naveenhospital.medtrack.core.data.auth.LockStore
 import com.naveenhospital.medtrack.core.data.auth.TokenStore
 import com.naveenhospital.medtrack.core.data.local.MedtrackDatabase
@@ -34,6 +36,27 @@ class MedtrackAppContainer @Inject constructor(@ApplicationContext context: Cont
         },
     )
 
+    private val accountInvalidator = AccountSessionInvalidator(
+        context = appContext,
+        database = database,
+        tokenStore = tokenStore,
+        lockStore = lockStore,
+    )
+
+    private val visibilityInvalidationListener: (String) -> Unit = { accountId ->
+        if (medtrackRepository.activeAccountId() == accountId) {
+            medtrackRepository.deactivateAccount()
+        }
+        if (lockStore.activeAccountId() == accountId) {
+            lockStore.deactivate()
+        }
+        accountApis.remove(accountId)
+    }
+
+    init {
+        AccountVisibilityInvalidations.register(visibilityInvalidationListener)
+    }
+
     val authRepository = AuthRepository(
         anonymousApi = MedtrackNetwork.create(apiBaseUrl),
         verificationApiForAccessToken = { candidateAccessToken ->
@@ -47,10 +70,7 @@ class MedtrackAppContainer @Inject constructor(@ApplicationContext context: Cont
         onBeforeAccountCommit = { previousAccountId, newAccountId ->
             medtrackRepository.deactivateAccount()
             if (previousAccountId != null && previousAccountId != newAccountId) {
-                MedtrackSyncWorker.cancelForAccount(appContext, previousAccountId)
-                medtrackRepository.wipeAccountData(previousAccountId)
-                lockStore.clearAccount(previousAccountId)
-                accountApis.remove(previousAccountId)
+                accountInvalidator.invalidate(previousAccountId)
             }
         },
         onAccountCommitted = { accountId ->
@@ -58,15 +78,7 @@ class MedtrackAppContainer @Inject constructor(@ApplicationContext context: Cont
             medtrackRepository.activateAccount(accountId)
         },
         onSessionCleared = { accountId ->
-            medtrackRepository.deactivateAccount()
-            if (accountId != null) {
-                MedtrackSyncWorker.cancelForAccount(appContext, accountId)
-                medtrackRepository.wipeAccountData(accountId)
-                lockStore.clearAccount(accountId)
-                accountApis.remove(accountId)
-            } else {
-                lockStore.deactivate()
-            }
+            accountInvalidator.invalidate(accountId)
         },
     )
 
@@ -86,6 +98,9 @@ class MedtrackAppContainer @Inject constructor(@ApplicationContext context: Cont
                 baseUrl = apiBaseUrl,
                 accessTokenProvider = { tokenStore.accessTokenFor(accountId) },
                 refreshTokenProvider = { tokenStore.refreshTokenFor(accountId) },
+                expectedAccountIdProvider = {
+                    accountId.takeIf { tokenStore.accountId() == accountId }
+                },
                 sessionUpdater = { access, refresh ->
                     tokenStore.updateSessionForAccount(accountId, access, refresh)
                 },

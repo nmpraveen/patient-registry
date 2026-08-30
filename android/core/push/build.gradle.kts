@@ -28,5 +28,10 @@ dependencies {
     implementation(libs.androidx.room.runtime)
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.messaging)
+    testImplementation(libs.androidx.room.testing)
+    testImplementation(libs.androidx.test.core)
+    testImplementation(libs.coroutines.test)
     testImplementation(libs.junit)
+    testImplementation(libs.retrofit.core)
+    testImplementation(libs.robolectric)
 }

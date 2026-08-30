@@ -8,6 +8,15 @@ import androidx.paging.PagingSource
 import kotlinx.coroutines.flow.Flow
 
 @Dao
+interface AccountLifecycleDao {
+    @Query("SELECT * FROM account_lifecycle WHERE ownerAccountId = :ownerAccountId LIMIT 1")
+    suspend fun lifecycle(ownerAccountId: String): AccountLifecycleEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertLifecycle(lifecycle: AccountLifecycleEntity)
+}
+
+@Dao
 interface CaseDao {
     @Query("SELECT * FROM cases WHERE ownerAccountId = :ownerAccountId ORDER BY nextTaskDueDate IS NULL, nextTaskDueDate ASC, patientName ASC")
     fun observeCases(ownerAccountId: String): Flow<List<CaseEntity>>

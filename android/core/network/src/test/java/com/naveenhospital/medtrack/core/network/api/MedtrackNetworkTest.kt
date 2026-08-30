@@ -7,6 +7,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
 import org.junit.Before
 import org.junit.Test
 
@@ -33,10 +34,12 @@ class MedtrackNetworkTest {
             baseUrl = server.url("/").toString(),
             accessTokenProvider = { accessToken },
             refreshTokenProvider = { refreshToken },
+            expectedAccountIdProvider = { "1" },
             sessionUpdater = { access, refresh ->
                 accessToken = access
                 refreshToken = refresh.orEmpty()
                 updatedSessions += access to refresh
+                true
             },
         )
         server.enqueue(MockResponse().setResponseCode(401))
@@ -44,6 +47,11 @@ class MedtrackNetworkTest {
             MockResponse()
                 .setHeader("Content-Type", "application/json")
                 .setBody("""{"access":"new-access","refresh":"new-refresh"}"""),
+        )
+        server.enqueue(
+            MockResponse()
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"id":1,"username":"admin","display_name":"Admin","roles":[],"capabilities":{}}"""),
         )
         server.enqueue(
             MockResponse()
@@ -65,8 +73,12 @@ class MedtrackNetworkTest {
         assertEquals("""{"refresh":"refresh-token"}""", refresh.body.readUtf8())
 
         val retry = server.takeRequest()
-        assertEquals("/api/metadata/categories/", retry.path)
+        assertEquals("/api/me/", retry.path)
         assertEquals("Bearer new-access", retry.getHeader("Authorization"))
+
+        val originalRetry = server.takeRequest()
+        assertEquals("/api/metadata/categories/", originalRetry.path)
+        assertEquals("Bearer new-access", originalRetry.getHeader("Authorization"))
     }
 
     @Test
@@ -87,5 +99,59 @@ class MedtrackNetworkTest {
         assertEquals(1, server.requestCount)
         val refresh = server.takeRequest()
         assertEquals("/api/auth/token/refresh/", refresh.path)
+    }
+
+    @Test
+    fun automaticRefreshDoesNotRetryWhenVerifiedIdentityMismatchesExpectedAccount() = runBlocking {
+        var committed = false
+        val api = MedtrackNetwork.create(
+            baseUrl = server.url("/").toString(),
+            accessTokenProvider = { "old-access" },
+            refreshTokenProvider = { "refresh-token" },
+            expectedAccountIdProvider = { "1" },
+            sessionUpdater = { _, _ -> committed = true; true },
+        )
+        server.enqueue(MockResponse().setResponseCode(401))
+        server.enqueue(
+            MockResponse()
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"access":"candidate","refresh":"rotated"}"""),
+        )
+        server.enqueue(
+            MockResponse()
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"id":2,"username":"other","display_name":"Other","roles":[],"capabilities":{}}"""),
+        )
+
+        assertTrue(runCatching { api.categories() }.isFailure)
+        assertFalse(committed)
+        assertEquals(3, server.requestCount)
+    }
+
+    @Test
+    fun automaticRefreshDoesNotRetryWhenAccountBoundCommitFails() = runBlocking {
+        var commitCalls = 0
+        val api = MedtrackNetwork.create(
+            baseUrl = server.url("/").toString(),
+            accessTokenProvider = { "old-access" },
+            refreshTokenProvider = { "refresh-token" },
+            expectedAccountIdProvider = { "1" },
+            sessionUpdater = { _, _ -> commitCalls += 1; false },
+        )
+        server.enqueue(MockResponse().setResponseCode(401))
+        server.enqueue(
+            MockResponse()
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"access":"candidate","refresh":"rotated"}"""),
+        )
+        server.enqueue(
+            MockResponse()
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"id":1,"username":"admin","display_name":"Admin","roles":[],"capabilities":{}}"""),
+        )
+
+        assertTrue(runCatching { api.categories() }.isFailure)
+        assertEquals(1, commitCalls)
+        assertEquals(3, server.requestCount)
     }
 }

@@ -107,6 +107,7 @@ import com.naveenhospital.medtrack.core.designsystem.MedtrackPage
 import com.naveenhospital.medtrack.core.designsystem.MedtrackSectionTitle
 import com.naveenhospital.medtrack.core.data.sync.PendingWriteTypes
 import com.naveenhospital.medtrack.core.data.auth.LockVerificationResult
+import com.naveenhospital.medtrack.core.data.auth.SessionRestoreResult
 import com.naveenhospital.medtrack.core.domain.model.CategoryFilterOption
 import com.naveenhospital.medtrack.core.domain.model.PatientCase
 import com.naveenhospital.medtrack.core.domain.model.CaseCategory
@@ -480,19 +481,28 @@ fun MedtrackApp(
                             }
                             scope.launch {
                                 if (lockSetupRequiresSessionRestore) {
-                                    val restoredProfile = container.authRepository.restoreSession()
-                                    if (restoredProfile == null) {
-                                        currentUserProfile = null
-                                        currentUserDisplayName = null
-                                        lockSetupRequiresSessionRestore = false
-                                        snackbarHostState.showSnackbar("Session expired. Please sign in again.")
-                                        navController.navigate(Routes.LOGIN) {
-                                            popUpTo(Routes.LOCK_SETUP) { inclusive = true }
+                                    when (val restored = container.authRepository.restoreSession()) {
+                                        is SessionRestoreResult.Verified -> {
+                                            setCurrentUser(restored.profile)
+                                            lockSetupRequiresSessionRestore = false
                                         }
-                                        return@launch
+                                        is SessionRestoreResult.Retryable -> {
+                                            snackbarHostState.showSnackbar(
+                                                "Unable to verify the session. Check the connection and retry.",
+                                            )
+                                            return@launch
+                                        }
+                                        SessionRestoreResult.NoSession -> {
+                                            currentUserProfile = null
+                                            currentUserDisplayName = null
+                                            lockSetupRequiresSessionRestore = false
+                                            snackbarHostState.showSnackbar("Session expired. Please sign in again.")
+                                            navController.navigate(Routes.LOGIN) {
+                                                popUpTo(Routes.LOCK_SETUP) { inclusive = true }
+                                            }
+                                            return@launch
+                                        }
                                     }
-                                    setCurrentUser(restoredProfile)
-                                    lockSetupRequiresSessionRestore = false
                                 }
                                 onAuthenticated()
                                 navController.navigate(Routes.HOME) {
@@ -527,19 +537,23 @@ fun MedtrackApp(
                                 }
                                 LockVerificationResult.Success -> Unit
                             }
-                            val restoredProfile = container.authRepository.restoreSession()
-                            return@UnlockScreen if (restoredProfile != null) {
-                                setCurrentUser(restoredProfile)
-                                onAuthenticated()
-                                navController.navigate(Routes.HOME) {
-                                    popUpTo(Routes.UNLOCK) { inclusive = true }
+                            return@UnlockScreen when (val restored = container.authRepository.restoreSession()) {
+                                is SessionRestoreResult.Verified -> {
+                                    setCurrentUser(restored.profile)
+                                    onAuthenticated()
+                                    navController.navigate(Routes.HOME) {
+                                        popUpTo(Routes.UNLOCK) { inclusive = true }
+                                    }
+                                    null
                                 }
-                                null
-                            } else {
-                                navController.navigate(Routes.LOGIN) {
-                                    popUpTo(Routes.UNLOCK) { inclusive = true }
+                                is SessionRestoreResult.Retryable ->
+                                    "Unable to verify the session. Check the connection and retry."
+                                SessionRestoreResult.NoSession -> {
+                                    navController.navigate(Routes.LOGIN) {
+                                        popUpTo(Routes.UNLOCK) { inclusive = true }
+                                    }
+                                    "Session expired. Please sign in again."
                                 }
-                                "Session expired. Please sign in again."
                             }
                         },
                         onBiometricUnlock = {
@@ -548,16 +562,22 @@ fun MedtrackApp(
                                 context = context,
                                 onSuccess = {
                                     scope.launch {
-                                        val restoredProfile = container.authRepository.restoreSession()
-                                        if (restoredProfile != null) {
-                                            setCurrentUser(restoredProfile)
-                                            onAuthenticated()
-                                            navController.navigate(Routes.HOME) {
-                                                popUpTo(Routes.UNLOCK) { inclusive = true }
+                                        when (val restored = container.authRepository.restoreSession()) {
+                                            is SessionRestoreResult.Verified -> {
+                                                setCurrentUser(restored.profile)
+                                                onAuthenticated()
+                                                navController.navigate(Routes.HOME) {
+                                                    popUpTo(Routes.UNLOCK) { inclusive = true }
+                                                }
                                             }
-                                        } else {
-                                            navController.navigate(Routes.LOGIN) {
-                                                popUpTo(Routes.UNLOCK) { inclusive = true }
+                                            is SessionRestoreResult.Retryable -> {
+                                                biometricMessage =
+                                                    "Unable to verify the session. Check the connection and retry."
+                                            }
+                                            SessionRestoreResult.NoSession -> {
+                                                navController.navigate(Routes.LOGIN) {
+                                                    popUpTo(Routes.UNLOCK) { inclusive = true }
+                                                }
                                             }
                                         }
                                     }

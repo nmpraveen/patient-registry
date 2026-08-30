@@ -8,6 +8,10 @@ import android.os.Build
 import com.google.firebase.FirebaseApp
 import com.google.firebase.messaging.FirebaseMessaging
 import com.naveenhospital.medtrack.core.data.auth.TokenStore
+import com.naveenhospital.medtrack.core.data.auth.AccountSessionInvalidator
+import com.naveenhospital.medtrack.core.data.auth.AccountSessionRefreshResult
+import com.naveenhospital.medtrack.core.data.auth.refreshAndVerifyAccountSession
+import com.naveenhospital.medtrack.core.data.auth.isDefinitiveAccountAuthFailure
 import com.naveenhospital.medtrack.core.data.local.MedtrackDatabase
 import com.naveenhospital.medtrack.core.data.local.PushTokenEntity
 import com.naveenhospital.medtrack.core.network.api.MedtrackNetwork
@@ -69,53 +73,44 @@ object MedtrackPush {
         val baseUrl = apiBaseUrl(appContext) ?: return@withContext false
         val tokenStore = TokenStore(appContext)
         val ownerAccountId = tokenStore.accountId() ?: return@withContext false
-        val refreshToken = tokenStore.refreshTokenFor(ownerAccountId) ?: return@withContext false
         val database = MedtrackDatabase.build(appContext)
-        database.pushTokenDao().upsertToken(
-            PushTokenEntity(
-                ownerAccountId = ownerAccountId,
-                token = token,
-                deviceLabel = deviceLabel,
-                syncedAtMillis = 0L,
-            ),
-        )
+        val invalidator = AccountSessionInvalidator(appContext)
         val api = MedtrackNetwork.create(
             baseUrl = baseUrl,
             accessTokenProvider = { tokenStore.accessTokenFor(ownerAccountId) },
             refreshTokenProvider = { tokenStore.refreshTokenFor(ownerAccountId) },
+            expectedAccountIdProvider = {
+                ownerAccountId.takeIf { tokenStore.accountId() == ownerAccountId }
+            },
             sessionUpdater = { access, refresh ->
                 tokenStore.updateSessionForAccount(ownerAccountId, access, refresh)
             },
         )
-        if (tokenStore.accessTokenFor(ownerAccountId).isNullOrBlank()) {
-            val session = runCatching {
+        registerPushTokenForAccountSession(
+            ownerAccountId = ownerAccountId,
+            token = token,
+            deviceLabel = deviceLabel,
+            tokenStore = tokenStore,
+            database = database,
+            invalidateIfCurrent = invalidator::invalidateIfCurrent,
+            refreshSession = { refreshToken ->
                 MedtrackNetwork.create(baseUrl).refresh(RefreshTokenRequestDto(refresh = refreshToken))
-            }
-                .getOrElse { return@withContext false }
-            val profile = runCatching {
+            },
+            verifyProfile = { accessToken ->
                 MedtrackNetwork.create(
                     baseUrl = baseUrl,
-                    accessTokenProvider = { session.access },
+                    accessTokenProvider = { accessToken },
                 ).me()
-            }.getOrElse { return@withContext false }
-            if (profile.id.toString() != ownerAccountId || tokenStore.accountId() != ownerAccountId) {
-                return@withContext false
-            }
-            if (!tokenStore.updateSessionForAccount(ownerAccountId, session.access, session.refresh)) {
-                return@withContext false
-            }
-        }
-        runCatching {
-            check(tokenStore.accountId() == ownerAccountId) { "Authenticated account changed." }
-            api.registerPushToken(
-                RegisterPushTokenRequestDto(
-                    token = token,
-                    deviceLabel = deviceLabel,
-                ),
-            )
-            check(tokenStore.accountId() == ownerAccountId) { "Authenticated account changed." }
-            database.pushTokenDao().markTokenSynced(ownerAccountId, token, System.currentTimeMillis())
-        }.isSuccess
+            },
+            registerRemote = {
+                api.registerPushToken(
+                    RegisterPushTokenRequestDto(
+                        token = token,
+                        deviceLabel = deviceLabel,
+                    ),
+                )
+            },
+        )
     }
 
     fun channelForType(type: String?): String =
@@ -132,4 +127,68 @@ object MedtrackPush {
             .metaData
             ?.getString(META_API_BASE_URL)
             ?.takeIf { it.isNotBlank() }
+}
+
+internal suspend fun registerPushTokenForAccountSession(
+    ownerAccountId: String,
+    token: String,
+    deviceLabel: String,
+    tokenStore: TokenStore,
+    database: MedtrackDatabase,
+    invalidateIfCurrent: suspend (String) -> Boolean,
+    refreshSession: suspend (String) -> com.naveenhospital.medtrack.core.network.model.AuthSessionDto,
+    verifyProfile: suspend (String) -> com.naveenhospital.medtrack.core.network.model.UserProfileDto,
+    registerRemote: suspend () -> Unit,
+): Boolean {
+    if (tokenStore.accountId() != ownerAccountId) return false
+    val accountGeneration = database.activeAccountGeneration(ownerAccountId) ?: return false
+    return try {
+        database.commitForAccount(
+            ownerAccountId,
+            accountGeneration,
+            { tokenStore.accountId() == ownerAccountId },
+        ) {
+            database.pushTokenDao().upsertToken(
+                PushTokenEntity(
+                    ownerAccountId = ownerAccountId,
+                    token = token,
+                    deviceLabel = deviceLabel,
+                    syncedAtMillis = 0L,
+                ),
+            )
+        }
+        if (tokenStore.accessTokenFor(ownerAccountId).isNullOrBlank()) {
+            when (
+                refreshAndVerifyAccountSession(
+                    ownerAccountId = ownerAccountId,
+                    tokenStore = tokenStore,
+                    refreshSession = refreshSession,
+                    verifyProfile = verifyProfile,
+                )
+            ) {
+                AccountSessionRefreshResult.Verified -> Unit
+                AccountSessionRefreshResult.StaleAccount -> return false
+                is AccountSessionRefreshResult.Retryable -> return false
+                is AccountSessionRefreshResult.DefinitiveFailure -> {
+                    invalidateIfCurrent(ownerAccountId)
+                    return false
+                }
+            }
+        }
+        if (tokenStore.accountId() != ownerAccountId) return false
+        registerRemote()
+        database.commitForAccount(
+            ownerAccountId,
+            accountGeneration,
+            { tokenStore.accountId() == ownerAccountId },
+        ) {
+            database.pushTokenDao().markTokenSynced(ownerAccountId, token, System.currentTimeMillis())
+        }
+        true
+    } catch (failure: Throwable) {
+        if (failure.isDefinitiveAccountAuthFailure()) {
+            invalidateIfCurrent(ownerAccountId)
+        }
+        false
+    }
 }

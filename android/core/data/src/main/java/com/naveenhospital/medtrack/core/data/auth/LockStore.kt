@@ -52,14 +52,15 @@ class LockStore internal constructor(
         require(pattern.size >= MIN_PATTERN_LENGTH) { "Use at least $MIN_PATTERN_LENGTH dots." }
         val prefix = requireActivePrefix()
         val salt = ByteArray(SALT_BYTES).also { secureRandom.nextBytes(it) }
-        check(
+        requireCommitted(
             prefs.edit()
                 .putString(prefix + KEY_PATTERN_SALT, salt.encode())
                 .putString(prefix + KEY_PATTERN_HASH, derivePattern(pattern, salt).encode())
                 .putInt(prefix + KEY_FAILED_ATTEMPTS, 0)
                 .putLong(prefix + KEY_LOCKOUT_UNTIL, 0L)
                 .commit(),
-        ) { "Unable to persist the MEDTRACK lock." }
+            "Unable to persist the MEDTRACK lock.",
+        )
     }
 
     fun verifyPattern(pattern: List<Int>): LockVerificationResult {
@@ -74,10 +75,14 @@ class LockStore internal constructor(
         val expected = prefs.getString(prefix + KEY_PATTERN_HASH, null)?.decode()
             ?: return LockVerificationResult.ReauthenticationRequired
         if (MessageDigest.isEqual(derivePattern(pattern, salt), expected)) {
-            prefs.edit()
-                .putInt(prefix + KEY_FAILED_ATTEMPTS, 0)
-                .putLong(prefix + KEY_LOCKOUT_UNTIL, 0L)
-                .commit()
+            if (!prefs.edit()
+                    .putInt(prefix + KEY_FAILED_ATTEMPTS, 0)
+                    .putLong(prefix + KEY_LOCKOUT_UNTIL, 0L)
+                    .commit()
+            ) {
+                activeAccountId = null
+                return LockVerificationResult.ReauthenticationRequired
+            }
             return LockVerificationResult.Success
         }
 
@@ -87,10 +92,14 @@ class LockStore internal constructor(
             return LockVerificationResult.ReauthenticationRequired
         }
         val delayMillis = throttleDelayMillis(failedAttempts)
-        prefs.edit()
-            .putInt(prefix + KEY_FAILED_ATTEMPTS, failedAttempts)
-            .putLong(prefix + KEY_LOCKOUT_UNTIL, if (delayMillis > 0) now + delayMillis else 0L)
-            .commit()
+        if (!prefs.edit()
+                .putInt(prefix + KEY_FAILED_ATTEMPTS, failedAttempts)
+                .putLong(prefix + KEY_LOCKOUT_UNTIL, if (delayMillis > 0) now + delayMillis else 0L)
+                .commit()
+        ) {
+            activeAccountId = null
+            return LockVerificationResult.ReauthenticationRequired
+        }
         return if (delayMillis > 0) {
             LockVerificationResult.Throttled(delayMillis)
         } else {
@@ -100,9 +109,10 @@ class LockStore internal constructor(
 
     fun setBiometricEnabled(enabled: Boolean) {
         val prefix = requireActivePrefix()
-        check(prefs.edit().putBoolean(prefix + KEY_BIOMETRIC_ENABLED, enabled).commit()) {
-            "Unable to persist biometric lock state."
-        }
+        requireCommitted(
+            prefs.edit().putBoolean(prefix + KEY_BIOMETRIC_ENABLED, enabled).commit(),
+            "Unable to persist biometric lock state.",
+        )
     }
 
     fun clearActiveAccount() {
@@ -114,12 +124,19 @@ class LockStore internal constructor(
         val prefix = accountPrefix(accountId)
         val editor = prefs.edit()
         prefs.all.keys.filter { it.startsWith(prefix) }.forEach(editor::remove)
-        editor.commit()
         if (activeAccountId == accountId) activeAccountId = null
+        check(editor.commit()) { "Unable to clear MEDTRACK lock state." }
     }
 
     fun deactivate() {
         activeAccountId = null
+    }
+
+    private fun requireCommitted(committed: Boolean, message: String) {
+        if (!committed) {
+            activeAccountId = null
+            throw IllegalStateException(message)
+        }
     }
 
     private fun derivePattern(pattern: List<Int>, salt: ByteArray): ByteArray {
@@ -143,12 +160,14 @@ class LockStore internal constructor(
 
     private fun discardLegacyUnownedLock() {
         if (prefs.getBoolean(KEY_OWNERSHIP_MIGRATED, false)) return
-        prefs.edit()
-            .remove(KEY_PATTERN_SALT)
-            .remove(KEY_PATTERN_HASH)
-            .remove(KEY_BIOMETRIC_ENABLED)
-            .putBoolean(KEY_OWNERSHIP_MIGRATED, true)
-            .commit()
+        check(
+            prefs.edit()
+                .remove(KEY_PATTERN_SALT)
+                .remove(KEY_PATTERN_HASH)
+                .remove(KEY_BIOMETRIC_ENABLED)
+                .putBoolean(KEY_OWNERSHIP_MIGRATED, true)
+                .commit(),
+        ) { "Unable to migrate MEDTRACK lock ownership." }
     }
 
     private fun throttleDelayMillis(failedAttempts: Int): Long {

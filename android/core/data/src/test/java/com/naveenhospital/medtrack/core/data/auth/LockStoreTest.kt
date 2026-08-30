@@ -119,6 +119,28 @@ class LockStoreTest {
         assertFalse(lockStore.hasAnyLock())
     }
 
+    @Test
+    fun failedPreferenceCommitCannotUnlockOrCreateLockState() {
+        prefs.edit().putBoolean("owner_lock_migration_complete", true).commit()
+        val failingStore = LockStore(failingCommitPreferences(prefs)).also { it.activateAccount(ACCOUNT_ID) }
+        assertThrows(IllegalStateException::class.java) {
+            failingStore.savePattern(listOf(0, 1, 4, 8))
+        }
+        assertFalse(failingStore.hasPattern())
+        assertEquals(null, failingStore.activeAccountId())
+
+        val goodStore = LockStore(prefs).also { it.activateAccount(ACCOUNT_ID) }
+        goodStore.savePattern(listOf(0, 1, 4, 8))
+        val failingVerificationStore = LockStore(failingCommitPreferences(prefs)).also {
+            it.activateAccount(ACCOUNT_ID)
+        }
+        assertEquals(
+            LockVerificationResult.ReauthenticationRequired,
+            failingVerificationStore.verifyPattern(listOf(0, 1, 4, 8)),
+        )
+        assertEquals(null, failingVerificationStore.activeAccountId())
+    }
+
     private companion object {
         const val ACCOUNT_ID = "1"
     }

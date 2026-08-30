@@ -38,6 +38,12 @@
 - Published a warning-free complete OpenAPI contract, made case PATCH preserve all omitted fields including `surgery_done`, and returned a complete editable case snapshot for safe client partial edits.
 - Added bounded mobile notification retention, terminal-task purge/reopen behavior, PHI-safe patient-search audit events, sanitized FCM failure categories, and push-token revocation on auth-version security changes.
 
+## 2026.08.30.00.17
+- Preserved verified account-owned Android cache, outbox, refresh credential, and local lock on retryable transport, timeout, and server failures while retaining destructive cleanup for definitive authentication or identity failure.
+- Unified app, WorkManager, and push revocation behind an idempotent compare-and-invalidate boundary that awaits account-work cancellation, deactivates live visibility, revokes the persistent Room account generation, purges owner rows and lock state, then clears only the captured account credentials.
+- Required every repository, paging, worker, cache, outbox, conflict, and push-token write to verify the active account generation inside its Room transaction; automatic JWT refresh now verifies isolated `/me` identity and a Boolean account-bound commit before retrying a clinical request.
+- Added deterministic stale-write/account-switch, captured-worker/new-account, worker and push 401/403/mismatch cleanup, retryable-state-retention, failed-preference-commit, and schema 1-11 to 12 migration coverage.
+
 ## 2026.08.30.00.16
 - Bound every Android Room cache, outbox, conflict, push-token, API client, local lock, and WorkManager identity to a verified server account ID, with fail-closed login/restore and safe logout/account-switch cleanup.
 - Migrated Android local storage to an Android Keystore-protected SQLCipher database; schema 11 deliberately discards unowned schema 1-10 cache/outbox rows and resyncs only after `/me` verifies the account.

@@ -49,12 +49,16 @@ class AuthRepository(
             verifiedProfile?.takeIf { it.id.toString() == accountId } ?: run {
                 val profile = runCatching { apiForAccount(accountId).me() }
                     .getOrElse { failure ->
-                        clearSessionLocked(accountId)
+                        if (failure.isDefinitiveAccountAuthFailure()) {
+                            clearSessionLocked(accountId)
+                        }
                         throw failure
                     }
                 if (profile.id.toString() != accountId) {
                     clearSessionLocked(accountId)
-                    error("Authenticated account identity changed unexpectedly.")
+                    throw DefinitiveAccountIdentityException(
+                        "Authenticated account identity changed unexpectedly.",
+                    )
                 }
                 verifiedProfile = profile
                 profile
@@ -62,21 +66,27 @@ class AuthRepository(
         }
     }
 
-    suspend fun restoreSession(): UserProfileDto? = transitionMutex.withLock {
-        val expectedAccountId = tokenStore.accountId() ?: return@withLock null
+    suspend fun restoreSession(): SessionRestoreResult = transitionMutex.withLock {
+        val expectedAccountId = tokenStore.accountId() ?: return@withLock SessionRestoreResult.NoSession
         verifiedProfile?.takeIf {
             it.id.toString() == expectedAccountId && tokenStore.accessTokenFor(expectedAccountId) != null
-        }?.let { return@withLock it }
+        }?.let { return@withLock SessionRestoreResult.Verified(it) }
         val refresh = tokenStore.refreshTokenFor(expectedAccountId) ?: run {
             clearSessionLocked(expectedAccountId)
-            return@withLock null
+            return@withLock SessionRestoreResult.NoSession
         }
-        runCatching {
+        try {
             val session = anonymousApi.refresh(RefreshTokenRequestDto(refresh = refresh))
-            verifyAndCommit(session = session, expectedAccountId = expectedAccountId)
-        }.getOrElse {
-            clearSessionLocked(expectedAccountId)
-            null
+            SessionRestoreResult.Verified(
+                verifyAndCommit(session = session, expectedAccountId = expectedAccountId),
+            )
+        } catch (failure: Throwable) {
+            if (failure.isDefinitiveAccountAuthFailure()) {
+                clearSessionLocked(expectedAccountId)
+                SessionRestoreResult.NoSession
+            } else {
+                SessionRestoreResult.Retryable(failure)
+            }
         }
     }
 
@@ -104,12 +114,17 @@ class AuthRepository(
         session: AuthSessionDto,
         expectedAccountId: String?,
     ): UserProfileDto {
-        val access = session.access.takeIf { it.isNotBlank() } ?: error("Login returned no access token.")
+        val access = session.access.takeIf { it.isNotBlank() }
+            ?: throw DefinitiveAccountIdentityException("Authentication returned no access token.")
         val profile = verificationApiForAccessToken(access).me()
         val verifiedAccountId = profile.id.toString().takeIf { it.isNotBlank() }
-            ?: error("The authenticated account has no stable identity.")
+            ?: throw DefinitiveAccountIdentityException(
+                "The authenticated account has no stable identity.",
+            )
         if (expectedAccountId != null && verifiedAccountId != expectedAccountId) {
-            error("Refreshed credentials do not belong to the stored account.")
+            throw DefinitiveAccountIdentityException(
+                "Refreshed credentials do not belong to the stored account.",
+            )
         }
         val previousAccountId = tokenStore.accountId()
         onBeforeAccountCommit(previousAccountId, verifiedAccountId)
@@ -129,7 +144,10 @@ class AuthRepository(
 
     private suspend fun clearSessionLocked(accountId: String?) {
         verifiedProfile = null
-        tokenStore.clear()
-        onSessionCleared(accountId)
+        try {
+            onSessionCleared(accountId)
+        } finally {
+            if (accountId == null) tokenStore.clear() else tokenStore.clearForAccount(accountId)
+        }
     }
 }

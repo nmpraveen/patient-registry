@@ -10,8 +10,13 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import java.io.File
 import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 
+class AccountGenerationRevokedException : IllegalStateException(
+    "The authenticated MEDTRACK account generation was revoked.",
+)
+
 @Database(
     entities = [
+        AccountLifecycleEntity::class,
         CaseEntity::class,
         CaseStatsEntity::class,
         TaskEntity::class,
@@ -24,10 +29,11 @@ import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
         SyncConflictEntity::class,
         CacheMetadataEntity::class,
     ],
-    version = 11,
+    version = 12,
     exportSchema = true,
 )
 abstract class MedtrackDatabase : RoomDatabase() {
+    abstract fun accountLifecycleDao(): AccountLifecycleDao
     abstract fun caseDao(): CaseDao
     abstract fun caseStatsDao(): CaseStatsDao
     abstract fun taskDao(): TaskDao
@@ -40,8 +46,49 @@ abstract class MedtrackDatabase : RoomDatabase() {
     abstract fun syncConflictDao(): SyncConflictDao
     abstract fun cacheMetadataDao(): CacheMetadataDao
 
-    suspend fun clearAccountData(ownerAccountId: String) {
+    suspend fun activateAccount(ownerAccountId: String): Long = withTransaction {
+        require(ownerAccountId.isNotBlank()) { "A verified account ID is required." }
+        val previousGeneration = accountLifecycleDao().lifecycle(ownerAccountId)?.generation ?: 0L
+        val generation = previousGeneration + 1L
+        accountLifecycleDao().upsertLifecycle(
+            AccountLifecycleEntity(
+                ownerAccountId = ownerAccountId,
+                generation = generation,
+                isActive = true,
+                updatedAtMillis = System.currentTimeMillis(),
+            ),
+        )
+        generation
+    }
+
+    suspend fun activeAccountGeneration(ownerAccountId: String): Long? =
+        accountLifecycleDao().lifecycle(ownerAccountId)
+            ?.takeIf(AccountLifecycleEntity::isActive)
+            ?.generation
+
+    suspend fun <T> commitForAccount(
+        ownerAccountId: String,
+        generation: Long,
+        isLocallyActive: () -> Boolean = { true },
+        block: suspend () -> T,
+    ): T = withTransaction {
+        checkAccountGeneration(ownerAccountId, generation, isLocallyActive)
+        val result = block()
+        checkAccountGeneration(ownerAccountId, generation, isLocallyActive)
+        result
+    }
+
+    suspend fun invalidateAndClearAccountData(ownerAccountId: String) {
         withTransaction {
+            val previousGeneration = accountLifecycleDao().lifecycle(ownerAccountId)?.generation ?: 0L
+            accountLifecycleDao().upsertLifecycle(
+                AccountLifecycleEntity(
+                    ownerAccountId = ownerAccountId,
+                    generation = previousGeneration + 1L,
+                    isActive = false,
+                    updatedAtMillis = System.currentTimeMillis(),
+                ),
+            )
             pendingWriteDao().clearForOwner(ownerAccountId)
             syncConflictDao().clearForOwner(ownerAccountId)
             notificationDao().clearForOwner(ownerAccountId)
@@ -53,6 +100,18 @@ abstract class MedtrackDatabase : RoomDatabase() {
             vitalsThresholdDao().clearForOwner(ownerAccountId)
             categoryOptionsDao().clearForOwner(ownerAccountId)
             cacheMetadataDao().clearForOwner(ownerAccountId)
+        }
+    }
+
+    private suspend fun checkAccountGeneration(
+        ownerAccountId: String,
+        generation: Long,
+        isLocallyActive: () -> Boolean,
+    ) {
+        if (!isLocallyActive()) throw AccountGenerationRevokedException()
+        val lifecycle = accountLifecycleDao().lifecycle(ownerAccountId)
+        if (lifecycle?.isActive != true || lifecycle.generation != generation) {
+            throw AccountGenerationRevokedException()
         }
     }
 
@@ -80,6 +139,7 @@ abstract class MedtrackDatabase : RoomDatabase() {
                         MIGRATION_8_9,
                         MIGRATION_9_10,
                         MIGRATION_10_11,
+                        MIGRATION_11_12,
                     )
                     .build()
                     .also { INSTANCE = it }
@@ -446,6 +506,22 @@ abstract class MedtrackDatabase : RoomDatabase() {
             }
         }
 
+        internal val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `account_lifecycle` (
+                        `ownerAccountId` TEXT NOT NULL,
+                        `generation` INTEGER NOT NULL,
+                        `isActive` INTEGER NOT NULL,
+                        `updatedAtMillis` INTEGER NOT NULL,
+                        PRIMARY KEY(`ownerAccountId`)
+                    )
+                    """.trimIndent(),
+                )
+            }
+        }
+
         internal val ALL_MIGRATIONS: Array<Migration> = arrayOf(
             MIGRATION_1_2,
             MIGRATION_2_3,
@@ -457,6 +533,7 @@ abstract class MedtrackDatabase : RoomDatabase() {
             MIGRATION_8_9,
             MIGRATION_9_10,
             MIGRATION_10_11,
+            MIGRATION_11_12,
         )
     }
 }

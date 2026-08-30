@@ -8,14 +8,18 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequest
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.Operation
 import androidx.work.PeriodicWorkRequest
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
-import androidx.room.withTransaction
 import com.naveenhospital.medtrack.core.data.auth.TokenStore
+import com.naveenhospital.medtrack.core.data.auth.AccountSessionInvalidator
+import com.naveenhospital.medtrack.core.data.auth.AccountSessionRefreshResult
+import com.naveenhospital.medtrack.core.data.auth.refreshAndVerifyAccountSession
 import com.naveenhospital.medtrack.core.data.local.CacheMetadataEntity
+import com.naveenhospital.medtrack.core.data.local.AccountGenerationRevokedException
 import com.naveenhospital.medtrack.core.data.local.CaseEntity
 import com.naveenhospital.medtrack.core.data.local.CaseStatsEntity
 import com.naveenhospital.medtrack.core.data.local.CategoryOptionsEntity
@@ -47,9 +51,11 @@ import com.naveenhospital.medtrack.core.network.model.VitalsThresholdsDto
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.Executor
 import java.security.MessageDigest
 import android.util.Base64
 import retrofit2.HttpException
+import kotlinx.coroutines.suspendCancellableCoroutine
 
 class MedtrackSyncWorker(
     appContext: Context,
@@ -61,67 +67,91 @@ class MedtrackSyncWorker(
             ?: return Result.failure()
         val tokenStore = TokenStore(applicationContext)
         if (tokenStore.accountId() != ownerAccountId) return Result.success()
-        val refreshToken = tokenStore.refreshTokenFor(ownerAccountId) ?: return Result.failure()
-
-        val session = runCatching {
-            MedtrackNetwork.create(baseUrl).refresh(RefreshTokenRequestDto(refresh = refreshToken))
-        }.getOrElse { error ->
-            if (error is HttpException && error.code() in 400..499) {
-                tokenStore.clear()
-                return Result.failure()
-            }
-            return Result.retry()
-        }
-        val verifiedProfile = runCatching {
-            MedtrackNetwork.create(
-                baseUrl = baseUrl,
-                accessTokenProvider = { session.access },
-            ).me()
-        }.getOrElse { error ->
-            if (error is HttpException && error.code() in 400..499) {
-                tokenStore.clear()
-                return Result.failure()
-            }
-            return Result.retry()
-        }
-        if (verifiedProfile.id.toString() != ownerAccountId || tokenStore.accountId() != ownerAccountId) {
-            tokenStore.clear()
-            return Result.failure()
-        }
-        if (!tokenStore.updateSessionForAccount(ownerAccountId, session.access, session.refresh)) {
-            return Result.failure()
+        val database = MedtrackDatabase.build(applicationContext)
+        val invalidator = AccountSessionInvalidator(applicationContext)
+        when (
+            authenticateWorkerAccount(
+                ownerAccountId = ownerAccountId,
+                tokenStore = tokenStore,
+                invalidator = invalidator,
+                refreshSession = { refreshToken ->
+                    MedtrackNetwork.create(baseUrl).refresh(RefreshTokenRequestDto(refresh = refreshToken))
+                },
+                verifyProfile = { accessToken ->
+                    MedtrackNetwork.create(
+                        baseUrl = baseUrl,
+                        accessTokenProvider = { accessToken },
+                    ).me()
+                },
+            )
+        ) {
+            WorkerAuthenticationResult.Verified -> Unit
+            WorkerAuthenticationResult.StaleAccount -> return Result.success()
+            WorkerAuthenticationResult.Retry -> return Result.retry()
+            WorkerAuthenticationResult.Invalidated -> return Result.failure()
         }
         val api = MedtrackNetwork.create(
             baseUrl = baseUrl,
             accessTokenProvider = { tokenStore.accessTokenFor(ownerAccountId) },
             refreshTokenProvider = { tokenStore.refreshTokenFor(ownerAccountId) },
+            expectedAccountIdProvider = {
+                ownerAccountId.takeIf { tokenStore.accountId() == ownerAccountId }
+            },
             sessionUpdater = { access, refresh ->
                 tokenStore.updateSessionForAccount(ownerAccountId, access, refresh)
             },
         )
-        val database = MedtrackDatabase.build(applicationContext)
+        val accountGeneration = database.activeAccountGeneration(ownerAccountId)
+            ?: return Result.success()
 
-        if (!drainPendingWritesForSync(
+        return try {
+            if (!drainPendingWritesForSync(
+                    api = api,
+                    database = database,
+                    ownerAccountId = ownerAccountId,
+                    accountGeneration = accountGeneration,
+                    activeAccountId = tokenStore::accountId,
+                )
+            ) {
+                return Result.retry()
+            }
+            if (!syncPendingPushTokens(
+                    api = api,
+                    database = database,
+                    ownerAccountId = ownerAccountId,
+                    accountGeneration = accountGeneration,
+                    activeAccountId = tokenStore::accountId,
+                )
+            ) {
+                return Result.retry()
+            }
+            if (tokenStore.accountId() != ownerAccountId) return Result.success()
+            refreshStaleReadCaches(
                 api = api,
                 database = database,
                 ownerAccountId = ownerAccountId,
+                accountGeneration = accountGeneration,
                 activeAccountId = tokenStore::accountId,
             )
-        ) {
-            return Result.retry()
+            Result.success()
+        } catch (failure: Throwable) {
+            if (failure is HttpException && failure.code() in setOf(401, 403)) {
+                invalidator.invalidateIfCurrent(ownerAccountId)
+                Result.failure()
+            } else if (failure is AccountChangedException || failure is AccountGenerationRevokedException) {
+                Result.success()
+            } else {
+                Result.retry()
+            }
         }
-        if (!syncPendingPushTokens(api = api, database = database, ownerAccountId = ownerAccountId)) {
-            return Result.retry()
-        }
-        if (tokenStore.accountId() != ownerAccountId) return Result.success()
-        refreshStaleReadCaches(api = api, database = database, ownerAccountId = ownerAccountId)
-        return Result.success()
     }
 
     private suspend fun refreshStaleReadCaches(
         api: com.naveenhospital.medtrack.core.network.api.MedtrackApi,
         database: MedtrackDatabase,
         ownerAccountId: String,
+        accountGeneration: Long,
+        activeAccountId: () -> String?,
     ) {
         val now = System.currentTimeMillis()
         val defaultCaseListKey = caseListCacheKey(
@@ -134,7 +164,11 @@ class MedtrackSyncWorker(
         )
         if (database.shouldRefresh(ownerAccountId, defaultCaseListKey, now)) {
             val response = api.listCases(bucket = "today", page = 1)
-            database.withTransaction {
+            database.commitForAccount(
+                ownerAccountId = ownerAccountId,
+                generation = accountGeneration,
+                isLocallyActive = { activeAccountId() == ownerAccountId },
+            ) {
                 database.caseDao().clearCases(ownerAccountId)
                 database.caseDao().upsertCases(response.results.map { it.toEntityForSync(ownerAccountId) })
                 database.caseStatsDao().upsertStats(response.stats.toEntityForSync(ownerAccountId, defaultCaseListKey, now))
@@ -143,18 +177,39 @@ class MedtrackSyncWorker(
         }
 
         if (database.shouldRefresh(ownerAccountId, CACHE_KEY_VITALS_THRESHOLDS, now)) {
-            database.vitalsThresholdDao().upsertThresholds(api.vitalsThresholds().toEntityForSync(ownerAccountId, now))
-            database.markCacheFresh(ownerAccountId, CACHE_KEY_VITALS_THRESHOLDS, now)
+            val response = api.vitalsThresholds()
+            database.commitForAccount(
+                ownerAccountId,
+                accountGeneration,
+                { activeAccountId() == ownerAccountId },
+            ) {
+                database.vitalsThresholdDao().upsertThresholds(response.toEntityForSync(ownerAccountId, now))
+                database.markCacheFresh(ownerAccountId, CACHE_KEY_VITALS_THRESHOLDS, now)
+            }
         }
 
         if (database.shouldRefresh(ownerAccountId, CACHE_KEY_CATEGORY_OPTIONS, now)) {
-            database.categoryOptionsDao().upsertOptions(api.categories().toEntityForSync(ownerAccountId, now))
-            database.markCacheFresh(ownerAccountId, CACHE_KEY_CATEGORY_OPTIONS, now)
+            val response = api.categories()
+            database.commitForAccount(
+                ownerAccountId,
+                accountGeneration,
+                { activeAccountId() == ownerAccountId },
+            ) {
+                database.categoryOptionsDao().upsertOptions(response.toEntityForSync(ownerAccountId, now))
+                database.markCacheFresh(ownerAccountId, CACHE_KEY_CATEGORY_OPTIONS, now)
+            }
         }
 
         if (database.shouldRefresh(ownerAccountId, CACHE_KEY_NOTIFICATIONS, now)) {
-            database.notificationDao().upsertNotifications(api.notifications().results.map { it.toEntityForSync(ownerAccountId) })
-            database.markCacheFresh(ownerAccountId, CACHE_KEY_NOTIFICATIONS, now)
+            val response = api.notifications()
+            database.commitForAccount(
+                ownerAccountId,
+                accountGeneration,
+                { activeAccountId() == ownerAccountId },
+            ) {
+                database.notificationDao().upsertNotifications(response.results.map { it.toEntityForSync(ownerAccountId) })
+                database.markCacheFresh(ownerAccountId, CACHE_KEY_NOTIFICATIONS, now)
+            }
         }
 
         database.cacheMetadataDao().cacheKeysStartingWith(ownerAccountId, CASE_DETAIL_CACHE_PREFIX).forEach { cacheKey ->
@@ -164,9 +219,16 @@ class MedtrackSyncWorker(
             val caseId = cacheKey.removePrefix(CASE_DETAIL_CACHE_PREFIX).takeIf { it.isNotBlank() }
                 ?: return@forEach
             runCatching {
-                refreshServerCase(api = api, database = database, ownerAccountId = ownerAccountId, caseId = caseId)
-                database.markCacheFresh(ownerAccountId, caseDetailCacheKey(caseId), now)
-            }
+                refreshServerCase(
+                    api = api,
+                    database = database,
+                    ownerAccountId = ownerAccountId,
+                    accountGeneration = accountGeneration,
+                    activeAccountId = activeAccountId,
+                    caseId = caseId,
+                    cacheUpdatedAtMillis = now,
+                )
+            }.onFailure(Throwable::rethrowAccountBoundaryFailure)
         }
     }
 
@@ -193,9 +255,10 @@ class MedtrackSyncWorker(
             )
         }
 
-        fun cancelForAccount(context: Context, accountId: String) {
-            WorkManager.getInstance(context).cancelUniqueWork(periodicWorkName(accountId))
-            WorkManager.getInstance(context).cancelUniqueWork(oneTimeWorkName(accountId))
+        suspend fun cancelForAccount(context: Context, accountId: String) {
+            val workManager = WorkManager.getInstance(context)
+            workManager.cancelUniqueWork(periodicWorkName(accountId)).awaitCompletion()
+            workManager.cancelUniqueWork(oneTimeWorkName(accountId)).awaitCompletion()
         }
 
         internal fun periodicWorkName(accountId: String): String =
@@ -233,10 +296,60 @@ class MedtrackSyncWorker(
     }
 }
 
+internal enum class WorkerAuthenticationResult {
+    Verified,
+    StaleAccount,
+    Retry,
+    Invalidated,
+}
+
+internal suspend fun authenticateWorkerAccount(
+    ownerAccountId: String,
+    tokenStore: TokenStore,
+    invalidator: AccountSessionInvalidator,
+    refreshSession: suspend (String) -> com.naveenhospital.medtrack.core.network.model.AuthSessionDto,
+    verifyProfile: suspend (String) -> com.naveenhospital.medtrack.core.network.model.UserProfileDto,
+): WorkerAuthenticationResult =
+    when (
+        refreshAndVerifyAccountSession(
+            ownerAccountId = ownerAccountId,
+            tokenStore = tokenStore,
+            refreshSession = refreshSession,
+            verifyProfile = verifyProfile,
+        )
+    ) {
+        AccountSessionRefreshResult.Verified -> WorkerAuthenticationResult.Verified
+        AccountSessionRefreshResult.StaleAccount -> WorkerAuthenticationResult.StaleAccount
+        is AccountSessionRefreshResult.Retryable -> WorkerAuthenticationResult.Retry
+        is AccountSessionRefreshResult.DefinitiveFailure -> {
+            if (invalidator.invalidateIfCurrent(ownerAccountId)) {
+                WorkerAuthenticationResult.Invalidated
+            } else {
+                WorkerAuthenticationResult.StaleAccount
+            }
+        }
+    }
+
+private suspend fun Operation.awaitCompletion() {
+    val future = result
+    suspendCancellableCoroutine<Unit> { continuation ->
+        future.addListener(
+            {
+                runCatching { future.get() }
+                    .onSuccess { continuation.resumeWith(Result.success(Unit)) }
+                    .onFailure { continuation.resumeWith(Result.failure(it)) }
+            },
+            Executor(Runnable::run),
+        )
+        continuation.invokeOnCancellation { future.cancel(true) }
+    }
+}
+
 internal suspend fun drainPendingWritesForSync(
     api: MedtrackApi,
     database: MedtrackDatabase,
     ownerAccountId: String,
+    accountGeneration: Long,
     activeAccountId: () -> String? = { ownerAccountId },
 ): Boolean {
     val pendingWriteDao = database.pendingWriteDao()
@@ -248,84 +361,151 @@ internal suspend fun drainPendingWritesForSync(
             when (val pendingWrite = PendingWriteJson.decodeForSync(write)) {
                 is DecodedPendingWrite.TaskComplete -> {
                     val response = api.completeTask(pendingWrite.taskId, pendingWrite.payload)
-                    ensureAccountActive(ownerAccountId, activeAccountId)
-                    database.caseDao().upsertCase(response.case.toEntityForSync(ownerAccountId))
-                    database.taskDao().upsertTask(response.task.toEntityForSync(ownerAccountId, pendingWrite.caseId))
+                    database.commitForAccount(
+                        ownerAccountId,
+                        accountGeneration,
+                        { activeAccountId() == ownerAccountId },
+                    ) {
+                        database.caseDao().upsertCase(response.case.toEntityForSync(ownerAccountId))
+                        database.taskDao().upsertTask(response.task.toEntityForSync(ownerAccountId, pendingWrite.caseId))
+                        pendingWriteDao.deletePendingWrite(ownerAccountId, write.clientWriteId)
+                    }
                 }
                 is DecodedPendingWrite.CallOutcome -> {
                     val response = api.logCall(pendingWrite.caseId, pendingWrite.payload)
-                    ensureAccountActive(ownerAccountId, activeAccountId)
-                    database.caseDao().upsertCase(response.case.toEntityForSync(ownerAccountId))
+                    database.commitForAccount(
+                        ownerAccountId,
+                        accountGeneration,
+                        { activeAccountId() == ownerAccountId },
+                    ) {
+                        database.caseDao().upsertCase(response.case.toEntityForSync(ownerAccountId))
+                        pendingWriteDao.deletePendingWrite(ownerAccountId, write.clientWriteId)
+                    }
                 }
                 is DecodedPendingWrite.VitalsCreate -> {
                     val response = api.addVitals(pendingWrite.caseId, pendingWrite.payload)
-                    ensureAccountActive(ownerAccountId, activeAccountId)
-                    database.caseDao().upsertCase(response.case.toEntityForSync(ownerAccountId))
-                    database.vitalDao().deleteVital(ownerAccountId, pendingVitalId(write.clientWriteId))
-                    database.vitalDao().upsertVital(response.vital.toEntityForSync(ownerAccountId, pendingWrite.caseId))
+                    database.commitForAccount(
+                        ownerAccountId,
+                        accountGeneration,
+                        { activeAccountId() == ownerAccountId },
+                    ) {
+                        database.caseDao().upsertCase(response.case.toEntityForSync(ownerAccountId))
+                        database.vitalDao().deleteVital(ownerAccountId, pendingVitalId(write.clientWriteId))
+                        database.vitalDao().upsertVital(response.vital.toEntityForSync(ownerAccountId, pendingWrite.caseId))
+                        pendingWriteDao.deletePendingWrite(ownerAccountId, write.clientWriteId)
+                    }
                 }
                 is DecodedPendingWrite.NotificationRead -> {
                     api.markNotificationRead(pendingWrite.notificationId)
-                    ensureAccountActive(ownerAccountId, activeAccountId)
-                    database.notificationDao().markRead(ownerAccountId, pendingWrite.notificationId)
+                    database.commitForAccount(
+                        ownerAccountId,
+                        accountGeneration,
+                        { activeAccountId() == ownerAccountId },
+                    ) {
+                        database.notificationDao().markRead(ownerAccountId, pendingWrite.notificationId)
+                        pendingWriteDao.deletePendingWrite(ownerAccountId, write.clientWriteId)
+                    }
                 }
             }
         }
-        if (result.isSuccess) {
-            pendingWriteDao.deletePendingWrite(ownerAccountId, write.clientWriteId)
-        } else {
+        if (result.isFailure) {
             val error = result.exceptionOrNull()
-            if (error is AccountChangedException) return true
+            if (error is AccountChangedException || error is AccountGenerationRevokedException) {
+                return true
+            }
             if (error is MalformedPendingWriteException) {
-                database.recordLocalSyncConflict(
-                    ownerAccountId = ownerAccountId,
-                    write = write,
-                    message = error.message ?: "Malformed pending write.",
-                    createdAtMillis = now,
-                )
-                pendingWriteDao.deletePendingWrite(ownerAccountId, write.clientWriteId)
-                return@forEach
-            }
-            if (error is HttpException && error.code() == 409) {
-                database.syncConflictDao().upsertConflict(
-                    SyncConflictEntity(
-                        ownerAccountId = ownerAccountId,
-                        clientWriteId = write.clientWriteId,
-                        writeType = write.writeType,
-                        caseId = write.caseId,
-                        taskId = write.taskId,
-                        message = error.conflictMessage(),
-                        serverPayloadJson = null,
-                        createdAtMillis = now,
-                    ),
-                )
-                pendingWriteDao.deletePendingWrite(ownerAccountId, write.clientWriteId)
-                write.caseId?.let { caseId ->
-                    runCatching { refreshServerCase(api = api, database = database, ownerAccountId = ownerAccountId, caseId = caseId) }
-                }
-                return@forEach
-            }
-            if (error is HttpException && error.code() in 400..499) {
-                if (write.writeType != PendingWriteTypes.NOTIFICATION_READ) {
+                database.commitForAccount(
+                    ownerAccountId,
+                    accountGeneration,
+                    { activeAccountId() == ownerAccountId },
+                ) {
                     database.recordLocalSyncConflict(
                         ownerAccountId = ownerAccountId,
                         write = write,
-                        message = error.rejectedMessage(),
+                        message = error.message ?: "Malformed pending write.",
                         createdAtMillis = now,
                     )
-                }
-                pendingWriteDao.deletePendingWrite(ownerAccountId, write.clientWriteId)
-                write.caseId?.let { caseId ->
-                    runCatching { refreshServerCase(api = api, database = database, ownerAccountId = ownerAccountId, caseId = caseId) }
+                    pendingWriteDao.deletePendingWrite(ownerAccountId, write.clientWriteId)
                 }
                 return@forEach
             }
-            pendingWriteDao.markAttempt(
-                ownerAccountId = ownerAccountId,
-                clientWriteId = write.clientWriteId,
-                lastError = error?.message,
-                updatedAtMillis = now,
-            )
+            if (error is HttpException && error.code() == 409) {
+                database.commitForAccount(
+                    ownerAccountId,
+                    accountGeneration,
+                    { activeAccountId() == ownerAccountId },
+                ) {
+                    database.syncConflictDao().upsertConflict(
+                        SyncConflictEntity(
+                            ownerAccountId = ownerAccountId,
+                            clientWriteId = write.clientWriteId,
+                            writeType = write.writeType,
+                            caseId = write.caseId,
+                            taskId = write.taskId,
+                            message = error.conflictMessage(),
+                            serverPayloadJson = null,
+                            createdAtMillis = now,
+                        ),
+                    )
+                    pendingWriteDao.deletePendingWrite(ownerAccountId, write.clientWriteId)
+                }
+                write.caseId?.let { caseId ->
+                    runCatching {
+                        refreshServerCase(
+                            api,
+                            database,
+                            ownerAccountId,
+                            accountGeneration,
+                            activeAccountId,
+                            caseId,
+                        )
+                    }.onFailure(Throwable::rethrowAccountBoundaryFailure)
+                }
+                return@forEach
+            }
+            if (error is HttpException && error.code() in setOf(401, 403)) throw error
+            if (error is HttpException && error.code() in 400..499) {
+                database.commitForAccount(
+                    ownerAccountId,
+                    accountGeneration,
+                    { activeAccountId() == ownerAccountId },
+                ) {
+                    if (write.writeType != PendingWriteTypes.NOTIFICATION_READ) {
+                        database.recordLocalSyncConflict(
+                            ownerAccountId = ownerAccountId,
+                            write = write,
+                            message = error.rejectedMessage(),
+                            createdAtMillis = now,
+                        )
+                    }
+                    pendingWriteDao.deletePendingWrite(ownerAccountId, write.clientWriteId)
+                }
+                write.caseId?.let { caseId ->
+                    runCatching {
+                        refreshServerCase(
+                            api,
+                            database,
+                            ownerAccountId,
+                            accountGeneration,
+                            activeAccountId,
+                            caseId,
+                        )
+                    }.onFailure(Throwable::rethrowAccountBoundaryFailure)
+                }
+                return@forEach
+            }
+            database.commitForAccount(
+                ownerAccountId,
+                accountGeneration,
+                { activeAccountId() == ownerAccountId },
+            ) {
+                pendingWriteDao.markAttempt(
+                    ownerAccountId = ownerAccountId,
+                    clientWriteId = write.clientWriteId,
+                    lastError = error?.message,
+                    updatedAtMillis = now,
+                )
+            }
             if (error !is HttpException || error.code() >= 500) {
                 return false
             }
@@ -338,6 +518,8 @@ private suspend fun syncPendingPushTokens(
     api: MedtrackApi,
     database: MedtrackDatabase,
     ownerAccountId: String,
+    accountGeneration: Long,
+    activeAccountId: () -> String?,
 ): Boolean {
     database.pushTokenDao().pendingTokens(ownerAccountId).forEach { token ->
         val result = runCatching {
@@ -347,12 +529,25 @@ private suspend fun syncPendingPushTokens(
                     deviceLabel = token.deviceLabel,
                 ),
             )
-            database.pushTokenDao().markTokenSynced(ownerAccountId, token.token, System.currentTimeMillis())
+            database.commitForAccount(
+                ownerAccountId,
+                accountGeneration,
+                { activeAccountId() == ownerAccountId },
+            ) {
+                database.pushTokenDao().markTokenSynced(ownerAccountId, token.token, System.currentTimeMillis())
+            }
         }
         if (result.isFailure) {
             val error = result.exceptionOrNull()
+            if (error is HttpException && error.code() in setOf(401, 403)) throw error
             if (error is HttpException && error.code() in 400..499) {
-                database.pushTokenDao().deleteToken(ownerAccountId, token.token)
+                database.commitForAccount(
+                    ownerAccountId,
+                    accountGeneration,
+                    { activeAccountId() == ownerAccountId },
+                ) {
+                    database.pushTokenDao().deleteToken(ownerAccountId, token.token)
+                }
                 return@forEach
             }
             return false
@@ -365,14 +560,26 @@ private suspend fun refreshServerCase(
     api: MedtrackApi,
     database: MedtrackDatabase,
     ownerAccountId: String,
+    accountGeneration: Long,
+    activeAccountId: () -> String?,
     caseId: String,
+    cacheUpdatedAtMillis: Long? = null,
 ) {
     val response = api.caseDetail(caseId)
-    database.caseDao().upsertCase(response.case.toEntityForSync(ownerAccountId))
-    database.taskDao().clearTasksForCase(ownerAccountId, caseId)
-    database.taskDao().upsertTasks(response.tasks.map { it.toEntityForSync(ownerAccountId, caseId) })
-    database.vitalDao().clearVitalsForCase(ownerAccountId, caseId)
-    database.vitalDao().upsertVitals(response.vitals.map { it.toEntityForSync(ownerAccountId, caseId) })
+    database.commitForAccount(
+        ownerAccountId,
+        accountGeneration,
+        { activeAccountId() == ownerAccountId },
+    ) {
+        database.caseDao().upsertCase(response.case.toEntityForSync(ownerAccountId))
+        database.taskDao().clearTasksForCase(ownerAccountId, caseId)
+        database.taskDao().upsertTasks(response.tasks.map { it.toEntityForSync(ownerAccountId, caseId) })
+        database.vitalDao().clearVitalsForCase(ownerAccountId, caseId)
+        database.vitalDao().upsertVitals(response.vitals.map { it.toEntityForSync(ownerAccountId, caseId) })
+        cacheUpdatedAtMillis?.let { updatedAt ->
+            database.markCacheFresh(ownerAccountId, caseDetailCacheKey(caseId), updatedAt)
+        }
+    }
 }
 
 private suspend fun MedtrackDatabase.recordLocalSyncConflict(
@@ -408,6 +615,16 @@ private class AccountChangedException : IllegalStateException("Authenticated acc
 
 private fun ensureAccountActive(ownerAccountId: String, activeAccountId: () -> String?) {
     if (activeAccountId() != ownerAccountId) throw AccountChangedException()
+}
+
+private fun Throwable.rethrowAccountBoundaryFailure() {
+    if (
+        this is AccountChangedException ||
+        this is AccountGenerationRevokedException ||
+        (this is HttpException && code() in setOf(401, 403))
+    ) {
+        throw this
+    }
 }
 
 private fun CaseSummaryDto.toEntityForSync(ownerAccountId: String): CaseEntity =

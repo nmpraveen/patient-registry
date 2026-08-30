@@ -8,6 +8,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertThrows
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -79,6 +80,21 @@ class TokenStoreTest {
         assertNull(tokenStore.refreshTokenFor("2"))
         assertFalse(tokenStore.updateSessionForAccount("2", "attacker-access", "attacker-refresh"))
         assertEquals("access-token", tokenStore.accessTokenFor(ACCOUNT_ID))
+    }
+
+    @Test
+    fun failedPreferenceCommitsNeverExposeCandidateTokensAndClearFailsClosed() {
+        val failingStore = TokenStore(failingCommitPreferences(prefs))
+
+        assertFalse(failingStore.commitVerifiedSession(ACCOUNT_ID, "candidate", "refresh"))
+        assertNull(failingStore.accessToken)
+        assertNull(failingStore.accountId())
+
+        val goodStore = TokenStore(prefs)
+        assertTrue(goodStore.commitVerifiedSession(ACCOUNT_ID, "access", "refresh"))
+        val failingClearStore = TokenStore(failingCommitPreferences(prefs))
+        assertThrows(IllegalStateException::class.java) { failingClearStore.clear() }
+        assertNull(failingClearStore.accessToken)
     }
 
     private companion object {

@@ -22,6 +22,7 @@ import com.naveenhospital.medtrack.core.network.model.VitalsRequestDto
 import com.naveenhospital.medtrack.core.network.model.VitalsThresholdsDto
 import com.naveenhospital.medtrack.core.network.model.VitalsWriteResponseDto
 import java.io.IOException
+import java.net.SocketTimeoutException
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -32,6 +33,10 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.ResponseBody.Companion.toResponseBody
+import retrofit2.HttpException
+import retrofit2.Response
 
 @RunWith(RobolectricTestRunner::class)
 class AuthRepositoryTest {
@@ -96,7 +101,7 @@ class AuthRepositoryTest {
 
         val restored = repository.restoreSession()
 
-        assertNull(restored)
+        assertTrue(restored is SessionRestoreResult.NoSession)
         assertNull(committedAccountId)
         assertNull(tokenStore.accountId())
         assertNull(tokenStore.accessToken)
@@ -111,23 +116,99 @@ class AuthRepositoryTest {
 
         val restored = repository.restoreSession()
 
-        assertEquals("admin", restored?.username)
+        assertEquals("admin", (restored as SessionRestoreResult.Verified).profile.username)
         assertEquals("stored-refresh", api.lastRefreshRequest?.refresh)
         assertEquals("new-access", tokenStore.accessToken)
         assertEquals("stored-refresh", tokenStore.refreshToken())
     }
 
     @Test
-    fun restoreSessionClearsTokensWhenRefreshFails() = runTest {
+    fun restoreSessionRetainsTrustedStateWhenRefreshHasIoFailure() = runTest {
         assertTrue(tokenStore.commitVerifiedSession("1", access = "old-access", refresh = "stored-refresh"))
-        val api = FakeAuthApi(refreshError = IOException("expired"))
-        val repository = AuthRepository(api = api, tokenStore = tokenStore)
+        val api = FakeAuthApi(refreshError = IOException("offline"))
+        var cleared = false
+        val repository = AuthRepository(
+            anonymousApi = api,
+            verificationApiForAccessToken = { api },
+            apiForAccount = { api },
+            tokenStore = tokenStore,
+            onSessionCleared = { cleared = true },
+        )
 
         val restored = repository.restoreSession()
 
-        assertNull(restored)
-        assertNull(tokenStore.accessToken)
-        assertNull(tokenStore.refreshToken())
+        assertTrue(restored is SessionRestoreResult.Retryable)
+        assertFalse(cleared)
+        assertEquals("1", tokenStore.accountId())
+        assertEquals("old-access", tokenStore.accessToken)
+        assertEquals("stored-refresh", tokenStore.refreshToken())
+    }
+
+    @Test
+    fun restoreSessionRetainsTrustedStateOnTimeoutAndServerFailure() = runTest {
+        listOf(
+            SocketTimeoutException("timeout"),
+            httpError(503),
+        ).forEach { failure ->
+            tokenStore.clear()
+            assertTrue(tokenStore.commitVerifiedSession("1", access = "old-access", refresh = "stored-refresh"))
+            var cleared = false
+            val api = FakeAuthApi(refreshError = failure)
+            val repository = AuthRepository(
+                anonymousApi = api,
+                verificationApiForAccessToken = { api },
+                apiForAccount = { api },
+                tokenStore = tokenStore,
+                onSessionCleared = { cleared = true },
+            )
+
+            assertTrue(repository.restoreSession() is SessionRestoreResult.Retryable)
+            assertFalse(cleared)
+            assertEquals("1", tokenStore.accountId())
+            assertEquals("stored-refresh", tokenStore.refreshToken())
+        }
+    }
+
+    @Test
+    fun restoreSessionPurges401And403() = runTest {
+        listOf(401, 403).forEach { status ->
+            tokenStore.clear()
+            assertTrue(tokenStore.commitVerifiedSession("1", access = "old-access", refresh = "stored-refresh"))
+            var clearedAccountId: String? = null
+            val api = FakeAuthApi(refreshError = httpError(status))
+            val repository = AuthRepository(
+                anonymousApi = api,
+                verificationApiForAccessToken = { api },
+                apiForAccount = { api },
+                tokenStore = tokenStore,
+                onSessionCleared = { clearedAccountId = it },
+            )
+
+            assertTrue(repository.restoreSession() is SessionRestoreResult.NoSession)
+            assertEquals("1", clearedAccountId)
+            assertNull(tokenStore.accountId())
+            assertNull(tokenStore.refreshToken())
+        }
+    }
+
+    @Test
+    fun currentUserRetainsSessionForIoAndServerFailureButPurgesUnauthorized() = runTest {
+        listOf(IOException("offline"), httpError(500)).forEach { failure ->
+            tokenStore.clear()
+            assertTrue(tokenStore.commitVerifiedSession("1", access = "access", refresh = "refresh"))
+            val api = FakeAuthApi(meError = failure)
+            val repository = AuthRepository(api = api, tokenStore = tokenStore)
+
+            assertTrue(runCatching { repository.currentUser() }.isFailure)
+            assertEquals("1", tokenStore.accountId())
+            assertEquals("refresh", tokenStore.refreshToken())
+        }
+
+        tokenStore.clear()
+        assertTrue(tokenStore.commitVerifiedSession("1", access = "access", refresh = "refresh"))
+        val unauthorized = AuthRepository(api = FakeAuthApi(meError = httpError(401)), tokenStore = tokenStore)
+        assertTrue(runCatching { unauthorized.currentUser() }.isFailure)
+        assertNull(tokenStore.accountId())
     }
 
     @Test
@@ -163,6 +244,7 @@ private class FakeAuthApi(
     private val loginSession: AuthSessionDto = AuthSessionDto(access = "access-token", refresh = "refresh-token"),
     private val refreshSession: AuthSessionDto = AuthSessionDto(access = "refreshed-access", refresh = "rotated-refresh"),
     private val refreshError: Throwable? = null,
+    private val meError: Throwable? = null,
     private val profile: UserProfileDto = userProfile(),
 ) : MedtrackApi {
     var lastLoginRequest: LoginRequestDto? = null
@@ -188,7 +270,10 @@ private class FakeAuthApi(
         return ApiMessageDto(message = "Logged out.")
     }
 
-    override suspend fun me(): UserProfileDto = profile
+    override suspend fun me(): UserProfileDto {
+        meError?.let { throw it }
+        return profile
+    }
 
     override suspend fun listCases(
         bucket: String?,
@@ -244,4 +329,12 @@ private fun userProfile(
         displayName = if (id == 1L) "Admin" else "Other",
         roles = listOf("Admin"),
         capabilities = emptyMap(),
+    )
+
+private fun httpError(status: Int): HttpException =
+    HttpException(
+        Response.error<Any>(
+            status,
+            "error".toResponseBody("text/plain".toMediaType()),
+        ),
     )

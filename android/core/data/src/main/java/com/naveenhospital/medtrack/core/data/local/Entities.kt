@@ -3,6 +3,14 @@ package com.naveenhospital.medtrack.core.data.local
 import androidx.room.ColumnInfo
 import androidx.room.Entity
 
+@Entity(tableName = "account_lifecycle", primaryKeys = ["ownerAccountId"])
+data class AccountLifecycleEntity(
+    val ownerAccountId: String,
+    val generation: Long,
+    val isActive: Boolean,
+    val updatedAtMillis: Long,
+)
+
 @Entity(tableName = "cases", primaryKeys = ["ownerAccountId", "id"])
 data class CaseEntity(
     val ownerAccountId: String,

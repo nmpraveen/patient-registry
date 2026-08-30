@@ -8,7 +8,6 @@ import androidx.paging.PagingData
 import androidx.paging.PagingState
 import androidx.paging.RemoteMediator
 import androidx.paging.map
-import androidx.room.withTransaction
 import com.naveenhospital.medtrack.core.data.local.CaseEntity
 import com.naveenhospital.medtrack.core.data.local.CaseStatsEntity
 import com.naveenhospital.medtrack.core.data.local.CacheMetadataEntity
@@ -106,6 +105,7 @@ class MedtrackRepository(
     private val apiForAccount: (String) -> MedtrackApi,
     private val database: MedtrackDatabase,
     private val onPendingWriteQueued: (String) -> Unit = {},
+    private val beforeLocalCommit: suspend (String) -> Unit = {},
 ) {
     constructor(
         api: MedtrackApi,
@@ -117,9 +117,15 @@ class MedtrackRepository(
         onPendingWriteQueued = onPendingWriteQueued,
     )
 
-    private data class AccountSession(val ownerAccountId: String, val api: MedtrackApi)
+    private data class AccountSession(
+        val ownerAccountId: String,
+        val generation: Long,
+        val api: MedtrackApi,
+    )
 
     private val activeAccountId = MutableStateFlow<String?>(null)
+    @Volatile
+    private var activeGeneration: Long? = null
     private val _stats = MutableStateFlow(InboxStats())
     val stats: StateFlow<InboxStats> = _stats
     private val _categoryOptions = MutableStateFlow<List<CategoryFilterOption>>(emptyList())
@@ -139,21 +145,24 @@ class MedtrackRepository(
             else database.caseDao().observeCases(ownerAccountId).map { entities -> entities.map { it.toDomain() } }
         }
 
-    fun activateAccount(accountId: String) {
+    suspend fun activateAccount(accountId: String) {
         require(accountId.isNotBlank()) { "A verified account ID is required." }
+        val generation = database.activateAccount(accountId)
         resetInMemoryState()
+        activeGeneration = generation
         activeAccountId.value = accountId
     }
 
     fun deactivateAccount() {
         activeAccountId.value = null
+        activeGeneration = null
         resetInMemoryState()
     }
 
     fun activeAccountId(): String? = activeAccountId.value
 
     suspend fun wipeAccountData(accountId: String) {
-        database.clearAccountData(accountId)
+        database.invalidateAndClearAccountData(accountId)
         if (activeAccountId.value == accountId) resetInMemoryState()
     }
 
@@ -168,11 +177,29 @@ class MedtrackRepository(
 
     private fun activeSession(): AccountSession {
         val ownerAccountId = activeAccountId.value ?: error("No verified MEDTRACK account is active.")
-        return AccountSession(ownerAccountId, apiForAccount(ownerAccountId))
+        val generation = activeGeneration ?: error("No verified MEDTRACK account generation is active.")
+        return AccountSession(ownerAccountId, generation, apiForAccount(ownerAccountId))
     }
 
-    private fun requireStillActive(ownerAccountId: String) {
-        check(activeAccountId.value == ownerAccountId) { "The authenticated MEDTRACK account changed." }
+    private fun requireStillActive(session: AccountSession) {
+        check(
+            activeAccountId.value == session.ownerAccountId && activeGeneration == session.generation,
+        ) { "The authenticated MEDTRACK account changed." }
+    }
+
+    private suspend fun <T> commitAccountMutation(
+        session: AccountSession,
+        block: suspend () -> T,
+    ): T {
+        beforeLocalCommit(session.ownerAccountId)
+        return database.commitForAccount(
+            ownerAccountId = session.ownerAccountId,
+            generation = session.generation,
+            isLocallyActive = {
+                activeAccountId.value == session.ownerAccountId && activeGeneration == session.generation
+            },
+            block = block,
+        )
     }
 
     @OptIn(ExperimentalPagingApi::class)
@@ -195,6 +222,7 @@ class MedtrackRepository(
             ),
             remoteMediator = CaseRemoteMediator(
                 ownerAccountId = session.ownerAccountId,
+                accountGeneration = session.generation,
                 api = session.api,
                 database = database,
                 cacheKey = cacheKey,
@@ -279,14 +307,16 @@ class MedtrackRepository(
             subcategories = subcategories.takeIf { it.isNotEmpty() },
             page = 1,
         )
-        requireStillActive(session.ownerAccountId)
+        commitAccountMutation(session) {
+            database.caseDao().clearCases(session.ownerAccountId)
+            database.caseDao().upsertCases(response.results.map { it.toEntity(session.ownerAccountId) })
+            database.caseStatsDao().upsertStats(response.stats.toEntity(session.ownerAccountId, activeCaseListKey))
+            markCacheFresh(session.ownerAccountId, caseListCacheKey(bucket, query, assignedTo, scopeContext, categories, subcategories))
+        }
+        requireStillActive(session)
         _stats.value = response.stats.toDomain()
         nextCasePage = response.nextPageAfter(1)
         _hasMoreCases.value = nextCasePage != null
-        database.caseDao().clearCases(session.ownerAccountId)
-        database.caseDao().upsertCases(response.results.map { it.toEntity(session.ownerAccountId) })
-        database.caseStatsDao().upsertStats(response.stats.toEntity(session.ownerAccountId, activeCaseListKey))
-        markCacheFresh(session.ownerAccountId, caseListCacheKey(bucket, query, assignedTo, scopeContext, categories, subcategories))
     }
 
     suspend fun loadNextCases(
@@ -320,25 +350,27 @@ class MedtrackRepository(
             subcategories = subcategories.takeIf { it.isNotEmpty() },
             page = page,
         )
-        requireStillActive(session.ownerAccountId)
+        commitAccountMutation(session) {
+            database.caseDao().upsertCases(response.results.map { it.toEntity(session.ownerAccountId) })
+            database.caseStatsDao().upsertStats(response.stats.toEntity(session.ownerAccountId, requestedKey))
+        }
+        requireStillActive(session)
         _stats.value = response.stats.toDomain()
         nextCasePage = response.nextPageAfter(page)
         _hasMoreCases.value = nextCasePage != null
-        database.caseDao().upsertCases(response.results.map { it.toEntity(session.ownerAccountId) })
-        database.caseStatsDao().upsertStats(response.stats.toEntity(session.ownerAccountId, requestedKey))
     }
 
     suspend fun loadCaseFormMetadata(): CaseFormMetadata {
         val session = activeSession()
         val response = session.api.caseFormMetadata()
-        requireStillActive(session.ownerAccountId)
+        requireStillActive(session)
         return response.toDomain()
     }
 
     suspend fun searchPatients(query: String): List<PatientLookup> {
         val session = activeSession()
         val response = session.api.searchPatients(query = query.trim().ifBlank { null })
-        requireStillActive(session.ownerAccountId)
+        requireStillActive(session)
         return response.results.map { it.toDomain() }
     }
 
@@ -347,11 +379,12 @@ class MedtrackRepository(
         val request = input.toRequestDto(newClientWriteId("case"))
         return runCatching {
             val response = session.api.createCase(request)
-            requireStillActive(session.ownerAccountId)
-            database.caseDao().upsertCase(response.case.toEntity(session.ownerAccountId))
+            commitAccountMutation(session) {
+                database.caseDao().upsertCase(response.case.toEntity(session.ownerAccountId))
+            }
             CaseCreateOutcome.Success(caseId = response.caseId, message = response.message)
         }.getOrElse { throwable ->
-            requireStillActive(session.ownerAccountId)
+            requireStillActive(session)
             if (throwable is HttpException && throwable.code() == 400) {
                 val parsed = runCatching {
                     caseCreateErrorAdapter.fromJson(throwable.response()?.errorBody()?.string().orEmpty())
@@ -369,7 +402,7 @@ class MedtrackRepository(
     suspend fun loadCaseEditForm(caseId: String): CaseEditPrefill {
         val session = activeSession()
         val response = session.api.caseEditForm(caseId)
-        requireStillActive(session.ownerAccountId)
+        requireStillActive(session)
         return response.toDomain()
     }
 
@@ -378,11 +411,12 @@ class MedtrackRepository(
         val request = input.toRequestDto(newClientWriteId("case-edit"))
         return runCatching {
             val response = session.api.updateCase(caseId, request)
-            requireStillActive(session.ownerAccountId)
-            database.caseDao().upsertCase(response.case.toEntity(session.ownerAccountId))
+            commitAccountMutation(session) {
+                database.caseDao().upsertCase(response.case.toEntity(session.ownerAccountId))
+            }
             CaseEditOutcome.Success(caseId = response.caseId, message = response.message)
         }.getOrElse { throwable ->
-            requireStillActive(session.ownerAccountId)
+            requireStillActive(session)
             parseFormErrors(throwable)?.let {
                 CaseEditOutcome.ValidationError(errors = it.errors, message = it.message ?: "Please fix the highlighted fields.")
             } ?: CaseEditOutcome.Failure(throwable.message ?: "Could not save the case. Try again.")
@@ -392,7 +426,7 @@ class MedtrackRepository(
     suspend fun loadTaskFormMetadata(): TaskFormMetadata {
         val session = activeSession()
         val response = session.api.taskFormMetadata()
-        requireStillActive(session.ownerAccountId)
+        requireStillActive(session)
         return response.toDomain()
     }
 
@@ -409,12 +443,13 @@ class MedtrackRepository(
         )
         return runCatching {
             val response = session.api.createTask(caseId, request)
-            requireStillActive(session.ownerAccountId)
-            database.caseDao().upsertCase(response.case.toEntity(session.ownerAccountId))
-            database.taskDao().upsertTask(response.task.toEntity(session.ownerAccountId, caseId))
+            commitAccountMutation(session) {
+                database.caseDao().upsertCase(response.case.toEntity(session.ownerAccountId))
+                database.taskDao().upsertTask(response.task.toEntity(session.ownerAccountId, caseId))
+            }
             TaskWriteOutcome.Success(response.message)
         }.getOrElse { throwable ->
-            requireStillActive(session.ownerAccountId)
+            requireStillActive(session)
             throwable.toTaskOutcome()
         }
     }
@@ -435,12 +470,13 @@ class MedtrackRepository(
         )
         return runCatching {
             val response = session.api.updateTask(taskId, request)
-            requireStillActive(session.ownerAccountId)
-            database.caseDao().upsertCase(response.case.toEntity(session.ownerAccountId))
-            database.taskDao().upsertTask(response.task.toEntity(session.ownerAccountId, caseId))
+            commitAccountMutation(session) {
+                database.caseDao().upsertCase(response.case.toEntity(session.ownerAccountId))
+                database.taskDao().upsertTask(response.task.toEntity(session.ownerAccountId, caseId))
+            }
             TaskWriteOutcome.Success(response.message)
         }.getOrElse { throwable ->
-            requireStillActive(session.ownerAccountId)
+            requireStillActive(session)
             throwable.toTaskOutcome()
         }
     }
@@ -449,12 +485,13 @@ class MedtrackRepository(
         val session = activeSession()
         return runCatching {
             val response = session.api.addTaskNote(taskId, TaskNoteRequestDto(note = note))
-            requireStillActive(session.ownerAccountId)
-            database.caseDao().upsertCase(response.case.toEntity(session.ownerAccountId))
-            database.taskDao().upsertTask(response.task.toEntity(session.ownerAccountId, caseId))
+            commitAccountMutation(session) {
+                database.caseDao().upsertCase(response.case.toEntity(session.ownerAccountId))
+                database.taskDao().upsertTask(response.task.toEntity(session.ownerAccountId, caseId))
+            }
             TaskWriteOutcome.Success(response.message)
         }.getOrElse { throwable ->
-            requireStillActive(session.ownerAccountId)
+            requireStillActive(session)
             throwable.toTaskOutcome()
         }
     }
@@ -480,12 +517,13 @@ class MedtrackRepository(
         )
         return runCatching {
             val response = session.api.updateVitals(vitalId, request)
-            requireStillActive(session.ownerAccountId)
-            database.caseDao().upsertCase(response.case.toEntity(session.ownerAccountId))
-            database.vitalDao().upsertVital(response.vital.toEntity(session.ownerAccountId, caseId))
+            commitAccountMutation(session) {
+                database.caseDao().upsertCase(response.case.toEntity(session.ownerAccountId))
+                database.vitalDao().upsertVital(response.vital.toEntity(session.ownerAccountId, caseId))
+            }
             VitalsWriteOutcome.Success(response.message)
         }.getOrElse { throwable ->
-            requireStillActive(session.ownerAccountId)
+            requireStillActive(session)
             parseFormErrors(throwable)?.let {
                 VitalsWriteOutcome.ValidationError(errors = it.errors, message = it.message ?: "Please check the vitals.")
             } ?: VitalsWriteOutcome.Failure(throwable.message ?: "Could not save vitals. Try again.")
@@ -519,10 +557,12 @@ class MedtrackRepository(
     suspend fun refreshCategoryOptions() {
         val session = activeSession()
         val response = session.api.categories()
-        requireStillActive(session.ownerAccountId)
+        commitAccountMutation(session) {
+            database.categoryOptionsDao().upsertOptions(response.toEntity(session.ownerAccountId))
+            markCacheFresh(session.ownerAccountId, CACHE_KEY_CATEGORY_OPTIONS)
+        }
+        requireStillActive(session)
         _categoryOptions.value = response.categories.map { it.toFilterOption() }
-        database.categoryOptionsDao().upsertOptions(response.toEntity(session.ownerAccountId))
-        markCacheFresh(session.ownerAccountId, CACHE_KEY_CATEGORY_OPTIONS)
     }
 
     suspend fun loadCachedVitalsThresholds() {
@@ -534,22 +574,28 @@ class MedtrackRepository(
     suspend fun refreshVitalsThresholds() {
         val session = activeSession()
         val response = session.api.vitalsThresholds()
-        requireStillActive(session.ownerAccountId)
+        commitAccountMutation(session) {
+            database.vitalsThresholdDao().upsertThresholds(response.toEntity(session.ownerAccountId))
+            markCacheFresh(session.ownerAccountId, CACHE_KEY_VITALS_THRESHOLDS)
+        }
+        requireStillActive(session)
         _vitalsThresholds.value = response.toDomain()
-        database.vitalsThresholdDao().upsertThresholds(response.toEntity(session.ownerAccountId))
-        markCacheFresh(session.ownerAccountId, CACHE_KEY_VITALS_THRESHOLDS)
     }
 
     suspend fun refreshCaseDetail(caseId: String) {
-        val session = activeSession()
+        refreshCaseDetailForSession(activeSession(), caseId)
+    }
+
+    private suspend fun refreshCaseDetailForSession(session: AccountSession, caseId: String) {
         val response = session.api.caseDetail(caseId)
-        requireStillActive(session.ownerAccountId)
-        database.caseDao().upsertCase(response.case.toEntity(session.ownerAccountId))
-        database.taskDao().clearTasksForCase(session.ownerAccountId, caseId)
-        database.taskDao().upsertTasks(response.tasks.map { it.toEntity(session.ownerAccountId, caseId) })
-        database.vitalDao().clearVitalsForCase(session.ownerAccountId, caseId)
-        database.vitalDao().upsertVitals(response.vitals.map { it.toEntity(session.ownerAccountId, caseId) })
-        markCacheFresh(session.ownerAccountId, caseDetailCacheKey(caseId))
+        commitAccountMutation(session) {
+            database.caseDao().upsertCase(response.case.toEntity(session.ownerAccountId))
+            database.taskDao().clearTasksForCase(session.ownerAccountId, caseId)
+            database.taskDao().upsertTasks(response.tasks.map { it.toEntity(session.ownerAccountId, caseId) })
+            database.vitalDao().clearVitalsForCase(session.ownerAccountId, caseId)
+            database.vitalDao().upsertVitals(response.vitals.map { it.toEntity(session.ownerAccountId, caseId) })
+            markCacheFresh(session.ownerAccountId, caseDetailCacheKey(caseId))
+        }
     }
 
     suspend fun refreshNotifications(type: String? = null) {
@@ -557,13 +603,14 @@ class MedtrackRepository(
         // When a Me-page category is open, fetch that type server-side so paginated
         // matches beyond the untyped first page aren't missed by client-side filtering.
         val response = session.api.notifications(type = type)
-        requireStillActive(session.ownerAccountId)
-        database.notificationDao().upsertNotifications(response.results.map { it.toEntity(session.ownerAccountId) })
-        // Only a full (untyped) refresh covers every category, so only it may mark the
-        // shared cache fresh. A typed refresh must not suppress the global sync, or the
-        // Me badge/counts could miss other categories until "All" is opened.
-        if (type == null) {
-            markCacheFresh(session.ownerAccountId, CACHE_KEY_NOTIFICATIONS)
+        commitAccountMutation(session) {
+            database.notificationDao().upsertNotifications(response.results.map { it.toEntity(session.ownerAccountId) })
+            // Only a full (untyped) refresh covers every category, so only it may mark the
+            // shared cache fresh. A typed refresh must not suppress the global sync, or the
+            // Me badge/counts could miss other categories until "All" is opened.
+            if (type == null) {
+                markCacheFresh(session.ownerAccountId, CACHE_KEY_NOTIFICATIONS)
+            }
         }
     }
 
@@ -574,40 +621,47 @@ class MedtrackRepository(
             notificationId = notificationId,
             clientWriteId = clientWriteId,
         )
-        database.notificationDao().markRead(session.ownerAccountId, notificationId)
+        commitAccountMutation(session) {
+            database.notificationDao().markRead(session.ownerAccountId, notificationId)
+        }
         runCatching {
             session.api.markNotificationRead(notificationId)
         }.getOrElse { throwable ->
-            requireStillActive(session.ownerAccountId)
+            requireStillActive(session)
             if (!throwable.shouldQueue()) {
                 throw throwable
             }
-            queuePendingWrite(
-                ownerAccountId = session.ownerAccountId,
-                clientWriteId = clientWriteId,
-                writeType = PendingWriteTypes.NOTIFICATION_READ,
-                caseId = null,
-                taskId = notificationId,
-                payloadJson = PendingWriteJson.encodeNotificationRead(payload),
-                lastError = throwable.message,
-            )
+            commitAccountMutation(session) {
+                queuePendingWrite(
+                    ownerAccountId = session.ownerAccountId,
+                    clientWriteId = clientWriteId,
+                    writeType = PendingWriteTypes.NOTIFICATION_READ,
+                    caseId = null,
+                    taskId = notificationId,
+                    payloadJson = PendingWriteJson.encodeNotificationRead(payload),
+                    lastError = throwable.message,
+                )
+            }
             onPendingWriteQueued(session.ownerAccountId)
         }
     }
 
     suspend fun registerPushToken(token: String, deviceLabel: String) {
         val session = activeSession()
-        database.pushTokenDao().upsertToken(
-            PushTokenEntity(
-                ownerAccountId = session.ownerAccountId,
-                token = token,
-                deviceLabel = deviceLabel,
-                syncedAtMillis = 0L,
-            ),
-        )
+        commitAccountMutation(session) {
+            database.pushTokenDao().upsertToken(
+                PushTokenEntity(
+                    ownerAccountId = session.ownerAccountId,
+                    token = token,
+                    deviceLabel = deviceLabel,
+                    syncedAtMillis = 0L,
+                ),
+            )
+        }
         session.api.registerPushToken(RegisterPushTokenRequestDto(token = token, deviceLabel = deviceLabel))
-        requireStillActive(session.ownerAccountId)
-        database.pushTokenDao().markTokenSynced(session.ownerAccountId, token, System.currentTimeMillis())
+        commitAccountMutation(session) {
+            database.pushTokenDao().markTokenSynced(session.ownerAccountId, token, System.currentTimeMillis())
+        }
     }
 
     suspend fun currentPushTokenForLogout(): String? {
@@ -624,16 +678,17 @@ class MedtrackRepository(
         val payload = ClientWriteRequestDto(clientWriteId = clientWriteId)
         return runCatching {
             val response = session.api.completeTask(taskId = taskId, request = payload)
-            requireStillActive(session.ownerAccountId)
-            database.caseDao().upsertCase(response.case.toEntity(session.ownerAccountId))
-            database.taskDao().upsertTask(response.task.toEntity(session.ownerAccountId, caseId))
+            commitAccountMutation(session) {
+                database.caseDao().upsertCase(response.case.toEntity(session.ownerAccountId))
+                database.taskDao().upsertTask(response.task.toEntity(session.ownerAccountId, caseId))
+            }
             WriteResult(clientWriteId = clientWriteId, queued = false, message = response.message)
         }.getOrElse { throwable ->
-            requireStillActive(session.ownerAccountId)
+            requireStillActive(session)
             when {
                 throwable.isConflict() -> {
                     recordConflict(
-                        ownerAccountId = session.ownerAccountId,
+                        session = session,
                         clientWriteId = clientWriteId,
                         writeType = PendingWriteTypes.TASK_COMPLETE,
                         caseId = caseId,
@@ -648,16 +703,18 @@ class MedtrackRepository(
                     )
                 }
                 throwable.shouldQueue() -> {
-                    queuePendingWrite(
-                        ownerAccountId = session.ownerAccountId,
-                        clientWriteId = clientWriteId,
-                        writeType = PendingWriteTypes.TASK_COMPLETE,
-                        caseId = caseId,
-                        taskId = taskId,
-                        payloadJson = PendingWriteJson.encodeTaskComplete(payload),
-                        lastError = throwable.message,
-                    )
-                    database.taskDao().markTaskCompletedLocally(session.ownerAccountId, taskId, System.currentTimeMillis())
+                    commitAccountMutation(session) {
+                        queuePendingWrite(
+                            ownerAccountId = session.ownerAccountId,
+                            clientWriteId = clientWriteId,
+                            writeType = PendingWriteTypes.TASK_COMPLETE,
+                            caseId = caseId,
+                            taskId = taskId,
+                            payloadJson = PendingWriteJson.encodeTaskComplete(payload),
+                            lastError = throwable.message,
+                        )
+                        database.taskDao().markTaskCompletedLocally(session.ownerAccountId, taskId, System.currentTimeMillis())
+                    }
                     onPendingWriteQueued(session.ownerAccountId)
                     WriteResult(
                         clientWriteId = clientWriteId,
@@ -688,15 +745,16 @@ class MedtrackRepository(
         )
         return runCatching {
             val response = session.api.logCall(caseId = caseId, request = payload)
-            requireStillActive(session.ownerAccountId)
-            database.caseDao().upsertCase(response.case.toEntity(session.ownerAccountId))
+            commitAccountMutation(session) {
+                database.caseDao().upsertCase(response.case.toEntity(session.ownerAccountId))
+            }
             WriteResult(clientWriteId = clientWriteId, queued = false, message = response.message)
         }.getOrElse { throwable ->
-            requireStillActive(session.ownerAccountId)
+            requireStillActive(session)
             when {
                 throwable.isConflict() -> {
                     recordConflict(
-                        ownerAccountId = session.ownerAccountId,
+                        session = session,
                         clientWriteId = clientWriteId,
                         writeType = PendingWriteTypes.CALL_OUTCOME,
                         caseId = caseId,
@@ -711,15 +769,17 @@ class MedtrackRepository(
                     )
                 }
                 throwable.shouldQueue() -> {
-                    queuePendingWrite(
-                        ownerAccountId = session.ownerAccountId,
-                        clientWriteId = clientWriteId,
-                        writeType = PendingWriteTypes.CALL_OUTCOME,
-                        caseId = caseId,
-                        taskId = taskId,
-                        payloadJson = PendingWriteJson.encodeCallOutcome(payload),
-                        lastError = throwable.message,
-                    )
+                    commitAccountMutation(session) {
+                        queuePendingWrite(
+                            ownerAccountId = session.ownerAccountId,
+                            clientWriteId = clientWriteId,
+                            writeType = PendingWriteTypes.CALL_OUTCOME,
+                            caseId = caseId,
+                            taskId = taskId,
+                            payloadJson = PendingWriteJson.encodeCallOutcome(payload),
+                            lastError = throwable.message,
+                        )
+                    }
                     onPendingWriteQueued(session.ownerAccountId)
                     WriteResult(
                         clientWriteId = clientWriteId,
@@ -754,16 +814,17 @@ class MedtrackRepository(
         )
         return runCatching {
             val response = session.api.addVitals(caseId = caseId, request = payload)
-            requireStillActive(session.ownerAccountId)
-            database.caseDao().upsertCase(response.case.toEntity(session.ownerAccountId))
-            database.vitalDao().upsertVital(response.vital.toEntity(session.ownerAccountId, caseId))
+            commitAccountMutation(session) {
+                database.caseDao().upsertCase(response.case.toEntity(session.ownerAccountId))
+                database.vitalDao().upsertVital(response.vital.toEntity(session.ownerAccountId, caseId))
+            }
             WriteResult(clientWriteId = clientWriteId, queued = false, message = response.message)
         }.getOrElse { throwable ->
-            requireStillActive(session.ownerAccountId)
+            requireStillActive(session)
             when {
                 throwable.isConflict() -> {
                     recordConflict(
-                        ownerAccountId = session.ownerAccountId,
+                        session = session,
                         clientWriteId = clientWriteId,
                         writeType = PendingWriteTypes.VITALS_CREATE,
                         caseId = caseId,
@@ -778,16 +839,20 @@ class MedtrackRepository(
                     )
                 }
                 throwable.shouldQueue() -> {
-                    queuePendingWrite(
-                        ownerAccountId = session.ownerAccountId,
-                        clientWriteId = clientWriteId,
-                        writeType = PendingWriteTypes.VITALS_CREATE,
-                        caseId = caseId,
-                        taskId = null,
-                        payloadJson = PendingWriteJson.encodeVitals(payload),
-                        lastError = throwable.message,
-                    )
-                    database.vitalDao().upsertVital(payload.toPendingVitalEntity(session.ownerAccountId, caseId, clientWriteId))
+                    commitAccountMutation(session) {
+                        queuePendingWrite(
+                            ownerAccountId = session.ownerAccountId,
+                            clientWriteId = clientWriteId,
+                            writeType = PendingWriteTypes.VITALS_CREATE,
+                            caseId = caseId,
+                            taskId = null,
+                            payloadJson = PendingWriteJson.encodeVitals(payload),
+                            lastError = throwable.message,
+                        )
+                        database.vitalDao().upsertVital(
+                            payload.toPendingVitalEntity(session.ownerAccountId, caseId, clientWriteId),
+                        )
+                    }
                     onPendingWriteQueued(session.ownerAccountId)
                     WriteResult(
                         clientWriteId = clientWriteId,
@@ -801,31 +866,35 @@ class MedtrackRepository(
     }
 
     suspend fun dismissSyncConflict(clientWriteId: String) {
-        val ownerAccountId = activeSession().ownerAccountId
-        database.syncConflictDao().deleteConflict(ownerAccountId, clientWriteId)
+        val session = activeSession()
+        commitAccountMutation(session) {
+            database.syncConflictDao().deleteConflict(session.ownerAccountId, clientWriteId)
+        }
     }
 
     private suspend fun recordConflict(
-        ownerAccountId: String,
+        session: AccountSession,
         clientWriteId: String,
         writeType: String,
         caseId: String?,
         taskId: String?,
         error: Throwable,
     ) {
-        database.syncConflictDao().upsertConflict(
-            SyncConflictEntity(
-                ownerAccountId = ownerAccountId,
-                clientWriteId = clientWriteId,
-                writeType = writeType,
-                caseId = caseId,
-                taskId = taskId,
-                message = conflictMessage(error),
-                serverPayloadJson = null,
-                createdAtMillis = System.currentTimeMillis(),
-            ),
-        )
-        caseId?.let { runCatching { refreshCaseDetail(it) } }
+        commitAccountMutation(session) {
+            database.syncConflictDao().upsertConflict(
+                SyncConflictEntity(
+                    ownerAccountId = session.ownerAccountId,
+                    clientWriteId = clientWriteId,
+                    writeType = writeType,
+                    caseId = caseId,
+                    taskId = taskId,
+                    message = conflictMessage(error),
+                    serverPayloadJson = null,
+                    createdAtMillis = System.currentTimeMillis(),
+                ),
+            )
+        }
+        caseId?.let { runCatching { refreshCaseDetailForSession(session, it) } }
     }
 
     private suspend fun queuePendingWrite(
@@ -868,6 +937,7 @@ class MedtrackRepository(
 @OptIn(ExperimentalPagingApi::class)
 private class CaseRemoteMediator(
     private val ownerAccountId: String,
+    private val accountGeneration: Long,
     private val api: MedtrackApi,
     private val database: MedtrackDatabase,
     private val cacheKey: String,
@@ -899,11 +969,14 @@ private class CaseRemoteMediator(
                 subcategories = subcategories.takeIf { it.isNotEmpty() },
                 page = page,
             )
-            check(isAccountActive()) { "The authenticated MEDTRACK account changed." }
             val updatedAtMillis = System.currentTimeMillis()
             val upcomingPage = response.nextPageAfter(page)
 
-            database.withTransaction {
+            database.commitForAccount(
+                ownerAccountId = ownerAccountId,
+                generation = accountGeneration,
+                isLocallyActive = isAccountActive,
+            ) {
                 if (loadType == LoadType.REFRESH) {
                     database.caseDao().clearCases(ownerAccountId)
                 }

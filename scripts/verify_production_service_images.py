@@ -77,12 +77,10 @@ def scan_and_sbom(
     artifact: Path,
     manifest_digest: str,
     policy: Path,
-    cache: Path,
 ) -> dict[str, str]:
     report = artifact.parent / f"{service}-trivy.json"
     sbom = artifact.parent / f"{service}-sbom.cdx.json"
     output_mount = f"{artifact.parent.resolve()}:/output"
-    cache_mount = f"{cache.resolve()}:/root/.cache/trivy"
     with tempfile.TemporaryDirectory(prefix="medtrack-service-oci-layout-") as layout_dir:
         layout = Path(layout_dir)
         with tarfile.open(artifact, mode="r:*") as archive:
@@ -98,7 +96,7 @@ def scan_and_sbom(
         subprocess.run(
             [
                 "docker", "run", "--rm", "--volume", output_mount,
-                "--volume", cache_mount, "--volume", f"{layout.resolve()}:/oci:ro",
+                "--volume", f"{layout.resolve()}:/oci:ro",
                 TRIVY_IMAGE, "image", "--input", "/oci",
                 "--scanners", "vuln,secret", "--severity", "HIGH,CRITICAL",
                 "--ignore-unfixed=false", "--exit-code", "0",
@@ -196,10 +194,9 @@ def main() -> int:
     output.mkdir(parents=True, exist_ok=True)
     records: list[dict[str, object]] = []
 
-    with tempfile.TemporaryDirectory(prefix="medtrack-service-context-") as context_dir, tempfile.TemporaryDirectory(prefix="medtrack-trivy-cache-") as cache_dir:
+    with tempfile.TemporaryDirectory(prefix="medtrack-service-context-") as context_dir:
         context = Path(context_dir)
         extract_git_archive(repo_root, revision, context)
-        cache = Path(cache_dir)
         for service in services:
             artifact = output / f"{service}-image.oci.tar"
             build_metadata_path: Path | None = None
@@ -232,7 +229,7 @@ def main() -> int:
                     raise RuntimeError("PostgreSQL BuildKit digest does not match its OCI archive")
             loaded_image = runtime_smoke(service, artifact, revision)
             evidence = scan_and_sbom(
-                repo_root, service, artifact, identity["manifest_digest"], policy, cache
+                repo_root, service, artifact, identity["manifest_digest"], policy
             )
             record = {
                 "service": service,

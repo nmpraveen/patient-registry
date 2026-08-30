@@ -8,6 +8,8 @@ The web app supports login-based role-aware workflows, case dashboards, case act
 
 The Android v1 implementation and its reviewed server contracts are merged in source, including API 36 environment flavors, fail-closed case edits, account-scoped encrypted state, cursor snapshot sync, durable recovery records, and data-only opaque FCM consumption. The release goal is not complete until external Firebase, physical-device, signing, and field gates pass.
 
+GitHub build/release containment is implemented in the current remediation change: the Docker context and image are runtime-allowlisted, Python and production image inputs are immutable, Android artifacts use Gradle checksum verification, and exact-head CI covers backend, schema, supply-chain, container, frontend, and Android gates. Branch protection is intentionally not mutated by this change; the coordinator must apply the tracked configuration after the workflow merges and has emitted all required check names.
+
 Production is deployed on the hardened VPS at commit `a5dff668b23c52e5a71431807a291573f9e0404c`: pinned Python/PostgreSQL/Caddy versions, loopback-only Django exposure, persistent host backup storage, health-gated startup, and exact-commit deployment. Website and API object authorization now enforce created, assigned, or current call-queue scope for restricted staff; Doctor/Admin retain full active-case scope. Non-superusers can no longer modify superusers or grant settings-admin access, and the plaintext temporary-password-note model/table/UI have been removed. Encrypted Google Drive backups and health timers are active, and a pull-only Synology ciphertext mirror provides an independent off-VPS copy.
 
 GitHub `main` is source-reviewed at `892a0c2a6095b346fcbb5a90804a481ec849ee76`, but this task did not query or modify the live VPS, Drive, NAS, or backup state. The rebased operations/recovery remediation branch adds fail-closed verified restore and rollback, two-phase deployment gates, supervised patient-data scheduling, stronger off-site triplet/hash health, destructive reverse-migration refusal, and bounded imports. Those controls remain pending PR merge and an explicitly approved live installation; they are not deployed.
@@ -119,6 +121,7 @@ If `docker-compose.override.yml` exists locally, the local-dev PowerShell wrappe
 - `backups/` - patient-data bundles and backup artifacts; treat as sensitive and gitignored.
 - `staticfiles/` - collected Django static files.
 - `output/` - Android/API smoke, audit, and field-test evidence when scripts are run.
+- GitHub Actions artifact `medtrack-sbom-provenance-<sha>` - CycloneDX SBOM, unsigned local in-toto statement, and OCI image archive containing BuildKit SBOM/provenance attestations; retained for 30 days.
 - `output/android-claude-handoff-final-20260531-105420/` - current screenshot handoff for style and workflow review.
 - Synology `Home/Backups/MEDTRACK/archive/` - encrypted NAS recovery archive; no private `age` key and no automatic deletion.
 - `C:\Users\prave\Documents\NNH umich\MEDTRACK Recovery\2026-08-11-nas-restore\` - local encrypted NAS restore evidence and verification report; no retained plaintext.

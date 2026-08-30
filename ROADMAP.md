@@ -13,6 +13,12 @@
 
 ## Near-Term Roadmap
 
+0. Activate the build and CI containment baseline.
+   - Merge the exact-head workflow and the application lanes required to make strict OpenAPI, Android unit/lint/release, and frontend no-overflow green.
+   - Do not mark failing checks optional or weaken their commands to merge.
+   - After all ten check names have run on `main`, use the read-only preflight and exact-SHA apply command in `.github/BRANCH_PROTECTION.md`.
+   - Keep weekly Dependabot and supply-chain freshness runs enabled; review all lock/digest changes through PRs.
+
 1. Operate and exercise the recovered production system.
    - Rotate the temporary VPS root credential and preserve the normal non-root admin path.
    - Add a host-level VPS snapshot so application backups are not the only recovery layer.

@@ -1,5 +1,65 @@
 # RUNBOOK.md
 
+## Reproducible Build And Exact-Head CI
+
+Production image inputs are immutable and the Docker context is closed by
+default. Never replace the explicit Dockerfile copies with `COPY .` or broaden
+`.dockerignore` to include the checkout.
+
+Review dependency/image updates:
+
+```powershell
+python .\scripts\update-python-locks.py
+python .\scripts\check_image_digests.py --remote
+git diff -- requirements.in requirements.txt requirements-ci.in requirements-ci.txt Dockerfile docker-compose.yml docker-compose.prod.yml
+```
+
+After reviewing an upstream image tag and release notes, refresh its digest and
+re-run all gates:
+
+```powershell
+python .\scripts\check_image_digests.py --update
+```
+
+Android dependency verification metadata must be updated serially, only after
+the owning application lanes have made all three Android gates green:
+
+```powershell
+Set-Location android
+.\gradlew.bat --no-daemon --max-workers=1 --write-verification-metadata sha256 testDebugUnitTest lintRelease assembleRelease
+Set-Location ..
+git diff -- android\gradle\verification-metadata.xml
+```
+
+Review every added artifact/checksum. Do not use verification-metadata updates
+to mask a source compile, unit, lint, or release failure.
+
+Build and scan an exact committed revision from a safe Git archive with
+synthetic canaries only:
+
+```powershell
+python .\scripts\verify_container_build.py --revision <full-git-sha> --image medtrack-review:<short-sha>
+python .\scripts\write_build_provenance.py --image medtrack-review:<short-sha> --revision <full-git-sha> --output output\medtrack-provenance.intoto.json
+```
+
+This stages the exact Git tree into a temporary directory, adds fake canaries
+at credential/Firebase/backup/age/rclone/output/node-module/override/PHI paths,
+builds a scratch context-audit image and the real runtime image, and scans both
+the immutable layers and exported filesystem. It never reads ignored credential
+values.
+
+GitHub Actions tests the pull request head SHA directly. The required checks are
+listed in `.github/BRANCH_PROTECTION.md`. Branch protection is a post-merge
+administrator action:
+
+```powershell
+.\scripts\apply-branch-protection.ps1
+.\scripts\apply-branch-protection.ps1 -Apply -ExpectedMainSha <40-character-merged-main-sha>
+```
+
+The first command is read-only. Do not use `-Apply` before the workflow exists
+on `main` and has emitted all required check names.
+
 ## Local Demo Server
 
 Use the local-only Test NNH server for demos and quick verification.

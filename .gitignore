@@ -3,6 +3,7 @@ __pycache__/
 *.sqlite3
 .env
 .env.backup.*
+LOCAL_CREDENTIALS.md
 backups/
 .pytest_cache/
 .mypy_cache/
@@ -24,3 +25,6 @@ firebase-service-account*.json
 *.agekey
 rclone.conf
 backup.env
+*.sql
+*.dump
+*.pgdump

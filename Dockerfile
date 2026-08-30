@@ -1,4 +1,10 @@
-FROM python:3.12.13-slim-trixie
+ARG PYTHON_BASE_IMAGE=python:3.12.13-slim-trixie@sha256:229a2c5bfa27522db7815ea81f9bed70af17ccb9de9fc7ad142b1877b5830d36
+FROM ${PYTHON_BASE_IMAGE}
+
+ARG VCS_REF=unknown
+
+LABEL org.opencontainers.image.source="https://github.com/nmpraveen/patient-registry" \
+      org.opencontainers.image.revision="${VCS_REF}"
 
 ARG VCS_REF=unknown
 ARG BUILD_CONTEXT_SHA256=unverified

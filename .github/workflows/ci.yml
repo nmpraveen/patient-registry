@@ -1,0 +1,363 @@
+name: MEDTRACK exact-head CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: medtrack-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+  PYTHON_VERSION: "3.12.13"
+  POSTGRES_DB: medtrack_ci
+  POSTGRES_USER: medtrack_ci
+  POSTGRES_PASSWORD: medtrack-ci-synthetic-password
+  POSTGRES_HOST: 127.0.0.1
+  POSTGRES_PORT: "5432"
+  SECRET_KEY: medtrack-ci-synthetic-secret-key-not-for-production
+  DEBUG: "False"
+  ALLOWED_HOSTS: localhost,127.0.0.1
+  FCM_ENABLED: "False"
+
+jobs:
+  django-tests:
+    name: Django tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16.14-alpine3.24@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
+        env:
+          POSTGRES_DB: medtrack_ci
+          POSTGRES_USER: medtrack_ci
+          POSTGRES_PASSWORD: medtrack-ci-synthetic-password
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U medtrack_ci -d medtrack_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ env.EXPECTED_SHA }}
+      - uses: ./.github/actions/verify-exact-head
+        with:
+          expected-sha: ${{ env.EXPECTED_SHA }}
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - run: python -m pip install --require-hashes -r requirements.txt
+      - run: python -m pip check
+      - run: python manage.py test
+
+  migration-integrity:
+    name: Migration integrity
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16.14-alpine3.24@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
+        env:
+          POSTGRES_DB: medtrack_ci
+          POSTGRES_USER: medtrack_ci
+          POSTGRES_PASSWORD: medtrack-ci-synthetic-password
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U medtrack_ci -d medtrack_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ env.EXPECTED_SHA }}
+      - uses: ./.github/actions/verify-exact-head
+        with:
+          expected-sha: ${{ env.EXPECTED_SHA }}
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - run: python -m pip install --require-hashes -r requirements.txt
+      - name: Migration drift
+        run: python manage.py makemigrations --check --dry-run
+      - name: Scratch migration from zero
+        run: |
+          set -euo pipefail
+          python manage.py migrate --noinput
+          python manage.py check
+          if python manage.py showmigrations --plan | grep -q '\[ \]'; then
+            echo "Unapplied migrations remain after scratch migration" >&2
+            exit 1
+          fi
+
+  strict-openapi:
+    name: Strict OpenAPI
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16.14-alpine3.24@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
+        env:
+          POSTGRES_DB: medtrack_ci
+          POSTGRES_USER: medtrack_ci
+          POSTGRES_PASSWORD: medtrack-ci-synthetic-password
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U medtrack_ci -d medtrack_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ env.EXPECTED_SHA }}
+      - uses: ./.github/actions/verify-exact-head
+        with:
+          expected-sha: ${{ env.EXPECTED_SHA }}
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - run: python -m pip install --require-hashes -r requirements.txt
+      - run: python manage.py spectacular --validate --fail-on-warn --file openapi-ci.yml
+
+  supply-chain:
+    name: Supply-chain scans
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ env.EXPECTED_SHA }}
+          fetch-depth: 0
+      - uses: ./.github/actions/verify-exact-head
+        with:
+          expected-sha: ${{ env.EXPECTED_SHA }}
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements-ci.txt
+      - run: python -m pip install --require-hashes -r requirements-ci.txt
+      - name: Python vulnerability audit
+        run: python -m pip_audit --strict --require-hashes -r requirements.txt
+      - name: Reproduce Python locks
+        run: |
+          python scripts/update-python-locks.py
+          git diff --exit-code -- requirements.txt requirements-ci.txt
+      - name: Verify immutable image pins
+        run: python scripts/check_image_digests.py --remote
+      - name: Filesystem vulnerability, secret, and misconfiguration scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret,misconfig
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+  compose-shell:
+    name: Compose and shell
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ env.EXPECTED_SHA }}
+      - uses: ./.github/actions/verify-exact-head
+        with:
+          expected-sha: ${{ env.EXPECTED_SHA }}
+      - name: Render development and production Compose
+        env:
+          MEDTRACK_DOMAIN: ci.invalid
+          CSRF_TRUSTED_ORIGINS: https://ci.invalid
+        run: |
+          set -euo pipefail
+          printf '%s\n' \
+            'SECRET_KEY=compose-render-synthetic-key' \
+            'POSTGRES_PASSWORD=compose-render-synthetic-password' \
+            'MEDTRACK_DOMAIN=ci.invalid' \
+            'ALLOWED_HOSTS=ci.invalid,localhost' \
+            'CSRF_TRUSTED_ORIGINS=https://ci.invalid' > .env
+          docker compose -f docker-compose.yml -f docker-compose.dev.yml config --quiet
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml config --quiet
+      - name: Shell syntax and static analysis
+        run: |
+          set -euo pipefail
+          mapfile -d '' scripts < <(git ls-files -z '*.sh')
+          for script in "${scripts[@]}"; do bash -n "$script"; done
+          if ! command -v shellcheck >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y shellcheck
+          fi
+          shellcheck "${scripts[@]}"
+      - name: Docker runtime allowlist regression
+        run: |
+          set -euo pipefail
+          if grep -Eq '^[[:space:]]*(COPY|ADD)[[:space:]]+\.[[:space:]]' Dockerfile; then
+            echo 'Dockerfile contains a broad COPY/ADD of the context' >&2
+            exit 1
+          fi
+          python scripts/check_image_digests.py
+
+  container-integrity:
+    name: Container integrity
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ env.EXPECTED_SHA }}
+          fetch-depth: 0
+      - uses: ./.github/actions/verify-exact-head
+        with:
+          expected-sha: ${{ env.EXPECTED_SHA }}
+      - name: Exact safe-context build and canary proof
+        run: >-
+          python scripts/verify_container_build.py
+          --revision "${EXPECTED_SHA}"
+          --image "medtrack-ci:${EXPECTED_SHA}"
+      - name: Image vulnerability and secret scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: medtrack-ci:${{ env.EXPECTED_SHA }}
+          scanners: vuln,secret
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+      - name: Prepare artifact directory
+        run: mkdir -p output
+      - name: Generate CycloneDX SBOM
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        with:
+          image: medtrack-ci:${{ env.EXPECTED_SHA }}
+          format: cyclonedx-json
+          output-file: output/medtrack-sbom.cdx.json
+          upload-artifact: false
+      - name: Write local provenance statement
+        run: >-
+          python scripts/write_build_provenance.py
+          --image "medtrack-ci:${EXPECTED_SHA}"
+          --revision "${EXPECTED_SHA}"
+          --output output/medtrack-provenance.intoto.json
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Build OCI archive with BuildKit SBOM and provenance attestations
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          build-args: VCS_REF=${{ env.EXPECTED_SHA }}
+          pull: true
+          provenance: mode=max
+          sbom: true
+          outputs: type=oci,dest=/tmp/medtrack-image.oci.tar
+      - name: Collect attested image archive
+        run: mv /tmp/medtrack-image.oci.tar output/medtrack-image.oci.tar
+      - name: GitHub provenance attestation after merge
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-path: output/medtrack-image.oci.tar
+      - name: GitHub SBOM attestation after merge
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/attest-sbom@4651f806c01d8637787e274ac3bdf724ef169f34 # v3
+        with:
+          subject-path: output/medtrack-image.oci.tar
+          sbom-path: output/medtrack-sbom.cdx.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: medtrack-sbom-provenance-${{ env.EXPECTED_SHA }}
+          path: output/
+          if-no-files-found: error
+          retention-days: 30
+
+  android:
+    name: Android (${{ matrix.gate }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - gate: unit
+            task: testDebugUnitTest
+          - gate: lint
+            task: lintRelease
+          - gate: release
+            task: assembleRelease
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ env.EXPECTED_SHA }}
+      - uses: ./.github/actions/verify-exact-head
+        with:
+          expected-sha: ${{ env.EXPECTED_SHA }}
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+      - name: Run Android gate
+        working-directory: android
+        env:
+          MEDTRACK_ANDROID_BUILD_DIR: ${{ runner.temp }}/medtrack-android-${{ matrix.gate }}
+        run: ./gradlew --no-daemon --max-workers=1 --stacktrace ${{ matrix.task }}
+
+  frontend-no-overflow:
+    name: Frontend no-overflow
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16.14-alpine3.24@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
+        env:
+          POSTGRES_DB: medtrack_ci
+          POSTGRES_USER: medtrack_ci
+          POSTGRES_PASSWORD: medtrack-ci-synthetic-password
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U medtrack_ci -d medtrack_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ env.EXPECTED_SHA }}
+      - uses: ./.github/actions/verify-exact-head
+        with:
+          expected-sha: ${{ env.EXPECTED_SHA }}
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements-ci.txt
+      - run: python -m pip install --require-hashes -r requirements-ci.txt
+      - run: python -m playwright install --with-deps chromium
+      - name: Seed synthetic data and run responsive smoke
+        env:
+          E2E_USERNAME: demo_admin
+          E2E_PASSWORD: pass
+        run: |
+          set -euo pipefail
+          python manage.py migrate --noinput
+          python manage.py seed_mock_data --count 8 --reset
+          python manage.py runserver 127.0.0.1:8000 > /tmp/medtrack-runserver.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8000/login/ >/dev/null; then break; fi
+            if [ "$attempt" -eq 30 ]; then cat /tmp/medtrack-runserver.log; exit 1; fi
+            sleep 1
+          done
+          python scripts/frontend_no_overflow.py --base-url http://127.0.0.1:8000

@@ -102,7 +102,7 @@ def restore_previous_defaults(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
-    dependencies = [("patients", "0037_backend_auth_clinical_security")]
+    dependencies = [("patients", "0038_calllog_client_event_at")]
 
     operations = [
         migrations.RunPython(apply_accessible_defaults, restore_previous_defaults),

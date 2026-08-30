@@ -19,7 +19,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command, get_commands
 from django.core.management.base import CommandError
 from django.db import ProgrammingError, connection
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.test.utils import CaptureQueriesContext
 from django.templatetags.static import static
 from django.urls import reverse

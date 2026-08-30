@@ -7,11 +7,13 @@ from pathlib import Path
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
-from django.test import Client, TestCase
+from django.db import transaction
+from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 from scripts.verify_web_vendor_integrity import verify_manifest
 
+from .test_client import AuthVersionTestClient
 from .forms import DepartmentThemeForm, ThemeSettingsForm
 from .models import (
     Case,
@@ -46,6 +48,8 @@ from .theme import (
 
 
 class FrontendAccessibilityRegressionTests(TestCase):
+    client_class = AuthVersionTestClient
+
     @classmethod
     def setUpTestData(cls):
         cls.admin = get_user_model().objects.create_superuser(
@@ -124,7 +128,7 @@ class FrontendAccessibilityRegressionTests(TestCase):
         self.assertNotIn("fonts.googleapis.com", csp)
 
     def test_anonymous_auth_device_and_phi_responses_are_private_no_store(self):
-        anonymous = Client()
+        anonymous = AuthVersionTestClient()
 
         token_response = anonymous.post(
             reverse("api:token_obtain_pair"),
@@ -142,10 +146,11 @@ class FrontendAccessibilityRegressionTests(TestCase):
         self.assertEqual(refresh_response.status_code, 200)
         self.assert_private_no_store(refresh_response)
 
-        invalid_token_response = anonymous.post(
-            reverse("api:token_obtain_pair"),
-            {"username": self.admin.username, "password": "wrong-password"},
-        )
+        with transaction.atomic():
+            invalid_token_response = anonymous.post(
+                reverse("api:token_obtain_pair"),
+                {"username": self.admin.username, "password": "wrong-password"},
+            )
         self.assertEqual(invalid_token_response.status_code, 401)
         self.assert_private_no_store(invalid_token_response)
 
@@ -168,7 +173,7 @@ class FrontendAccessibilityRegressionTests(TestCase):
         self.assertEqual(pending_error.status_code, 403)
         self.assert_private_no_store(pending_error)
 
-        phi_redirect = Client().get(reverse("patients:patient_list"))
+        phi_redirect = AuthVersionTestClient().get(reverse("patients:patient_list"))
         self.assertEqual(phi_redirect.status_code, 302)
         self.assert_private_no_store(phi_redirect)
 
@@ -354,7 +359,7 @@ class FrontendAccessibilityRegressionTests(TestCase):
             created_by=self.admin,
         )
 
-        restricted_client = Client()
+        restricted_client = AuthVersionTestClient()
         restricted_client.force_login(restricted_user)
         detail_url = reverse("patients:patient_detail", kwargs={"pk": source_case.patient_id})
         review = restricted_client.get(detail_url, {"target_patient": target_case.patient_id})

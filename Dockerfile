@@ -4,19 +4,6 @@ FROM ${PYTHON_BASE_IMAGE}
 ARG VCS_REF=unknown
 ARG BUILD_CONTEXT_SHA256=unverified
 
-LABEL org.opencontainers.image.source="https://github.com/nmpraveen/patient-registry" \
-      org.opencontainers.image.revision="${VCS_REF}" \
-      org.medtrack.build-context.schema="medtrack.build-context/v1" \
-      org.medtrack.build-context.digest="${BUILD_CONTEXT_SHA256}"
-
-ARG VCS_REF=unknown
-ARG BUILD_CONTEXT_SHA256=unverified
-
-LABEL org.opencontainers.image.source="https://github.com/nmpraveen/patient-registry" \
-      org.opencontainers.image.revision="${VCS_REF}" \
-      org.medtrack.build-context.schema="medtrack.build-context/v1" \
-      org.medtrack.build-context.digest="${BUILD_CONTEXT_SHA256}"
-
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV MEDTRACK_IMAGE_REVISION="${VCS_REF}"
@@ -34,9 +21,10 @@ RUN apk add --no-cache \
     && chmod 1777 /tmp
 
 COPY requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+RUN python -m pip install --no-cache-dir --require-hashes -r /app/requirements.txt \
+    && python -m pip check
 
-# Runtime allowlist. Keep synchronized with build PR #100; never use COPY . or ADD .
+# Runtime allowlist. Never replace these copies with COPY . or ADD .
 COPY manage.py VERSION CHANGELOG.md /app/
 COPY patient_registry /app/patient_registry
 COPY api /app/api

@@ -14,12 +14,15 @@ import sys
 IMAGE_REFS = (
     ("Dockerfile", "python:3.12.13-alpine3.23"),
     ("Dockerfile.postgres", "postgres:16.14-alpine3.24"),
-    ("docker-compose.prod.yml", "caddy:2.11.4-alpine"),
+    ("deploy/Dockerfile.caddy", "caddy:2.11.4-builder-alpine"),
+    ("deploy/Dockerfile.caddy", "caddy:2.11.4-alpine"),
     ("scripts/build_canonical_image.py", "quay.io/skopeo/stable:v1.21.0"),
     ("scripts/update-python-locks.py", "python:3.12.13-alpine3.23"),
     ("scripts/update-python-locks.py", "python:3.12.13-slim-bookworm"),
     ("scripts/verify_canonical_artifact.sh", "aquasec/trivy:0.74.0"),
     ("scripts/verify_canonical_artifact.sh", "anchore/syft:v1.51.1"),
+    ("scripts/verify_production_service_images.py", "aquasec/trivy:0.74.0"),
+    ("scripts/verify_production_service_images.py", "anchore/syft:v1.51.1"),
 )
 DIGEST_PATTERN = re.compile(r"sha256:[0-9a-f]{64}")
 

@@ -164,6 +164,7 @@ jobs:
           python -m unittest
           scripts.tests.test_scan_container_image
           scripts.tests.test_verify_container_vulnerabilities
+          scripts.tests.test_verify_production_service_images
       - name: Stage exact committed tree for repository scan
         run: |
           set -euo pipefail

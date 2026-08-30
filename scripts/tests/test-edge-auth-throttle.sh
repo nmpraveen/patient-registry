@@ -24,8 +24,10 @@ image_ref="medtrack-caddy:auth-throttle-test"
 MSYS_NO_PATHCONV=1 docker build --quiet -f "$docker_repo_root/deploy/Dockerfile.caddy" \
   -t "$image_ref" "$docker_repo_root" >/dev/null
 MSYS_NO_PATHCONV=1 docker run --rm --entrypoint sh -e MEDTRACK_DOMAIN=http://medtrack.invalid \
+  --cap-drop ALL --cap-add NET_BIND_SERVICE --security-opt no-new-privileges:true \
+  --tmpfs /var/log/medtrack:rw,noexec,nosuid,nodev,mode=0770,uid=10002,gid=10001 \
   -v "$docker_repo_root/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" "$image_ref" -ceu \
-  'caddy list-modules | grep -Fxq http.handlers.rate_limit && caddy validate --config /etc/caddy/Caddyfile' >/dev/null
+  'test "$(id -u)" = 10002 && test "$(id -g)" = 10001 && caddy list-modules | grep -Fxq http.handlers.rate_limit && caddy validate --config /etc/caddy/Caddyfile' >/dev/null
 adapted_config="$(MSYS_NO_PATHCONV=1 docker run --rm --entrypoint caddy -e MEDTRACK_DOMAIN=http://medtrack.invalid \
   -v "$docker_repo_root/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" "$image_ref" \
   adapt --config /etc/caddy/Caddyfile)"
@@ -45,6 +47,7 @@ if docker run --rm --entrypoint sh caddy:2.11.4-alpine@sha256:5f5c8640aae01df965
 fi
 
 mkdir -p "$test_root/logs"
+chmod 3777 "$test_root/logs"
 docker network create "$network_name" >/dev/null
 docker run -d --name "$backend_name" --network "$network_name" --network-alias web \
   --entrypoint caddy "$image_ref" respond --listen :8000 --body OK >/dev/null
@@ -53,6 +56,7 @@ for _ in $(seq 1 20); do
   sleep 1
 done
 MSYS_NO_PATHCONV=1 docker run -d --name "$container_name" --network "$network_name" -e MEDTRACK_DOMAIN=http://medtrack.invalid \
+  --cap-drop ALL --cap-add NET_BIND_SERVICE --security-opt no-new-privileges:true \
   -p 127.0.0.1::80 \
   -v "$docker_repo_root/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" \
   -v "$docker_test_root/logs:/var/log/medtrack" "$image_ref" >/dev/null

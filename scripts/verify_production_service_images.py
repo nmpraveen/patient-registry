@@ -6,14 +6,12 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-import re
 import subprocess
 import sys
 import tarfile
 import tempfile
 
 from build_canonical_image import (
-    SKOPEO_IMAGE,
     inspect_oci_archive,
     load_oci_archive,
     sha256_file,
@@ -23,52 +21,67 @@ from verify_container_build import extract_git_archive
 
 TRIVY_IMAGE = "aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969"
 SYFT_IMAGE = "anchore/syft:v1.51.1@sha256:95fe0835e5bebc6f8b1f8acef68d47d63d594ef4c0f25c097ff853b23cbac74c"
-DIGEST_PIN = re.compile(r"^\S+@sha256:[0-9a-f]{64}$")
+SERVICE_BUILDS = {
+    "postgres": {
+        "dockerfile": "Dockerfile.postgres",
+        "tag": "medtrack-postgres:16.14-hardened",
+        "policy": "security/postgres-vex.json",
+    },
+    "caddy": {
+        "dockerfile": "deploy/Dockerfile.caddy",
+        "tag": "medtrack-caddy:2.11.4-ratelimit",
+        "policy": "security/caddy-vex.json",
+    },
+}
 
 
-def compose_image(path: Path, service: str) -> str:
-    current_service: str | None = None
-    in_services = False
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.split("#", 1)[0].rstrip()
-        if line == "services:":
-            in_services = True
-            continue
-        if not in_services or not line:
-            continue
-        if not line.startswith(" "):
-            break
-        service_match = re.match(r"^  ([A-Za-z0-9_-]+):\s*$", line)
-        if service_match:
-            current_service = service_match.group(1)
-            continue
-        image_match = re.match(r"^    image:\s*([^\s]+)\s*$", line)
-        if current_service == service and image_match:
-            reference = image_match.group(1).strip("'\"")
-            if not DIGEST_PIN.fullmatch(reference):
-                raise RuntimeError(f"production {service} image is not digest-pinned: {reference}")
-            return reference
-    raise RuntimeError(f"production Compose has no image reference for service {service}")
-
-
-def copy_registry_image(reference: str, artifact: Path) -> None:
-    # Skopeo rejects the otherwise valid name:tag@digest form. Keep only the
-    # immutable digest while preserving an optional registry port.
-    name, digest = reference.rsplit("@", 1)
-    prefix, separator, leaf = name.rpartition("/")
-    leaf = leaf.split(":", 1)[0]
-    immutable_reference = f"{prefix}{separator}{leaf}@{digest}"
+def build_service_image(
+    context: Path,
+    output: Path,
+    builder: str,
+    service: str,
+    revision: str,
+    artifact: Path,
+) -> dict[str, str]:
+    spec = SERVICE_BUILDS[service]
+    dockerfile = str(spec["dockerfile"])
+    metadata = output / f"{service}-buildkit-metadata.json"
     artifact.unlink(missing_ok=True)
-    subprocess.run(
+    metadata.unlink(missing_ok=True)
+    command = [
+        "docker", "buildx", "build", "--builder", builder,
+        "--platform", "linux/amd64", "--provenance=false", "--sbom=false",
+        "--pull", "--file", str(context / dockerfile),
+    ]
+    if service == "caddy":
+        command.extend(["--build-arg", f"VCS_REF={revision}"])
+    command.extend(
         [
-            "docker", "run", "--rm",
-            "--volume", f"{artifact.parent.resolve()}:/output",
-            SKOPEO_IMAGE,
-            "copy", "--override-os", "linux", "--override-arch", "amd64",
-            f"docker://{immutable_reference}", f"oci-archive:/output/{artifact.name}",
-        ],
-        check=True,
+            "--tag", str(spec["tag"]),
+            "--metadata-file", str(metadata),
+            "--output", f"type=oci,dest={artifact},tar=true,oci-mediatypes=true",
+            str(context),
+        ]
     )
+    subprocess.run(command, check=True)
+    record = {
+        "source": (
+            "git+https://github.com/nmpraveen/patient-registry"
+            f"@{revision}#{dockerfile}"
+        ),
+        "dockerfile": dockerfile,
+        "dockerfile_sha256": sha256_file(context / dockerfile),
+        "build_metadata": metadata.name,
+        "build_metadata_sha256": sha256_file(metadata),
+    }
+    if service == "caddy":
+        record.update(
+            {
+                "runtime_config": "deploy/Caddyfile",
+                "runtime_config_sha256": sha256_file(context / "deploy" / "Caddyfile"),
+            }
+        )
+    return record
 
 
 def scan_and_sbom(
@@ -77,6 +90,7 @@ def scan_and_sbom(
     artifact: Path,
     manifest_digest: str,
     policy: Path,
+    policy_display: str,
 ) -> dict[str, str]:
     report = artifact.parent / f"{service}-trivy.json"
     sbom = artifact.parent / f"{service}-sbom.cdx.json"
@@ -117,7 +131,7 @@ def scan_and_sbom(
         "trivy_report_sha256": sha256_file(report),
         "sbom": sbom.name,
         "sbom_sha256": sha256_file(sbom),
-        "vex_policy": policy.relative_to(repo_root).as_posix(),
+        "vex_policy": policy_display,
         "vex_policy_sha256": sha256_file(policy),
     }
 
@@ -162,19 +176,72 @@ def write_set_receipt(
     return receipt_path
 
 
-def runtime_smoke(service: str, artifact: Path, revision: str) -> str:
+def runtime_smoke(
+    source_root: Path,
+    service: str,
+    artifact: Path,
+    revision: str,
+    expected_config_digest: str,
+) -> dict[str, str]:
     image = f"medtrack-{service}-proof:{revision[:12]}"
     load_oci_archive(artifact, image)
+    inspection = json.loads(
+        subprocess.run(
+            ["docker", "image", "inspect", image],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+    )[0]
+    loaded_image_id = str(inspection.get("Id", ""))
+    configured_user = str(inspection.get("Config", {}).get("User", ""))
+    if loaded_image_id != expected_config_digest:
+        raise RuntimeError(
+            f"{service} loaded image ID does not match its OCI config digest: "
+            f"loaded={loaded_image_id} config={expected_config_digest}"
+        )
     if service == "postgres":
         command = [
             "docker", "run", "--rm", "--entrypoint", "sh", image, "-ceu",
             'test "$(id -u)" = 70; test "$(id -g)" = 70; '
-            "! test -e /usr/local/bin/gosu; postgres --version",
+            "! test -e /usr/local/bin/gosu; postgres --version; "
+            "printf 'uid=%s gid=%s\\n' \"$(id -u)\" \"$(id -g)\"",
         ]
+        runtime_uid = "70"
+        runtime_gid = "70"
     else:
-        command = ["docker", "run", "--rm", "--entrypoint", "caddy", image, "version"]
-    subprocess.run(command, check=True)
-    return image
+        labels = inspection.get("Config", {}).get("Labels") or {}
+        if labels.get("org.opencontainers.image.revision") != revision:
+            raise RuntimeError("Caddy runtime revision label does not match the exact Git revision")
+        if configured_user != "10002:10001":
+            raise RuntimeError(f"Caddy image has an unexpected runtime user: {configured_user!r}")
+        command = [
+            "docker", "run", "--rm", "--entrypoint", "sh",
+            "--env", "MEDTRACK_DOMAIN=http://medtrack.invalid",
+            "--cap-drop", "ALL", "--cap-add", "NET_BIND_SERVICE",
+            "--security-opt", "no-new-privileges:true",
+            "--tmpfs", "/var/log/medtrack:rw,noexec,nosuid,nodev,mode=0770,uid=10002,gid=10001",
+            "--volume", f"{(source_root / 'deploy' / 'Caddyfile').resolve()}:/etc/caddy/Caddyfile:ro",
+            image, "-ceu",
+            'test "$(id -u)" = 10002; test "$(id -g)" = 10001; '
+            "caddy list-modules | grep -Fxq http.handlers.rate_limit; "
+            "caddy validate --config /etc/caddy/Caddyfile; "
+            "bind_status=0; timeout 1 caddy respond --listen :80 >/tmp/caddy-bind.log 2>&1 || bind_status=$?; "
+            "test \"$bind_status\" = 124; "
+            "printf 'uid=%s gid=%s\\n' \"$(id -u)\" \"$(id -g)\"",
+        ]
+        subprocess.run(command, check=True)
+        runtime_uid = "10002"
+        runtime_gid = "10001"
+    if service == "postgres":
+        subprocess.run(command, check=True)
+    return {
+        "loaded_image": image,
+        "loaded_image_id": loaded_image_id,
+        "configured_user": configured_user,
+        "runtime_uid": runtime_uid,
+        "runtime_gid": runtime_gid,
+    }
 
 
 def main() -> int:
@@ -199,46 +266,37 @@ def main() -> int:
         extract_git_archive(repo_root, revision, context)
         for service in services:
             artifact = output / f"{service}-image.oci.tar"
-            build_metadata_path: Path | None = None
-            if service == "postgres":
-                artifact.unlink(missing_ok=True)
-                build_metadata_path = output / "postgres-buildkit-metadata.json"
-                subprocess.run(
-                    [
-                        "docker", "buildx", "build", "--builder", args.builder,
-                        "--platform", "linux/amd64", "--provenance=false", "--sbom=false",
-                        "--pull", "--file", str(context / "Dockerfile.postgres"),
-                        "--tag", "medtrack-postgres:16.14-hardened",
-                        "--metadata-file", str(build_metadata_path),
-                        "--output", f"type=oci,dest={artifact},tar=true,oci-mediatypes=true",
-                        str(context),
-                    ],
-                    check=True,
-                )
-                source = "git+https://github.com/nmpraveen/patient-registry#Dockerfile.postgres"
-                policy = repo_root / "security" / "postgres-vex.json"
-            else:
-                reference = compose_image(repo_root / "docker-compose.prod.yml", "caddy")
-                copy_registry_image(reference, artifact)
-                source = reference
-                policy = repo_root / "security" / "caddy-vex.json"
+            build = build_service_image(
+                context, output, args.builder, service, revision, artifact
+            )
+            policy_display = str(SERVICE_BUILDS[service]["policy"])
+            policy = context / policy_display
             identity = inspect_oci_archive(artifact)
-            if build_metadata_path is not None:
-                build_metadata = json.loads(build_metadata_path.read_text(encoding="utf-8"))
-                if build_metadata.get("containerimage.digest") != identity["manifest_digest"]:
-                    raise RuntimeError("PostgreSQL BuildKit digest does not match its OCI archive")
-            loaded_image = runtime_smoke(service, artifact, revision)
+            build_metadata_path = output / str(build["build_metadata"])
+            build_metadata = json.loads(build_metadata_path.read_text(encoding="utf-8"))
+            if build_metadata.get("containerimage.digest") != identity["manifest_digest"]:
+                raise RuntimeError(
+                    f"{service} BuildKit digest does not match its canonical OCI archive"
+                )
+            runtime = runtime_smoke(
+                context, service, artifact, revision, identity["config_digest"]
+            )
             evidence = scan_and_sbom(
-                repo_root, service, artifact, identity["manifest_digest"], policy
+                repo_root,
+                service,
+                artifact,
+                identity["manifest_digest"],
+                policy,
+                policy_display,
             )
             record = {
                 "service": service,
-                "source": source,
                 "revision": revision,
-                "loaded_image": loaded_image,
                 "artifact": artifact.name,
                 "artifact_sha256": sha256_file(artifact),
+                **build,
                 **identity,
+                **runtime,
                 **evidence,
             }
             try:

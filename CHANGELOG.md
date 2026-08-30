@@ -38,6 +38,9 @@
 - Published a warning-free complete OpenAPI contract, made case PATCH preserve all omitted fields including `surgery_done`, and returned a complete editable case snapshot for safe client partial edits.
 - Added bounded mobile notification retention, terminal-task purge/reopen behavior, PHI-safe patient-search audit events, sanitized FCM failure categories, and push-token revocation on auth-version security changes.
 
+## 2026.08.30.00.18
+- Bound worker, push, and automatic-refresh compare-and-set operations to an immutable encrypted session incarnation so a stale same-account request cannot overwrite or invalidate a later logout-and-login session.
+
 ## 2026.08.30.00.17
 - Preserved verified account-owned Android cache, outbox, refresh credential, and local lock on retryable transport, timeout, and server failures while retaining destructive cleanup for definitive authentication or identity failure.
 - Unified app, WorkManager, and push revocation behind an idempotent compare-and-invalidate boundary that awaits account-work cancellation, deactivates live visibility, revokes the persistent Room account generation, purges owner rows and lock state, then clears only the captured account credentials.

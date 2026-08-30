@@ -67,18 +67,19 @@ class MedtrackAppContainer @Inject constructor(@ApplicationContext context: Cont
         },
         apiForAccount = ::apiForAccount,
         tokenStore = tokenStore,
-        onBeforeAccountCommit = { previousAccountId, newAccountId ->
+        onBeforeAccountCommit = { previousSession, newAccountId ->
             medtrackRepository.deactivateAccount()
-            if (previousAccountId != null && previousAccountId != newAccountId) {
-                accountInvalidator.invalidate(previousAccountId)
+            previousSession?.let { accountApis.remove(it.accountId) }
+            if (previousSession != null && previousSession.accountId != newAccountId) {
+                accountInvalidator.invalidate(previousSession)
             }
         },
         onAccountCommitted = { accountId ->
             lockStore.activateAccount(accountId)
             medtrackRepository.activateAccount(accountId)
         },
-        onSessionCleared = { accountId ->
-            accountInvalidator.invalidate(accountId)
+        onSessionCleared = { sessionIdentity ->
+            accountInvalidator.invalidate(sessionIdentity)
         },
     )
 
@@ -94,15 +95,20 @@ class MedtrackAppContainer @Inject constructor(@ApplicationContext context: Cont
 
     private fun apiForAccount(accountId: String): MedtrackApi =
         accountApis.getOrPut(accountId) {
+            val sessionIdentity = tokenStore.sessionIdentityFor(accountId)
+                ?: error("No verified MEDTRACK session is bound to account $accountId.")
             MedtrackNetwork.create(
                 baseUrl = apiBaseUrl,
-                accessTokenProvider = { tokenStore.accessTokenFor(accountId) },
-                refreshTokenProvider = { tokenStore.refreshTokenFor(accountId) },
+                accessTokenProvider = { tokenStore.accessTokenFor(sessionIdentity) },
+                refreshTokenProvider = { tokenStore.refreshTokenFor(sessionIdentity) },
                 expectedAccountIdProvider = {
                     accountId.takeIf { tokenStore.accountId() == accountId }
                 },
+                sessionIncarnationProvider = {
+                    tokenStore.sessionIdentityFor(accountId)?.incarnation
+                },
                 sessionUpdater = { access, refresh ->
-                    tokenStore.updateSessionForAccount(accountId, access, refresh)
+                    tokenStore.updateSessionForIdentity(sessionIdentity, access, refresh)
                 },
             )
         }

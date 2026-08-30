@@ -299,10 +299,13 @@ class MedtrackSyncWorkerTest {
             val lockStore = LockStore(lockPrefs)
             database.activateAccount(ACCOUNT_ID)
             seedTrustedOwnerState(tokenStore, lockStore)
+            val expectedSession = requireNotNull(tokenStore.sessionIdentityFor(ACCOUNT_ID))
+            val expectedGeneration = requireNotNull(database.activeAccountGeneration(ACCOUNT_ID))
             val invalidator = testInvalidator(tokenStore, lockStore)
 
             val result = authenticateWorkerAccount(
-                ownerAccountId = ACCOUNT_ID,
+                expectedSession = expectedSession,
+                expectedGeneration = expectedGeneration,
                 tokenStore = tokenStore,
                 invalidator = invalidator,
                 refreshSession = { throw authError(status) },
@@ -325,10 +328,13 @@ class MedtrackSyncWorkerTest {
         }
         AccountVisibilityInvalidations.register(visibilityListener)
         seedTrustedOwnerState(tokenStore, lockStore)
+        val expectedSession = requireNotNull(tokenStore.sessionIdentityFor(ACCOUNT_ID))
+        val expectedGeneration = requireNotNull(database.activeAccountGeneration(ACCOUNT_ID))
 
         val result = try {
             authenticateWorkerAccount(
-                ownerAccountId = ACCOUNT_ID,
+                expectedSession = expectedSession,
+                expectedGeneration = expectedGeneration,
                 tokenStore = tokenStore,
                 invalidator = testInvalidator(tokenStore, lockStore),
                 refreshSession = { AuthSessionDto("candidate-access", "rotated-refresh") },
@@ -353,9 +359,12 @@ class MedtrackSyncWorkerTest {
             val lockStore = LockStore(lockPrefs)
             database.activateAccount(ACCOUNT_ID)
             seedTrustedOwnerState(tokenStore, lockStore)
+            val expectedSession = requireNotNull(tokenStore.sessionIdentityFor(ACCOUNT_ID))
+            val expectedGeneration = requireNotNull(database.activeAccountGeneration(ACCOUNT_ID))
 
             val result = authenticateWorkerAccount(
-                ownerAccountId = ACCOUNT_ID,
+                expectedSession = expectedSession,
+                expectedGeneration = expectedGeneration,
                 tokenStore = tokenStore,
                 invalidator = testInvalidator(tokenStore, lockStore),
                 refreshSession = { throw failure },
@@ -369,7 +378,7 @@ class MedtrackSyncWorkerTest {
             assertEquals(1L, database.cacheMetadataDao().updatedAtMillis(ACCOUNT_ID, "cache-a"))
             lockStore.activateAccount(ACCOUNT_ID)
             assertTrue(lockStore.hasPattern())
-            testInvalidator(tokenStore, lockStore).invalidate(ACCOUNT_ID)
+            testInvalidator(tokenStore, lockStore).invalidate(expectedSession, expectedGeneration)
         }
     }
 
@@ -378,9 +387,12 @@ class MedtrackSyncWorkerTest {
         val tokenStore = TokenStore(authPrefs)
         val lockStore = LockStore(lockPrefs)
         seedTrustedOwnerState(tokenStore, lockStore)
+        val expectedSession = requireNotNull(tokenStore.sessionIdentityFor(ACCOUNT_ID))
+        val expectedGeneration = requireNotNull(database.activeAccountGeneration(ACCOUNT_ID))
 
         val result = authenticateWorkerAccount(
-            ownerAccountId = ACCOUNT_ID,
+            expectedSession = expectedSession,
+            expectedGeneration = expectedGeneration,
             tokenStore = tokenStore,
             invalidator = testInvalidator(tokenStore, lockStore),
             refreshSession = {
@@ -394,6 +406,91 @@ class MedtrackSyncWorkerTest {
         assertEquals("account-b", tokenStore.accountId())
         assertEquals("access-b", tokenStore.accessToken)
         assertEquals("refresh-b", tokenStore.refreshToken())
+    }
+
+    @Test
+    fun staleWorker401CannotInvalidateReloggedSameAccountSession() = runTest {
+        val tokenStore = TokenStore(authPrefs)
+        val lockStore = LockStore(lockPrefs)
+        seedTrustedOwnerState(tokenStore, lockStore)
+        val expectedSession = requireNotNull(tokenStore.sessionIdentityFor(ACCOUNT_ID))
+        val expectedGeneration = requireNotNull(database.activeAccountGeneration(ACCOUNT_ID))
+
+        val result = authenticateWorkerAccount(
+            expectedSession = expectedSession,
+            expectedGeneration = expectedGeneration,
+            tokenStore = tokenStore,
+            invalidator = testInvalidator(tokenStore, lockStore),
+            refreshSession = {
+                replaceWithNewSameAccountSession(
+                    expectedSession,
+                    expectedGeneration,
+                    tokenStore,
+                    lockStore,
+                )
+                throw authError(401)
+            },
+            verifyProfile = { error("stale failure must not verify") },
+        )
+
+        assertEquals(WorkerAuthenticationResult.StaleAccount, result)
+        assertEquals("new-access", tokenStore.accessTokenFor(ACCOUNT_ID))
+        assertEquals("new-refresh", tokenStore.refreshTokenFor(ACCOUNT_ID))
+        assertEquals(2L, database.cacheMetadataDao().updatedAtMillis(ACCOUNT_ID, "new-cache"))
+        lockStore.activateAccount(ACCOUNT_ID)
+        assertTrue(lockStore.hasPattern())
+    }
+
+    @Test
+    fun staleWorkerRefreshSuccessCannotOverwriteReloggedSameAccountSession() = runTest {
+        val tokenStore = TokenStore(authPrefs)
+        val lockStore = LockStore(lockPrefs)
+        seedTrustedOwnerState(tokenStore, lockStore)
+        val expectedSession = requireNotNull(tokenStore.sessionIdentityFor(ACCOUNT_ID))
+        val expectedGeneration = requireNotNull(database.activeAccountGeneration(ACCOUNT_ID))
+        var verifyCalls = 0
+
+        val result = authenticateWorkerAccount(
+            expectedSession = expectedSession,
+            expectedGeneration = expectedGeneration,
+            tokenStore = tokenStore,
+            invalidator = testInvalidator(tokenStore, lockStore),
+            refreshSession = {
+                replaceWithNewSameAccountSession(
+                    expectedSession,
+                    expectedGeneration,
+                    tokenStore,
+                    lockStore,
+                )
+                AuthSessionDto("stale-candidate", "stale-rotated")
+            },
+            verifyProfile = {
+                verifyCalls += 1
+                UserProfileDto(1, "same", "Same", emptyList(), emptyMap())
+            },
+        )
+
+        assertEquals(WorkerAuthenticationResult.StaleAccount, result)
+        assertEquals(0, verifyCalls)
+        assertEquals("new-access", tokenStore.accessTokenFor(ACCOUNT_ID))
+        assertEquals("new-refresh", tokenStore.refreshTokenFor(ACCOUNT_ID))
+        assertEquals(2L, database.cacheMetadataDao().updatedAtMillis(ACCOUNT_ID, "new-cache"))
+    }
+
+    private suspend fun replaceWithNewSameAccountSession(
+        expectedSession: com.naveenhospital.medtrack.core.data.auth.AccountSessionIdentity,
+        expectedGeneration: Long,
+        tokenStore: TokenStore,
+        lockStore: LockStore,
+    ) {
+        assertTrue(database.invalidateAndClearAccountData(ACCOUNT_ID, expectedGeneration))
+        assertTrue(tokenStore.clearForIdentity(expectedSession))
+        lockStore.clearAccount(ACCOUNT_ID)
+        assertTrue(tokenStore.commitVerifiedSession(ACCOUNT_ID, "new-access", "new-refresh"))
+        database.activateAccount(ACCOUNT_ID)
+        database.cacheMetadataDao().upsertMetadata(CacheMetadataEntity(ACCOUNT_ID, "new-cache", 2L))
+        lockStore.activateAccount(ACCOUNT_ID)
+        lockStore.savePattern(listOf(0, 1, 4, 8))
     }
 
     private suspend fun seedTrustedOwnerState(tokenStore: TokenStore, lockStore: LockStore) {

@@ -78,10 +78,13 @@ class MedtrackPushTest {
             database.activateAccount(ACCOUNT_ID)
             val lockStore = seedTrustedState()
             val tokenStore = TokenStore(context)
+            val expectedSession = requireNotNull(tokenStore.sessionIdentityFor(ACCOUNT_ID))
+            val accountGeneration = requireNotNull(database.activeAccountGeneration(ACCOUNT_ID))
             val invalidator = testInvalidator(tokenStore, lockStore)
 
             val registered = registerPushTokenForAccountSession(
-                ownerAccountId = ACCOUNT_ID,
+                expectedSession = expectedSession,
+                accountGeneration = accountGeneration,
                 token = "push-new",
                 deviceLabel = "device",
                 tokenStore = tokenStore,
@@ -101,10 +104,13 @@ class MedtrackPushTest {
     fun pushIdentityMismatchPurgesTrustedOwnerState() = runTest {
         val lockStore = seedTrustedState()
         val tokenStore = TokenStore(context)
+        val expectedSession = requireNotNull(tokenStore.sessionIdentityFor(ACCOUNT_ID))
+        val accountGeneration = requireNotNull(database.activeAccountGeneration(ACCOUNT_ID))
         val invalidator = testInvalidator(tokenStore, lockStore)
 
         val registered = registerPushTokenForAccountSession(
-            ownerAccountId = ACCOUNT_ID,
+            expectedSession = expectedSession,
+            accountGeneration = accountGeneration,
             token = "push-new",
             deviceLabel = "device",
             tokenStore = tokenStore,
@@ -126,10 +132,13 @@ class MedtrackPushTest {
             val lockStore = seedTrustedState()
             val tokenStore = TokenStore(context)
             assertTrue(tokenStore.commitVerifiedSession(ACCOUNT_ID, "active-access", "refresh-a"))
+            val expectedSession = requireNotNull(tokenStore.sessionIdentityFor(ACCOUNT_ID))
+            val accountGeneration = requireNotNull(database.activeAccountGeneration(ACCOUNT_ID))
             val invalidator = testInvalidator(tokenStore, lockStore)
 
             val registered = registerPushTokenForAccountSession(
-                ownerAccountId = ACCOUNT_ID,
+                expectedSession = expectedSession,
+                accountGeneration = accountGeneration,
                 token = "push-new",
                 deviceLabel = "device",
                 tokenStore = tokenStore,
@@ -151,10 +160,13 @@ class MedtrackPushTest {
             database.activateAccount(ACCOUNT_ID)
             val lockStore = seedTrustedState()
             val tokenStore = TokenStore(context)
+            val expectedSession = requireNotNull(tokenStore.sessionIdentityFor(ACCOUNT_ID))
+            val accountGeneration = requireNotNull(database.activeAccountGeneration(ACCOUNT_ID))
             val invalidator = testInvalidator(tokenStore, lockStore)
 
             val registered = registerPushTokenForAccountSession(
-                ownerAccountId = ACCOUNT_ID,
+                expectedSession = expectedSession,
+                accountGeneration = accountGeneration,
                 token = "push-new",
                 deviceLabel = "device",
                 tokenStore = tokenStore,
@@ -172,8 +184,88 @@ class MedtrackPushTest {
             assertEquals(1L, database.cacheMetadataDao().updatedAtMillis(ACCOUNT_ID, "cache-a"))
             lockStore.activateAccount(ACCOUNT_ID)
             assertTrue(lockStore.hasPattern())
-            invalidator.invalidate(ACCOUNT_ID)
+            invalidator.invalidate(expectedSession, accountGeneration)
         }
+    }
+
+    @Test
+    fun stalePush401CannotInvalidateReloggedSameAccountSession() = runTest {
+        val lockStore = seedTrustedState()
+        val tokenStore = TokenStore(context)
+        val expectedSession = requireNotNull(tokenStore.sessionIdentityFor(ACCOUNT_ID))
+        val accountGeneration = requireNotNull(database.activeAccountGeneration(ACCOUNT_ID))
+        val invalidator = testInvalidator(tokenStore, lockStore)
+
+        val registered = registerPushTokenForAccountSession(
+            expectedSession = expectedSession,
+            accountGeneration = accountGeneration,
+            token = "stale-push",
+            deviceLabel = "old-session",
+            tokenStore = tokenStore,
+            database = database,
+            invalidateIfCurrent = invalidator::invalidateIfCurrent,
+            refreshSession = {
+                replaceWithNewSameAccountSession(expectedSession, accountGeneration, tokenStore, lockStore)
+                throw httpError(401)
+            },
+            verifyProfile = { error("stale failure must not verify") },
+            registerRemote = { error("stale failure must not register") },
+        )
+
+        assertFalse(registered)
+        assertEquals("new-access", tokenStore.accessTokenFor(ACCOUNT_ID))
+        assertEquals("new-refresh", tokenStore.refreshTokenFor(ACCOUNT_ID))
+        lockStore.activateAccount(ACCOUNT_ID)
+        assertTrue(lockStore.hasPattern())
+    }
+
+    @Test
+    fun stalePushRefreshSuccessCannotOverwriteReloggedSameAccountSession() = runTest {
+        val lockStore = seedTrustedState()
+        val tokenStore = TokenStore(context)
+        val expectedSession = requireNotNull(tokenStore.sessionIdentityFor(ACCOUNT_ID))
+        val accountGeneration = requireNotNull(database.activeAccountGeneration(ACCOUNT_ID))
+        val invalidator = testInvalidator(tokenStore, lockStore)
+        var verifyCalls = 0
+
+        val registered = registerPushTokenForAccountSession(
+            expectedSession = expectedSession,
+            accountGeneration = accountGeneration,
+            token = "stale-push",
+            deviceLabel = "old-session",
+            tokenStore = tokenStore,
+            database = database,
+            invalidateIfCurrent = invalidator::invalidateIfCurrent,
+            refreshSession = {
+                replaceWithNewSameAccountSession(expectedSession, accountGeneration, tokenStore, lockStore)
+                AuthSessionDto("stale-candidate", "stale-rotated")
+            },
+            verifyProfile = {
+                verifyCalls += 1
+                UserProfileDto(1, "same", "Same", emptyList(), emptyMap())
+            },
+            registerRemote = { error("stale success must not register") },
+        )
+
+        assertFalse(registered)
+        assertEquals(0, verifyCalls)
+        assertEquals("new-access", tokenStore.accessTokenFor(ACCOUNT_ID))
+        assertEquals("new-refresh", tokenStore.refreshTokenFor(ACCOUNT_ID))
+    }
+
+    private suspend fun replaceWithNewSameAccountSession(
+        expectedSession: com.naveenhospital.medtrack.core.data.auth.AccountSessionIdentity,
+        accountGeneration: Long,
+        tokenStore: TokenStore,
+        lockStore: LockStore,
+    ) {
+        assertTrue(database.invalidateAndClearAccountData(ACCOUNT_ID, accountGeneration))
+        assertTrue(tokenStore.clearForIdentity(expectedSession))
+        lockStore.clearAccount(ACCOUNT_ID)
+        assertTrue(tokenStore.commitVerifiedSession(ACCOUNT_ID, "new-access", "new-refresh"))
+        database.activateAccount(ACCOUNT_ID)
+        lockStore.activateAccount(ACCOUNT_ID)
+        lockStore.savePattern(listOf(0, 1, 4, 8))
     }
 
     private suspend fun seedTrustedState(): LockStore {

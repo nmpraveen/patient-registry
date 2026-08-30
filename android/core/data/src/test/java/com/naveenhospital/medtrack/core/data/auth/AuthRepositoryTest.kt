@@ -181,7 +181,7 @@ class AuthRepositoryTest {
                 verificationApiForAccessToken = { api },
                 apiForAccount = { api },
                 tokenStore = tokenStore,
-                onSessionCleared = { clearedAccountId = it },
+                onSessionCleared = { clearedAccountId = it?.accountId },
             )
 
             assertTrue(repository.restoreSession() is SessionRestoreResult.NoSession)

@@ -15,6 +15,7 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.naveenhospital.medtrack.core.data.auth.TokenStore
+import com.naveenhospital.medtrack.core.data.auth.AccountSessionIdentity
 import com.naveenhospital.medtrack.core.data.auth.AccountSessionInvalidator
 import com.naveenhospital.medtrack.core.data.auth.AccountSessionRefreshResult
 import com.naveenhospital.medtrack.core.data.auth.refreshAndVerifyAccountSession
@@ -66,12 +67,15 @@ class MedtrackSyncWorker(
         val ownerAccountId = inputData.getString(KEY_ACCOUNT_ID)?.takeIf { it.isNotBlank() }
             ?: return Result.failure()
         val tokenStore = TokenStore(applicationContext)
-        if (tokenStore.accountId() != ownerAccountId) return Result.success()
+        val expectedSession = tokenStore.sessionIdentityFor(ownerAccountId) ?: return Result.success()
         val database = MedtrackDatabase.build(applicationContext)
+        val accountGeneration = database.activeAccountGeneration(ownerAccountId)
+            ?: return Result.success()
         val invalidator = AccountSessionInvalidator(applicationContext)
         when (
             authenticateWorkerAccount(
-                ownerAccountId = ownerAccountId,
+                expectedSession = expectedSession,
+                expectedGeneration = accountGeneration,
                 tokenStore = tokenStore,
                 invalidator = invalidator,
                 refreshSession = { refreshToken ->
@@ -92,17 +96,19 @@ class MedtrackSyncWorker(
         }
         val api = MedtrackNetwork.create(
             baseUrl = baseUrl,
-            accessTokenProvider = { tokenStore.accessTokenFor(ownerAccountId) },
-            refreshTokenProvider = { tokenStore.refreshTokenFor(ownerAccountId) },
+            accessTokenProvider = { tokenStore.accessTokenFor(expectedSession) },
+            refreshTokenProvider = { tokenStore.refreshTokenFor(expectedSession) },
             expectedAccountIdProvider = {
                 ownerAccountId.takeIf { tokenStore.accountId() == ownerAccountId }
             },
+            sessionIncarnationProvider = {
+                tokenStore.sessionIdentityFor(ownerAccountId)?.incarnation
+            },
             sessionUpdater = { access, refresh ->
-                tokenStore.updateSessionForAccount(ownerAccountId, access, refresh)
+                tokenStore.updateSessionForIdentity(expectedSession, access, refresh)
             },
         )
-        val accountGeneration = database.activeAccountGeneration(ownerAccountId)
-            ?: return Result.success()
+        if (!tokenStore.isCurrent(expectedSession)) return Result.success()
 
         return try {
             if (!drainPendingWritesForSync(
@@ -110,7 +116,9 @@ class MedtrackSyncWorker(
                     database = database,
                     ownerAccountId = ownerAccountId,
                     accountGeneration = accountGeneration,
-                    activeAccountId = tokenStore::accountId,
+                    activeAccountId = {
+                        ownerAccountId.takeIf { tokenStore.isCurrent(expectedSession) }
+                    },
                 )
             ) {
                 return Result.retry()
@@ -120,23 +128,27 @@ class MedtrackSyncWorker(
                     database = database,
                     ownerAccountId = ownerAccountId,
                     accountGeneration = accountGeneration,
-                    activeAccountId = tokenStore::accountId,
+                    activeAccountId = {
+                        ownerAccountId.takeIf { tokenStore.isCurrent(expectedSession) }
+                    },
                 )
             ) {
                 return Result.retry()
             }
-            if (tokenStore.accountId() != ownerAccountId) return Result.success()
+            if (!tokenStore.isCurrent(expectedSession)) return Result.success()
             refreshStaleReadCaches(
                 api = api,
                 database = database,
                 ownerAccountId = ownerAccountId,
                 accountGeneration = accountGeneration,
-                activeAccountId = tokenStore::accountId,
+                activeAccountId = {
+                    ownerAccountId.takeIf { tokenStore.isCurrent(expectedSession) }
+                },
             )
             Result.success()
         } catch (failure: Throwable) {
             if (failure is HttpException && failure.code() in setOf(401, 403)) {
-                invalidator.invalidateIfCurrent(ownerAccountId)
+                invalidator.invalidateIfCurrent(expectedSession, accountGeneration)
                 Result.failure()
             } else if (failure is AccountChangedException || failure is AccountGenerationRevokedException) {
                 Result.success()
@@ -304,7 +316,8 @@ internal enum class WorkerAuthenticationResult {
 }
 
 internal suspend fun authenticateWorkerAccount(
-    ownerAccountId: String,
+    expectedSession: AccountSessionIdentity,
+    expectedGeneration: Long,
     tokenStore: TokenStore,
     invalidator: AccountSessionInvalidator,
     refreshSession: suspend (String) -> com.naveenhospital.medtrack.core.network.model.AuthSessionDto,
@@ -312,7 +325,7 @@ internal suspend fun authenticateWorkerAccount(
 ): WorkerAuthenticationResult =
     when (
         refreshAndVerifyAccountSession(
-            ownerAccountId = ownerAccountId,
+            expectedSession = expectedSession,
             tokenStore = tokenStore,
             refreshSession = refreshSession,
             verifyProfile = verifyProfile,
@@ -322,7 +335,7 @@ internal suspend fun authenticateWorkerAccount(
         AccountSessionRefreshResult.StaleAccount -> WorkerAuthenticationResult.StaleAccount
         is AccountSessionRefreshResult.Retryable -> WorkerAuthenticationResult.Retry
         is AccountSessionRefreshResult.DefinitiveFailure -> {
-            if (invalidator.invalidateIfCurrent(ownerAccountId)) {
+            if (invalidator.invalidateIfCurrent(expectedSession, expectedGeneration)) {
                 WorkerAuthenticationResult.Invalidated
             } else {
                 WorkerAuthenticationResult.StaleAccount

@@ -8,6 +8,7 @@ import android.os.Build
 import com.google.firebase.FirebaseApp
 import com.google.firebase.messaging.FirebaseMessaging
 import com.naveenhospital.medtrack.core.data.auth.TokenStore
+import com.naveenhospital.medtrack.core.data.auth.AccountSessionIdentity
 import com.naveenhospital.medtrack.core.data.auth.AccountSessionInvalidator
 import com.naveenhospital.medtrack.core.data.auth.AccountSessionRefreshResult
 import com.naveenhospital.medtrack.core.data.auth.refreshAndVerifyAccountSession
@@ -72,22 +73,29 @@ object MedtrackPush {
         val appContext = context.applicationContext
         val baseUrl = apiBaseUrl(appContext) ?: return@withContext false
         val tokenStore = TokenStore(appContext)
-        val ownerAccountId = tokenStore.accountId() ?: return@withContext false
+        val expectedSession = tokenStore.sessionIdentity() ?: return@withContext false
+        val ownerAccountId = expectedSession.accountId
         val database = MedtrackDatabase.build(appContext)
+        val accountGeneration = database.activeAccountGeneration(ownerAccountId)
+            ?: return@withContext false
         val invalidator = AccountSessionInvalidator(appContext)
         val api = MedtrackNetwork.create(
             baseUrl = baseUrl,
-            accessTokenProvider = { tokenStore.accessTokenFor(ownerAccountId) },
-            refreshTokenProvider = { tokenStore.refreshTokenFor(ownerAccountId) },
+            accessTokenProvider = { tokenStore.accessTokenFor(expectedSession) },
+            refreshTokenProvider = { tokenStore.refreshTokenFor(expectedSession) },
             expectedAccountIdProvider = {
                 ownerAccountId.takeIf { tokenStore.accountId() == ownerAccountId }
             },
+            sessionIncarnationProvider = {
+                tokenStore.sessionIdentityFor(ownerAccountId)?.incarnation
+            },
             sessionUpdater = { access, refresh ->
-                tokenStore.updateSessionForAccount(ownerAccountId, access, refresh)
+                tokenStore.updateSessionForIdentity(expectedSession, access, refresh)
             },
         )
         registerPushTokenForAccountSession(
-            ownerAccountId = ownerAccountId,
+            expectedSession = expectedSession,
+            accountGeneration = accountGeneration,
             token = token,
             deviceLabel = deviceLabel,
             tokenStore = tokenStore,
@@ -130,23 +138,24 @@ object MedtrackPush {
 }
 
 internal suspend fun registerPushTokenForAccountSession(
-    ownerAccountId: String,
+    expectedSession: AccountSessionIdentity,
+    accountGeneration: Long,
     token: String,
     deviceLabel: String,
     tokenStore: TokenStore,
     database: MedtrackDatabase,
-    invalidateIfCurrent: suspend (String) -> Boolean,
+    invalidateIfCurrent: suspend (AccountSessionIdentity, Long) -> Boolean,
     refreshSession: suspend (String) -> com.naveenhospital.medtrack.core.network.model.AuthSessionDto,
     verifyProfile: suspend (String) -> com.naveenhospital.medtrack.core.network.model.UserProfileDto,
     registerRemote: suspend () -> Unit,
 ): Boolean {
-    if (tokenStore.accountId() != ownerAccountId) return false
-    val accountGeneration = database.activeAccountGeneration(ownerAccountId) ?: return false
+    if (!tokenStore.isCurrent(expectedSession)) return false
+    val ownerAccountId = expectedSession.accountId
     return try {
         database.commitForAccount(
             ownerAccountId,
             accountGeneration,
-            { tokenStore.accountId() == ownerAccountId },
+            { tokenStore.isCurrent(expectedSession) },
         ) {
             database.pushTokenDao().upsertToken(
                 PushTokenEntity(
@@ -157,10 +166,10 @@ internal suspend fun registerPushTokenForAccountSession(
                 ),
             )
         }
-        if (tokenStore.accessTokenFor(ownerAccountId).isNullOrBlank()) {
+        if (tokenStore.accessTokenFor(expectedSession).isNullOrBlank()) {
             when (
                 refreshAndVerifyAccountSession(
-                    ownerAccountId = ownerAccountId,
+                    expectedSession = expectedSession,
                     tokenStore = tokenStore,
                     refreshSession = refreshSession,
                     verifyProfile = verifyProfile,
@@ -170,24 +179,24 @@ internal suspend fun registerPushTokenForAccountSession(
                 AccountSessionRefreshResult.StaleAccount -> return false
                 is AccountSessionRefreshResult.Retryable -> return false
                 is AccountSessionRefreshResult.DefinitiveFailure -> {
-                    invalidateIfCurrent(ownerAccountId)
+                    invalidateIfCurrent(expectedSession, accountGeneration)
                     return false
                 }
             }
         }
-        if (tokenStore.accountId() != ownerAccountId) return false
+        if (!tokenStore.isCurrent(expectedSession)) return false
         registerRemote()
         database.commitForAccount(
             ownerAccountId,
             accountGeneration,
-            { tokenStore.accountId() == ownerAccountId },
+            { tokenStore.isCurrent(expectedSession) },
         ) {
             database.pushTokenDao().markTokenSynced(ownerAccountId, token, System.currentTimeMillis())
         }
         true
     } catch (failure: Throwable) {
         if (failure.isDefinitiveAccountAuthFailure()) {
-            invalidateIfCurrent(ownerAccountId)
+            invalidateIfCurrent(expectedSession, accountGeneration)
         }
         false
     }

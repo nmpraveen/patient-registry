@@ -53,7 +53,8 @@ class TokenStoreTest {
         val tokenStore = TokenStore(prefs)
 
         assertTrue(tokenStore.commitVerifiedSession(ACCOUNT_ID, access = "access-token-1", refresh = "refresh-token"))
-        assertTrue(tokenStore.updateSessionForAccount(ACCOUNT_ID, access = "access-token-2", refresh = null))
+        val identity = requireNotNull(tokenStore.sessionIdentityFor(ACCOUNT_ID))
+        assertTrue(tokenStore.updateSessionForIdentity(identity, access = "access-token-2", refresh = null))
 
         assertEquals("access-token-2", tokenStore.accessToken)
         assertEquals("refresh-token", tokenStore.refreshToken())
@@ -78,8 +79,29 @@ class TokenStoreTest {
 
         assertNull(tokenStore.accessTokenFor("2"))
         assertNull(tokenStore.refreshTokenFor("2"))
-        assertFalse(tokenStore.updateSessionForAccount("2", "attacker-access", "attacker-refresh"))
+        assertFalse(
+            tokenStore.updateSessionForIdentity(
+                AccountSessionIdentity("2", "attacker-incarnation"),
+                "attacker-access",
+                "attacker-refresh",
+            ),
+        )
         assertEquals("access-token", tokenStore.accessTokenFor(ACCOUNT_ID))
+    }
+
+    @Test
+    fun sameAccountReloginRejectsStaleSessionMutationAndClear() {
+        val tokenStore = TokenStore(prefs)
+        assertTrue(tokenStore.commitVerifiedSession(ACCOUNT_ID, "old-access", "old-refresh"))
+        val staleIdentity = requireNotNull(tokenStore.sessionIdentityFor(ACCOUNT_ID))
+
+        assertTrue(tokenStore.commitVerifiedSession(ACCOUNT_ID, "new-access", "new-refresh"))
+        val currentIdentity = requireNotNull(tokenStore.sessionIdentityFor(ACCOUNT_ID))
+
+        assertFalse(tokenStore.updateSessionForIdentity(staleIdentity, "stale-access", "stale-refresh"))
+        assertFalse(tokenStore.clearForIdentity(staleIdentity))
+        assertEquals("new-access", tokenStore.accessTokenFor(currentIdentity))
+        assertEquals("new-refresh", tokenStore.refreshTokenFor(currentIdentity))
     }
 
     @Test

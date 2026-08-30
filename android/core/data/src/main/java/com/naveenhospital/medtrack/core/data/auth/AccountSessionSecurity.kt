@@ -9,6 +9,8 @@ import java.util.concurrent.CopyOnWriteArraySet
 import retrofit2.HttpException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 sealed interface SessionRestoreResult {
     data class Verified(val profile: com.naveenhospital.medtrack.core.network.model.UserProfileDto) : SessionRestoreResult
@@ -38,25 +40,27 @@ sealed interface AccountSessionRefreshResult {
 }
 
 suspend fun refreshAndVerifyAccountSession(
-    ownerAccountId: String,
+    expectedSession: AccountSessionIdentity,
     tokenStore: TokenStore,
     refreshSession: suspend (String) -> com.naveenhospital.medtrack.core.network.model.AuthSessionDto,
     verifyProfile: suspend (String) -> com.naveenhospital.medtrack.core.network.model.UserProfileDto,
 ): AccountSessionRefreshResult {
-    if (tokenStore.accountId() != ownerAccountId) return AccountSessionRefreshResult.StaleAccount
-    val refreshToken = tokenStore.refreshTokenFor(ownerAccountId)
+    if (!tokenStore.isCurrent(expectedSession)) return AccountSessionRefreshResult.StaleAccount
+    val refreshToken = tokenStore.refreshTokenFor(expectedSession)
         ?: return AccountSessionRefreshResult.DefinitiveFailure(
             DefinitiveAccountIdentityException("The verified account has no refresh credential."),
         )
     val session = try {
         refreshSession(refreshToken)
     } catch (failure: Throwable) {
+        if (!tokenStore.isCurrent(expectedSession)) return AccountSessionRefreshResult.StaleAccount
         return if (failure.isDefinitiveAccountAuthFailure()) {
             AccountSessionRefreshResult.DefinitiveFailure(failure)
         } else {
             AccountSessionRefreshResult.Retryable(failure)
         }
     }
+    if (!tokenStore.isCurrent(expectedSession)) return AccountSessionRefreshResult.StaleAccount
     val access = session.access.takeIf { it.isNotBlank() }
         ?: return AccountSessionRefreshResult.DefinitiveFailure(
             DefinitiveAccountIdentityException("Authentication returned no access token."),
@@ -64,25 +68,32 @@ suspend fun refreshAndVerifyAccountSession(
     val profile = try {
         verifyProfile(access)
     } catch (failure: Throwable) {
+        if (!tokenStore.isCurrent(expectedSession)) return AccountSessionRefreshResult.StaleAccount
         return if (failure.isDefinitiveAccountAuthFailure()) {
             AccountSessionRefreshResult.DefinitiveFailure(failure)
         } else {
             AccountSessionRefreshResult.Retryable(failure)
         }
     }
-    if (tokenStore.accountId() != ownerAccountId) return AccountSessionRefreshResult.StaleAccount
-    if (profile.id.toString() != ownerAccountId) {
+    if (!tokenStore.isCurrent(expectedSession)) return AccountSessionRefreshResult.StaleAccount
+    if (profile.id.toString() != expectedSession.accountId) {
         return AccountSessionRefreshResult.DefinitiveFailure(
             DefinitiveAccountIdentityException(
                 "Refreshed credentials do not belong to the stored account.",
             ),
         )
     }
-    return if (tokenStore.updateSessionForAccount(ownerAccountId, access, session.refresh)) {
+    return if (tokenStore.updateSessionForIdentity(expectedSession, access, session.refresh)) {
         AccountSessionRefreshResult.Verified
     } else {
         AccountSessionRefreshResult.StaleAccount
     }
+}
+
+internal object AccountSessionTransitions {
+    private val mutex = Mutex()
+
+    suspend fun <T> serialized(block: suspend () -> T): T = mutex.withLock { block() }
 }
 
 /**
@@ -139,7 +150,25 @@ class AccountSessionInvalidator(
         },
     )
 
-    suspend fun invalidate(ownerAccountId: String?) = withContext(NonCancellable) {
+    suspend fun invalidate(
+        expectedSession: AccountSessionIdentity?,
+        expectedGeneration: Long? = null,
+    ): Boolean = AccountSessionTransitions.serialized {
+        invalidateLocked(expectedSession, expectedGeneration, requireCurrent = expectedSession != null)
+    }
+
+    suspend fun invalidateIfCurrent(
+        expectedSession: AccountSessionIdentity,
+        expectedGeneration: Long? = null,
+    ): Boolean = AccountSessionTransitions.serialized {
+        invalidateLocked(expectedSession, expectedGeneration, requireCurrent = true)
+    }
+
+    private suspend fun invalidateLocked(
+        expectedSession: AccountSessionIdentity?,
+        expectedGeneration: Long?,
+        requireCurrent: Boolean,
+    ): Boolean = withContext(NonCancellable) {
         var firstFailure: Throwable? = null
         fun recordFailure(failure: Throwable) {
             if (firstFailure == null) {
@@ -156,26 +185,37 @@ class AccountSessionInvalidator(
             }
         }
 
-        val accountId = ownerAccountId?.takeIf { it.isNotBlank() }
-        if (accountId == null) {
+        if (expectedSession == null) {
             attempt { tokenStore.clear() }
             attempt { lockStore.deactivate() }
-        } else {
-            attempt { cancelAccountWork(accountId) }
+            firstFailure?.let { throw it }
+            return@withContext true
+        }
+        if (requireCurrent && !tokenStore.isCurrent(expectedSession)) {
+            return@withContext false
+        }
+
+        val accountId = expectedSession.accountId
+        attempt { cancelAccountWork(accountId) }
+        val purged = try {
+            database.invalidateAndClearAccountData(accountId, expectedGeneration)
+        } catch (failure: Throwable) {
+            recordFailure(failure)
+            false
+        }
+        if (purged) {
             attempt { AccountVisibilityInvalidations.deactivate(accountId) }
-            attempt { database.invalidateAndClearAccountData(accountId) }
             // Catch a one-time enqueue that raced the first cancellation while an
             // already-started account commit was draining before the purge transaction.
             attempt { cancelAccountWork(accountId) }
             attempt { lockStore.clearAccount(accountId) }
-            attempt { tokenStore.clearForAccount(accountId) }
+            attempt { tokenStore.clearForIdentity(expectedSession) }
+        } else {
+            // A newer activation won the Room compare-and-set. Its visibility, rows,
+            // lock, work, and credentials belong to a different session incarnation.
+            return@withContext false
         }
         firstFailure?.let { throw it }
-    }
-
-    suspend fun invalidateIfCurrent(ownerAccountId: String): Boolean {
-        if (tokenStore.accountId() != ownerAccountId) return false
-        invalidate(ownerAccountId)
-        return true
+        true
     }
 }

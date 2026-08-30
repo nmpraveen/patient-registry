@@ -78,29 +78,38 @@ abstract class MedtrackDatabase : RoomDatabase() {
         result
     }
 
-    suspend fun invalidateAndClearAccountData(ownerAccountId: String) {
-        withTransaction {
-            val previousGeneration = accountLifecycleDao().lifecycle(ownerAccountId)?.generation ?: 0L
-            accountLifecycleDao().upsertLifecycle(
-                AccountLifecycleEntity(
-                    ownerAccountId = ownerAccountId,
-                    generation = previousGeneration + 1L,
-                    isActive = false,
-                    updatedAtMillis = System.currentTimeMillis(),
-                ),
-            )
-            pendingWriteDao().clearForOwner(ownerAccountId)
-            syncConflictDao().clearForOwner(ownerAccountId)
-            notificationDao().clearForOwner(ownerAccountId)
-            pushTokenDao().clearForOwner(ownerAccountId)
-            taskDao().clearForOwner(ownerAccountId)
-            vitalDao().clearForOwner(ownerAccountId)
-            caseDao().clearCases(ownerAccountId)
-            caseStatsDao().clearForOwner(ownerAccountId)
-            vitalsThresholdDao().clearForOwner(ownerAccountId)
-            categoryOptionsDao().clearForOwner(ownerAccountId)
-            cacheMetadataDao().clearForOwner(ownerAccountId)
+    suspend fun invalidateAndClearAccountData(
+        ownerAccountId: String,
+        expectedGeneration: Long? = null,
+    ): Boolean = withTransaction {
+        val lifecycle = accountLifecycleDao().lifecycle(ownerAccountId)
+        if (
+            expectedGeneration != null &&
+            (lifecycle?.isActive != true || lifecycle.generation != expectedGeneration)
+        ) {
+            return@withTransaction false
         }
+        val previousGeneration = lifecycle?.generation ?: 0L
+        accountLifecycleDao().upsertLifecycle(
+            AccountLifecycleEntity(
+                ownerAccountId = ownerAccountId,
+                generation = previousGeneration + 1L,
+                isActive = false,
+                updatedAtMillis = System.currentTimeMillis(),
+            ),
+        )
+        pendingWriteDao().clearForOwner(ownerAccountId)
+        syncConflictDao().clearForOwner(ownerAccountId)
+        notificationDao().clearForOwner(ownerAccountId)
+        pushTokenDao().clearForOwner(ownerAccountId)
+        taskDao().clearForOwner(ownerAccountId)
+        vitalDao().clearForOwner(ownerAccountId)
+        caseDao().clearCases(ownerAccountId)
+        caseStatsDao().clearForOwner(ownerAccountId)
+        vitalsThresholdDao().clearForOwner(ownerAccountId)
+        categoryOptionsDao().clearForOwner(ownerAccountId)
+        cacheMetadataDao().clearForOwner(ownerAccountId)
+        true
     }
 
     private suspend fun checkAccountGeneration(

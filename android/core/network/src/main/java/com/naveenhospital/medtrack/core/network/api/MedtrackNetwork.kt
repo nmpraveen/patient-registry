@@ -30,6 +30,7 @@ object MedtrackNetwork {
         accessTokenProvider: () -> String? = { null },
         refreshTokenProvider: () -> String? = { null },
         expectedAccountIdProvider: () -> String? = { null },
+        sessionIncarnationProvider: () -> String? = { null },
         sessionUpdater: (access: String, refresh: String?) -> Boolean = { _, _ -> false },
     ): MedtrackApi {
         val normalizedBaseUrl = baseUrl.withTrailingSlash()
@@ -57,6 +58,9 @@ object MedtrackNetwork {
                     accessTokenProvider = accessTokenProvider,
                     refreshTokenProvider = refreshTokenProvider,
                     expectedAccountIdProvider = expectedAccountIdProvider,
+                    expectedSessionIncarnation = sessionIncarnationProvider()
+                        ?.takeIf { it.isNotBlank() },
+                    currentSessionIncarnationProvider = sessionIncarnationProvider,
                     sessionUpdater = sessionUpdater,
                     moshi = moshi,
                 ),
@@ -79,6 +83,8 @@ private class RefreshTokenAuthenticator(
     private val accessTokenProvider: () -> String?,
     private val refreshTokenProvider: () -> String?,
     private val expectedAccountIdProvider: () -> String?,
+    private val expectedSessionIncarnation: String?,
+    private val currentSessionIncarnationProvider: () -> String?,
     private val sessionUpdater: (access: String, refresh: String?) -> Boolean,
     private val moshi: Moshi,
 ) : Authenticator {
@@ -89,9 +95,12 @@ private class RefreshTokenAuthenticator(
         if (response.request.url.encodedPath.endsWith("/api/auth/token/refresh/")) return null
         if (response.responseCount() >= MAX_AUTH_ATTEMPTS) return null
         val expectedAccountId = expectedAccountIdProvider()?.takeIf { it.isNotBlank() } ?: return null
+        val sessionIncarnation = expectedSessionIncarnation ?: return null
+        if (currentSessionIncarnationProvider() != sessionIncarnation) return null
 
         val requestToken = response.request.bearerToken()
         val currentToken = accessTokenProvider()?.takeIf { it.isNotBlank() }
+        if (currentSessionIncarnationProvider() != sessionIncarnation) return null
         if (!currentToken.isNullOrBlank() && currentToken != requestToken) {
             return response.request.withBearer(currentToken)
         }
@@ -99,16 +108,19 @@ private class RefreshTokenAuthenticator(
         val refreshToken = refreshTokenProvider()?.takeIf { it.isNotBlank() } ?: return null
         return synchronized(this) {
             if (expectedAccountIdProvider() != expectedAccountId) return@synchronized null
+            if (currentSessionIncarnationProvider() != sessionIncarnation) return@synchronized null
             val updatedToken = accessTokenProvider()?.takeIf { it.isNotBlank() }
             if (!updatedToken.isNullOrBlank() && updatedToken != requestToken) {
                 return@synchronized response.request.withBearer(updatedToken)
             }
+            if (currentSessionIncarnationProvider() != sessionIncarnation) return@synchronized null
 
             val session = when (val refresh = refreshSession(refreshToken)) {
                 is AutomaticRefreshAttempt.Success -> refresh.session
                 is AutomaticRefreshAttempt.RetryableFailure -> throw RetryableSessionRefreshException(refresh.cause)
                 AutomaticRefreshAttempt.DefinitiveFailure -> return@synchronized null
             }
+            if (currentSessionIncarnationProvider() != sessionIncarnation) return@synchronized null
             val access = session.access.takeIf { it.isNotBlank() } ?: return@synchronized null
             val profile = when (val verification = verifyAccessToken(access)) {
                 is AutomaticVerificationAttempt.Success -> verification.profile
@@ -117,10 +129,13 @@ private class RefreshTokenAuthenticator(
                 }
                 AutomaticVerificationAttempt.DefinitiveFailure -> return@synchronized null
             }
+            if (currentSessionIncarnationProvider() != sessionIncarnation) return@synchronized null
             if (profile.id.toString() != expectedAccountId) return@synchronized null
             if (expectedAccountIdProvider() != expectedAccountId) return@synchronized null
+            if (currentSessionIncarnationProvider() != sessionIncarnation) return@synchronized null
             if (!sessionUpdater(access, session.refresh)) return@synchronized null
             if (expectedAccountIdProvider() != expectedAccountId) return@synchronized null
+            if (currentSessionIncarnationProvider() != sessionIncarnation) return@synchronized null
             response.request.withBearer(access)
         }
     }

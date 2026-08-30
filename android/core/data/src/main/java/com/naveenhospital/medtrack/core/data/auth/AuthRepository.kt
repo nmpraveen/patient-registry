@@ -17,9 +17,12 @@ class AuthRepository(
     private val verificationApiForAccessToken: (String) -> MedtrackApi,
     private val apiForAccount: (String) -> MedtrackApi,
     private val tokenStore: TokenStore,
-    private val onBeforeAccountCommit: suspend (previousAccountId: String?, newAccountId: String) -> Unit = { _, _ -> },
+    private val onBeforeAccountCommit: suspend (
+        previousSession: AccountSessionIdentity?,
+        newAccountId: String,
+    ) -> Unit = { _, _ -> },
     private val onAccountCommitted: suspend (accountId: String) -> Unit = {},
-    private val onSessionCleared: suspend (accountId: String?) -> Unit = {},
+    private val onSessionCleared: suspend (session: AccountSessionIdentity?) -> Unit = {},
 ) {
     constructor(api: MedtrackApi, tokenStore: TokenStore) : this(
         anonymousApi = api,
@@ -43,19 +46,29 @@ class AuthRepository(
     }
 
     suspend fun currentUser(): UserProfileDto {
-        val accountId = tokenStore.accountId() ?: error("No verified MEDTRACK account is active.")
+        val sessionIdentity = tokenStore.sessionIdentity()
+            ?: error("No verified MEDTRACK account is active.")
+        val accountId = sessionIdentity.accountId
         verifiedProfile?.takeIf { it.id.toString() == accountId }?.let { return it }
         return transitionMutex.withLock {
             verifiedProfile?.takeIf { it.id.toString() == accountId } ?: run {
                 val profile = runCatching { apiForAccount(accountId).me() }
                     .getOrElse { failure ->
-                        if (failure.isDefinitiveAccountAuthFailure()) {
-                            clearSessionLocked(accountId)
+                        if (
+                            failure.isDefinitiveAccountAuthFailure() &&
+                            tokenStore.isCurrent(sessionIdentity)
+                        ) {
+                            clearSessionLocked(sessionIdentity)
                         }
                         throw failure
                     }
+                if (!tokenStore.isCurrent(sessionIdentity)) {
+                    throw DefinitiveAccountIdentityException(
+                        "Authenticated session changed while verifying account identity.",
+                    )
+                }
                 if (profile.id.toString() != accountId) {
-                    clearSessionLocked(accountId)
+                    clearSessionLocked(sessionIdentity)
                     throw DefinitiveAccountIdentityException(
                         "Authenticated account identity changed unexpectedly.",
                     )
@@ -67,12 +80,13 @@ class AuthRepository(
     }
 
     suspend fun restoreSession(): SessionRestoreResult = transitionMutex.withLock {
-        val expectedAccountId = tokenStore.accountId() ?: return@withLock SessionRestoreResult.NoSession
+        val expectedSession = tokenStore.sessionIdentity() ?: return@withLock SessionRestoreResult.NoSession
+        val expectedAccountId = expectedSession.accountId
         verifiedProfile?.takeIf {
-            it.id.toString() == expectedAccountId && tokenStore.accessTokenFor(expectedAccountId) != null
+            it.id.toString() == expectedAccountId && tokenStore.accessTokenFor(expectedSession) != null
         }?.let { return@withLock SessionRestoreResult.Verified(it) }
-        val refresh = tokenStore.refreshTokenFor(expectedAccountId) ?: run {
-            clearSessionLocked(expectedAccountId)
+        val refresh = tokenStore.refreshTokenFor(expectedSession) ?: run {
+            clearSessionLocked(expectedSession)
             return@withLock SessionRestoreResult.NoSession
         }
         try {
@@ -82,7 +96,9 @@ class AuthRepository(
             )
         } catch (failure: Throwable) {
             if (failure.isDefinitiveAccountAuthFailure()) {
-                clearSessionLocked(expectedAccountId)
+                if (tokenStore.isCurrent(expectedSession)) {
+                    clearSessionLocked(expectedSession)
+                }
                 SessionRestoreResult.NoSession
             } else {
                 SessionRestoreResult.Retryable(failure)
@@ -91,8 +107,9 @@ class AuthRepository(
     }
 
     suspend fun logout(deviceToken: String? = null) = transitionMutex.withLock {
-        val accountId = tokenStore.accountId()
-        val refresh = accountId?.let(tokenStore::refreshTokenFor)
+        val sessionIdentity = tokenStore.sessionIdentity()
+        val accountId = sessionIdentity?.accountId
+        val refresh = sessionIdentity?.let(tokenStore::refreshTokenFor)
         if (accountId != null && !refresh.isNullOrBlank()) {
             runCatching {
                 apiForAccount(accountId).logout(
@@ -103,11 +120,11 @@ class AuthRepository(
                 )
             }
         }
-        clearSessionLocked(accountId)
+        clearSessionLocked(sessionIdentity)
     }
 
     suspend fun abandonSession() = transitionMutex.withLock {
-        clearSessionLocked(tokenStore.accountId())
+        clearSessionLocked(tokenStore.sessionIdentity())
     }
 
     private suspend fun verifyAndCommit(
@@ -126,28 +143,36 @@ class AuthRepository(
                 "Refreshed credentials do not belong to the stored account.",
             )
         }
-        val previousAccountId = tokenStore.accountId()
-        onBeforeAccountCommit(previousAccountId, verifiedAccountId)
-        if (!tokenStore.commitVerifiedSession(verifiedAccountId, access, session.refresh)) {
-            clearSessionLocked(previousAccountId)
-            error("Unable to persist the verified MEDTRACK session.")
-        }
+        val previousSession = tokenStore.sessionIdentity()
+        onBeforeAccountCommit(previousSession, verifiedAccountId)
+        var committedSession: AccountSessionIdentity? = null
         return runCatching {
-            onAccountCommitted(verifiedAccountId)
+            AccountSessionTransitions.serialized {
+                if (!tokenStore.commitVerifiedSession(verifiedAccountId, access, session.refresh)) {
+                    error("Unable to persist the verified MEDTRACK session.")
+                }
+                committedSession = tokenStore.sessionIdentityFor(verifiedAccountId)
+                    ?: error("Unable to bind the verified MEDTRACK session identity.")
+                onAccountCommitted(verifiedAccountId)
+            }
             verifiedProfile = profile
             profile
         }.getOrElse { failure ->
-            clearSessionLocked(verifiedAccountId)
+            clearSessionLocked(committedSession ?: previousSession)
             throw failure
         }
     }
 
-    private suspend fun clearSessionLocked(accountId: String?) {
+    private suspend fun clearSessionLocked(sessionIdentity: AccountSessionIdentity?) {
         verifiedProfile = null
         try {
-            onSessionCleared(accountId)
+            onSessionCleared(sessionIdentity)
         } finally {
-            if (accountId == null) tokenStore.clear() else tokenStore.clearForAccount(accountId)
+            if (sessionIdentity == null) {
+                tokenStore.clear()
+            } else {
+                tokenStore.clearForIdentity(sessionIdentity)
+            }
         }
     }
 }

@@ -35,6 +35,7 @@ class MedtrackNetworkTest {
             accessTokenProvider = { accessToken },
             refreshTokenProvider = { refreshToken },
             expectedAccountIdProvider = { "1" },
+            sessionIncarnationProvider = { "session-a" },
             sessionUpdater = { access, refresh ->
                 accessToken = access
                 refreshToken = refresh.orEmpty()
@@ -109,6 +110,7 @@ class MedtrackNetworkTest {
             accessTokenProvider = { "old-access" },
             refreshTokenProvider = { "refresh-token" },
             expectedAccountIdProvider = { "1" },
+            sessionIncarnationProvider = { "session-a" },
             sessionUpdater = { _, _ -> committed = true; true },
         )
         server.enqueue(MockResponse().setResponseCode(401))
@@ -136,6 +138,7 @@ class MedtrackNetworkTest {
             accessTokenProvider = { "old-access" },
             refreshTokenProvider = { "refresh-token" },
             expectedAccountIdProvider = { "1" },
+            sessionIncarnationProvider = { "session-a" },
             sessionUpdater = { _, _ -> commitCalls += 1; false },
         )
         server.enqueue(MockResponse().setResponseCode(401))

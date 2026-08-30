@@ -33,6 +33,13 @@ COPY api /app/api
 COPY patients /app/patients
 COPY templates /app/templates
 
+# Apply commit-specific metadata after dependency installation so changing the
+# reviewed revision does not invalidate the hash-locked dependency layer.
+LABEL org.opencontainers.image.source="https://github.com/nmpraveen/patient-registry" \
+      org.opencontainers.image.revision="${VCS_REF}" \
+      org.medtrack.build-context.schema="medtrack.build-context/v1" \
+      org.medtrack.build-context.digest="${BUILD_CONTEXT_SHA256}"
+
 EXPOSE 8000
 
 CMD ["gunicorn", "patient_registry.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "3", "--timeout", "60"]

@@ -201,7 +201,8 @@ $emulatorSmoke = Find-LatestPassingSummary -Filter "android-emulator-smoke-*" -P
 $pushSmoke = Find-LatestPassingSummary -Filter "mobile-push-smoke-*" -Predicate {
     param($summary)
     $checks = $summary.checks
-    return (Test-TruthyProperty -Object $checks -Property "hasNotificationRow") -and
+    return (Test-TruthyProperty -Object $checks -Property "hasOpaqueEvent") -and
+        (Test-TruthyProperty -Object $checks -Property "hasEventOnlyPayload") -and
         (Test-TruthyProperty -Object $checks -Property "hasDeviceTokenRow") -and
         (Test-TruthyProperty -Object $checks -Property "hasFirebaseConfigStatus") -and
         (
@@ -223,14 +224,15 @@ $realPushSmoke = Find-LatestPassingSummary -Filter "mobile-real-push-smoke-*" -P
         (Test-TruthyProperty -Object $checks -Property "hasRegisteredDeviceToken") -and
         (Test-TruthyProperty -Object $checks -Property "hasFirebaseConfigured") -and
         (Test-TruthyProperty -Object $checks -Property "hasDeliverySent") -and
-        (Test-TruthyProperty -Object $checks -Property "hasDeviceNotificationEvidence")
+        (Test-TruthyProperty -Object $checks -Property "hasOpaqueEventOnlyPayload") -and
+        (Test-TruthyProperty -Object $checks -Property "hasInAppSyncEvidence")
 }
 
 $realPushDeliveryProved = ($realPushSmoke -ne $null) -or ($pushSmoke -and
     $pushSmoke.Summary.requireFirebase -eq $true -and
     $pushSmoke.Summary.usingRealToken -eq $true -and
     $pushSmoke.Summary.firebaseConfigured -eq $true -and
-    $pushSmoke.Summary.deliveryResult.sent -eq $true)
+    $pushSmoke.Summary.deliverySent -eq $true)
 
 $biometricSmoke = Find-LatestPassingSummary -Filter "android-biometric-smoke-*" -Predicate {
     param($summary)

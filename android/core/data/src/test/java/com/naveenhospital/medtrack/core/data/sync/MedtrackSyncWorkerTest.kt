@@ -14,6 +14,7 @@ import com.naveenhospital.medtrack.core.data.auth.AccountVisibilityInvalidations
 import com.naveenhospital.medtrack.core.data.auth.LockStore
 import com.naveenhospital.medtrack.core.data.auth.TokenStore
 import com.naveenhospital.medtrack.core.data.repository.MedtrackRepository
+import com.naveenhospital.medtrack.core.data.local.TaskEntity
 import com.naveenhospital.medtrack.core.data.local.VitalEntity
 import com.naveenhospital.medtrack.core.network.api.MedtrackApi
 import com.naveenhospital.medtrack.core.network.model.ApiMessageDto
@@ -39,6 +40,7 @@ import com.naveenhospital.medtrack.core.network.model.VitalDto
 import com.naveenhospital.medtrack.core.network.model.VitalsRequestDto
 import com.naveenhospital.medtrack.core.network.model.VitalsThresholdsDto
 import com.naveenhospital.medtrack.core.network.model.VitalsWriteResponseDto
+import java.io.IOException
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.runBlocking
@@ -774,6 +776,113 @@ class MedtrackSyncWorkerTest {
         assertEquals(SyncFailureKinds.AUTHENTICATION, recovery?.failureKind)
     }
 
+    @Test
+    fun authorizationFailureIsTerminalForOnlyThatWriteAndRetainsSessionClassification() = runTest {
+        val api = FakeSyncApi(completeTaskError = httpError(403, "scope_revoked"))
+        database.pendingWriteDao().upsertPendingWrite(
+            pendingWrite(
+                clientWriteId = "forbidden-write",
+                writeType = PendingWriteTypes.TASK_COMPLETE,
+                caseId = "42",
+                taskId = "7",
+                payloadJson = PendingWriteJson.encodeTaskComplete(ClientWriteRequestDto("forbidden-write")),
+            ),
+        )
+
+        val outcome = drainPendingWritesForSync(api, database)
+
+        assertEquals(SyncRunOutcome.COMPLETED, outcome)
+        assertTrue(database.pendingWriteDao().pendingWrites().isEmpty())
+        val recovery = SyncRecoveryJson.decode(
+            database.syncConflictDao().conflictById("forbidden-write")?.serverPayloadJson,
+        )
+        assertEquals(SyncFailureKinds.AUTHORIZATION, recovery?.failureKind)
+        assertEquals(403, recovery?.httpStatus)
+    }
+
+    @Test
+    fun protocolFailureAtRetryCeilingRollsBackTaskAndDoesNotBlockLaterWrite() = runTest {
+        val originalTask = TaskEntity(
+            id = "7",
+            caseId = "42",
+            title = "Local review",
+            dueDate = "2026-08-30",
+            status = "PENDING",
+            statusLabel = "Pending",
+            canComplete = true,
+            updatedAtMillis = 10L,
+        )
+        database.taskDao().upsertTask(originalTask.copy(status = "COMPLETED", statusLabel = "Completed", canComplete = false))
+        database.pendingWriteDao().upsertPendingWrite(
+            pendingWrite(
+                clientWriteId = "protocol-write",
+                writeType = PendingWriteTypes.TASK_COMPLETE,
+                caseId = "42",
+                taskId = "7",
+                payloadJson = PendingWriteJson.encodeTaskComplete(
+                    ClientWriteRequestDto("protocol-write"),
+                    originalTask,
+                ),
+                retryCount = MAX_PENDING_WRITE_ATTEMPTS - 1,
+            ),
+        )
+        database.pendingWriteDao().upsertPendingWrite(
+            pendingWrite(
+                clientWriteId = "later-call-write",
+                writeType = PendingWriteTypes.CALL_OUTCOME,
+                caseId = "42",
+                payloadJson = PendingWriteJson.encodeCallOutcome(
+                    LogCallRequestDto(outcome = "NO_ANSWER", clientWriteId = "later-call-write"),
+                ),
+            ),
+        )
+        val api = FakeSyncApi(completeTaskError = IllegalStateException("schema drift"))
+
+        val outcome = drainPendingWritesForSync(api, database)
+
+        assertEquals(SyncRunOutcome.COMPLETED, outcome)
+        assertTrue(database.pendingWriteDao().pendingWrites().isEmpty())
+        val recovery = SyncRecoveryJson.decode(
+            database.syncConflictDao().conflictById("protocol-write")?.serverPayloadJson,
+        )
+        assertEquals(SyncFailureKinds.PROTOCOL, recovery?.failureKind)
+        assertEquals(MAX_PENDING_WRITE_ATTEMPTS, recovery?.attemptCount)
+        assertEquals("SCHEDULED", database.taskDao().observeTasksForCase("42").first().single().status)
+    }
+
+    @Test
+    fun malformedOptimisticTaskIsRemovedWhenAuthoritativeRefreshCannotRun() = runTest {
+        database.taskDao().upsertTask(
+            TaskEntity(
+                id = "7",
+                caseId = "42",
+                title = "Optimistic",
+                dueDate = null,
+                status = "COMPLETED",
+                statusLabel = "Completed",
+                canComplete = false,
+                updatedAtMillis = 1L,
+            ),
+        )
+        database.pendingWriteDao().upsertPendingWrite(
+            pendingWrite(
+                clientWriteId = "malformed-task",
+                writeType = PendingWriteTypes.TASK_COMPLETE,
+                caseId = "42",
+                taskId = "7",
+                payloadJson = "{not-json",
+            ),
+        )
+
+        val outcome = drainPendingWritesForSync(
+            FakeSyncApi(caseDetailError = IOException("offline")),
+            database,
+        )
+
+        assertEquals(SyncRunOutcome.COMPLETED, outcome)
+        assertTrue(database.taskDao().observeTasksForCase("42").first().isEmpty())
+    }
+
     private suspend fun assertServerVersionRefreshed() {
         val case = database.caseDao().caseById(ACCOUNT_ID, "42")
         assertEquals("Server Patient", case?.patientName)
@@ -789,6 +898,7 @@ class MedtrackSyncWorkerTest {
         caseId: String? = "42",
         taskId: String? = null,
         payloadJson: String,
+        retryCount: Int = 0,
     ): PendingWriteEntity =
         PendingWriteEntity(
             ownerAccountId = ACCOUNT_ID,
@@ -797,7 +907,7 @@ class MedtrackSyncWorkerTest {
             caseId = caseId,
             taskId = taskId,
             payloadJson = payloadJson,
-            retryCount = 0,
+            retryCount = retryCount,
             lastError = null,
             createdAtMillis = 1L,
             updatedAtMillis = 1L,

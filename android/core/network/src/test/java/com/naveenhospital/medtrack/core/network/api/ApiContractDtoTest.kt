@@ -5,6 +5,7 @@ import com.naveenhospital.medtrack.core.network.model.CaseUpdateResponseDto
 import com.naveenhospital.medtrack.core.network.model.NotificationsResponseDto
 import com.naveenhospital.medtrack.core.network.model.PatientSearchRequestDto
 import com.naveenhospital.medtrack.core.network.model.PatientSearchResponseDto
+import com.naveenhospital.medtrack.core.network.model.PatchField
 import com.naveenhospital.medtrack.core.network.model.UpdateCaseRequestDto
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
@@ -19,7 +20,7 @@ import retrofit2.http.POST
 import retrofit2.http.Query
 
 class ApiContractDtoTest {
-    private val moshi = Moshi.Builder().add(KotlinJsonAdapterFactory()).build()
+    private val moshi = MedtrackNetwork.contractMoshi()
 
     @Test
     fun currentCaseEditContractMakesMissingSurgeryDoneExplicitlyUnknown() {
@@ -37,9 +38,9 @@ class ApiContractDtoTest {
             ),
         )
         val request = UpdateCaseRequestDto(
-            diagnosis = "Post-operative review",
-            surgeryDone = response?.case?.surgeryDone,
-            clientWriteId = "contract-test-write",
+            diagnosis = PatchField.Value("Post-operative review"),
+            surgeryDone = PatchField.Value(response?.case?.surgeryDone),
+            clientWriteId = PatchField.Value("contract-test-write"),
         )
         val json = moshi.adapter(UpdateCaseRequestDto::class.java).toJson(request)
 
@@ -47,6 +48,21 @@ class ApiContractDtoTest {
         assertTrue(json.contains("\"diagnosis\":\"Post-operative review\""))
         assertFalse(json.contains("\"high_risk\""))
         assertFalse(json.contains("\"ncd_flags\""))
+    }
+
+    @Test
+    fun casePatchDistinguishesOmissionFromExplicitNullClearing() {
+        val request = UpdateCaseRequestDto(
+            notes = PatchField.Value(null),
+            diagnosis = PatchField.Omitted,
+            clientWriteId = PatchField.Value("contract-test-write"),
+        )
+
+        val json = moshi.adapter(UpdateCaseRequestDto::class.java).toJson(request)
+
+        assertTrue(json.contains("\"notes\":null"))
+        assertFalse(json.contains("\"diagnosis\""))
+        assertTrue(json.contains("\"client_write_id\":\"contract-test-write\""))
     }
 
     @Test

@@ -91,7 +91,7 @@ function Invoke-ProcessLogged {
     }
 
     @(
-        "command: $FilePath $argumentString"
+        "command: $FilePath [arguments redacted]"
         "workingDirectory: $WorkingDirectory"
         "exitCode: $($process.ExitCode)"
         ""

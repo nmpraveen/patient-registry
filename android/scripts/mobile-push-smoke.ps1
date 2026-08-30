@@ -75,7 +75,7 @@ function Invoke-ProcessLogged {
     }
 
     @(
-        "command: $FilePath $argumentString"
+        "command: $FilePath [arguments redacted]"
         "workingDirectory: $WorkingDirectory"
         "exitCode: $($process.ExitCode)"
         ""
@@ -220,16 +220,14 @@ notification, _ = MobileNotification.objects.get_or_create(
     dedupe_key=f"mobile-push-smoke-{run_id}",
     defaults={
         "notification_type": MobileNotificationType.ASSIGNMENT,
-        "title": "Mobile push smoke",
-        "body": "Local MEDTRACK push smoke",
+        "title": "MEDTRACK update",
+        "body": "Open MEDTRACK to review this update.",
         "case": case,
-        "payload": {
-            "type": MobileNotificationType.ASSIGNMENT,
-            "channel": "assignments",
-            "case_id": case.pk,
-        },
+        "payload": {},
     },
 )
+notification.payload = {"event_id": str(notification.event_id)}
+notification.save(update_fields=["payload"])
 configured = firebase_configured()
 result = send_mobile_notification(notification)
 device.refresh_from_db()
@@ -239,10 +237,11 @@ print(
         {
             "firebase_configured": configured,
             "using_real_token": using_real_token,
-            "notification_id": notification.pk,
-            "case_id": case.pk,
+            "event_id": str(notification.event_id),
             "device_active": device.is_active,
-            "result": result,
+            "sent": bool(result.get("sent")),
+            "reason": result.get("reason"),
+            "payload_keys": sorted(notification.payload.keys()),
         },
         sort_keys=True,
     )
@@ -280,22 +279,21 @@ print(
     $line = ($stdout -split "`r?`n" | Where-Object { $_ -like "MEDTRACK_PUSH_SMOKE_JSON=*" } | Select-Object -Last 1)
     Assert-True (-not [string]::IsNullOrWhiteSpace($line)) "Push smoke did not emit a JSON result."
     $result = $line.Substring("MEDTRACK_PUSH_SMOKE_JSON=".Length) | ConvertFrom-Json
-    Save-Json -Path (Join-Path $EvidenceDir "push-result.json") -Value $result -Depth 10
-
     if ($RequireFirebase) {
         Assert-True $result.firebase_configured "RequireFirebase was set, but Firebase is not configured."
         Assert-True $result.using_real_token "RequireFirebase was set, but no real FCM token was supplied."
-        Assert-True $result.result.sent "RequireFirebase was set, but Firebase delivery did not report sent=true."
+        Assert-True $result.sent "RequireFirebase was set, but Firebase delivery did not report sent=true."
     }
     elseif (-not $result.firebase_configured) {
-        Assert-True ($result.result.reason -eq "fcm_not_configured") "Expected fcm_not_configured when Firebase config is missing."
+        Assert-True ($result.reason -eq "fcm_not_configured") "Expected fcm_not_configured when Firebase config is missing."
     }
 
     $checks = [ordered]@{
-        hasNotificationRow = [bool]$result.notification_id
+        hasOpaqueEvent = [bool]([string]$result.event_id -match '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')
+        hasEventOnlyPayload = (@($result.payload_keys).Count -eq 1 -and $result.payload_keys[0] -eq "event_id")
         hasDeviceTokenRow = [bool]$result.device_active
         hasFirebaseConfigStatus = $null -ne $result.firebase_configured
-        hasExpectedMissingConfigResult = (-not $result.firebase_configured -and $result.result.reason -eq "fcm_not_configured")
+        hasExpectedMissingConfigResult = (-not $result.firebase_configured -and $result.reason -eq "fcm_not_configured")
         hasRealDeliveryAttempt = ($result.firebase_configured -and $result.using_real_token)
     }
     $summary = [ordered]@{
@@ -305,9 +303,8 @@ print(
         requireFirebase = [bool]$RequireFirebase
         usingRealToken = [bool]$result.using_real_token
         firebaseConfigured = [bool]$result.firebase_configured
-        notificationId = $result.notification_id
-        caseId = $result.case_id
-        deliveryResult = $result.result
+        eventId = $result.event_id
+        deliverySent = [bool]$result.sent
         checks = $checks
         evidenceDir = $EvidenceDir
     }

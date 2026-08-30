@@ -286,54 +286,53 @@ data class CreateCaseRequestDto(
     @Json(name = "client_write_id") val clientWriteId: String,
 )
 
-/**
- * PATCH payload for an existing case.
- *
- * Every property is nullable so Moshi omits fields the edit surface does not own. This is
- * intentionally separate from [CreateCaseRequestDto], whose create-time defaults must never be
- * replayed over an existing clinical record.
- */
+sealed interface PatchField<out T> {
+    data object Omitted : PatchField<Nothing>
+    data class Value<T>(val value: T?) : PatchField<T>
+}
+
+/** PATCH payload with a real three-state field model: omitted, value, or explicit JSON null. */
 data class UpdateCaseRequestDto(
-    @Json(name = "patient_mode") val patientMode: String? = null,
-    @Json(name = "selected_patient") val selectedPatient: Long? = null,
-    @Json(name = "use_temporary_uhid") val useTemporaryUhid: Boolean? = null,
-    val uhid: String? = null,
-    val prefix: String? = null,
-    @Json(name = "first_name") val firstName: String? = null,
-    @Json(name = "last_name") val lastName: String? = null,
-    val gender: String? = null,
-    @Json(name = "blood_group") val bloodGroup: String? = null,
-    @Json(name = "date_of_birth") val dateOfBirth: String? = null,
-    val place: String? = null,
-    val age: Int? = null,
-    @Json(name = "phone_number") val phoneNumber: String? = null,
-    @Json(name = "alternate_phone_number") val alternatePhoneNumber: String? = null,
-    val category: Long? = null,
-    val subcategory: String? = null,
-    val status: String? = null,
-    val diagnosis: String? = null,
-    @Json(name = "referred_by") val referredBy: String? = null,
-    val notes: String? = null,
-    @Json(name = "high_risk") val highRisk: Boolean? = null,
-    @Json(name = "ncd_flags") val ncdFlags: List<String>? = null,
-    @Json(name = "anc_high_risk_reasons") val ancHighRiskReasons: List<String>? = null,
-    @Json(name = "rch_number") val rchNumber: String? = null,
-    @Json(name = "rch_bypass") val rchBypass: Boolean? = null,
-    val lmp: String? = null,
-    val edd: String? = null,
-    @Json(name = "usg_edd") val usgEdd: String? = null,
-    @Json(name = "surgical_pathway") val surgicalPathway: String? = null,
-    @Json(name = "surgery_done") val surgeryDone: Boolean? = null,
-    @Json(name = "surgery_date") val surgeryDate: String? = null,
-    @Json(name = "review_frequency") val reviewFrequency: String? = null,
-    @Json(name = "review_date") val reviewDate: String? = null,
-    val gravida: Int? = null,
-    val para: Int? = null,
-    val abortions: Int? = null,
-    val living: Int? = null,
-    val ftnd: Int? = null,
-    val lscs: Int? = null,
-    @Json(name = "client_write_id") val clientWriteId: String? = null,
+    val patientMode: PatchField<String> = PatchField.Omitted,
+    val selectedPatient: PatchField<Long> = PatchField.Omitted,
+    val useTemporaryUhid: PatchField<Boolean> = PatchField.Omitted,
+    val uhid: PatchField<String> = PatchField.Omitted,
+    val prefix: PatchField<String> = PatchField.Omitted,
+    val firstName: PatchField<String> = PatchField.Omitted,
+    val lastName: PatchField<String> = PatchField.Omitted,
+    val gender: PatchField<String> = PatchField.Omitted,
+    val bloodGroup: PatchField<String> = PatchField.Omitted,
+    val dateOfBirth: PatchField<String> = PatchField.Omitted,
+    val place: PatchField<String> = PatchField.Omitted,
+    val age: PatchField<Int> = PatchField.Omitted,
+    val phoneNumber: PatchField<String> = PatchField.Omitted,
+    val alternatePhoneNumber: PatchField<String> = PatchField.Omitted,
+    val category: PatchField<Long> = PatchField.Omitted,
+    val subcategory: PatchField<String> = PatchField.Omitted,
+    val status: PatchField<String> = PatchField.Omitted,
+    val diagnosis: PatchField<String> = PatchField.Omitted,
+    val referredBy: PatchField<String> = PatchField.Omitted,
+    val notes: PatchField<String> = PatchField.Omitted,
+    val highRisk: PatchField<Boolean> = PatchField.Omitted,
+    val ncdFlags: PatchField<List<String>> = PatchField.Omitted,
+    val ancHighRiskReasons: PatchField<List<String>> = PatchField.Omitted,
+    val rchNumber: PatchField<String> = PatchField.Omitted,
+    val rchBypass: PatchField<Boolean> = PatchField.Omitted,
+    val lmp: PatchField<String> = PatchField.Omitted,
+    val edd: PatchField<String> = PatchField.Omitted,
+    val usgEdd: PatchField<String> = PatchField.Omitted,
+    val surgicalPathway: PatchField<String> = PatchField.Omitted,
+    val surgeryDone: PatchField<Boolean> = PatchField.Omitted,
+    val surgeryDate: PatchField<String> = PatchField.Omitted,
+    val reviewFrequency: PatchField<String> = PatchField.Omitted,
+    val reviewDate: PatchField<String> = PatchField.Omitted,
+    val gravida: PatchField<Int> = PatchField.Omitted,
+    val para: PatchField<Int> = PatchField.Omitted,
+    val abortions: PatchField<Int> = PatchField.Omitted,
+    val living: PatchField<Int> = PatchField.Omitted,
+    val ftnd: PatchField<Int> = PatchField.Omitted,
+    val lscs: PatchField<Int> = PatchField.Omitted,
+    val clientWriteId: PatchField<String> = PatchField.Omitted,
 )
 
 data class CaseCreateResponseDto(

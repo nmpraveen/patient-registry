@@ -3,6 +3,7 @@ package com.naveenhospital.medtrack.core.network.api
 import android.util.Log
 import com.naveenhospital.medtrack.core.network.model.AuthSessionDto
 import com.naveenhospital.medtrack.core.network.model.RefreshTokenRequestDto
+import com.naveenhospital.medtrack.core.network.model.UpdateCaseRequestDtoJsonAdapterFactory
 import okhttp3.Authenticator
 import okhttp3.MediaType.Companion.toMediaType
 import com.squareup.moshi.Moshi
@@ -37,9 +38,7 @@ object MedtrackNetwork {
         enableDebugLogging: Boolean = false,
     ): MedtrackApi {
         val normalizedBaseUrl = baseUrl.withTrailingSlash()
-        val moshi = Moshi.Builder()
-            .add(KotlinJsonAdapterFactory())
-            .build()
+        val moshi = contractMoshi()
         val clientBuilder = OkHttpClient.Builder()
             .addInterceptor { chain ->
                 val token = accessTokenProvider()
@@ -88,6 +87,11 @@ object MedtrackNetwork {
         val redactedPath = encodedPath.replace(NUMERIC_PATH_SEGMENT, "/{id}")
         return "$method $redactedPath"
     }
+
+    internal fun contractMoshi(): Moshi = Moshi.Builder()
+        .add(UpdateCaseRequestDtoJsonAdapterFactory)
+        .add(KotlinJsonAdapterFactory())
+        .build()
 
     private const val DEBUG_LOG_TAG = "MedtrackHttp"
     private val NUMERIC_PATH_SEGMENT = Regex("/\\d+(?=/|$)")

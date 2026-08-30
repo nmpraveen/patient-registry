@@ -10,6 +10,7 @@ $repoRoot = Split-Path -Parent $androidRoot
 $gradle = Join-Path $androidRoot 'gradlew.bat'
 $versionPropertiesPath = Join-Path $androidRoot 'version.properties'
 $buildRoot = Join-Path $androidRoot '.build\app\outputs'
+$releaseIdentityPath = Join-Path $buildRoot 'prod-release-identity.json'
 
 $versionProperties = @{}
 foreach ($line in Get-Content -LiteralPath $versionPropertiesPath) {
@@ -21,8 +22,12 @@ $versionName = $versionProperties['VERSION_NAME']
 $versionCode = [int64]$versionProperties['VERSION_CODE']
 $gitSha = (& git -C $repoRoot rev-parse HEAD).Trim()
 $gitShortSha = (& git -C $repoRoot rev-parse --short=12 HEAD).Trim()
-$gitStatus = (& git -C $repoRoot status --porcelain --untracked-files=no | Out-String)
+$gitStatus = (& git -C $repoRoot status --porcelain | Out-String)
 $gitDirty = -not [string]::IsNullOrWhiteSpace($gitStatus)
+
+if ($gitDirty) {
+    throw 'Release artifacts must be built and labeled from a clean source commit.'
+}
 
 if (-not $OutputDirectory) {
     $OutputDirectory = Join-Path $androidRoot "release-artifacts\$versionName\$gitShortSha"
@@ -31,8 +36,6 @@ $resolvedOutput = [IO.Path]::GetFullPath($OutputDirectory)
 if (-not $resolvedOutput.StartsWith([IO.Path]::GetFullPath($androidRoot), [StringComparison]::OrdinalIgnoreCase)) {
     throw 'Release artifact output must remain inside this Android worktree.'
 }
-New-Item -ItemType Directory -Path $resolvedOutput -Force | Out-Null
-
 if (-not $SkipBuild) {
     Push-Location $androidRoot
     try {
@@ -46,12 +49,41 @@ if (-not $SkipBuild) {
     }
 }
 
-$sourceArtifacts = @()
-$sourceArtifacts += Get-ChildItem -LiteralPath (Join-Path $buildRoot 'apk\prod\release') -File -Filter '*.apk'
-$sourceArtifacts += Get-ChildItem -LiteralPath (Join-Path $buildRoot 'bundle\prodRelease') -File -Filter '*.aab'
-if (@($sourceArtifacts).Count -lt 2) {
-    throw 'Expected both a production release APK and AAB.'
+if (-not (Test-Path -LiteralPath $releaseIdentityPath)) {
+    throw 'Missing prod-release-identity.json. Rebuild instead of exporting stale outputs.'
 }
+$releaseIdentity = Get-Content -LiteralPath $releaseIdentityPath -Raw | ConvertFrom-Json
+if ($releaseIdentity.source_commit -ne $gitSha -or $releaseIdentity.source_dirty -ne $false) {
+    throw 'Release outputs do not match the current clean source commit.'
+}
+if ($releaseIdentity.version_name -ne $versionName -or [int64]$releaseIdentity.version_code -ne $versionCode) {
+    throw 'Release outputs do not match android/version.properties.'
+}
+if ($releaseIdentity.variant -ne 'prodRelease') {
+    throw 'Release output identity is not labeled prodRelease.'
+}
+$sourceArtifacts = @($releaseIdentity.artifacts | ForEach-Object {
+    $artifactPath = [IO.Path]::GetFullPath([string]$_.path)
+    if (-not $artifactPath.StartsWith([IO.Path]::GetFullPath($buildRoot), [StringComparison]::OrdinalIgnoreCase)) {
+        throw 'Release identity referenced an artifact outside the worktree build output.'
+    }
+    if (-not (Test-Path -LiteralPath $artifactPath -PathType Leaf)) {
+        throw "Release identity artifact is missing: $artifactPath"
+    }
+    $artifact = Get-Item -LiteralPath $artifactPath
+    $actualHash = (Get-FileHash -LiteralPath $artifact.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actualHash -ne ([string]$_.sha256).ToLowerInvariant() -or $artifact.Length -ne [int64]$_.bytes) {
+        throw "Release artifact bytes no longer match the build identity: $($artifact.Name)"
+    }
+    $artifact
+})
+if ($sourceArtifacts.Count -ne 2 -or @($sourceArtifacts.Extension | Sort-Object -Unique) -join ',' -ne '.aab,.apk') {
+    throw 'Release identity must contain exactly one production APK and one AAB.'
+}
+if ((Test-Path -LiteralPath $resolvedOutput) -and @(Get-ChildItem -LiteralPath $resolvedOutput -Force).Count -gt 0) {
+    throw 'Release artifact output directory must be empty to prevent stale or mislabeled files.'
+}
+New-Item -ItemType Directory -Path $resolvedOutput -Force | Out-Null
 
 $copiedArtifacts = @()
 foreach ($artifact in $sourceArtifacts) {

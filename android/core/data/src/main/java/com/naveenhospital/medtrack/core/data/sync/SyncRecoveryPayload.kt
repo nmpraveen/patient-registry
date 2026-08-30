@@ -5,8 +5,10 @@ import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 
 object SyncFailureKinds {
     const val AUTHENTICATION = "AUTHENTICATION"
+    const val AUTHORIZATION = "AUTHORIZATION"
     const val CONFLICT = "CONFLICT"
     const val MALFORMED = "MALFORMED"
+    const val PROTOCOL = "PROTOCOL"
     const val TRANSIENT = "TRANSIENT"
     const val VALIDATION = "VALIDATION"
 }
@@ -25,6 +27,8 @@ data class SyncRecoveryPayload(
     val localPayloadJson: String? = null,
     val serverPayloadJson: String? = null,
     val httpStatus: Int? = null,
+    val attemptCount: Int? = null,
+    val replacementClientWriteId: String? = null,
     val resolutionState: String = SyncResolutionStates.OPEN,
     val resolutionAtMillis: Long? = null,
 )

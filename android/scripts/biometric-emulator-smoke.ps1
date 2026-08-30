@@ -78,7 +78,7 @@ function Invoke-ProcessLogged {
     $stdout = if (Test-Path $stdoutPath) { Get-Content -Raw -Path $stdoutPath } else { "" }
     $stderr = if (Test-Path $stderrPath) { Get-Content -Raw -Path $stderrPath } else { "" }
     @(
-        "command: $FilePath $argumentString",
+        "command: $FilePath [arguments redacted]",
         "workingDirectory: $WorkingDirectory",
         "exitCode: $($process.ExitCode)",
         "",

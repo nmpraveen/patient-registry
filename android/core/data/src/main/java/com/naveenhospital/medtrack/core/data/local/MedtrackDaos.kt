@@ -56,6 +56,9 @@ interface TaskDao {
     @Query("SELECT * FROM tasks WHERE ownerAccountId = :ownerAccountId AND caseId = :caseId ORDER BY dueDate IS NULL, dueDate ASC, id ASC")
     fun observeTasksForCase(ownerAccountId: String, caseId: String): Flow<List<TaskEntity>>
 
+    @Query("SELECT * FROM tasks WHERE ownerAccountId = :ownerAccountId AND id = :taskId LIMIT 1")
+    suspend fun taskById(ownerAccountId: String, taskId: String): TaskEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertTask(task: TaskEntity)
 
@@ -79,6 +82,9 @@ interface TaskDao {
 
     @Query("DELETE FROM tasks WHERE ownerAccountId = :ownerAccountId")
     suspend fun clearForOwner(ownerAccountId: String)
+
+    @Query("DELETE FROM tasks WHERE ownerAccountId = :ownerAccountId AND id = :taskId")
+    suspend fun deleteTask(ownerAccountId: String, taskId: String)
 }
 
 @Dao

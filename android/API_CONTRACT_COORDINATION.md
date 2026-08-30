@@ -22,9 +22,11 @@ PATCH endpoint treats omitted Boolean form data as false. That combination can
 silently clear an existing surgery completion value when Android edits another
 field.
 
-Android now retains the edit-form baseline and uses a dedicated nullable update
-DTO that sends only fields changed by the user. Fields omitted by the server are
-therefore never converted from client defaults into destructive PATCH values.
+Android now retains the edit-form baseline and uses a dedicated three-state
+update DTO: omitted, value, or explicit JSON null. It sends only fields changed
+by the user, while still allowing a nullable field to be deliberately cleared.
+Fields omitted by the server are therefore never converted from client defaults
+into destructive PATCH values.
 For Surgery cases it additionally refuses to send any update when the server
 did not provide `surgery_done`. This is a deliberate fail-closed compatibility
 gate; no guessed Boolean is submitted.
@@ -45,8 +47,16 @@ fail-closed until the amended PR #99 head is available for exact integration:
 
 The contract test `ApiContractDtoTest` covers the legacy missing-field response,
 the coordinated response, and the authoritative `editable_case`. After lane 2
-merges, retain the nullable update DTO and fail-closed guard so a future schema
+merges, retain the three-state update DTO and fail-closed guard so a future schema
 regression cannot be converted to a destructive default.
+
+Lane 2's frozen local checkpoint
+`6e6f09dfda531fe3975e45b4cf29503a7cb791fa` additionally requires
+`base_updated_at` and `base_values` for every touched case/task/vital field.
+That SHA is not an integration head and is intentionally not rebased here.
+When PR #99 publishes its authorized final head, Android must add those
+optimistic-concurrency fields from the edit baseline and stop if the final DTO
+or conflict envelope differs instead of guessing.
 
 ## Notification snapshot reconciliation
 
@@ -96,3 +106,17 @@ closed with 400/403. GET is rejected by the server, and Android has no
 query-parameter search method, so names, UHIDs, and phones never enter a
 patient-search URL. The server must enforce current patient scope on every page
 and a 30/minute authenticated-actor throttle.
+
+## Pending case-search integration
+
+The current Android case list still uses the legacy `GET /api/cases/` list
+method and can pass `q`; that PHI-bearing search transport is not acceptable in
+the final server contract. Lane 2's frozen checkpoint defines
+`POST /api/cases/search/` with body fields `query`, `page_size`, `cursor`,
+`bucket`, `assigned_to`, `scope_context`, `category`, and `subcategory`, and a
+cursor response containing full case summaries plus stats. Android can consume
+that response shape and cursor traversal, but this dependency is deliberately
+deferred until the final pushed PR #99 head is authorized. At integration,
+remove case-list `q` use, keep ordinary non-search case-list filters on GET,
+and pin invalid-cursor restart behavior and all final field names to the exact
+published OpenAPI document.

@@ -172,13 +172,14 @@ class MedtrackSyncWorker(
             )
             Result.success()
         } catch (failure: Throwable) {
-            if (failure is HttpException && failure.code() in setOf(401, 403)) {
-                invalidator.invalidateIfCurrent(expectedSession, accountGeneration)
-                Result.failure()
-            } else if (failure is AccountChangedException || failure is AccountGenerationRevokedException) {
+            if (failure is AccountChangedException || failure is AccountGenerationRevokedException) {
                 Result.success()
-            } else {
-                Result.retry()
+            } else if (classifySyncFailure(failure) == SyncFailureKinds.AUTHENTICATION) {
+                invalidator.invalidateIfCurrent(expectedSession, accountGeneration)
+                Result.failure(workDataOf(KEY_FAILURE_KIND to SyncFailureKinds.AUTHENTICATION))
+            } else when (classifySyncFailure(failure)) {
+                SyncFailureKinds.TRANSIENT -> Result.retry()
+                else -> Result.failure(workDataOf(KEY_FAILURE_KIND to classifySyncFailure(failure)))
             }
         }
     }
@@ -190,8 +191,8 @@ class MedtrackSyncWorker(
         accountGeneration: Long,
         activeAccountId: () -> String?,
     ) {
-        // Revalidate the current JWT actor before any clinical/notification read. PR #103/lane 4
-        // must additionally bind this identity to the account-scoped database generation.
+        // Revalidate the current JWT actor before every clinical/notification refresh; all local
+        // commits remain bound to the captured account generation below.
         require(api.me().id > 0L) { "Authenticated mobile identity is invalid." }
         val now = System.currentTimeMillis()
         val defaultCaseListKey = caseListCacheKey(
@@ -403,6 +404,7 @@ internal suspend fun drainPendingWritesForSync(
     activeAccountId: () -> String? = { ownerAccountId },
 ): SyncRunOutcome {
     val pendingWriteDao = database.pendingWriteDao()
+    var requiresRetry = false
     pendingWriteDao.pendingWrites(ownerAccountId).forEach { write ->
         if (activeAccountId() != ownerAccountId) return SyncRunOutcome.COMPLETED
         val now = System.currentTimeMillis()
@@ -488,9 +490,27 @@ internal suspend fun drainPendingWritesForSync(
                         message = error.message ?: "Malformed pending write.",
                         serverPayloadJson = null,
                         httpStatus = null,
+                        attemptCount = write.retryCount + 1,
                         createdAtMillis = now,
                     )
                     pendingWriteDao.deletePendingWrite(ownerAccountId, write.clientWriteId)
+                    rollbackOptimisticWrite(
+                        database = database,
+                        ownerAccountId = ownerAccountId,
+                        write = write,
+                    )
+                }
+                write.caseId?.let { caseId ->
+                    runCatching {
+                        refreshServerCase(
+                            api,
+                            database,
+                            ownerAccountId,
+                            accountGeneration,
+                            activeAccountId,
+                            caseId,
+                        )
+                    }.onFailure(Throwable::rethrowAccountBoundaryFailure)
                 }
                 return@forEach
             }
@@ -514,12 +534,18 @@ internal suspend fun drainPendingWritesForSync(
                         message = "Authentication expired. Sign in to retry the retained change.",
                         serverPayloadJson = error.httpErrorBody(),
                         httpStatus = (error as? HttpException)?.code(),
+                        attemptCount = write.retryCount + 1,
                         createdAtMillis = now,
                     )
                 }
                 return SyncRunOutcome.AUTH_REQUIRED
             }
-            if (failureKind in setOf(SyncFailureKinds.CONFLICT, SyncFailureKinds.VALIDATION)) {
+            if (failureKind in setOf(
+                    SyncFailureKinds.AUTHORIZATION,
+                    SyncFailureKinds.CONFLICT,
+                    SyncFailureKinds.VALIDATION,
+                )
+            ) {
                 val serverPayload = error.httpErrorBody()
                 val statusCode = (error as? HttpException)?.code()
                 val serverMessage = serverPayload
@@ -528,6 +554,7 @@ internal suspend fun drainPendingWritesForSync(
                     ?.takeIf { it.length <= 240 && !it.startsWith("{") && !it.startsWith("[") }
                 val message = serverMessage ?: when (failureKind) {
                     SyncFailureKinds.CONFLICT -> "The server version was kept. Review or retry the retained change."
+                    SyncFailureKinds.AUTHORIZATION -> "Permission was revoked. The local change was rolled back."
                     else -> "The server rejected this saved change${statusCode?.let { " ($it)" }.orEmpty()}. Review or discard it."
                 }
                 database.commitForAccount(
@@ -542,9 +569,15 @@ internal suspend fun drainPendingWritesForSync(
                         message = message,
                         serverPayloadJson = serverPayload,
                         httpStatus = statusCode,
+                        attemptCount = write.retryCount + 1,
                         createdAtMillis = now,
                     )
                     pendingWriteDao.deletePendingWrite(ownerAccountId, write.clientWriteId)
+                    rollbackOptimisticWrite(
+                        database = database,
+                        ownerAccountId = ownerAccountId,
+                        write = write,
+                    )
                 }
                 write.caseId?.let { caseId ->
                     runCatching {
@@ -560,22 +593,66 @@ internal suspend fun drainPendingWritesForSync(
                 }
                 return@forEach
             }
+            val attemptCount = write.retryCount + 1
+            if (attemptCount < MAX_PENDING_WRITE_ATTEMPTS) {
+                database.commitForAccount(
+                    ownerAccountId,
+                    accountGeneration,
+                    { activeAccountId() == ownerAccountId },
+                ) {
+                    pendingWriteDao.markAttempt(
+                        ownerAccountId = ownerAccountId,
+                        clientWriteId = write.clientWriteId,
+                        lastError = when (failureKind) {
+                            SyncFailureKinds.PROTOCOL -> "Unexpected server response. Bounded retry $attemptCount/$MAX_PENDING_WRITE_ATTEMPTS."
+                            else -> "Temporary sync failure. Bounded retry $attemptCount/$MAX_PENDING_WRITE_ATTEMPTS."
+                        },
+                        updatedAtMillis = now,
+                    )
+                }
+                requiresRetry = true
+                return@forEach
+            }
             database.commitForAccount(
                 ownerAccountId,
                 accountGeneration,
                 { activeAccountId() == ownerAccountId },
             ) {
-                pendingWriteDao.markAttempt(
+                database.recordSyncIssue(
                     ownerAccountId = ownerAccountId,
-                    clientWriteId = write.clientWriteId,
-                    lastError = error?.message,
-                    updatedAtMillis = now,
+                    write = write,
+                    failureKind = failureKind,
+                    message = when (failureKind) {
+                        SyncFailureKinds.PROTOCOL -> "The server response could not be understood after $attemptCount attempts. The local change was rolled back."
+                        else -> "Sync failed after $attemptCount attempts. The local change was rolled back."
+                    },
+                    serverPayloadJson = error.httpErrorBody(),
+                    httpStatus = (error as? HttpException)?.code(),
+                    attemptCount = attemptCount,
+                    createdAtMillis = now,
+                )
+                pendingWriteDao.deletePendingWrite(ownerAccountId, write.clientWriteId)
+                rollbackOptimisticWrite(
+                    database = database,
+                    ownerAccountId = ownerAccountId,
+                    write = write,
                 )
             }
-            return SyncRunOutcome.RETRY
+            write.caseId?.let { caseId ->
+                runCatching {
+                    refreshServerCase(
+                        api,
+                        database,
+                        ownerAccountId,
+                        accountGeneration,
+                        activeAccountId,
+                        caseId,
+                    )
+                }.onFailure(Throwable::rethrowAccountBoundaryFailure)
+            }
         }
     }
-    return SyncRunOutcome.COMPLETED
+    return if (requiresRetry) SyncRunOutcome.RETRY else SyncRunOutcome.COMPLETED
 }
 
 private suspend fun syncPendingPushTokens(
@@ -622,7 +699,7 @@ private suspend fun syncPendingPushTokens(
     return SyncRunOutcome.COMPLETED
 }
 
-private suspend fun refreshServerCase(
+internal suspend fun refreshServerCase(
     api: MedtrackApi,
     database: MedtrackDatabase,
     ownerAccountId: String,
@@ -648,6 +725,37 @@ private suspend fun refreshServerCase(
     }
 }
 
+internal suspend fun rollbackOptimisticWrite(
+    database: MedtrackDatabase,
+    ownerAccountId: String,
+    write: com.naveenhospital.medtrack.core.data.local.PendingWriteEntity,
+) {
+    when (write.writeType) {
+        PendingWriteTypes.VITALS_CREATE -> {
+            database.vitalDao().deleteVital(ownerAccountId, pendingVitalId(write.clientWriteId))
+        }
+        PendingWriteTypes.TASK_COMPLETE -> {
+            val rollback = runCatching {
+                PendingWriteJson.decodeTaskCompletePending(write.payloadJson).rollback
+            }.getOrNull()
+            val caseId = write.caseId
+            val taskId = write.taskId
+            if (rollback != null && !caseId.isNullOrBlank() && !taskId.isNullOrBlank()) {
+                database.taskDao().upsertTask(
+                    rollback.toEntity(
+                        ownerAccountId = ownerAccountId,
+                        caseId = caseId,
+                        taskId = taskId,
+                    ),
+                )
+            } else if (!taskId.isNullOrBlank()) {
+                // Do not leave an unverifiable optimistic completion visible.
+                database.taskDao().deleteTask(ownerAccountId, taskId)
+            }
+        }
+    }
+}
+
 private suspend fun MedtrackDatabase.recordSyncIssue(
     ownerAccountId: String,
     write: com.naveenhospital.medtrack.core.data.local.PendingWriteEntity,
@@ -655,6 +763,7 @@ private suspend fun MedtrackDatabase.recordSyncIssue(
     message: String,
     serverPayloadJson: String?,
     httpStatus: Int?,
+    attemptCount: Int?,
     createdAtMillis: Long,
 ) {
     syncConflictDao().upsertConflict(
@@ -671,6 +780,7 @@ private suspend fun MedtrackDatabase.recordSyncIssue(
                     localPayloadJson = write.payloadJson,
                     serverPayloadJson = serverPayloadJson,
                     httpStatus = httpStatus,
+                    attemptCount = attemptCount,
                 ),
             ),
             createdAtMillis = createdAtMillis,
@@ -704,14 +814,15 @@ internal fun classifySyncFailure(error: Throwable?): String =
     when (error) {
         is IOException -> SyncFailureKinds.TRANSIENT
         is HttpException -> when (error.code()) {
-            401, 403 -> SyncFailureKinds.AUTHENTICATION
+            401 -> SyncFailureKinds.AUTHENTICATION
+            403 -> SyncFailureKinds.AUTHORIZATION
             409 -> SyncFailureKinds.CONFLICT
             408, 425, 429 -> SyncFailureKinds.TRANSIENT
             in 500..599 -> SyncFailureKinds.TRANSIENT
             in 400..499 -> SyncFailureKinds.VALIDATION
-            else -> SyncFailureKinds.TRANSIENT
+            else -> SyncFailureKinds.PROTOCOL
         }
-        else -> SyncFailureKinds.TRANSIENT
+        else -> SyncFailureKinds.PROTOCOL
     }
 
 private fun Throwable?.httpErrorBody(): String? =
@@ -799,6 +910,7 @@ internal suspend fun replaceNotificationSnapshot(
 
 private const val MAX_NOTIFICATION_PAGES = 5_000
 private const val NOTIFICATION_PAGE_SIZE = 100
+internal const val MAX_PENDING_WRITE_ATTEMPTS = 3
 
 
 private suspend fun MedtrackDatabase.markCacheFresh(ownerAccountId: String, cacheKey: String, now: Long) {

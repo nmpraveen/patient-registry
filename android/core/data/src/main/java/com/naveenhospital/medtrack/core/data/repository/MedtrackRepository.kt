@@ -31,6 +31,7 @@ import com.naveenhospital.medtrack.core.data.sync.SyncRecoveryPayload
 import com.naveenhospital.medtrack.core.data.sync.SyncResolutionStates
 import com.naveenhospital.medtrack.core.data.sync.fetchAllNotifications
 import com.naveenhospital.medtrack.core.data.sync.replaceNotificationSnapshot
+import com.naveenhospital.medtrack.core.data.sync.rollbackOptimisticWrite
 import com.naveenhospital.medtrack.core.domain.model.CaseCategory
 import com.naveenhospital.medtrack.core.domain.model.CaseCreateOutcome
 import com.naveenhospital.medtrack.core.domain.model.CaseEditOutcome
@@ -74,6 +75,7 @@ import com.naveenhospital.medtrack.core.network.model.UpdateCaseRequestDto
 import com.naveenhospital.medtrack.core.network.model.VitalsUpdateRequestDto
 import com.naveenhospital.medtrack.core.network.model.PatientLookupDto
 import com.naveenhospital.medtrack.core.network.model.PatientSearchRequestDto
+import com.naveenhospital.medtrack.core.network.model.PatchField
 import com.naveenhospital.medtrack.core.network.model.CaseListResponseDto
 import com.naveenhospital.medtrack.core.network.model.CaseStatsDto
 import com.naveenhospital.medtrack.core.network.model.CaseSummaryDto
@@ -110,6 +112,8 @@ const val CACHE_KEY_VITALS_THRESHOLDS = "vitals_thresholds"
 const val CACHE_KEY_NOTIFICATIONS = "notifications"
 const val CACHE_KEY_NOTIFICATION_DATASET_EPOCH_PREFIX = "notification_dataset_epoch:"
 private const val CASE_PAGE_SIZE = 20
+private const val PATIENT_SEARCH_PAGE_SIZE = 20
+private const val MAX_PATIENT_SEARCH_PAGES = 5_000
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class MedtrackRepository(
@@ -383,9 +387,27 @@ class MedtrackRepository(
         val session = activeSession()
         val normalizedQuery = query.trim()
         require(normalizedQuery.length in 3..80) { "Patient search requires 3 to 80 characters." }
-        val response = session.api.searchPatients(PatientSearchRequestDto(query = normalizedQuery))
-        requireStillActive(session)
-        return response.results.map { it.toDomain() }
+        val resultsById = linkedMapOf<Long, PatientLookup>()
+        val seenCursors = mutableSetOf<String>()
+        var cursor: String? = null
+        var requestCount = 0
+        while (true) {
+            requestCount += 1
+            check(requestCount <= MAX_PATIENT_SEARCH_PAGES) { "Patient search pagination exceeded the safety limit." }
+            val response = session.api.searchPatients(
+                PatientSearchRequestDto(
+                    query = normalizedQuery,
+                    pageSize = PATIENT_SEARCH_PAGE_SIZE,
+                    cursor = cursor,
+                ),
+            )
+            requireStillActive(session)
+            response.results.forEach { patient -> resultsById[patient.id] = patient.toDomain() }
+            val nextCursor = response.nextCursor?.takeIf { it.isNotBlank() } ?: break
+            check(nextCursor != cursor && seenCursors.add(nextCursor)) { "Patient search cursor repeated." }
+            cursor = nextCursor
+        }
+        return resultsById.values.toList()
     }
 
     suspend fun createCase(input: NewCaseInput): CaseCreateOutcome {
@@ -712,6 +734,8 @@ class MedtrackRepository(
         val session = activeSession()
         val clientWriteId = newClientWriteId("task")
         val payload = ClientWriteRequestDto(clientWriteId = clientWriteId)
+        val rollbackTask = database.taskDao().taskById(session.ownerAccountId, taskId)
+        val pendingPayloadJson = PendingWriteJson.encodeTaskComplete(payload, rollbackTask)
         return runCatching {
             val response = session.api.completeTask(taskId = taskId, request = payload)
             commitAccountMutation(session) {
@@ -729,7 +753,7 @@ class MedtrackRepository(
                         writeType = PendingWriteTypes.TASK_COMPLETE,
                         caseId = caseId,
                         taskId = taskId,
-                        payloadJson = PendingWriteJson.encodeTaskComplete(payload),
+                        payloadJson = pendingPayloadJson,
                         error = throwable,
                     )
                     WriteResult(
@@ -747,7 +771,7 @@ class MedtrackRepository(
                             writeType = PendingWriteTypes.TASK_COMPLETE,
                             caseId = caseId,
                             taskId = taskId,
-                            payloadJson = PendingWriteJson.encodeTaskComplete(payload),
+                            payloadJson = pendingPayloadJson,
                             lastError = throwable.message,
                         )
                         database.taskDao().markTaskCompletedLocally(session.ownerAccountId, taskId, System.currentTimeMillis())
@@ -913,19 +937,31 @@ class MedtrackRepository(
         val localPayload = recovery.localPayloadJson
             ?.takeIf { it.isNotBlank() }
             ?: error("The original change is unavailable and cannot be retried.")
+        check(recovery.resolutionState == SyncResolutionStates.OPEN) {
+            "This sync issue has already been resolved."
+        }
+        val replacementClientWriteId = newClientWriteId("recovery")
+        val replacementPayload = runCatching {
+            PendingWriteJson.reissue(
+                writeType = conflict.writeType,
+                json = localPayload,
+                clientWriteId = replacementClientWriteId,
+            )
+        }.getOrElse { throw IllegalStateException("The original change cannot be safely reissued.", it) }
         val now = System.currentTimeMillis()
         commitAccountMutation(session) {
+            database.pendingWriteDao().deletePendingWrite(session.ownerAccountId, clientWriteId)
             database.pendingWriteDao().upsertPendingWrite(
                 PendingWriteEntity(
                     ownerAccountId = session.ownerAccountId,
-                    clientWriteId = conflict.clientWriteId,
+                    clientWriteId = replacementClientWriteId,
                     writeType = conflict.writeType,
                     caseId = conflict.caseId,
                     taskId = conflict.taskId,
-                    payloadJson = localPayload,
+                    payloadJson = replacementPayload,
                     retryCount = 0,
                     lastError = conflict.message,
-                    createdAtMillis = conflict.createdAtMillis,
+                    createdAtMillis = now,
                     updatedAtMillis = now,
                 ),
             )
@@ -935,6 +971,7 @@ class MedtrackRepository(
                         recovery.copy(
                             resolutionState = SyncResolutionStates.RETRY_QUEUED,
                             resolutionAtMillis = now,
+                            replacementClientWriteId = replacementClientWriteId,
                         ),
                     ),
                 ),
@@ -950,11 +987,25 @@ class MedtrackRepository(
         val recovery = SyncRecoveryJson.decode(conflict.serverPayloadJson)
             ?: SyncRecoveryPayload(failureKind = SyncFailureKinds.CONFLICT)
         val now = System.currentTimeMillis()
+        val rollbackWrite = PendingWriteEntity(
+            ownerAccountId = session.ownerAccountId,
+            clientWriteId = clientWriteId,
+            writeType = conflict.writeType,
+            caseId = conflict.caseId,
+            taskId = conflict.taskId,
+            payloadJson = recovery.localPayloadJson.orEmpty(),
+            retryCount = 0,
+            lastError = conflict.message,
+            createdAtMillis = conflict.createdAtMillis,
+            updatedAtMillis = now,
+        )
         commitAccountMutation(session) {
             database.pendingWriteDao().deletePendingWrite(session.ownerAccountId, clientWriteId)
-            if (conflict.writeType == PendingWriteTypes.VITALS_CREATE) {
-                database.vitalDao().deleteVital(session.ownerAccountId, pendingVitalId(clientWriteId))
-            }
+            rollbackOptimisticWrite(
+                database = database,
+                ownerAccountId = session.ownerAccountId,
+                write = rollbackWrite,
+            )
             database.syncConflictDao().upsertConflict(
                 conflict.copy(
                     serverPayloadJson = SyncRecoveryJson.encode(
@@ -1237,13 +1288,14 @@ internal fun NewCaseInput.toUpdateRequestDto(
     living = changed(living, baseline.living),
     ftnd = changed(ftnd, baseline.ftnd),
     lscs = changed(lscs, baseline.lscs),
-    clientWriteId = clientWriteId,
+    clientWriteId = PatchField.Value(clientWriteId),
 )
 
-private fun <T> changed(current: T, baseline: T?): T? = current.takeIf { it != baseline }
+private fun <T> changed(current: T?, baseline: T?): PatchField<T> =
+    if (current == baseline) PatchField.Omitted else PatchField.Value(current)
 
-private fun changedText(current: String?, baseline: String?): String? =
-    if (current == baseline) null else current.orEmpty()
+private fun changedText(current: String?, baseline: String?): PatchField<String> =
+    if (current == baseline) PatchField.Omitted else PatchField.Value(current?.takeIf { it.isNotBlank() })
 
 private fun CaseEditFormDto.toDomain(): CaseEditPrefill {
     val metadata = CaseFormMetadata(

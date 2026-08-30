@@ -1,4 +1,6 @@
 import java.util.Properties
+import java.security.KeyStore
+import java.security.MessageDigest
 import org.gradle.api.GradleException
 
 plugins {
@@ -26,6 +28,7 @@ val signingStoreFile = externalValue("MEDTRACK_SIGNING_STORE_FILE")
 val signingStorePassword = externalValue("MEDTRACK_SIGNING_STORE_PASSWORD")
 val signingKeyAlias = externalValue("MEDTRACK_SIGNING_KEY_ALIAS")
 val signingKeyPassword = externalValue("MEDTRACK_SIGNING_KEY_PASSWORD")
+val expectedSigningCertificateSha256 = externalValue("MEDTRACK_EXPECTED_SIGNING_CERT_SHA256")
 val signingValues = listOf(signingStoreFile, signingStorePassword, signingKeyAlias, signingKeyPassword)
 val hasExternalSigning = signingValues.all { it != null }
 if (signingValues.any { it != null } && !hasExternalSigning) {
@@ -173,19 +176,84 @@ tasks.register("verifyProdSigning") {
         check(hasExternalSigning) {
             "Production signing is not configured. Use unsignedReleaseArtifacts for review builds."
         }
+        val expected = expectedSigningCertificateSha256
+            ?.replace(Regex("[^A-Fa-f0-9]"), "")
+            ?.uppercase()
+            ?.takeIf { it.length == 64 }
+            ?: throw GradleException("MEDTRACK_EXPECTED_SIGNING_CERT_SHA256 must contain the approved certificate SHA-256.")
+        val store = file(requireNotNull(signingStoreFile))
+        check(store.isFile) { "The configured production signing store does not exist." }
+        val password = requireNotNull(signingStorePassword).toCharArray()
+        val keyStore = sequenceOf("PKCS12", "JKS")
+            .mapNotNull { type ->
+                runCatching {
+                    KeyStore.getInstance(type).apply {
+                        store.inputStream().use { load(it, password) }
+                    }
+                }.getOrNull()
+            }
+            .firstOrNull()
+            ?: throw GradleException("The production signing store could not be opened.")
+        val certificate = keyStore.getCertificate(requireNotNull(signingKeyAlias))
+            ?: throw GradleException("The approved signing alias is not present in the store.")
+        val actual = MessageDigest.getInstance("SHA-256")
+            .digest(certificate.encoded)
+            .joinToString("") { byte -> "%02X".format(byte) }
+        check(actual == expected) { "Production signing certificate does not match the approved SHA-256." }
+    }
+}
+
+val releaseIdentityFile = layout.buildDirectory.file("outputs/prod-release-identity.json")
+
+tasks.register("writeProdReleaseIdentity") {
+    group = "build"
+    description = "Pins prod release artifact bytes to the current clean source identity."
+    dependsOn("assembleProdRelease", "bundleProdRelease")
+    outputs.file(releaseIdentityFile)
+    doLast {
+        val repositoryRoot = rootProject.projectDir.parentFile
+        fun git(vararg arguments: String): String {
+            val process = ProcessBuilder(listOf("git", "-C", repositoryRoot.absolutePath) + arguments)
+                .redirectErrorStream(true)
+                .start()
+            val output = process.inputStream.bufferedReader().use { it.readText() }.trim()
+            check(process.waitFor() == 0) { "Could not resolve source identity for release artifacts." }
+            return output
+        }
+        val sourceCommit = git("rev-parse", "HEAD")
+        val sourceDirty = git("status", "--porcelain").isNotBlank()
+        val releaseApks = layout.buildDirectory.dir("outputs/apk/prod/release").get().asFile
+            .listFiles { file -> file.isFile && file.name.matches(Regex("app-prod-release(-unsigned)?\\.apk")) }
+            ?.toList()
+            .orEmpty()
+        check(releaseApks.size == 1) { "Expected exactly one prod release APK output." }
+        val artifacts = releaseApks +
+            layout.buildDirectory.file("outputs/bundle/prodRelease/app-prod-release.aab").get().asFile
+        check(artifacts.all { it.isFile }) { "Expected prod release APK and AAB were not created." }
+        val artifactJson = artifacts.joinToString(",") { artifact ->
+            val sha256 = MessageDigest.getInstance("SHA-256")
+                .digest(artifact.readBytes())
+                .joinToString("") { byte -> "%02x".format(byte) }
+            """{"path":"${artifact.invariantSeparatorsPath}","sha256":"$sha256","bytes":${artifact.length()}}"""
+        }
+        val identity = """{"schema_version":1,"source_commit":"$sourceCommit","source_dirty":$sourceDirty,"version_name":"$medtrackVersionName","version_code":$medtrackVersionCode,"variant":"prodRelease","artifacts":[$artifactJson]}"""
+        releaseIdentityFile.get().asFile.apply {
+            parentFile.mkdirs()
+            writeText(identity)
+        }
     }
 }
 
 tasks.register("unsignedReleaseArtifacts") {
     group = "build"
     description = "Builds unsigned production release APK and AAB artifacts for review."
-    dependsOn("verifyReleaseMetadata", "assembleProdRelease", "bundleProdRelease")
+    dependsOn("verifyReleaseMetadata", "writeProdReleaseIdentity")
 }
 
 tasks.register("bundleProdForPlay") {
     group = "build"
     description = "Builds a production AAB only after external signing is verified."
-    dependsOn("verifyProdSigning", "bundleProdRelease")
+    dependsOn("verifyProdSigning", "verifyReleaseMetadata", "bundleProdRelease")
 }
 
 tasks.matching { it.name == "bundleProdRelease" }.configureEach {

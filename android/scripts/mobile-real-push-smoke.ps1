@@ -78,7 +78,7 @@ function Invoke-ProcessLogged {
     $stdout = if (Test-Path $stdoutPath) { Get-Content -Raw -Path $stdoutPath } else { "" }
     $stderr = if (Test-Path $stderrPath) { Get-Content -Raw -Path $stderrPath } else { "" }
     @(
-        "command: $FilePath $argumentString",
+        "command: $FilePath [arguments redacted]",
         "workingDirectory: $WorkingDirectory",
         "exitCode: $($process.ExitCode)",
         "",
@@ -119,26 +119,20 @@ function Write-NotReadySummary {
     Save-Json -Path (Join-Path $EvidenceDir "summary.json") -Value $summary -Depth 8
 }
 
-function Wait-ForNotificationEvidence {
+function Wait-ForInAppSyncEvidence {
     param(
         [string]$DeviceSerial,
-        [string]$Needle,
         [int]$TimeoutSeconds
     )
+    adb -s $DeviceSerial shell monkey -p $packageName -c android.intent.category.LAUNCHER 1 2>$null | Out-Null
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
     do {
-        $dump = adb -s $DeviceSerial shell dumpsys notification --noredact 2>$null | Out-String
-        $matches = @(
-            $dump -split "`r?`n" |
-                Where-Object { $_ -like "*$Needle*" -or $_ -like "*Mobile push smoke*" }
-        )
-        if ($matches.Count -gt 0) {
-            $matches | Set-Content -Path (Join-Path $EvidenceDir "device-notification-evidence.txt")
+        $workLog = adb -s $DeviceSerial logcat -d -t 1500 2>$null | Out-String
+        if ($workLog -match 'MedtrackSyncWorker' -and $workLog -match '(SUCCEEDED|succeeded|Result\.success)') {
             return $true
         }
         Start-Sleep -Seconds 3
     } while ((Get-Date) -lt $deadline)
-    "" | Set-Content -Path (Join-Path $EvidenceDir "device-notification-evidence.txt")
     return $false
 }
 
@@ -210,8 +204,6 @@ try {
         -Arguments @("-s", $deviceSerial, "shell", "pm", "grant", $packageName, "android.permission.POST_NOTIFICATIONS") `
         -AllowFailure
 
-    $title = "Mobile push smoke $runId"
-    $body = "MEDTRACK Firebase delivery $runId"
     $python = @"
 import hashlib
 import json
@@ -227,8 +219,6 @@ from patients.models import Case, CaseStatus
 
 username = os.environ["MEDTRACK_REAL_PUSH_USERNAME"]
 run_id = os.environ["MEDTRACK_REAL_PUSH_RUN_ID"]
-title = os.environ["MEDTRACK_REAL_PUSH_TITLE"]
-body = os.environ["MEDTRACK_REAL_PUSH_BODY"]
 started_at = parse_datetime(os.environ["MEDTRACK_REAL_PUSH_STARTED_AT"])
 token_timeout = int(os.environ["MEDTRACK_REAL_PUSH_TOKEN_TIMEOUT"])
 user = get_user_model().objects.get(username=username)
@@ -259,17 +249,14 @@ if case is None:
 notification = MobileNotification.objects.create(
     user=user,
     notification_type=MobileNotificationType.ASSIGNMENT,
-    title=title,
-    body=body,
+    title="MEDTRACK update",
+    body="Open MEDTRACK to review this update.",
     case=case,
     dedupe_key=f"mobile-real-push-smoke-{run_id}",
-    payload={
-        "type": MobileNotificationType.ASSIGNMENT,
-        "channel": "assignments",
-        "case_id": case.pk,
-        "run_id": run_id,
-    },
+    payload={},
 )
+notification.payload = {"event_id": str(notification.event_id)}
+notification.save(update_fields=["payload"])
 configured = firebase_configured()
 result = send_mobile_notification(notification)
 print(
@@ -278,17 +265,11 @@ print(
         {
             "ok": True,
             "firebase_configured": configured,
-            "notification_id": notification.pk,
-            "case_id": case.pk,
-            "device": {
-                "id": device.pk,
-                "device_label": device.device_label,
-                "platform": device.platform,
-                "app_version": device.app_version,
-                "updated_at": device.updated_at.isoformat(),
-                "token_sha256_12": hashlib.sha256(device.token.encode("utf-8")).hexdigest()[:12],
-            },
-            "delivery_result": result,
+            "event_id": str(notification.event_id),
+            "device_registered": True,
+            "sent": bool(result.get("sent")),
+            "reason": result.get("reason"),
+            "payload_keys": sorted(notification.payload.keys()),
         },
         sort_keys=True,
     )
@@ -297,11 +278,10 @@ print(
 
     $env:MEDTRACK_REAL_PUSH_USERNAME = $Username
     $env:MEDTRACK_REAL_PUSH_RUN_ID = $runId
-    $env:MEDTRACK_REAL_PUSH_TITLE = $title
-    $env:MEDTRACK_REAL_PUSH_BODY = $body
     $env:MEDTRACK_REAL_PUSH_STARTED_AT = $startedAt.ToString("o")
     $env:MEDTRACK_REAL_PUSH_TOKEN_TIMEOUT = [string]$TokenTimeoutSeconds
 
+    adb -s $deviceSerial logcat -c 2>$null | Out-Null
     Write-Step "Sending Firebase push to the app-registered FCM token"
     Invoke-ProcessLogged `
         -Name "django-real-push-smoke" `
@@ -321,10 +301,6 @@ print(
             "-e",
             "MEDTRACK_REAL_PUSH_RUN_ID",
             "-e",
-            "MEDTRACK_REAL_PUSH_TITLE",
-            "-e",
-            "MEDTRACK_REAL_PUSH_BODY",
-            "-e",
             "MEDTRACK_REAL_PUSH_STARTED_AT",
             "-e",
             "MEDTRACK_REAL_PUSH_TOKEN_TIMEOUT",
@@ -342,57 +318,55 @@ print(
         throw "Real push smoke did not emit a JSON result."
     }
     $result = $line.Substring("MEDTRACK_REAL_PUSH_JSON=".Length) | ConvertFrom-Json
-    Save-Json -Path (Join-Path $EvidenceDir "real-push-result.json") -Value $result -Depth 10
     if ($result.ok -ne $true) {
         throw "Real push smoke failed before delivery: $($result.reason)"
     }
     if ($result.firebase_configured -ne $true) {
         throw "Django did not report firebase_configured() == true."
     }
-    if ($result.delivery_result.sent -ne $true) {
+    if ($result.sent -ne $true) {
         throw "Firebase delivery did not report sent=true."
     }
+    if (@($result.payload_keys).Count -ne 1 -or $result.payload_keys[0] -ne "event_id") {
+        throw "Firebase payload was not event_id-only."
+    }
 
-    Write-Step "Checking device notification evidence"
-    $hasDeviceNotificationEvidence = Wait-ForNotificationEvidence `
+    Write-Step "Checking non-PHI in-app WorkManager sync evidence"
+    $hasInAppSyncEvidence = Wait-ForInAppSyncEvidence `
         -DeviceSerial $deviceSerial `
-        -Needle $runId `
         -TimeoutSeconds $NotificationTimeoutSeconds
 
     $checks = [ordered]@{
         hasPhysicalDeviceSmoke = $physicalSummary.passed -eq $true
-        hasRegisteredDeviceToken = $null -ne $result.device.id
+        hasRegisteredDeviceToken = $result.device_registered -eq $true
         hasFirebaseConfigured = $result.firebase_configured -eq $true
-        hasDeliverySent = $result.delivery_result.sent -eq $true
-        hasDeviceNotificationEvidence = $hasDeviceNotificationEvidence
+        hasDeliverySent = $result.sent -eq $true
+        hasOpaqueEventOnlyPayload = (@($result.payload_keys).Count -eq 1 -and $result.payload_keys[0] -eq "event_id")
+        hasInAppSyncEvidence = $hasInAppSyncEvidence
     }
     $summary = [ordered]@{
-        passed = ($checks.hasPhysicalDeviceSmoke -and $checks.hasRegisteredDeviceToken -and $checks.hasFirebaseConfigured -and $checks.hasDeliverySent -and $checks.hasDeviceNotificationEvidence)
+        passed = ($checks.hasPhysicalDeviceSmoke -and $checks.hasRegisteredDeviceToken -and $checks.hasFirebaseConfigured -and $checks.hasDeliverySent -and $checks.hasOpaqueEventOnlyPayload -and $checks.hasInAppSyncEvidence)
         runId = $runId
         username = $Username
         deviceSerial = $deviceSerial
         physicalSmokeSummary = $physicalSummaryPath
         usingRegisteredDeviceToken = $true
         firebaseConfigured = [bool]$result.firebase_configured
-        notificationId = $result.notification_id
-        caseId = $result.case_id
-        registeredDevice = $result.device
-        deliveryResult = $result.delivery_result
+        eventId = $result.event_id
+        deliverySent = [bool]$result.sent
         checks = $checks
         evidenceDir = $EvidenceDir
     }
     Save-Json -Path (Join-Path $EvidenceDir "summary.json") -Value $summary -Depth 10
 
     if (-not $summary.passed) {
-        throw "Real push smoke did not find device notification evidence."
+        throw "Real push smoke did not prove the event-only in-app sync path."
     }
     Write-Step "PASS"
 }
 finally {
     Remove-Item Env:\MEDTRACK_REAL_PUSH_USERNAME -ErrorAction SilentlyContinue
     Remove-Item Env:\MEDTRACK_REAL_PUSH_RUN_ID -ErrorAction SilentlyContinue
-    Remove-Item Env:\MEDTRACK_REAL_PUSH_TITLE -ErrorAction SilentlyContinue
-    Remove-Item Env:\MEDTRACK_REAL_PUSH_BODY -ErrorAction SilentlyContinue
     Remove-Item Env:\MEDTRACK_REAL_PUSH_STARTED_AT -ErrorAction SilentlyContinue
     Remove-Item Env:\MEDTRACK_REAL_PUSH_TOKEN_TIMEOUT -ErrorAction SilentlyContinue
 

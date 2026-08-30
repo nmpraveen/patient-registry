@@ -66,8 +66,12 @@ object MedtrackPush {
     }
 
     fun enqueueNotificationRefresh(context: Context) {
-        val baseUrl = apiBaseUrl(context.applicationContext) ?: return
-        MedtrackSyncWorker.enqueueOneTime(context.applicationContext, baseUrl)
+        val appContext = context.applicationContext
+        val baseUrl = apiBaseUrl(appContext) ?: return
+        val tokenStore = TokenStore(appContext)
+        val expectedSession = tokenStore.sessionIdentity() ?: return
+        if (!tokenStore.isCurrent(expectedSession)) return
+        MedtrackSyncWorker.enqueueOneTime(appContext, baseUrl, expectedSession.accountId)
     }
 
     suspend fun registerTokenForCurrentSession(

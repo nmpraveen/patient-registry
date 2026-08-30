@@ -265,3 +265,7 @@ docker compose exec web python manage.py createsuperuser
 docker compose exec -T web python manage.py backup_patient_data --keep 30
 docker compose down
 ```
+
+The pinned Playwright Chromium regression matrix covers 320, 390, 430, and 1440 pixel viewports. With a local server running, configure `PLAYWRIGHT_BASE_URL`, `PLAYWRIGHT_USERNAME`, and `PLAYWRIGHT_PASSWORD`, then run `npm ci` and `npm run test:e2e`. See `local-dev/TEST_NNH_SERVER.md` for the Test NNH example; evidence is written under `output/playwright/`.
+
+Authenticated-page third-party asset versions and licenses are recorded in `THIRD_PARTY_WEB_ASSETS.md`.

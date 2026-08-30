@@ -27,12 +27,12 @@ THEME_DEFAULTS = {
     "nav": {
         "bg": "#fffdf8",
         "text": "#1e3a5f",
-        "control_text": "#6a7280",
+        "control_text": "#656d7b",
         "control_border": "#dfe4ea",
         "control_bg": "#f3f5f7",
         "control_hover_bg": "#e9edf2",
         "logout_bg": "#f3f5f7",
-        "logout_text": "#6a7280",
+        "logout_text": "#656d7b",
     },
     "case_header": {
         "bg": "#3949ab",
@@ -90,7 +90,7 @@ THEME_DEFAULTS = {
         "result_hover_bg": "#bbdefb",
         "tag_bg": "#d1c4e9",
         "tag_text": "#4a148c",
-        "gender_female": {"bg": "#fdf0ec", "text": "#d4726a"},
+        "gender_female": {"bg": "#fdf0ec", "text": "#d06f67"},
         "gender_male": {"bg": "#e8f0f7", "text": "#5b8db8"},
         "gender_other": {"bg": "#f5f0ea", "text": "#7a7067"},
     },
@@ -128,6 +128,31 @@ PAIR_GROUPS = (
     ("search", "gender_female"),
     ("search", "gender_male"),
     ("search", "gender_other"),
+)
+
+THEME_CONTRAST_RULES = (
+    ("shell__page_text", "shell__page_bg", 4.5, "Page text"),
+    ("shell__surface_text", "shell__surface_bg", 4.5, "Surface text"),
+    ("shell__muted_text", "shell__page_bg", 4.5, "Muted text on page"),
+    ("shell__muted_text", "shell__surface_bg", 4.5, "Muted text on surfaces"),
+    ("shell__link", "shell__page_bg", 3.0, "Page link and focus color"),
+    ("shell__link", "shell__surface_bg", 3.0, "Surface link and focus color"),
+    ("shell__link_hover", "shell__page_bg", 3.0, "Page link hover color"),
+    ("shell__link_hover", "shell__surface_bg", 3.0, "Surface link hover color"),
+    ("nav__text", "nav__bg", 4.5, "Navigation text"),
+    ("nav__control_text", "nav__control_bg", 4.5, "Navigation control text"),
+    ("nav__logout_text", "nav__logout_bg", 4.5, "Logout control text"),
+    ("search__dropdown_text", "search__dropdown_bg", 4.5, "Search result text"),
+    ("search__dropdown_text", "search__result_hover_bg", 4.5, "Selected search result text"),
+    ("search__tag_text", "search__tag_bg", 4.5, "Search tag text"),
+) + tuple(
+    (
+        f"{section_name}__{token_name}__text",
+        f"{section_name}__{token_name}__bg",
+        3.0,
+        f"{section_name.replace('_', ' ').title()} {token_name.replace('_', ' ').title()}",
+    )
+    for section_name, token_name in PAIR_GROUPS
 )
 
 CHART_FIELDS = (
@@ -266,6 +291,25 @@ def normalize_hex_color(value):
 def hex_to_rgb(hex_color):
     normalized = normalize_hex_color(hex_color)
     return tuple(int(normalized[index : index + 2], 16) for index in (1, 3, 5))
+
+
+def contrast_ratio(first_color, second_color):
+    def relative_luminance(hex_color):
+        channels = []
+        for channel in hex_to_rgb(hex_color):
+            normalized = channel / 255
+            channels.append(
+                normalized / 12.92
+                if normalized <= 0.04045
+                else ((normalized + 0.055) / 1.055) ** 2.4
+            )
+        return (0.2126 * channels[0]) + (0.7152 * channels[1]) + (0.0722 * channels[2])
+
+    first_luminance = relative_luminance(first_color)
+    second_luminance = relative_luminance(second_color)
+    lighter = max(first_luminance, second_luminance)
+    darker = min(first_luminance, second_luminance)
+    return (lighter + 0.05) / (darker + 0.05)
 
 
 def rgb_to_hex(red, green, blue):

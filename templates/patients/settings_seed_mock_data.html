@@ -35,7 +35,7 @@
         <div class="d-flex flex-wrap gap-2">
           <button class="btn btn-primary" type="submit" name="action" value="seed">Seed</button>
           <button class="btn btn-warning" type="submit" name="action" value="reseed">Re-seed (replace prior seeded mock data)</button>
-          <button class="btn btn-outline-danger" type="submit" name="action" value="delete_seeded" onclick="return confirm('Delete all seeded mock data?');">Delete all mock data</button>
+          <button class="btn btn-outline-danger" type="submit" name="action" value="delete_seeded" data-confirm-delete-seeded>Delete all mock data</button>
         </div>
       </form>
     </div></div>
@@ -49,10 +49,11 @@
     </div></div>
   </div>
 </div>
-<script>
+<script nonce="{{ request.csp_nonce }}">
   (function() {
     const form = document.getElementById("seed-mock-data-form");
     if (!form) return;
+    const deleteButton = form.querySelector("[data-confirm-delete-seeded]");
     const resetAllField = document.getElementById("{{ form.reset_all.id_for_label }}");
     const confirmResetAllField = document.getElementById("{{ form.confirm_reset_all.id_for_label }}");
     form.addEventListener("submit", function(event) {
@@ -60,6 +61,10 @@
       confirmResetAllField.value = "";
       const submitter = event.submitter;
       const action = submitter && submitter.value ? submitter.value : "";
+      if (submitter === deleteButton && !window.confirm("Delete all seeded mock data?")) {
+        event.preventDefault();
+        return;
+      }
       const requiresResetAllConfirmation = resetAllField && resetAllField.checked && action !== "delete_seeded";
       if (!requiresResetAllConfirmation) return;
       const approved = window.confirm("This will delete ALL case/call/activity data before seeding. Continue?");

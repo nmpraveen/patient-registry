@@ -29,16 +29,74 @@
     <section class="card border-0 shadow-sm mb-3">
       <div class="card-body">
         <h2 class="h6 mb-2">Merge Temporary / Duplicate Patient</h2>
-        <form method="post" action="{% url 'patients:patient_merge' patient.pk %}" class="row g-2 align-items-end">
-          {% csrf_token %}
+        <form method="get" action="{% url 'patients:patient_detail' patient.pk %}" class="row g-2 align-items-end">
           <div class="col-12 col-lg-6">
             <label class="form-label" for="{{ merge_form.target_patient.id_for_label }}">{{ merge_form.target_patient.label }}</label>
             {{ merge_form.target_patient }}
+            {% if merge_form.target_patient.errors %}<div class="text-danger small mt-1">{{ merge_form.target_patient.errors|striptags }}</div>{% endif %}
           </div>
           <div class="col-12 col-lg-auto">
-            <button class="btn btn-outline-danger" type="submit">Merge Patient</button>
+            <button class="btn btn-outline-danger" type="submit">Review Merge</button>
           </div>
         </form>
+
+        {% if merge_review_blocked %}
+          <div class="alert alert-danger mt-3 mb-0">{{ merge_review_blocked }}</div>
+        {% endif %}
+
+        {% if merge_review %}
+          <div class="border rounded p-3 mt-3" aria-labelledby="merge-review-title">
+            <h3 id="merge-review-title" class="h6 mb-3">Review Patient Merge</h3>
+            <dl class="row small mb-3">
+              <dt class="col-5 col-md-3">Source UHID</dt>
+              <dd class="col-7 col-md-9"><strong>{{ merge_review.source_patient.uhid }}</strong></dd>
+              <dt class="col-5 col-md-3">Target UHID</dt>
+              <dd class="col-7 col-md-9"><strong>{{ merge_review.target_patient.uhid }}</strong></dd>
+              <dt class="col-5 col-md-3">Affected cases</dt>
+              <dd class="col-7 col-md-9">{{ merge_review.affected_cases|length }}</dd>
+            </dl>
+
+            {% if merge_review.affected_cases %}
+              <div class="table-responsive mb-3">
+                <table class="table table-sm align-middle mb-0">
+                  <caption class="visually-hidden">Cases that will move from {{ merge_review.source_patient.uhid }} to {{ merge_review.target_patient.uhid }}</caption>
+                  <thead><tr><th>Case</th><th>Category</th><th>Diagnosis</th><th>Status</th></tr></thead>
+                  <tbody>
+                    {% for affected_case in merge_review.affected_cases %}
+                      <tr>
+                        <td>Case #{{ affected_case.id }}</td>
+                        <td>{{ affected_case.category.name }}</td>
+                        <td>{{ affected_case.diagnosis|default:"-" }}</td>
+                        <td>{{ affected_case.get_status_display }}</td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            {% else %}
+              <p class="small text-muted">No cases will be reassigned.</p>
+            {% endif %}
+
+            <form method="post" action="{% url 'patients:patient_merge' patient.pk %}" class="row g-3">
+              {% csrf_token %}
+              {{ merge_confirmation_form.target_patient }}
+              <div class="col-12 col-lg-6">
+                <label class="form-label" for="{{ merge_confirmation_form.confirm_target_uhid.id_for_label }}">{{ merge_confirmation_form.confirm_target_uhid.label }}</label>
+                {{ merge_confirmation_form.confirm_target_uhid }}
+              </div>
+              <div class="col-12">
+                <div class="form-check">
+                  {{ merge_confirmation_form.confirm_merge }}
+                  <label class="form-check-label" for="{{ merge_confirmation_form.confirm_merge.id_for_label }}">{{ merge_confirmation_form.confirm_merge.label }}</label>
+                </div>
+              </div>
+              <div class="col-12 d-flex flex-wrap gap-2">
+                <button class="btn btn-danger" type="submit">Confirm Merge</button>
+                <a class="btn btn-outline-secondary" href="{% url 'patients:patient_detail' patient.pk %}">Cancel</a>
+              </div>
+            </form>
+          </div>
+        {% endif %}
       </div>
     </section>
   {% endif %}

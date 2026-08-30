@@ -41,6 +41,8 @@ from .models import (
 )
 from .theme import (
     THEME_FORM_SECTIONS,
+    THEME_CONTRAST_RULES,
+    contrast_ratio,
     field_name_to_css_var,
     flatten_theme_tokens,
     merge_theme_tokens,
@@ -687,6 +689,12 @@ class PatientMergeForm(forms.Form):
         queryset=Patient.objects.none(),
         required=True,
         label="Merge into patient",
+        widget=forms.Select(
+            attrs={
+                "class": "form-select w-100",
+                "style": "max-width:100%;min-width:0;",
+            }
+        ),
     )
 
     def __init__(self, *args, source_patient=None, target_queryset=None, **kwargs):
@@ -697,6 +705,39 @@ class PatientMergeForm(forms.Form):
         if source_patient and source_patient.pk:
             queryset = queryset.exclude(pk=source_patient.pk)
         self.fields["target_patient"].queryset = queryset
+
+
+class PatientMergeConfirmationForm(PatientMergeForm):
+    confirm_target_uhid = forms.CharField(
+        label="Type target UHID to confirm",
+        max_length=64,
+        widget=forms.TextInput(
+            attrs={
+                "class": "form-control",
+                "autocomplete": "off",
+                "spellcheck": "false",
+            }
+        ),
+    )
+    confirm_merge = forms.BooleanField(
+        label="I confirm the source cases will move to the target patient.",
+        required=True,
+        widget=forms.CheckboxInput(attrs={"class": "form-check-input"}),
+    )
+
+    def __init__(self, *args, target_patient=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.target_patient = target_patient
+        self.fields["target_patient"].widget = forms.HiddenInput()
+        if target_patient is not None:
+            self.fields["target_patient"].initial = target_patient
+
+    def clean_confirm_target_uhid(self):
+        entered_uhid = self.cleaned_data["confirm_target_uhid"].strip()
+        target_patient = self.cleaned_data.get("target_patient") or self.target_patient
+        if target_patient is not None and entered_uhid.casefold() != target_patient.uhid.casefold():
+            raise forms.ValidationError("Enter the target patient's UHID exactly.")
+        return entered_uhid
 
 
 class TaskForm(StyledModelForm):
@@ -1137,6 +1178,17 @@ class ThemeSettingsForm(forms.Form):
                 cleaned_data[field_name] = normalize_hex_color(cleaned_data[field_name])
             except (KeyError, ValueError) as exc:
                 self.add_error(field_name, str(exc))
+        for text_field, background_field, minimum_ratio, label in THEME_CONTRAST_RULES:
+            text_color = cleaned_data.get(text_field)
+            background_color = cleaned_data.get(background_field)
+            if not text_color or not background_color:
+                continue
+            ratio = contrast_ratio(text_color, background_color)
+            if ratio < minimum_ratio:
+                self.add_error(
+                    text_field,
+                    f"{label} contrast is {ratio:.2f}:1; minimum {minimum_ratio:.1f}:1.",
+                )
         return cleaned_data
 
     def save(self):
@@ -1171,6 +1223,19 @@ class DepartmentThemeForm(forms.ModelForm):
 
     def clean_theme_text_color(self):
         return normalize_hex_color(self.cleaned_data["theme_text_color"])
+
+    def clean(self):
+        cleaned_data = super().clean()
+        background_color = cleaned_data.get("theme_bg_color")
+        text_color = cleaned_data.get("theme_text_color")
+        if background_color and text_color:
+            ratio = contrast_ratio(background_color, text_color)
+            if ratio < 3.0:
+                self.add_error(
+                    "theme_text_color",
+                    f"Category contrast is {ratio:.2f}:1; minimum 3.0:1.",
+                )
+        return cleaned_data
 
 
 DepartmentThemeFormSet = modelformset_factory(

@@ -62,6 +62,7 @@ from .forms import (
     CaseForm,
     DatabaseImportForm,
     PatientForm,
+    PatientMergeConfirmationForm,
     PatientMergeForm,
     PatientDataBackupScheduleForm,
     DepartmentThemeFormSet,
@@ -3301,6 +3302,7 @@ def _build_upcoming_call_queue(filters):
         rows.append(
             {
                 "case_id": case.id,
+                "uhid": case.uhid,
                 "primary_task_id": primary_task.id,
                 "patient_name": patient_name,
                 "short_name": _build_short_name(case),
@@ -5065,10 +5067,39 @@ class PatientDetailView(LoginRequiredMixin, PatientDataAccessMixin, DetailView):
         context["can_patient_merge"] = _can_manage_patient_identity(
             self.request.user, patient, capability="patient_merge"
         )
-        context["merge_form"] = PatientMergeForm(
+        target_queryset = _accessible_patient_queryset(self.request.user, Patient.objects.all())
+        merge_form = PatientMergeForm(
+            self.request.GET or None,
             source_patient=patient,
-            target_queryset=_accessible_patient_queryset(self.request.user, Patient.objects.all()),
+            target_queryset=target_queryset,
         )
+        context["merge_form"] = merge_form
+        if self.request.GET.get("target_patient") and merge_form.is_valid():
+            target_patient = merge_form.cleaned_data["target_patient"]
+            source_cases = list(patient.cases.select_related("category").order_by("id"))
+            target_cases = list(target_patient.cases.select_related("category").order_by("id"))
+            affected_cases = [*source_cases, *target_cases]
+            if not _can_access_all_cases(self.request.user, affected_cases):
+                context["merge_review_blocked"] = (
+                    "Review blocked: you need access to every case attached to both the source and target patient."
+                )
+            else:
+                context["merge_review"] = {
+                    "source_patient": patient,
+                    "target_patient": target_patient,
+                    "source_case_count": len(source_cases),
+                    "target_case_count": len(target_cases),
+                    "affected_case_rows": [
+                        *({"case": case, "record_label": "Source - will move"} for case in source_cases),
+                        *({"case": case, "record_label": "Target - remains"} for case in target_cases),
+                    ],
+                }
+                context["merge_confirmation_form"] = PatientMergeConfirmationForm(
+                    source_patient=patient,
+                    target_patient=target_patient,
+                    target_queryset=target_queryset,
+                    initial={"target_patient": target_patient},
+                )
         context["patient_edit_url"] = reverse("patients:patient_edit", kwargs={"pk": patient.pk})
         context["new_case_url"] = f"{reverse('patients:case_create')}?patient_mode=existing&patient_id={patient.pk}"
         return context
@@ -5153,12 +5184,20 @@ class PatientMergeView(LoginRequiredMixin, PatientMergeAccessMixin, View):
             Patient.objects.filter(merged_into__isnull=True),
         )
         source_patient = get_object_or_404(patient_queryset, pk=pk)
-        form = PatientMergeForm(request.POST, source_patient=source_patient, target_queryset=patient_queryset)
+        form = PatientMergeConfirmationForm(
+            request.POST,
+            source_patient=source_patient,
+            target_queryset=patient_queryset,
+        )
         if not form.is_valid():
             for errors in form.errors.values():
                 for error in errors:
                     messages.error(request, error)
-            return redirect("patients:patient_detail", pk=source_patient.pk)
+            target_patient_id = request.POST.get("target_patient", "")
+            review_url = reverse("patients:patient_detail", kwargs={"pk": source_patient.pk})
+            if target_patient_id.isdigit():
+                review_url = f"{review_url}?{urlencode({'target_patient': target_patient_id})}"
+            return redirect(review_url)
 
         target_patient = form.cleaned_data["target_patient"]
         try:
@@ -6184,6 +6223,10 @@ class DeviceAuthenticationVerifyView(View):
 
 class UserManagementSettingsView(LoginRequiredMixin, View):
     template_name = "patients/settings_user_management.html"
+    user_create_prefix = "user-create"
+    user_edit_prefix = "user-edit"
+    role_create_prefix = "role-create"
+    role_edit_prefix = "role-edit"
 
     def _check_access(self, request):
         if not has_capability(request.user, "manage_settings"):
@@ -6254,8 +6297,14 @@ class UserManagementSettingsView(LoginRequiredMixin, View):
         User = get_user_model()
         return {
             "active_tab": self._normalize_tab(active_tab),
-            "create_form": create_form or UserManagementCreateForm(),
-            "edit_form": edit_form or (UserManagementUpdateForm(instance=selected_user) if selected_user else None),
+            "create_form": create_form if create_form is not None else UserManagementCreateForm(prefix=self.user_create_prefix),
+            "edit_form": edit_form
+            if edit_form is not None
+            else (
+                UserManagementUpdateForm(instance=selected_user, prefix=self.user_edit_prefix)
+                if selected_user
+                else None
+            ),
             "selected_user": selected_user,
             "users": users,
             "user_query": user_query,
@@ -6263,8 +6312,16 @@ class UserManagementSettingsView(LoginRequiredMixin, View):
             "total_user_count": User.objects.count(),
             "active_user_count": User.objects.filter(is_active=True).count(),
             "settings_admin_count": _settings_admin_user_count(),
-            "role_create_form": role_create_form or RoleSettingForm(),
-            "role_edit_form": role_edit_form or (RoleSettingUpdateForm(instance=selected_role) if selected_role else None),
+            "role_create_form": role_create_form
+            if role_create_form is not None
+            else RoleSettingForm(prefix=self.role_create_prefix),
+            "role_edit_form": role_edit_form
+            if role_edit_form is not None
+            else (
+                RoleSettingUpdateForm(instance=selected_role, prefix=self.role_edit_prefix)
+                if selected_role
+                else None
+            ),
             "selected_role": selected_role,
             "roles": roles,
             "settings_role_count": sum(1 for role in roles if role.can_manage_settings),
@@ -6297,7 +6354,7 @@ class UserManagementSettingsView(LoginRequiredMixin, View):
         selected_role_id = request.POST.get("selected_role_id") or request.POST.get("role_id")
 
         if action == "create_user":
-            create_form = UserManagementCreateForm(request.POST)
+            create_form = UserManagementCreateForm(request.POST, prefix=self.user_create_prefix)
             if create_form.is_valid():
                 if not request.user.is_superuser and self._role_grants_settings(create_form.cleaned_data["role"]):
                     return HttpResponseForbidden("Only a superuser can assign settings-administrator access.")
@@ -6322,7 +6379,11 @@ class UserManagementSettingsView(LoginRequiredMixin, View):
             selected_user = get_object_or_404(User, pk=request.POST.get("user_id"))
             if self._superuser_target_denied(request, selected_user):
                 return HttpResponseForbidden("Only a superuser can modify another superuser.")
-            edit_form = UserManagementUpdateForm(request.POST, instance=selected_user)
+            edit_form = UserManagementUpdateForm(
+                request.POST,
+                instance=selected_user,
+                prefix=self.user_edit_prefix,
+            )
             if edit_form.is_valid():
                 if not request.user.is_superuser and self._role_grants_settings(edit_form.cleaned_data["role"]):
                     return HttpResponseForbidden("Only a superuser can assign settings-administrator access.")
@@ -6343,7 +6404,7 @@ class UserManagementSettingsView(LoginRequiredMixin, View):
             )
 
         if action == "create_role":
-            role_create_form = RoleSettingForm(request.POST)
+            role_create_form = RoleSettingForm(request.POST, prefix=self.role_create_prefix)
             if role_create_form.is_valid():
                 if self._protected_settings_role_denied(
                     request,
@@ -6371,7 +6432,11 @@ class UserManagementSettingsView(LoginRequiredMixin, View):
             selected_role = get_object_or_404(RoleSetting, pk=request.POST.get("role_id"))
             if self._protected_settings_role_denied(request, current_role=selected_role):
                 return HttpResponseForbidden("Only a superuser can change a settings-administrator role.")
-            role_edit_form = RoleSettingUpdateForm(request.POST, instance=selected_role)
+            role_edit_form = RoleSettingUpdateForm(
+                request.POST,
+                instance=selected_role,
+                prefix=self.role_edit_prefix,
+            )
             if role_edit_form.is_valid():
                 if self._protected_settings_role_denied(
                     request,

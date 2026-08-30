@@ -2,7 +2,7 @@
 {% load theme_tags %}
 {% block title %}Theme | MEDTRACK{% endblock %}
 {% block content %}
-<style>
+<style nonce="{{ request.csp_nonce }}">
   .theme-toolbar {
     display: flex;
     flex-wrap: wrap;
@@ -25,6 +25,11 @@
   .theme-preview-main {
     padding: 1rem;
     background: var(--theme-shell-page-bg);
+  }
+
+  .theme-hex-input[data-contrast-invalid="true"] {
+    border-color: var(--theme-alerts-danger-border);
+    box-shadow: 0 0 0 0.2rem var(--theme-alerts-danger-bg);
   }
 
   .theme-preview-nav .app-nav-shell {
@@ -704,8 +709,9 @@
   {% csrf_token %}
   <div class="theme-toolbar mb-2">
     <div class="text-muted small">Use the hex field or the color picker. Preview updates instantly; the live app updates after save.</div>
-    <button class="btn btn-primary" type="submit" name="action" value="save">Save Theme</button>
+    <button class="btn btn-primary" type="submit" name="action" value="save" data-theme-save>Save Theme</button>
   </div>
+  <div class="alert py-2" role="status" aria-live="polite" data-contrast-summary></div>
 
   {% for section in theme_form_sections %}
     <section class="theme-section-card">
@@ -726,6 +732,7 @@
                       type="color"
                       class="form-control form-control-color theme-color-picker"
                       data-sync-target="{{ field.bound_field.id_for_label }}"
+                      aria-label="{{ row.label }} {{ field.label }} color picker"
                       value="{{ field.bound_field.value|default_if_none:field.bound_field.initial }}"
                     />
                   </div>
@@ -757,6 +764,7 @@
                 type="color"
                 class="form-control form-control-color theme-color-picker"
                 data-sync-target="{{ form.theme_bg_color.id_for_label }}"
+                aria-label="{{ form.instance.name }} background color picker"
                 value="{{ form.theme_bg_color.value|default_if_none:form.theme_bg_color.initial }}"
               />
             </div>
@@ -772,6 +780,7 @@
                 type="color"
                 class="form-control form-control-color theme-color-picker"
                 data-sync-target="{{ form.theme_text_color.id_for_label }}"
+                aria-label="{{ form.instance.name }} text color picker"
                 value="{{ form.theme_text_color.value|default_if_none:form.theme_text_color.initial }}"
               />
             </div>
@@ -790,11 +799,13 @@
   </section>
 </form>
 
-<script>
+<script nonce="{{ request.csp_nonce }}">
   (() => {
     const previewRoot = document.querySelector("[data-theme-preview-root]");
     const hexInputs = document.querySelectorAll(".theme-hex-input");
     const pickerInputs = document.querySelectorAll(".theme-color-picker");
+    const contrastSummary = document.querySelector("[data-contrast-summary]");
+    const saveButton = document.querySelector("[data-theme-save]");
     const pairPrefixes = [
       "buttons-primary",
       "buttons-success",
@@ -835,6 +846,53 @@
       "weight",
       "hemoglobin",
     ];
+    const contrastRules = [
+      ["shell__page_text", "shell__page_bg", 4.5],
+      ["shell__surface_text", "shell__surface_bg", 4.5],
+      ["shell__muted_text", "shell__page_bg", 4.5],
+      ["shell__muted_text", "shell__surface_bg", 4.5],
+      ["shell__link", "shell__page_bg", 3.0],
+      ["shell__link", "shell__surface_bg", 3.0],
+      ["shell__link_hover", "shell__page_bg", 3.0],
+      ["shell__link_hover", "shell__surface_bg", 3.0],
+      ["nav__text", "nav__bg", 4.5],
+      ["nav__control_text", "nav__control_bg", 4.5],
+      ["nav__logout_text", "nav__logout_bg", 4.5],
+      ["search__dropdown_text", "search__dropdown_bg", 4.5],
+      ["search__dropdown_text", "search__result_hover_bg", 4.5],
+      ["search__tag_text", "search__tag_bg", 4.5],
+      ["buttons__primary__text", "buttons__primary__bg", 3.0],
+      ["buttons__success__text", "buttons__success__bg", 3.0],
+      ["buttons__secondary__text", "buttons__secondary__bg", 3.0],
+      ["buttons__warning__text", "buttons__warning__bg", 3.0],
+      ["buttons__danger__text", "buttons__danger__bg", 3.0],
+      ["buttons__light__text", "buttons__light__bg", 3.0],
+      ["alerts__info__text", "alerts__info__bg", 3.0],
+      ["alerts__success__text", "alerts__success__bg", 3.0],
+      ["alerts__warning__text", "alerts__warning__bg", 3.0],
+      ["alerts__danger__text", "alerts__danger__bg", 3.0],
+      ["alerts__light__text", "alerts__light__bg", 3.0],
+      ["dashboard__today__text", "dashboard__today__bg", 3.0],
+      ["dashboard__recent__text", "dashboard__recent__bg", 3.0],
+      ["dashboard__upcoming__text", "dashboard__upcoming__bg", 3.0],
+      ["dashboard__overdue__text", "dashboard__overdue__bg", 3.0],
+      ["case_status__active__text", "case_status__active__bg", 3.0],
+      ["case_status__completed__text", "case_status__completed__bg", 3.0],
+      ["case_status__cancelled__text", "case_status__cancelled__bg", 3.0],
+      ["case_status__loss_to_follow_up__text", "case_status__loss_to_follow_up__bg", 3.0],
+      ["task_status__scheduled__text", "task_status__scheduled__bg", 3.0],
+      ["task_status__awaiting_reports__text", "task_status__awaiting_reports__bg", 3.0],
+      ["task_status__completed__text", "task_status__completed__bg", 3.0],
+      ["task_status__cancelled__text", "task_status__cancelled__bg", 3.0],
+      ["vitals_status__low__text", "vitals_status__low__bg", 3.0],
+      ["vitals_status__normal__text", "vitals_status__normal__bg", 3.0],
+      ["vitals_status__high__text", "vitals_status__high__bg", 3.0],
+      ["vitals_status__neutral__text", "vitals_status__neutral__bg", 3.0],
+      ["vitals_status__na__text", "vitals_status__na__bg", 3.0],
+      ["search__gender_female__text", "search__gender_female__bg", 3.0],
+      ["search__gender_male__text", "search__gender_male__bg", 3.0],
+      ["search__gender_other__text", "search__gender_other__bg", 3.0],
+    ];
 
     function normalizeHex(value) {
       const normalized = String(value || "").trim().toLowerCase();
@@ -843,6 +901,72 @@
 
     function hexToRgb(hexColor) {
       return [1, 3, 5].map((start) => Number.parseInt(hexColor.slice(start, start + 2), 16));
+    }
+
+    function relativeLuminance(hexColor) {
+      const channels = hexToRgb(hexColor).map((channel) => {
+        const normalized = channel / 255;
+        return normalized <= 0.04045
+          ? normalized / 12.92
+          : ((normalized + 0.055) / 1.055) ** 2.4;
+      });
+      return (0.2126 * channels[0]) + (0.7152 * channels[1]) + (0.0722 * channels[2]);
+    }
+
+    function contrastRatio(firstColor, secondColor) {
+      const first = relativeLuminance(firstColor);
+      const second = relativeLuminance(secondColor);
+      return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
+    }
+
+    function markContrastInvalid(input) {
+      if (!input) return;
+      input.dataset.contrastInvalid = "true";
+      input.setAttribute("aria-invalid", "true");
+    }
+
+    function updateContrastSummary() {
+      hexInputs.forEach((input) => {
+        if (input.dataset.contrastInvalid === "true") {
+          delete input.dataset.contrastInvalid;
+          input.removeAttribute("aria-invalid");
+        }
+      });
+
+      let issueCount = 0;
+      contrastRules.forEach(([textName, backgroundName, minimum]) => {
+        const textInput = document.querySelector(`[name="${textName}"]`);
+        const backgroundInput = document.querySelector(`[name="${backgroundName}"]`);
+        const textColor = normalizeHex(textInput?.value);
+        const backgroundColor = normalizeHex(backgroundInput?.value);
+        if (textColor && backgroundColor && contrastRatio(textColor, backgroundColor) < minimum) {
+          issueCount += 1;
+          markContrastInvalid(textInput);
+          markContrastInvalid(backgroundInput);
+        }
+      });
+
+      document.querySelectorAll(".theme-category-row").forEach((row) => {
+        const backgroundInput = row.querySelector('[data-category-role="bg"]');
+        const textInput = row.querySelector('[data-category-role="text"]');
+        const backgroundColor = normalizeHex(backgroundInput?.value);
+        const textColor = normalizeHex(textInput?.value);
+        if (textColor && backgroundColor && contrastRatio(textColor, backgroundColor) < 3) {
+          issueCount += 1;
+          markContrastInvalid(textInput);
+          markContrastInvalid(backgroundInput);
+        }
+      });
+
+      if (contrastSummary) {
+        contrastSummary.className = `alert py-2 ${issueCount ? "alert-danger" : "alert-success"}`;
+        contrastSummary.textContent = issueCount
+          ? `Contrast check: ${issueCount} issue${issueCount === 1 ? "" : "s"}. Save is blocked.`
+          : "Contrast check: Pass.";
+      }
+      if (saveButton) {
+        saveButton.disabled = issueCount > 0;
+      }
     }
 
     function rgbToHex(rgb) {
@@ -988,6 +1112,7 @@
         if (input.dataset.categoryPreview) {
           updateCategoryPreview(input.dataset.categoryPreview);
         }
+        updateContrastSummary();
       });
     });
 
@@ -1006,6 +1131,7 @@
     document.querySelectorAll("[data-category-preview]").forEach((input) => {
       updateCategoryPreview(input.dataset.categoryPreview);
     });
+    updateContrastSummary();
   })();
 </script>
 {% endblock %}

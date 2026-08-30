@@ -2,7 +2,7 @@
 {% load theme_tags %}
 {% block title %}Icon Mockup | MEDTRACK{% endblock %}
 {% block content %}
-<style>
+<style nonce="{{ request.csp_nonce }}">
   .icon-mockup-toolbar {
     display: flex;
     flex-wrap: wrap;

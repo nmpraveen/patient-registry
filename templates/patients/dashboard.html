@@ -39,7 +39,7 @@
 {% endblock %}
 
 {% block content %}
-<style>
+<style nonce="{{ request.csp_nonce }}">
   .dashboard-module {
     --dashboard-module-bg: var(--theme-dashboard-upcoming-bg);
     --dashboard-module-text: var(--theme-dashboard-upcoming-text);
@@ -3134,7 +3134,7 @@
   </div>
 </div>
 
-<script>
+<script nonce="{{ request.csp_nonce }}">
   (() => {
     const summarySelector = "[data-dashboard-summary-grid]";
     const rootSelector = "[data-upcoming-schedule]";
@@ -3290,7 +3290,7 @@
   })();
 </script>
 
-<script>
+<script nonce="{{ request.csp_nonce }}">
   (() => {
     const mobileBreakpoint = window.matchMedia("(max-width: 767.98px)");
     const measureCanvas = document.createElement("canvas");
@@ -3544,7 +3544,7 @@
     <template data-dashboard-icon-template="patients/icons/subcategories/medical_oncology.svg">{% inline_static_svg "patients/icons/subcategories/medical_oncology.svg" %}</template>
   </div>
 
-  <script>
+  <script nonce="{{ request.csp_nonce }}">
     (() => {
       const initializeRecentCases = () => {
         const payloadEl = document.getElementById("recent-cases-payload");

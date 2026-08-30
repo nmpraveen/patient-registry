@@ -23,6 +23,7 @@
 
 2. Continue the website-first Stage 7 cleanup.
    - Build role profiles and frontend behavior on the live created/assigned/call-queue/all object-scope boundary.
+   - Review the completed frontend hardening branch for self-hosted assets, CSP/no-store headers, accessible forms/search/merge workflows, theme contrast checks, and responsive browser coverage before deployment.
    - Keep forged-ID, archived-object, and reassignment-revocation tests as release gates.
    - Do not reintroduce plaintext credential notes into the application database or UI; credentials remain in the local Git-ignored ledger until rotation.
 

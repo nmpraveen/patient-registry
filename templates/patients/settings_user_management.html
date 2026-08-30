@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% block title %}User Management | MEDTRACK{% endblock %}
 {% block content %}
-<style>
+<style nonce="{{ request.csp_nonce }}">
   .settings-shell-header {
     padding: 1.5rem;
     border: 1px solid var(--theme-shell-surface-border);
@@ -128,7 +128,8 @@
           <form class="row g-2 mb-3" method="get">
             <input type="hidden" name="tab" value="users" />
             <div class="col">
-              <input class="form-control" type="search" name="q" value="{{ user_query }}" placeholder="Search users" />
+              <label class="visually-hidden" for="user-management-search">Search users</label>
+              <input id="user-management-search" class="form-control" type="search" name="q" value="{{ user_query }}" placeholder="Search users" />
             </div>
             <div class="col-auto">
               <button class="btn btn-primary btn-sm" type="submit">Search</button>

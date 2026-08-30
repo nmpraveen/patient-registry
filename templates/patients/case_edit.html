@@ -190,6 +190,6 @@
   </article>
 {% endblock %}
 {% block extra_scripts %}
-  <script src="https://cdn.jsdelivr.net/npm/htmx.org@1.9.12/dist/htmx.min.js" crossorigin="anonymous"></script>
+  <script src="{% static 'patients/vendor/htmx/1.9.12/htmx.min.js' %}"></script>
   <script src="{% static 'patients/case_edit.js' %}" defer></script>
 {% endblock %}

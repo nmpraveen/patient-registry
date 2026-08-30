@@ -2185,7 +2185,11 @@ class MedtrackViewTests(TestCase):
 
         response = self.client.post(
             reverse("patients:patient_merge", kwargs={"pk": source_case.patient_id}),
-            {"target_patient": target_case.patient_id},
+            {
+                "target_patient": target_case.patient_id,
+                "confirm_target_uhid": target_case.patient.uhid,
+                "confirm_merge": "on",
+            },
         )
 
         self.assertEqual(response.status_code, 302)
@@ -5065,13 +5069,13 @@ class MedtrackViewTests(TestCase):
             reverse("patients:settings_user_management"),
             {
                 "action": "create_user",
-                "first_name": "Anita",
-                "last_name": "Thomas",
-                "username": "frontdesk",
-                "password1": "strong-password-456",
-                "password2": "strong-password-456",
-                "role": str(reception_group.pk),
-                "is_active": "on",
+                "user-create-first_name": "Anita",
+                "user-create-last_name": "Thomas",
+                "user-create-username": "frontdesk",
+                "user-create-password1": "strong-password-456",
+                "user-create-password2": "strong-password-456",
+                "user-create-role": str(reception_group.pk),
+                "user-create-is_active": "on",
                 "temporary_password_note": "Temp password: strong-password-456",
                 "selected_user_id": str(self.user.pk),
                 "tab": "users",
@@ -5105,13 +5109,13 @@ class MedtrackViewTests(TestCase):
             {
                 "action": "update_user",
                 "user_id": str(target_user.pk),
-                "first_name": "Updated",
-                "last_name": "Doctor",
-                "username": "doctor-user",
-                "password1": "new-strong-password-789",
-                "password2": "new-strong-password-789",
-                "role": str(doctor_group.pk),
-                "is_active": "on",
+                "user-edit-first_name": "Updated",
+                "user-edit-last_name": "Doctor",
+                "user-edit-username": "doctor-user",
+                "user-edit-password1": "new-strong-password-789",
+                "user-edit-password2": "new-strong-password-789",
+                "user-edit-role": str(doctor_group.pk),
+                "user-edit-is_active": "on",
                 "temporary_password_note": "Handed off on paper",
                 "tab": "users",
             },
@@ -5149,11 +5153,11 @@ class MedtrackViewTests(TestCase):
             {
                 "action": "create_role",
                 "tab": "roles",
-                "role_name": "Coordinator",
-                "case_data_scope": CaseDataScope.ASSIGNED,
-                "can_case_create": "on",
-                "can_case_edit": "on",
-                "can_note_add": "on",
+                "role-create-role_name": "Coordinator",
+                "role-create-case_data_scope": CaseDataScope.ASSIGNED,
+                "role-create-can_case_create": "on",
+                "role-create-can_case_edit": "on",
+                "role-create-can_note_add": "on",
             },
             follow=True,
         )
@@ -5173,14 +5177,14 @@ class MedtrackViewTests(TestCase):
                 "action": "update_role",
                 "tab": "roles",
                 "role_id": str(role.pk),
-                "case_data_scope": role.case_data_scope,
-                "can_case_create": "on",
-                "can_case_edit": "on",
-                "can_task_create": "on",
-                "can_task_edit": "on",
-                "can_task_reopen": "on",
-                "can_note_add": "on",
-                "can_manage_settings": "on",
+                "role-edit-case_data_scope": role.case_data_scope,
+                "role-edit-can_case_create": "on",
+                "role-edit-can_case_edit": "on",
+                "role-edit-can_task_create": "on",
+                "role-edit-can_task_edit": "on",
+                "role-edit-can_task_reopen": "on",
+                "role-edit-can_note_add": "on",
+                "role-edit-can_manage_settings": "on",
             },
             follow=True,
         )
@@ -5204,14 +5208,14 @@ class MedtrackViewTests(TestCase):
                 "action": "update_role",
                 "tab": "roles",
                 "role_id": str(role.pk),
-                "case_data_scope": role.case_data_scope,
-                "can_case_create": "on",
-                "can_case_edit": "on",
-                "can_task_create": "on",
-                "can_task_edit": "on",
-                "can_task_reopen": "on",
-                "can_note_add": "on",
-                "can_manage_settings": "on",
+                "role-edit-case_data_scope": role.case_data_scope,
+                "role-edit-can_case_create": "on",
+                "role-edit-can_case_edit": "on",
+                "role-edit-can_task_create": "on",
+                "role-edit-can_task_edit": "on",
+                "role-edit-can_task_reopen": "on",
+                "role-edit-can_note_add": "on",
+                "role-edit-can_manage_settings": "on",
             },
         )
 
@@ -5232,13 +5236,13 @@ class MedtrackViewTests(TestCase):
             {
                 "action": "update_user",
                 "user_id": str(target_superuser.pk),
-                "first_name": "Taken",
-                "last_name": "Over",
-                "username": "taken-over-superuser",
-                "password1": "attacker-password-456",
-                "password2": "attacker-password-456",
-                "role": str(doctor_group.pk),
-                "is_active": "on",
+                "user-edit-first_name": "Taken",
+                "user-edit-last_name": "Over",
+                "user-edit-username": "taken-over-superuser",
+                "user-edit-password1": "attacker-password-456",
+                "user-edit-password2": "attacker-password-456",
+                "user-edit-role": str(doctor_group.pk),
+                "user-edit-is_active": "on",
                 "tab": "users",
             },
         )
@@ -5264,13 +5268,13 @@ class MedtrackViewTests(TestCase):
             {
                 "action": "update_user",
                 "user_id": str(target_user.pk),
-                "first_name": "Ordinary",
-                "last_name": "User",
-                "username": target_user.username,
-                "password1": "attacker-password-456",
-                "password2": "attacker-password-456",
-                "role": str(admin_group.pk),
-                "is_active": "on",
+                "user-edit-first_name": "Ordinary",
+                "user-edit-last_name": "User",
+                "user-edit-username": target_user.username,
+                "user-edit-password1": "attacker-password-456",
+                "user-edit-password2": "attacker-password-456",
+                "user-edit-role": str(admin_group.pk),
+                "user-edit-is_active": "on",
                 "tab": "users",
             },
         )
@@ -5289,11 +5293,11 @@ class MedtrackViewTests(TestCase):
             {
                 "action": "update_user",
                 "user_id": str(self.user.pk),
-                "first_name": self.user.first_name,
-                "last_name": self.user.last_name,
-                "username": self.user.username,
-                "role": str(doctor_group.pk),
-                "is_active": "on",
+                "user-edit-first_name": self.user.first_name,
+                "user-edit-last_name": self.user.last_name,
+                "user-edit-username": self.user.username,
+                "user-edit-role": str(doctor_group.pk),
+                "user-edit-is_active": "on",
                 "tab": "users",
             },
             follow=True,
@@ -6402,12 +6406,12 @@ class MedtrackViewTests(TestCase):
         anc = DepartmentConfig.objects.get(name="ANC")
         post_data = self.build_theme_post_data(
             token_overrides={
-                "nav__bg": "#123456",
+                "nav__bg": "#dbeafe",
                 "case_header__bg": "#654321",
                 "shell__page_bg": "#faf0e6",
                 "dashboard__recent__bg": "#c7ddff",
                 "dashboard__recent__text": "#163ea8",
-                "search__gender_male__bg": "#ccddee",
+                "search__gender_male__bg": "#eaf4ff",
                 "search__gender_other__text": "#334455",
             },
             category_overrides={"ANC": {"bg": "#abcdef", "text": "#123456"}},
@@ -6418,19 +6422,19 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         theme_settings = ThemeSettings.get_solo()
         anc.refresh_from_db()
-        self.assertEqual(theme_settings.tokens["nav"]["bg"], "#123456")
+        self.assertEqual(theme_settings.tokens["nav"]["bg"], "#dbeafe")
         self.assertEqual(theme_settings.tokens["case_header"]["bg"], "#654321")
         self.assertEqual(theme_settings.tokens["shell"]["page_bg"], "#faf0e6")
         self.assertEqual(theme_settings.tokens["dashboard"]["recent"]["bg"], "#c7ddff")
         self.assertEqual(theme_settings.tokens["dashboard"]["recent"]["text"], "#163ea8")
-        self.assertEqual(theme_settings.tokens["search"]["gender_male"]["bg"], "#ccddee")
+        self.assertEqual(theme_settings.tokens["search"]["gender_male"]["bg"], "#eaf4ff")
         self.assertEqual(theme_settings.tokens["search"]["gender_other"]["text"], "#334455")
         self.assertEqual(anc.theme_bg_color, "#abcdef")
         self.assertEqual(anc.theme_text_color, "#123456")
-        self.assertContains(response, "--theme-nav-bg: #123456;")
+        self.assertContains(response, "--theme-nav-bg: #dbeafe;")
         self.assertContains(response, "--theme-case-header-bg: #654321;")
         self.assertContains(response, "--theme-dashboard-recent-bg: #c7ddff;")
-        self.assertContains(response, "--theme-search-gender-male-bg: #ccddee;")
+        self.assertContains(response, "--theme-search-gender-male-bg: #eaf4ff;")
         self.assertContains(response, "--theme-search-gender-other-text: #334455;")
         self.assertContains(response, "Theme settings saved.")
 
@@ -6478,7 +6482,7 @@ class MedtrackViewTests(TestCase):
 
         response = self.client.post(
             reverse("patients:settings_user_management"),
-            {"action": "create_role", "tab": "roles"},
+            {"action": "create_role", "tab": "roles", "role-create-role_name": ""},
             follow=True,
         )
 

@@ -68,6 +68,8 @@
   display: grid;
   gap: 1rem;
   isolation: isolate;
+  max-width: 100%;
+  overflow-x: clip;
   padding-bottom: 4.5rem;
 }
 
@@ -4139,6 +4141,16 @@
   .case-task-history-toggle {
     width: 100%;
     justify-content: center;
+  }
+}
+
+@media (max-width: 359.98px) {
+  .case-task-card__actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .case-task-card__actions > :last-child {
+    grid-column: 1 / -1;
   }
 }
 

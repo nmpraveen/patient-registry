@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% block title %}Case Form | MEDTRACK{% endblock %}
 {% block content %}
-<style>
+<style nonce="{{ request.csp_nonce }}">
   .case-section-card {
     border: 1px solid var(--theme-shell-surface-border);
     border-radius: 0.75rem;
@@ -179,7 +179,7 @@
   </form>
 </div></div>
 
-<script>
+<script nonce="{{ request.csp_nonce }}">
 (function() {
   const categoryEl = document.getElementById('id_category');
   if (!categoryEl) return;

@@ -15,6 +15,13 @@
 - Centralized explicit role, intake-search, and patient-selection policy; removed role-name grants and blocked hidden identity disclosure and stale merged-patient case writes.
 - Added bounded one-time patient-merge recovery, transaction-coupled clinical/IAM/data audits, immutable PostgreSQL evidence, and least-privilege migration and mock-seed behavior.
 
+## 2026.08.30.00.33
+- Self-hosted and version-pinned the authenticated website's Bootstrap, Crayons, Crayons icons, Inter, HTMX, and Chart.js assets; added per-response CSP nonces, the required Crayons style hash, restrictive browser security headers, and private no-store caching for authenticated responses.
+- Added unique create/edit user and role form prefixes, accessible call/search/filter labels, a keyboard-operable ARIA universal-search combobox with live state, and a skip-to-content link.
+- Added an explicit patient-merge review and confirmation gate that displays both patient UHIDs and the complete source-plus-target affected case set, plus narrow-screen overflow fixes for case detail, task actions, and the merge selector.
+- Enforced server-side theme contrast minimums with live preview feedback, and replaced case-detail server-message HTML insertion with text nodes.
+- Added Django/template security and accessibility regressions plus a Playwright Chromium matrix at 320, 390, 430, and 1440 pixels, including CSP assets, console errors, semantics, and logout/back-cache checks.
+
 ## 2026.08.30.00.20
 - Replaced implicit role-name data access with explicit case, call-queue, and intake-lookup scopes enforced across website and API policy.
 - Hardened patient identity edits and merges with complete affected-set authorization, deterministic database locks, and terminal-target validation.

@@ -3,7 +3,7 @@
 {% block title %}{{ page_title }} | MEDTRACK{% endblock %}
 
 {% block content %}
-<style>
+<style nonce="{{ request.csp_nonce }}">
   .calls-sheet-page {
     display: grid;
     gap: 1rem;
@@ -862,7 +862,7 @@
 
     <section class="calls-sheet-bulk" data-calls-bulk-bar>
       <div class="calls-sheet-bulk-header">
-        <div class="calls-sheet-selection-copy"><strong data-selected-count>0</strong> patient<span data-selected-plural>s</span> selected</div>
+        <div class="calls-sheet-selection-copy" role="status" aria-live="polite" aria-atomic="true"><strong data-selected-count>0</strong> patient<span data-selected-plural>s</span> selected</div>
         <div class="calls-sheet-bulk-links" data-bulk-links hidden>
           <button type="button" class="calls-sheet-link-button" data-select-visible>Select visible</button>
           <button type="button" class="calls-sheet-link-button" data-clear-selection>Clear</button>
@@ -908,6 +908,7 @@
           <div class="calls-sheet-row-shell">
             <div class="calls-sheet-row-select">
               <input id="call-case-{{ row.case_id }}" type="checkbox" name="case_ids" value="{{ row.case_id }}" data-case-select />
+              <label class="visually-hidden" for="call-case-{{ row.case_id }}">Select {{ row.patient_name }}, UHID {{ row.uhid }}, case {{ row.case_id }}</label>
             </div>
 
             <div>
@@ -1052,9 +1053,10 @@
   </form>
 </div>
 
-<script>
+<script nonce="{{ request.csp_nonce }}">
   (() => {
     const checkboxes = Array.from(document.querySelectorAll("[data-case-select]"));
+    const form = document.querySelector(".calls-sheet-form");
     const selectedCountEl = document.querySelector("[data-selected-count]");
     const selectedPluralEl = document.querySelector("[data-selected-plural]");
     const applyButton = document.querySelector("[data-apply-button]");
@@ -1107,6 +1109,15 @@
       checkbox.addEventListener("click", (event) => event.stopPropagation());
     });
     outcomeSelect?.addEventListener("change", updateSelectionState);
+    form?.addEventListener("submit", (event) => {
+      const selectedCount = checkboxes.filter((checkbox) => checkbox.checked).length;
+      const confirmed = selectedCount > 0 && window.confirm(
+        `Apply this outcome to ${selectedCount} selected patient${selectedCount === 1 ? "" : "s"}?`,
+      );
+      if (!confirmed) {
+        event.preventDefault();
+      }
+    });
     updateSelectionState();
 
     const listEl = document.querySelector("[data-calls-sheet-list]");

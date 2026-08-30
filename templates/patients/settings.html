@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% block title %}Settings | MEDTRACK{% endblock %}
 {% block content %}
-<style>
+<style nonce="{{ request.csp_nonce }}">
   .settings-hub-hero {
     padding: 1.5rem;
     border: 1px solid var(--theme-shell-surface-border);
@@ -410,7 +410,7 @@
   No settings categories matched that filter.
 </div>
 
-<script>
+<script nonce="{{ request.csp_nonce }}">
   (() => {
     const input = document.getElementById("settings-filter");
     const cards = Array.from(document.querySelectorAll("[data-settings-card]"));

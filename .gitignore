@@ -6,6 +6,7 @@ __pycache__/
 backups/
 .pytest_cache/
 .mypy_cache/
+node_modules/
 .playwright-mcp/
 .DS_Store
 output/

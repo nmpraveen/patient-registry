@@ -84,6 +84,13 @@ if rg -i -g '*.jsonl' 'authorization|cookie|query_string|request_body|patient[_ 
   exit 1
 fi
 
+printf '{"timestamp":"now","method":"GET","status":200,"duration_us":12,"bytes":0}\n' > "$log_root/caddy-access.json"
+printf '{"timestamp":"now","method":"GET","status":200,"duration_us":10,"bytes":0}\n' > "$log_root/gunicorn-access.log"
+: > "$FAKE_ALERT_LOG"
+"$repo_root/scripts/export-security-evidence.sh"
+"$repo_root/scripts/verify-security-evidence.sh"
+test ! -s "$FAKE_ALERT_LOG"
+
 cp "$evidence_root/state/checkpoint.env" "$test_root/checkpoint.saved"
 sed -i 's/^completed_epoch=.*/completed_epoch=0/' "$evidence_root/state/checkpoint.env"
 if "$repo_root/scripts/verify-security-evidence.sh" >/dev/null 2>&1; then

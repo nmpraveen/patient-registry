@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.08.30.16.43
+- Fixed the PHI-safe security-evidence exporter so a normal interval with zero HTTP 429 responses records a count of zero instead of failing the evidence chain.
+- Added a regression covering a clean interval with no rate-limit events and no false security alert.
+
 ## 2026.08.30.16.16
 - Fixed the production Caddy trusted-client-IP replacement so Caddy 2.11 no longer deletes the header it just set and hardened Django requests reach the application instead of failing with HTTP 400.
 - Added an adapted-config regression that rejects simultaneous delete/set operations for the case-insensitive trusted client-IP header.

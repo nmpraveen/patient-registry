@@ -108,7 +108,7 @@ if grep -Eqi 'authorization|cookie|query_string|request_body|patient[_ -]?search
   false
 fi
 edge_429_count="$(grep -Ehc '"status"[[:space:]]*:[[:space:]]*429' \
-  "$stage_dir/caddy-access.jsonl" "$stage_dir/gunicorn-access.jsonl" | awk '{total += $1} END {print total + 0}')"
+  "$stage_dir/caddy-access.jsonl" "$stage_dir/gunicorn-access.jsonl" | awk '{total += $1} END {print total + 0}' || true)"
 audit_failure_count="$(grep -Eic '"outcome"[[:space:]]*:[[:space:]]*"(failure|denied|locked|lockout)"' \
   "$stage_dir/audit-events.jsonl" || true)"
 if (( edge_429_count >= failure_alert_threshold || audit_failure_count >= failure_alert_threshold )); then

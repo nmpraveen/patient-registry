@@ -17,7 +17,7 @@ services:
   web:
     image: ${MEDTRACK_APP_IMAGE:-medtrack-app:local}
     build:
-      context: .
+      context: ${MEDTRACK_BUILD_CONTEXT:-.}
       args:
         VCS_REF: ${MEDTRACK_BUILD_REVISION:-unknown}
         BUILD_CONTEXT_SHA256: ${MEDTRACK_BUILD_CONTEXT_SHA256:-unverified}

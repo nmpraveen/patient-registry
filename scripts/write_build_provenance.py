@@ -10,14 +10,18 @@ import os
 from pathlib import Path
 import subprocess
 
+from build_context_receipt import create_receipt, verify_image
+
 
 MATERIALS = (
+    ".dockerignore",
     "Dockerfile",
     "requirements.in",
     "requirements.txt",
     "docker-compose.yml",
     "docker-compose.prod.yml",
     "android/gradle/verification-metadata.xml",
+    "scripts/build_context_receipt.py",
 )
 
 
@@ -51,6 +55,8 @@ def main() -> int:
             text=True,
         ).stdout
     )[0]
+    context_receipt = create_receipt(repo_root, revision)
+    verify_image(args.image, context_receipt)
     image_id = inspection["Id"].removeprefix("sha256:")
     materials = []
     for relative in MATERIALS:
@@ -69,7 +75,14 @@ def main() -> int:
         "predicate": {
             "buildDefinition": {
                 "buildType": "https://mobyproject.org/buildkit@v1",
-                "externalParameters": {"revision": revision},
+                "externalParameters": {
+                    "revision": revision,
+                    "buildContext": {
+                        "schema": context_receipt["schema"],
+                        "digest": context_receipt["build_context_sha256"],
+                        "fileCount": context_receipt["file_count"],
+                    },
+                },
                 "internalParameters": {"platform": inspection.get("Os") + "/" + inspection.get("Architecture")},
                 "resolvedDependencies": materials,
             },

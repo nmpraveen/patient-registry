@@ -48,6 +48,31 @@ builds a scratch context-audit image and the real runtime image, and scans both
 the immutable layers and exported filesystem. It never reads ignored credential
 values.
 
+The deployment trust contract is `medtrack.build-context/v1`. Its digest is a
+canonical SHA-256 over the Git mode, UTF-8 path, byte length, and blob bytes for
+the committed Docker policy files and runtime allowlist. Ignored tests,
+credentials, Firebase/service-account files, backups, age/rclone material,
+outputs, node modules, local overrides, dumps, and PHI bundles cannot affect or
+enter the receipt. Compute and verify it without trusting the working-tree diff:
+
+```powershell
+python .\scripts\build_context_receipt.py --revision <full-git-sha>
+python .\scripts\build_context_receipt.py --revision <full-git-sha> --verify-image medtrack-review:<short-sha>
+```
+
+The verifier requires exact equality for these OCI labels:
+
+- `org.opencontainers.image.revision=<40-character-git-sha>`
+- `org.medtrack.build-context.schema=medtrack.build-context/v1`
+- `org.medtrack.build-context.digest=sha256:<64-hex-context-digest>`
+
+`deploy-production.sh` computes the digest from Git objects, stages that exact
+commit with `git archive` into a temporary build context, passes the digest as a
+build argument, reads the labels back before startup, and emits a single receipt
+line: `MEDTRACK_BUILD_RECEIPT revision=<sha>
+build_context_sha256=<digest> image=<image-id>`. Ops must store that line with
+the reviewed deployment record and reject an image that fails the verifier.
+
 GitHub Actions tests the pull request head SHA directly. The required checks are
 listed in `.github/BRANCH_PROTECTION.md`. Branch protection is a post-merge
 administrator action:

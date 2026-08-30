@@ -25,11 +25,14 @@ def main() -> int:
     command.extend(
         [
             "--env",
+            "HOME=/tmp/medtrack-lock-home",
+            "--env",
             "CUSTOM_COMPILE_COMMAND=python scripts/update-python-locks.py",
             PYTHON_LOCK_IMAGE,
             "sh",
             "-euc",
             f"""
+mkdir -p "$HOME"
 python -m venv /tmp/medtrack-lock-venv
 /tmp/medtrack-lock-venv/bin/python -m pip install --quiet --disable-pip-version-check --no-cache-dir pip-tools=={PIP_TOOLS_VERSION}
 for source in requirements.in requirements-ci.in; do

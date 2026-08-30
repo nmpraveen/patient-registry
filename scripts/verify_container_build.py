@@ -11,6 +11,8 @@ import sys
 import tarfile
 import tempfile
 
+from build_context_receipt import create_receipt, verify_image
+
 
 CANARY_PATHS = (
     ".env",
@@ -74,6 +76,7 @@ def main() -> int:
         capture_output=True,
         text=True,
     ).stdout.strip()
+    receipt = create_receipt(repo_root, revision)
     image = args.image or f"medtrack-build-proof:{revision[:12]}"
     context_image = f"medtrack-context-proof:{revision[:12]}"
     canary = f"MEDTRACK_FAKE_SECRET_PHI_CANARY_{secrets.token_hex(16)}"
@@ -116,6 +119,8 @@ def main() -> int:
                 [
                     "--build-arg",
                     f"VCS_REF={revision}",
+                    "--build-arg",
+                    f"BUILD_CONTEXT_SHA256={receipt['build_context_sha256']}",
                     "--tag",
                     image,
                     str(context),
@@ -123,6 +128,7 @@ def main() -> int:
             )
             subprocess.run(build, check=True)
             run_scan(repo_root, image, "runtime", canary)
+            verify_image(image, receipt)
     finally:
         subprocess.run(
             ["docker", "image", "rm", "--force", context_image],
@@ -132,7 +138,9 @@ def main() -> int:
         )
     print(
         f"SAFE_CONTEXT_BUILD_OK revision={revision} image={image} "
-        f"canaries={len(CANARY_PATHS)}"
+        f"canaries={len(CANARY_PATHS)} "
+        f"build_context_sha256={receipt['build_context_sha256']} "
+        f"receipt_schema={receipt['schema']} files={receipt['file_count']}"
     )
     return 0
 

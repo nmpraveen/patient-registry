@@ -2,9 +2,12 @@ ARG PYTHON_BASE_IMAGE=python:3.12.13-slim-trixie@sha256:229a2c5bfa27522db7815ea8
 FROM ${PYTHON_BASE_IMAGE}
 
 ARG VCS_REF=unknown
+ARG BUILD_CONTEXT_SHA256=unverified
 
 LABEL org.opencontainers.image.source="https://github.com/nmpraveen/patient-registry" \
-      org.opencontainers.image.revision="${VCS_REF}"
+      org.opencontainers.image.revision="${VCS_REF}" \
+      org.medtrack.build-context.schema="medtrack.build-context/v1" \
+      org.medtrack.build-context.digest="${BUILD_CONTEXT_SHA256}"
 
 ARG VCS_REF=unknown
 ARG BUILD_CONTEXT_SHA256=unverified

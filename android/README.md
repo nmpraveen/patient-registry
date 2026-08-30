@@ -52,7 +52,7 @@ Retryable refresh or `/me` failures (transport, timeout, and server errors) keep
 
 Logout and account switch use that same boundary, and repeat cancellation after purge to catch a late enqueue from a draining write. Pattern and biometric settings never transfer between accounts. Password, pattern, clinical-note, and search text are not placed in Compose saveable state; process restoration retains only non-sensitive route/filter IDs and requires a fresh verified session before PHI navigation.
 
-The account boundary necessarily touches `MedtrackSyncWorker`, repository queue/drain code, push-token registration, automatic network refresh, and app-container sync startup. Keep those files as explicit merge-review points for concurrent sync/release work. Android now implements the published server mobile-device approval contract: targeted first login accepts only a strict HTTP 202 `PENDING` response, stores the server's one-time secret in dedicated Android Keystore-backed encrypted preferences, and supplies the paired `device_id` and `device_secret` until approval. Successful sessions require access and rotated refresh JWTs to agree on the account and approved `mobile_device_id`; the credential remains separate from the independently rotating FCM delivery token. No FCM payload shape, build flavor, Docker, or operations behavior changes here.
+The account boundary necessarily touches `MedtrackSyncWorker`, repository queue/drain code, push-token registration, automatic network refresh, and app-container sync startup. Keep those files as explicit merge-review points for concurrent sync/release work. Android implements the published server mobile-device approval contract: targeted first login accepts only a strict HTTP 202 `PENDING` response, stores the server's one-time secret in dedicated Android Keystore-backed encrypted preferences, and supplies the paired `device_id` and `device_secret` until approval. Successful sessions require access and rotated refresh JWTs to agree on the account and approved `mobile_device_id`; the credential remains separate from the independently rotating FCM delivery token. FCM is accepted only as the exact data-only `{event_id}` wake-up envelope and never supplies lock-screen clinical content or navigation extras.
 
 ## Open
 
@@ -262,7 +262,7 @@ For the full real-device delivery gate, connect a USB Android phone, configure F
 .\android\scripts\mobile-real-push-smoke.ps1
 ```
 
-This wrapper runs the physical-device offline-write smoke, waits for the app to register its real FCM token with Django, sends a Firebase push to that registered token, checks the device notification surface through `adb`, and writes redacted evidence under `output/mobile-real-push-smoke-*`. It never writes the raw FCM token to the evidence files.
+This wrapper runs the physical-device offline-write smoke, waits for the app to register its real FCM token with Django, sends an event-ID-only Firebase wake-up to that registered token, verifies non-PHI in-app WorkManager sync evidence through `adb`, and writes redacted evidence under `output/mobile-real-push-smoke-*`. It never writes the raw FCM token to the evidence files and does not expect a notification-drawer message.
 
 ## V1 Verification Audit
 

@@ -11,6 +11,7 @@ import com.naveenhospital.medtrack.core.data.local.MedtrackDatabase
 import com.naveenhospital.medtrack.core.data.local.PendingWriteEntity
 import com.naveenhospital.medtrack.core.data.sync.PendingWriteTypes
 import com.naveenhospital.medtrack.core.network.model.AuthSessionDto
+import com.naveenhospital.medtrack.core.network.model.DataScopeDto
 import com.naveenhospital.medtrack.core.network.model.UserProfileDto
 import java.io.IOException
 import kotlinx.coroutines.runBlocking
@@ -122,7 +123,7 @@ class MedtrackPushTest {
                     jwt(ACCOUNT_ID, "rotated"),
                 )
             },
-            verifyProfile = { UserProfileDto(2, "other", "Other", emptyList(), emptyMap()) },
+            verifyProfile = { UserProfileDto(2, "other", "Other", emptyList(), emptyMap(), DATA_SCOPE) },
             registerRemote = { error("must not register") },
         )
 
@@ -163,7 +164,7 @@ class MedtrackPushTest {
             },
             verifyProfile = {
                 verifyCalls += 1
-                UserProfileDto(1, "same", "Same", emptyList(), emptyMap())
+                UserProfileDto(1, "same", "Same", emptyList(), emptyMap(), DATA_SCOPE)
             },
             registerRemote = { error("must not register") },
         )
@@ -293,7 +294,7 @@ class MedtrackPushTest {
             },
             verifyProfile = {
                 verifyCalls += 1
-                UserProfileDto(1, "same", "Same", emptyList(), emptyMap())
+                UserProfileDto(1, "same", "Same", emptyList(), emptyMap(), DATA_SCOPE)
             },
             registerRemote = { error("stale success must not register") },
         )
@@ -373,6 +374,7 @@ class MedtrackPushTest {
     }
 
     private companion object {
+        val DATA_SCOPE = DataScopeDto("ALL", callQueue = true, intakePatientLookup = true)
         const val ACCOUNT_ID = "1"
         const val MOBILE_DEVICE_ID = "11111111-1111-4111-8111-111111111111"
     }

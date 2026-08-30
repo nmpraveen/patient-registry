@@ -25,6 +25,8 @@ import com.naveenhospital.medtrack.core.network.model.CaseCategoryDto
 import com.naveenhospital.medtrack.core.network.model.CaseDetailDto
 import com.naveenhospital.medtrack.core.network.model.CaseEditCaseDto
 import com.naveenhospital.medtrack.core.network.model.CaseListResponseDto
+import com.naveenhospital.medtrack.core.network.model.CaseSearchRequestDto
+import com.naveenhospital.medtrack.core.network.model.CaseSearchResponseDto
 import com.naveenhospital.medtrack.core.network.model.CaseStatsDto
 import com.naveenhospital.medtrack.core.network.model.CaseSummaryDto
 import com.naveenhospital.medtrack.core.network.model.CaseSubcategoryDto
@@ -131,6 +133,44 @@ class MedtrackRepositoryTest {
     }
 
     @Test
+    fun caseSearchRetainsOpaqueCursorAndEveryBoundFilterAcrossPages() = runTest {
+        val stats = CaseStatsDto(today = 1, upcoming = 2, overdue = 3, awaiting = 4, red = 5)
+        val api = FakeMedtrackApi(
+            caseSearchResponses = mapOf(
+                null to CaseSearchResponseDto(nextCursor = "opaque-case-page-two", stats = stats),
+                "opaque-case-page-two" to CaseSearchResponseDto(nextCursor = null, stats = stats),
+            ),
+        )
+        val repository = repository(api)
+
+        repository.refreshCases(
+            bucket = "overdue",
+            query = "  TEST-00  ",
+            assignedTo = "me",
+            scopeContext = "calls",
+            categories = listOf("Surgery"),
+            subcategories = listOf("Review"),
+        )
+        repository.loadNextCases(
+            bucket = "overdue",
+            query = "  TEST-00  ",
+            assignedTo = "me",
+            scopeContext = "calls",
+            categories = listOf("Surgery"),
+            subcategories = listOf("Review"),
+        )
+
+        assertEquals(listOf(null, "opaque-case-page-two"), api.caseSearchRequests.map { it.cursor })
+        assertTrue(api.caseSearchRequests.all { request ->
+            request.query == "TEST-00" && request.pageSize == 20 &&
+                request.bucket == "overdue" && request.assignedTo == "me" &&
+                request.scopeContext == "calls" && request.category == listOf("Surgery") &&
+                request.subcategory == listOf("Review")
+        })
+        assertEquals(false, repository.hasMoreCases.value)
+    }
+
+    @Test
     fun patientSearchTraversesEveryOpaqueCursorAndDeduplicatesByPatientId() = runTest {
         val api = FakeMedtrackApi(
             patientSearchResponses = mapOf(
@@ -147,7 +187,7 @@ class MedtrackRepositoryTest {
                 ),
             ),
         )
-        val repository = MedtrackRepository(api = api, database = database)
+        val repository = repository(api)
 
         val results = repository.searchPatients("  UH-0  ")
 
@@ -348,7 +388,7 @@ class MedtrackRepositoryTest {
         repository.retrySyncConflict(result.clientWriteId)
 
         assertEquals(1, queuedCallbacks)
-        val replacementWrite = database.pendingWriteDao().pendingWrites().single()
+        val replacementWrite = database.pendingWriteDao().pendingWrites(ACCOUNT_ID).single()
         assertTrue(result.clientWriteId != replacementWrite.clientWriteId)
         assertEquals(
             replacementWrite.clientWriteId,
@@ -358,13 +398,13 @@ class MedtrackRepositoryTest {
         assertEquals(
             SyncResolutionStates.RETRY_QUEUED,
             SyncRecoveryJson.decode(
-                database.syncConflictDao().conflictById(result.clientWriteId)?.serverPayloadJson,
+                database.syncConflictDao().conflictById(ACCOUNT_ID, result.clientWriteId)?.serverPayloadJson,
             )?.resolutionState,
         )
         assertEquals(
             replacementWrite.clientWriteId,
             SyncRecoveryJson.decode(
-                database.syncConflictDao().conflictById(result.clientWriteId)?.serverPayloadJson,
+                database.syncConflictDao().conflictById(ACCOUNT_ID, result.clientWriteId)?.serverPayloadJson,
             )?.replacementClientWriteId,
         )
     }
@@ -373,6 +413,7 @@ class MedtrackRepositoryTest {
     fun casePatchContainsOnlyUserChangedFieldsAndPreservesSurgeryDone() {
         val baseline = CaseEditCaseDto(
             id = 42,
+            baseUpdatedAt = "2026-08-29T18:00:00Z",
             patientMode = "existing",
             category = 2,
             diagnosis = "Original diagnosis",
@@ -392,6 +433,8 @@ class MedtrackRepositoryTest {
         val request = input.toUpdateRequestDto("case-edit-test", baseline)
 
         assertEquals(PatchField.Value("Updated diagnosis"), request.diagnosis)
+        assertEquals("2026-08-29T18:00:00Z", request.baseUpdatedAt)
+        assertEquals(mapOf("diagnosis" to "Original diagnosis", "notes" to "Clear this note"), request.baseValues)
         assertEquals(PatchField.Value("case-edit-test"), request.clientWriteId)
         assertEquals(PatchField.Omitted, request.surgeryDone)
         assertEquals(PatchField.Omitted, request.highRisk)
@@ -406,7 +449,7 @@ class MedtrackRepositoryTest {
     @Test
     fun discardSyncIssueKeepsLocalResolutionEvidence() = runTest {
         val api = FakeMedtrackApi(addVitalsError = conflictError("Vitals conflict."))
-        val repository = MedtrackRepository(api = api, database = database)
+        val repository = repository(api)
         val result = repository.addVitals(
             caseId = "42",
             bpSystolic = 120,
@@ -420,7 +463,7 @@ class MedtrackRepositoryTest {
         repository.discardSyncConflict(result.clientWriteId)
 
         assertTrue(repository.syncConflicts.first().isEmpty())
-        val retained = database.syncConflictDao().conflictById(result.clientWriteId)
+        val retained = database.syncConflictDao().conflictById(ACCOUNT_ID, result.clientWriteId)
         assertNotNull(retained)
         assertEquals(
             SyncResolutionStates.DISCARDED,
@@ -431,6 +474,7 @@ class MedtrackRepositoryTest {
     @Test
     fun discardSyncIssueRestoresOptimisticTaskFromDurableRollbackPayload() = runTest {
         val originalTask = TaskEntity(
+            ownerAccountId = ACCOUNT_ID,
             id = "7",
             caseId = "42",
             title = "Follow-up",
@@ -449,6 +493,7 @@ class MedtrackRepositoryTest {
         )
         database.syncConflictDao().upsertConflict(
             com.naveenhospital.medtrack.core.data.local.SyncConflictEntity(
+                ownerAccountId = ACCOUNT_ID,
                 clientWriteId = "discard-task",
                 writeType = PendingWriteTypes.TASK_COMPLETE,
                 caseId = "42",
@@ -463,11 +508,11 @@ class MedtrackRepositoryTest {
                 createdAtMillis = 2L,
             ),
         )
-        val repository = MedtrackRepository(api = FakeMedtrackApi(), database = database)
+        val repository = repository(FakeMedtrackApi())
 
         repository.discardSyncConflict("discard-task")
 
-        val restored = database.taskDao().taskById("7")
+        val restored = database.taskDao().taskById(ACCOUNT_ID, "7")
         assertEquals("PENDING", restored?.status)
         assertEquals(true, restored?.canComplete)
     }
@@ -757,6 +802,7 @@ private class FakeMedtrackApi(
         results = emptyList(),
     ),
     private val patientSearchResponses: Map<String?, PatientSearchResponseDto> = emptyMap(),
+    private val caseSearchResponses: Map<String?, CaseSearchResponseDto> = emptyMap(),
     private val categoriesError: Throwable? = null,
     private val registerPushError: Throwable? = null,
     private val notificationReadError: Throwable? = null,
@@ -765,6 +811,7 @@ private class FakeMedtrackApi(
     private val addVitalsError: Throwable? = null,
 ) : MedtrackApi {
     val patientSearchRequests = mutableListOf<PatientSearchRequestDto>()
+    val caseSearchRequests = mutableListOf<CaseSearchRequestDto>()
     var categoryCalls = 0
         private set
     var notificationReadCalls = 0
@@ -794,12 +841,20 @@ private class FakeMedtrackApi(
         scopeContext: String?,
         categories: List<String>?,
         subcategories: List<String>?,
-        query: String?,
         page: Int?,
     ): CaseListResponseDto {
         lastListCasesAssignedTo = assignedTo
         lastListCasesScopeContext = scopeContext
         return caseListResponse
+    }
+
+    override suspend fun searchCases(request: CaseSearchRequestDto): CaseSearchResponseDto {
+        caseSearchRequests += request
+        return caseSearchResponses[request.cursor] ?: CaseSearchResponseDto(
+            nextCursor = null,
+            stats = caseListResponse.stats,
+            results = caseListResponse.results,
+        )
     }
 
     override suspend fun caseDetail(caseId: String): CaseDetailDto = unused()
@@ -855,6 +910,7 @@ private class FakeMedtrackApi(
                 spo2 = request.spo2,
                 weightKg = request.weightKg,
                 hemoglobin = request.hemoglobin,
+                updatedAt = "2026-08-29T18:00:00Z",
             ),
             case = sampleCaseSummary(),
         )
@@ -902,5 +958,6 @@ private class FakeMedtrackApi(
             status = "COMPLETED",
             statusLabel = "Completed",
             canComplete = false,
+            updatedAt = "2026-08-29T18:00:00Z",
         )
 }

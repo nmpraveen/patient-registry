@@ -77,6 +77,8 @@ import com.naveenhospital.medtrack.core.network.model.PatientLookupDto
 import com.naveenhospital.medtrack.core.network.model.PatientSearchRequestDto
 import com.naveenhospital.medtrack.core.network.model.PatchField
 import com.naveenhospital.medtrack.core.network.model.CaseListResponseDto
+import com.naveenhospital.medtrack.core.network.model.CaseSearchRequestDto
+import com.naveenhospital.medtrack.core.network.model.CaseSearchResponseDto
 import com.naveenhospital.medtrack.core.network.model.CaseStatsDto
 import com.naveenhospital.medtrack.core.network.model.CaseSummaryDto
 import com.naveenhospital.medtrack.core.network.model.CaseSubcategoryDto
@@ -150,8 +152,11 @@ class MedtrackRepository(
     private val _hasMoreCases = MutableStateFlow(false)
     val hasMoreCases: StateFlow<Boolean> = _hasMoreCases
     private var nextCasePage: Int? = null
+    private var nextCaseCursor: String? = null
     private var activeCaseListKey: String = ""
     private val caseEditBaselines = ConcurrentHashMap<String, CaseEditCaseDto>()
+    private val taskEditBaselines = ConcurrentHashMap<String, TaskDto>()
+    private val vitalEditBaselines = ConcurrentHashMap<String, VitalDto>()
     private val caseCreateErrorAdapter =
         Moshi.Builder().add(KotlinJsonAdapterFactory()).build().adapter(CaseCreateErrorDto::class.java)
 
@@ -188,8 +193,11 @@ class MedtrackRepository(
         _vitalsThresholds.value = null
         _hasMoreCases.value = false
         nextCasePage = null
+        nextCaseCursor = null
         activeCaseListKey = ""
         caseEditBaselines.clear()
+        taskEditBaselines.clear()
+        vitalEditBaselines.clear()
     }
 
     private fun activeSession(): AccountSession {
@@ -314,25 +322,52 @@ class MedtrackRepository(
         database.caseStatsDao().statsForKey(session.ownerAccountId, activeCaseListKey)?.let { cachedStats ->
             _stats.value = cachedStats.toDomain()
         }
-        val response = session.api.listCases(
-            bucket = bucket ?: "all",
-            query = query?.takeIf { it.isNotBlank() },
-            assignedTo = assignedTo,
-            scopeContext = scopeContext,
-            categories = categories.takeIf { it.isNotEmpty() },
-            subcategories = subcategories.takeIf { it.isNotEmpty() },
-            page = 1,
-        )
+        val normalizedQuery = query?.trim()?.takeIf { it.isNotEmpty() }
+        val page = if (normalizedQuery == null) {
+            val response = session.api.listCases(
+                bucket = bucket ?: "all",
+                assignedTo = assignedTo,
+                scopeContext = scopeContext,
+                categories = categories.takeIf { it.isNotEmpty() },
+                subcategories = subcategories.takeIf { it.isNotEmpty() },
+                page = 1,
+            )
+            CasePage(
+                results = response.results,
+                stats = response.stats,
+                nextPage = response.nextPageAfter(1),
+            )
+        } else {
+            require(normalizedQuery.length in 3..80) { "Case search requires 3 to 80 characters." }
+            val response = session.api.searchCases(
+                CaseSearchRequestDto(
+                    query = normalizedQuery,
+                    pageSize = CASE_PAGE_SIZE,
+                    bucket = bucket ?: "all",
+                    assignedTo = assignedTo,
+                    scopeContext = scopeContext.orEmpty(),
+                    category = categories,
+                    subcategory = subcategories,
+                ),
+            )
+            CasePage(
+                results = response.results,
+                stats = response.stats,
+                nextCursor = response.nextCursor,
+            )
+        }
+        requireStillActive(session)
         commitAccountMutation(session) {
             database.caseDao().clearCases(session.ownerAccountId)
-            database.caseDao().upsertCases(response.results.map { it.toEntity(session.ownerAccountId) })
-            database.caseStatsDao().upsertStats(response.stats.toEntity(session.ownerAccountId, activeCaseListKey))
+            database.caseDao().upsertCases(page.results.map { it.toEntity(session.ownerAccountId) })
+            database.caseStatsDao().upsertStats(page.stats.toEntity(session.ownerAccountId, activeCaseListKey))
             markCacheFresh(session.ownerAccountId, caseListCacheKey(bucket, query, assignedTo, scopeContext, categories, subcategories))
         }
         requireStillActive(session)
-        _stats.value = response.stats.toDomain()
-        nextCasePage = response.nextPageAfter(1)
-        _hasMoreCases.value = nextCasePage != null
+        _stats.value = page.stats.toDomain()
+        nextCasePage = page.nextPage
+        nextCaseCursor = page.nextCursor
+        _hasMoreCases.value = page.nextPage != null || page.nextCursor != null
     }
 
     suspend fun loadNextCases(
@@ -356,24 +391,55 @@ class MedtrackRepository(
             )
             return
         }
-        val page = nextCasePage ?: return
-        val response = session.api.listCases(
-            bucket = bucket ?: "all",
-            query = query?.takeIf { it.isNotBlank() },
-            assignedTo = assignedTo,
-            scopeContext = scopeContext,
-            categories = categories.takeIf { it.isNotEmpty() },
-            subcategories = subcategories.takeIf { it.isNotEmpty() },
-            page = page,
-        )
-        commitAccountMutation(session) {
-            database.caseDao().upsertCases(response.results.map { it.toEntity(session.ownerAccountId) })
-            database.caseStatsDao().upsertStats(response.stats.toEntity(session.ownerAccountId, requestedKey))
+        val normalizedQuery = query?.trim()?.takeIf { it.isNotEmpty() }
+        val page = if (normalizedQuery == null) {
+            val pageNumber = nextCasePage ?: return
+            val response = session.api.listCases(
+                bucket = bucket ?: "all",
+                assignedTo = assignedTo,
+                scopeContext = scopeContext,
+                categories = categories.takeIf { it.isNotEmpty() },
+                subcategories = subcategories.takeIf { it.isNotEmpty() },
+                page = pageNumber,
+            )
+            CasePage(
+                results = response.results,
+                stats = response.stats,
+                nextPage = response.nextPageAfter(pageNumber),
+            )
+        } else {
+            val cursor = nextCaseCursor ?: return
+            val result = session.api.searchCasesResettingInvalidCursor(
+                CaseSearchRequestDto(
+                    query = normalizedQuery,
+                    pageSize = CASE_PAGE_SIZE,
+                    cursor = cursor,
+                    bucket = bucket ?: "all",
+                    assignedTo = assignedTo,
+                    scopeContext = scopeContext.orEmpty(),
+                    category = categories,
+                    subcategory = subcategories,
+                ),
+                beforeReset = { requireStillActive(session) },
+            )
+            CasePage(
+                results = result.response.results,
+                stats = result.response.stats,
+                nextCursor = result.response.nextCursor,
+                cursorReset = result.cursorReset,
+            )
         }
         requireStillActive(session)
-        _stats.value = response.stats.toDomain()
-        nextCasePage = response.nextPageAfter(page)
-        _hasMoreCases.value = nextCasePage != null
+        commitAccountMutation(session) {
+            if (page.cursorReset) database.caseDao().clearCases(session.ownerAccountId)
+            database.caseDao().upsertCases(page.results.map { it.toEntity(session.ownerAccountId) })
+            database.caseStatsDao().upsertStats(page.stats.toEntity(session.ownerAccountId, requestedKey))
+        }
+        requireStillActive(session)
+        _stats.value = page.stats.toDomain()
+        nextCasePage = page.nextPage
+        nextCaseCursor = page.nextCursor
+        _hasMoreCases.value = page.nextPage != null || page.nextCursor != null
     }
 
     suspend fun loadCaseFormMetadata(): CaseFormMetadata {
@@ -394,14 +460,20 @@ class MedtrackRepository(
         while (true) {
             requestCount += 1
             check(requestCount <= MAX_PATIENT_SEARCH_PAGES) { "Patient search pagination exceeded the safety limit." }
-            val response = session.api.searchPatients(
+            val page = session.api.searchPatientsResettingInvalidCursor(
                 PatientSearchRequestDto(
                     query = normalizedQuery,
                     pageSize = PATIENT_SEARCH_PAGE_SIZE,
                     cursor = cursor,
                 ),
+                beforeReset = { requireStillActive(session) },
             )
+            val response = page.response
             requireStillActive(session)
+            if (page.cursorReset) {
+                resultsById.clear()
+                seenCursors.clear()
+            }
             response.results.forEach { patient -> resultsById[patient.id] = patient.toDomain() }
             val nextCursor = response.nextCursor?.takeIf { it.isNotBlank() } ?: break
             check(nextCursor != cursor && seenCursors.add(nextCursor)) { "Patient search cursor repeated." }
@@ -506,23 +578,43 @@ class MedtrackRepository(
 
     suspend fun updateTask(taskId: String, caseId: String, input: TaskEditInput): TaskWriteOutcome {
         val session = activeSession()
-        val assignedUserValue = when {
-            input.assignedUserId != null -> input.assignedUserId.toString()
-            input.clearAssignee -> "" // explicit unassign
-            else -> null // omitted -> server keeps current assignee
+        val baseline = taskEditBaselines[taskId]
+            ?: return TaskWriteOutcome.Failure(
+                "Task edit must be refreshed before saving. No changes were sent.",
+            )
+        val title = changedOptional(input.title, baseline.title)
+        val dueDate = changedOptional(input.dueDate, baseline.dueDate)
+        val status = changedOptional(input.status, baseline.status)
+        val taskType = changedOptional(input.taskType, baseline.taskType)
+        val assignedUser = when {
+            input.clearAssignee && baseline.assignedUserId != null -> PatchField.Value(null)
+            input.assignedUserId != null && input.assignedUserId != baseline.assignedUserId -> {
+                PatchField.Value(input.assignedUserId)
+            }
+            else -> PatchField.Omitted
         }
         val request = UpdateTaskRequestDto(
-            title = input.title,
-            dueDate = input.dueDate,
-            status = input.status,
-            taskType = input.taskType,
-            assignedUser = assignedUserValue,
+            baseUpdatedAt = baseline.updatedAt,
+            baseValues = buildMap {
+                putBaseline("title", title, baseline.title)
+                putBaseline("due_date", dueDate, baseline.dueDate)
+                putBaseline("status", status, baseline.status)
+                putBaseline("task_type", taskType, baseline.taskType)
+                putBaseline("assigned_user", assignedUser, baseline.assignedUserId)
+            },
+            title = title,
+            dueDate = dueDate,
+            status = status,
+            taskType = taskType,
+            assignedUser = assignedUser,
+            clientWriteId = newClientWriteId("task-edit"),
         )
         return runCatching {
             val response = session.api.updateTask(taskId, request)
             commitAccountMutation(session) {
                 database.caseDao().upsertCase(response.case.toEntity(session.ownerAccountId))
                 database.taskDao().upsertTask(response.task.toEntity(session.ownerAccountId, caseId))
+                taskEditBaselines[taskId] = response.task
             }
             TaskWriteOutcome.Success(response.message)
         }.getOrElse { throwable ->
@@ -557,19 +649,40 @@ class MedtrackRepository(
         hemoglobin: String?,
     ): VitalsWriteOutcome {
         val session = activeSession()
+        val baseline = vitalEditBaselines[vitalId]
+            ?: return VitalsWriteOutcome.Failure(
+                "Vitals edit must be refreshed before saving. No changes were sent.",
+            )
+        val systolicPatch = changed(bpSystolic, baseline.bpSystolic)
+        val diastolicPatch = changed(bpDiastolic, baseline.bpDiastolic)
+        val pulsePatch = changed(pulse, baseline.pr)
+        val spo2Patch = changed(spo2, baseline.spo2)
+        val weightPatch = changedText(weightKg, baseline.weightKg)
+        val hemoglobinPatch = changedText(hemoglobin, baseline.hemoglobin)
         val request = VitalsUpdateRequestDto(
-            bpSystolic = bpSystolic,
-            bpDiastolic = bpDiastolic,
-            pr = pulse,
-            spo2 = spo2,
-            weightKg = weightKg,
-            hemoglobin = hemoglobin,
+            baseUpdatedAt = baseline.updatedAt,
+            baseValues = buildMap {
+                putBaseline("bp_systolic", systolicPatch, baseline.bpSystolic)
+                putBaseline("bp_diastolic", diastolicPatch, baseline.bpDiastolic)
+                putBaseline("pr", pulsePatch, baseline.pr)
+                putBaseline("spo2", spo2Patch, baseline.spo2)
+                putBaseline("weight_kg", weightPatch, baseline.weightKg)
+                putBaseline("hemoglobin", hemoglobinPatch, baseline.hemoglobin)
+            },
+            bpSystolic = systolicPatch,
+            bpDiastolic = diastolicPatch,
+            pr = pulsePatch,
+            spo2 = spo2Patch,
+            weightKg = weightPatch,
+            hemoglobin = hemoglobinPatch,
+            clientWriteId = newClientWriteId("vitals-edit"),
         )
         return runCatching {
             val response = session.api.updateVitals(vitalId, request)
             commitAccountMutation(session) {
                 database.caseDao().upsertCase(response.case.toEntity(session.ownerAccountId))
                 database.vitalDao().upsertVital(response.vital.toEntity(session.ownerAccountId, caseId))
+                vitalEditBaselines[vitalId] = response.vital
             }
             VitalsWriteOutcome.Success(response.message)
         }.getOrElse { throwable ->
@@ -644,6 +757,8 @@ class MedtrackRepository(
             database.taskDao().upsertTasks(response.tasks.map { it.toEntity(session.ownerAccountId, caseId) })
             database.vitalDao().clearVitalsForCase(session.ownerAccountId, caseId)
             database.vitalDao().upsertVitals(response.vitals.map { it.toEntity(session.ownerAccountId, caseId) })
+            response.tasks.forEach { task -> taskEditBaselines[task.id.toString()] = task }
+            response.vitals.forEach { vital -> vitalEditBaselines[vital.id.toString()] = vital }
             markCacheFresh(session.ownerAccountId, caseDetailCacheKey(caseId))
         }
     }
@@ -1092,6 +1207,47 @@ class MedtrackRepository(
     }
 }
 
+private data class CasePage(
+    val results: List<CaseSummaryDto>,
+    val stats: CaseStatsDto,
+    val nextPage: Int? = null,
+    val nextCursor: String? = null,
+    val cursorReset: Boolean = false,
+)
+
+private data class CursorResetResult<T>(
+    val response: T,
+    val cursorReset: Boolean,
+)
+
+private suspend fun MedtrackApi.searchCasesResettingInvalidCursor(
+    request: CaseSearchRequestDto,
+    beforeReset: () -> Unit = {},
+): CursorResetResult<CaseSearchResponseDto> = try {
+    CursorResetResult(searchCases(request), cursorReset = false)
+} catch (error: HttpException) {
+    if (request.cursor == null || !error.isInvalidCursorResponse()) throw error
+    beforeReset()
+    CursorResetResult(searchCases(request.copy(cursor = null)), cursorReset = true)
+}
+
+private suspend fun MedtrackApi.searchPatientsResettingInvalidCursor(
+    request: PatientSearchRequestDto,
+    beforeReset: () -> Unit = {},
+): CursorResetResult<com.naveenhospital.medtrack.core.network.model.PatientSearchResponseDto> = try {
+    CursorResetResult(searchPatients(request), cursorReset = false)
+} catch (error: HttpException) {
+    if (request.cursor == null || !error.isInvalidCursorResponse()) throw error
+    beforeReset()
+    CursorResetResult(searchPatients(request.copy(cursor = null)), cursorReset = true)
+}
+
+private fun HttpException.isInvalidCursorResponse(): Boolean {
+    if (code() != 400) return false
+    val body = response()?.errorBody()?.string().orEmpty()
+    return body.contains("\"code\"") && body.contains("\"invalid_cursor\"")
+}
+
 @OptIn(ExperimentalPagingApi::class)
 private class CaseRemoteMediator(
     private val ownerAccountId: String,
@@ -1109,37 +1265,80 @@ private class CaseRemoteMediator(
     private val isAccountActive: () -> Boolean,
 ) : RemoteMediator<Int, CaseEntity>() {
     private var nextPage: Int? = 1
+    private var nextCursor: String? = null
+    private var searchStarted = false
 
     override suspend fun load(loadType: LoadType, state: PagingState<Int, CaseEntity>): MediatorResult {
-        val page = when (loadType) {
-            LoadType.REFRESH -> 1
-            LoadType.PREPEND -> return MediatorResult.Success(endOfPaginationReached = true)
-            LoadType.APPEND -> nextPage ?: return MediatorResult.Success(endOfPaginationReached = true)
+        if (loadType == LoadType.PREPEND) {
+            return MediatorResult.Success(endOfPaginationReached = true)
         }
+        val normalizedQuery = query?.trim()?.takeIf { it.isNotEmpty() }
 
         return runCatching {
-            val response = api.listCases(
-                bucket = bucket ?: "all",
-                query = query?.takeIf { it.isNotBlank() },
-                assignedTo = assignedTo,
-                scopeContext = scopeContext,
-                categories = categories.takeIf { it.isNotEmpty() },
-                subcategories = subcategories.takeIf { it.isNotEmpty() },
-                page = page,
-            )
+            val page = if (normalizedQuery == null) {
+                val pageNumber = when (loadType) {
+                    LoadType.REFRESH -> 1
+                    LoadType.APPEND -> nextPage
+                        ?: return@runCatching MediatorResult.Success(endOfPaginationReached = true)
+                    LoadType.PREPEND -> error("Handled above")
+                }
+                val response = api.listCases(
+                    bucket = bucket ?: "all",
+                    assignedTo = assignedTo,
+                    scopeContext = scopeContext,
+                    categories = categories.takeIf { it.isNotEmpty() },
+                    subcategories = subcategories.takeIf { it.isNotEmpty() },
+                    page = pageNumber,
+                )
+                CasePage(
+                    results = response.results,
+                    stats = response.stats,
+                    nextPage = response.nextPageAfter(pageNumber),
+                )
+            } else {
+                require(normalizedQuery.length in 3..80) { "Case search requires 3 to 80 characters." }
+                val cursor = when (loadType) {
+                    LoadType.REFRESH -> null
+                    LoadType.APPEND -> {
+                        if (searchStarted && nextCursor == null) {
+                            return@runCatching MediatorResult.Success(endOfPaginationReached = true)
+                        }
+                        nextCursor
+                    }
+                    LoadType.PREPEND -> error("Handled above")
+                }
+                val result = api.searchCasesResettingInvalidCursor(
+                    CaseSearchRequestDto(
+                        query = normalizedQuery,
+                        pageSize = CASE_PAGE_SIZE,
+                        cursor = cursor,
+                        bucket = bucket ?: "all",
+                        assignedTo = assignedTo,
+                        scopeContext = scopeContext.orEmpty(),
+                        category = categories,
+                        subcategory = subcategories,
+                    ),
+                    beforeReset = { check(isAccountActive()) { "The authenticated MEDTRACK account changed." } },
+                )
+                CasePage(
+                    results = result.response.results,
+                    stats = result.response.stats,
+                    nextCursor = result.response.nextCursor,
+                    cursorReset = result.cursorReset,
+                )
+            }
             val updatedAtMillis = System.currentTimeMillis()
-            val upcomingPage = response.nextPageAfter(page)
 
             database.commitForAccount(
                 ownerAccountId = ownerAccountId,
                 generation = accountGeneration,
                 isLocallyActive = isAccountActive,
             ) {
-                if (loadType == LoadType.REFRESH) {
+                if (loadType == LoadType.REFRESH || page.cursorReset) {
                     database.caseDao().clearCases(ownerAccountId)
                 }
-                database.caseDao().upsertCases(response.results.map { it.toEntity(ownerAccountId) })
-                database.caseStatsDao().upsertStats(response.stats.toEntity(ownerAccountId, cacheKey))
+                database.caseDao().upsertCases(page.results.map { it.toEntity(ownerAccountId) })
+                database.caseStatsDao().upsertStats(page.stats.toEntity(ownerAccountId, cacheKey))
                 database.cacheMetadataDao().upsertMetadata(
                     CacheMetadataEntity(
                         ownerAccountId = ownerAccountId,
@@ -1149,9 +1348,13 @@ private class CaseRemoteMediator(
                 )
             }
 
-            nextPage = upcomingPage
-            onStats(response.stats.toDomain())
-            MediatorResult.Success(endOfPaginationReached = upcomingPage == null)
+            nextPage = page.nextPage
+            nextCursor = page.nextCursor
+            searchStarted = normalizedQuery != null
+            onStats(page.stats.toDomain())
+            MediatorResult.Success(
+                endOfPaginationReached = page.nextPage == null && page.nextCursor == null,
+            )
         }.getOrElse { error ->
             MediatorResult.Error(error)
         }
@@ -1249,6 +1452,8 @@ internal fun NewCaseInput.toUpdateRequestDto(
     clientWriteId: String,
     baseline: CaseEditCaseDto,
 ): UpdateCaseRequestDto = UpdateCaseRequestDto(
+    baseUpdatedAt = baseline.baseUpdatedAt,
+    baseValues = emptyMap(),
     patientMode = changed(patientMode, baseline.patientMode),
     selectedPatient = changed(selectedPatientId, baseline.selectedPatient),
     useTemporaryUhid = changed(useTemporaryUhid, baseline.useTemporaryUhid),
@@ -1289,13 +1494,69 @@ internal fun NewCaseInput.toUpdateRequestDto(
     ftnd = changed(ftnd, baseline.ftnd),
     lscs = changed(lscs, baseline.lscs),
     clientWriteId = PatchField.Value(clientWriteId),
-)
+).withBaseValues(baseline)
+
+private fun UpdateCaseRequestDto.withBaseValues(baseline: CaseEditCaseDto): UpdateCaseRequestDto =
+    copy(
+        baseValues = buildMap {
+            putBaseline("patient_mode", patientMode, baseline.patientMode)
+            putBaseline("selected_patient", selectedPatient, baseline.selectedPatient)
+            putBaseline("use_temporary_uhid", useTemporaryUhid, baseline.useTemporaryUhid)
+            putBaseline("uhid", uhid, baseline.uhid)
+            putBaseline("prefix", prefix, baseline.prefix)
+            putBaseline("first_name", firstName, baseline.firstName)
+            putBaseline("last_name", lastName, baseline.lastName)
+            putBaseline("gender", gender, baseline.gender)
+            putBaseline("blood_group", bloodGroup, baseline.bloodGroup)
+            putBaseline("date_of_birth", dateOfBirth, baseline.dateOfBirth)
+            putBaseline("place", place, baseline.place)
+            putBaseline("age", age, baseline.age)
+            putBaseline("phone_number", phoneNumber, baseline.phoneNumber)
+            putBaseline("alternate_phone_number", alternatePhoneNumber, baseline.alternatePhoneNumber)
+            putBaseline("category", category, baseline.category)
+            putBaseline("subcategory", subcategory, baseline.subcategory)
+            putBaseline("status", status, baseline.status)
+            putBaseline("diagnosis", diagnosis, baseline.diagnosis)
+            putBaseline("referred_by", referredBy, baseline.referredBy)
+            putBaseline("notes", notes, baseline.notes)
+            putBaseline("high_risk", highRisk, baseline.highRisk)
+            putBaseline("ncd_flags", ncdFlags, baseline.ncdFlags)
+            putBaseline("anc_high_risk_reasons", ancHighRiskReasons, baseline.ancHighRiskReasons)
+            putBaseline("rch_number", rchNumber, baseline.rchNumber)
+            putBaseline("rch_bypass", rchBypass, baseline.rchBypass)
+            putBaseline("lmp", lmp, baseline.lmp)
+            putBaseline("edd", edd, baseline.edd)
+            putBaseline("usg_edd", usgEdd, baseline.usgEdd)
+            putBaseline("surgical_pathway", surgicalPathway, baseline.surgicalPathway)
+            putBaseline("surgery_done", surgeryDone, baseline.surgeryDone)
+            putBaseline("surgery_date", surgeryDate, baseline.surgeryDate)
+            putBaseline("review_frequency", reviewFrequency, baseline.reviewFrequency)
+            putBaseline("review_date", reviewDate, baseline.reviewDate)
+            putBaseline("gravida", gravida, baseline.gravida)
+            putBaseline("para", para, baseline.para)
+            putBaseline("abortions", abortions, baseline.abortions)
+            putBaseline("living", living, baseline.living)
+            putBaseline("ftnd", ftnd, baseline.ftnd)
+            putBaseline("lscs", lscs, baseline.lscs)
+        },
+    )
 
 private fun <T> changed(current: T?, baseline: T?): PatchField<T> =
     if (current == baseline) PatchField.Omitted else PatchField.Value(current)
 
+private fun <T> changedOptional(current: T?, baseline: T?): PatchField<T> =
+    if (current == null || current == baseline) PatchField.Omitted else PatchField.Value(current)
+
 private fun changedText(current: String?, baseline: String?): PatchField<String> =
     if (current == baseline) PatchField.Omitted else PatchField.Value(current?.takeIf { it.isNotBlank() })
+
+private fun MutableMap<String, Any?>.putBaseline(
+    fieldName: String,
+    patch: PatchField<*>,
+    baselineValue: Any?,
+) {
+    if (patch is PatchField.Value) put(fieldName, baselineValue)
+}
 
 private fun CaseEditFormDto.toDomain(): CaseEditPrefill {
     val metadata = CaseFormMetadata(

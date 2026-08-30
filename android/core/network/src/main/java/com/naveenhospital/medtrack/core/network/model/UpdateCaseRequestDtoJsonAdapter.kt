@@ -10,11 +10,16 @@ import java.lang.reflect.Type
 /** Writes only present PATCH fields while preserving an explicit null value. */
 object UpdateCaseRequestDtoJsonAdapterFactory : JsonAdapter.Factory {
     override fun create(type: Type, annotations: Set<Annotation>, moshi: Moshi): JsonAdapter<*>? {
-        if (annotations.isNotEmpty() || Types.getRawType(type) != UpdateCaseRequestDto::class.java) return null
-        return Adapter
+        if (annotations.isNotEmpty()) return null
+        return when (Types.getRawType(type)) {
+            UpdateCaseRequestDto::class.java -> CaseAdapter
+            UpdateTaskRequestDto::class.java -> TaskAdapter
+            VitalsUpdateRequestDto::class.java -> VitalsAdapter
+            else -> null
+        }
     }
 
-    private object Adapter : JsonAdapter<UpdateCaseRequestDto>() {
+    private object CaseAdapter : JsonAdapter<UpdateCaseRequestDto>() {
         override fun fromJson(reader: JsonReader): UpdateCaseRequestDto {
             throw UnsupportedOperationException("UpdateCaseRequestDto is request-only.")
         }
@@ -22,6 +27,7 @@ object UpdateCaseRequestDtoJsonAdapterFactory : JsonAdapter.Factory {
         override fun toJson(writer: JsonWriter, value: UpdateCaseRequestDto?) {
             requireNotNull(value) { "UpdateCaseRequestDto must not be null." }
             writer.beginObject()
+            writer.optimisticControl(value.baseUpdatedAt, value.baseValues)
             writer.patch("patient_mode", value.patientMode)
             writer.patch("selected_patient", value.selectedPatient)
             writer.patch("use_temporary_uhid", value.useTemporaryUhid)
@@ -65,6 +71,51 @@ object UpdateCaseRequestDtoJsonAdapterFactory : JsonAdapter.Factory {
             writer.endObject()
         }
     }
+
+    private object TaskAdapter : JsonAdapter<UpdateTaskRequestDto>() {
+        override fun fromJson(reader: JsonReader): UpdateTaskRequestDto {
+            throw UnsupportedOperationException("UpdateTaskRequestDto is request-only.")
+        }
+
+        override fun toJson(writer: JsonWriter, value: UpdateTaskRequestDto?) {
+            requireNotNull(value) { "UpdateTaskRequestDto must not be null." }
+            writer.beginObject()
+            writer.optimisticControl(value.baseUpdatedAt, value.baseValues)
+            writer.patch("title", value.title)
+            writer.patch("due_date", value.dueDate)
+            writer.patch("status", value.status)
+            writer.patch("task_type", value.taskType)
+            writer.patch("assigned_user", value.assignedUser)
+            writer.name("client_write_id").value(value.clientWriteId)
+            writer.endObject()
+        }
+    }
+
+    private object VitalsAdapter : JsonAdapter<VitalsUpdateRequestDto>() {
+        override fun fromJson(reader: JsonReader): VitalsUpdateRequestDto {
+            throw UnsupportedOperationException("VitalsUpdateRequestDto is request-only.")
+        }
+
+        override fun toJson(writer: JsonWriter, value: VitalsUpdateRequestDto?) {
+            requireNotNull(value) { "VitalsUpdateRequestDto must not be null." }
+            writer.beginObject()
+            writer.optimisticControl(value.baseUpdatedAt, value.baseValues)
+            writer.patch("recorded_at", value.recordedAt)
+            writer.patch("bp_systolic", value.bpSystolic)
+            writer.patch("bp_diastolic", value.bpDiastolic)
+            writer.patch("pr", value.pr)
+            writer.patch("spo2", value.spo2)
+            writer.patch("weight_kg", value.weightKg)
+            writer.patch("hemoglobin", value.hemoglobin)
+            writer.name("client_write_id").value(value.clientWriteId)
+            writer.endObject()
+        }
+    }
+}
+
+private fun JsonWriter.optimisticControl(baseUpdatedAt: String, baseValues: Map<String, Any?>) {
+    name("base_updated_at").value(baseUpdatedAt)
+    name("base_values").jsonValue(baseValues)
 }
 
 private fun JsonWriter.patch(name: String, field: PatchField<*>) {

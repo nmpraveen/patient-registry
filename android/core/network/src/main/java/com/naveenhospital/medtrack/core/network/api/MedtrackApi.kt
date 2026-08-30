@@ -8,6 +8,8 @@ import com.naveenhospital.medtrack.core.network.model.CaseDetailDto
 import com.naveenhospital.medtrack.core.network.model.CaseEditFormDto
 import com.naveenhospital.medtrack.core.network.model.CaseFormMetadataDto
 import com.naveenhospital.medtrack.core.network.model.CaseListResponseDto
+import com.naveenhospital.medtrack.core.network.model.CaseSearchRequestDto
+import com.naveenhospital.medtrack.core.network.model.CaseSearchResponseDto
 import com.naveenhospital.medtrack.core.network.model.CaseUpdateResponseDto
 import com.naveenhospital.medtrack.core.network.model.ClientWriteRequestDto
 import com.naveenhospital.medtrack.core.network.model.CreateCaseRequestDto
@@ -59,9 +61,11 @@ interface MedtrackApi {
         @Query("scope_context") scopeContext: String? = null,
         @Query("category") categories: List<String>? = null,
         @Query("subcategory") subcategories: List<String>? = null,
-        @Query("q") query: String? = null,
         @Query("page") page: Int? = null,
     ): CaseListResponseDto
+
+    @POST("api/cases/search/")
+    suspend fun searchCases(@Body request: CaseSearchRequestDto): CaseSearchResponseDto
 
     @POST("api/cases/")
     suspend fun createCase(@Body request: CreateCaseRequestDto): CaseCreateResponseDto

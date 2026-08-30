@@ -413,9 +413,12 @@ private class FakeAuthApi(
         scopeContext: String?,
         categories: List<String>?,
         subcategories: List<String>?,
-        query: String?,
         page: Int?,
     ): CaseListResponseDto = unused()
+
+    override suspend fun searchCases(
+        request: com.naveenhospital.medtrack.core.network.model.CaseSearchRequestDto,
+    ): com.naveenhospital.medtrack.core.network.model.CaseSearchResponseDto = unused()
 
     override suspend fun caseDetail(caseId: String): CaseDetailDto = unused()
 
@@ -461,6 +464,11 @@ private fun userProfile(
         displayName = if (id == 1L) "Admin" else "Other",
         roles = listOf("Admin"),
         capabilities = emptyMap(),
+        dataScope = com.naveenhospital.medtrack.core.network.model.DataScopeDto(
+            caseDataScope = "ALL",
+            callQueue = true,
+            intakePatientLookup = true,
+        ),
     )
 
 private fun httpError(status: Int): HttpException =

@@ -49,7 +49,8 @@ internal data class OpaquePushPolicy(
 /**
  * FCM is only an opaque wake-up signal. Raw push data never reaches a system notification or
  * intent. Account/session authorization must be proven by the authenticated sync path; until the
- * account-security lane supplies that identity generation, display remains suppressed.
+ * the verified account/session-incarnation worker has fetched the authorized snapshot, display
+ * remains suppressed. Clinical content is never sourced from FCM or posted to the lock screen.
  */
 @Suppress("UNUSED_PARAMETER")
 internal fun policyForOpaquePush(

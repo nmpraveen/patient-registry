@@ -30,6 +30,7 @@ class PendingWritePayloadsTest {
     @Test
     fun taskCompletePayloadRetainsRollbackAndReissueRotatesIdempotencyIdentity() {
         val original = TaskEntity(
+            ownerAccountId = "1",
             id = "task-1",
             caseId = "case-1",
             title = "Review",

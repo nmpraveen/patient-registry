@@ -1,38 +1,25 @@
 # Android API Contract Coordination
 
-This lane is based on server commit
-`920357a58a69bd2e18ed03023a4273cd1493a066`, but its Android DTO tests pin the
-breaking replacement contract coordinated with API remediation lane 2 / PR
-#99. This document is intentionally separate from server implementation so the
-two pull requests can be rebased without overlapping source changes.
+The Android joins in this lane are pinned to the merged server contract in
+`origin/main` (API PR #99 plus Android security PR #102). The final branch is
+rebased on the exact main head recorded in the PR and its DTO tests reject
+field-name or transport drift.
 
 ## Authentication and device policy integration gate
 
-Backend PR #103 is still under amendment. Its target identity includes JWT
-access/refresh `auth_version` plus `/api/me` `data_scope`, rotating refresh
-tokens with replay handling, and an explicit approved-mobile-device policy for
-targeted accounts. Those DTOs and refresh/device tests are intentionally not
-guessed in this lane. Lane 4 owns account/auth/local-security implementation;
-lane 5 must be validated against PR #103's final exact head before integration.
+The merged account-security implementation owns this boundary. Android parses
+the required `/api/me.data_scope`, accepts targeted first login only as a strict
+HTTP 202 `PENDING` response, and keeps the one-time mobile device secret in its
+dedicated Keystore-backed credential store. An approved login is committed only
+when access and rotated refresh JWTs bind the same account and exact
+`mobile_device_id`. The FCM registration token remains a separate credential.
 
 ## Case partial edits
 
-At the base commit, the case edit-form response omits `surgery_done`, while the
-PATCH endpoint treats omitted Boolean form data as false. That combination can
-silently clear an existing surgery completion value when Android edits another
-field.
-
-Android now retains the edit-form baseline and uses a dedicated three-state
-update DTO: omitted, value, or explicit JSON null. It sends only fields changed
-by the user, while still allowing a nullable field to be deliberately cleared.
-Fields omitted by the server are therefore never converted from client defaults
-into destructive PATCH values.
-For Surgery cases it additionally refuses to send any update when the server
-did not provide `surgery_done`. This is a deliberate fail-closed compatibility
-gate; no guessed Boolean is submitted.
-
-The coordinated lane 2 contract provides all of the following; Android remains
-fail-closed until the amended PR #99 head is available for exact integration:
+Android retains the complete edit-form baseline and uses a three-state update
+DTO: omitted, value, or explicit JSON null. It sends only fields changed by the
+user and sends `base_updated_at` plus `base_values` for every touched field.
+The response contract requires an authoritative complete `editable_case`.
 
 1. The case edit-form payload includes an explicit, non-null
    `case.surgery_done` Boolean for Surgery cases.
@@ -41,22 +28,13 @@ fail-closed until the amended PR #99 head is available for exact integration:
    omission for nullable fields.
 3. PATCH returns `editable_case`, whose complete editable field set includes
    `surgery_done`, so the client can refresh from authoritative state.
-4. Server tests prove an unrelated partial edit cannot change
+4. Server and Android tests prove an unrelated partial edit cannot change
    `surgery_done`, patient date of birth, alternate phone, or any other omitted
    field.
 
-The contract test `ApiContractDtoTest` covers the legacy missing-field response,
-the coordinated response, and the authoritative `editable_case`. After lane 2
-merges, retain the three-state update DTO and fail-closed guard so a future schema
-regression cannot be converted to a destructive default.
-
-Lane 2's frozen local checkpoint
-`6e6f09dfda531fe3975e45b4cf29503a7cb791fa` additionally requires
-`base_updated_at` and `base_values` for every touched case/task/vital field.
-That SHA is not an integration head and is intentionally not rebased here.
-When PR #99 publishes its authorized final head, Android must add those
-optimistic-concurrency fields from the edit baseline and stop if the final DTO
-or conflict envelope differs instead of guessing.
+`ApiContractDtoTest` rejects an incomplete editable snapshot, pins omission
+versus explicit-null serialization, and verifies the optimistic baseline fields
+for case, task, and vital PATCH payloads.
 
 ## Notification snapshot reconciliation
 
@@ -66,16 +44,15 @@ Legacy `page` is invalid. The response is
 `dataset_epoch`, `next_cursor`, and authorized generic notification results,
 ordered by `created_at DESC, id DESC`. The cursor is filter-bound and preserves
 the first-page snapshot boundary. It is also bound to page size/order,
-actor/account/scope/auth version, filter identity, and epoch; any tampered,
-stale-auth, or mismatched cursor must return 400/403 and is never silently
-restarted by Android. Authorization is re-evaluated on every page.
+actor/account/scope/auth version, filter identity, and epoch. Authorization is
+re-evaluated on every page.
 
-Android requests 100 rows, follows `next_cursor` until null, rejects a repeated
-cursor or dataset-epoch change mid-traversal, deduplicates by opaque `event_id`,
-and atomically replaces the local snapshot only after traversal completes. This
-removes unseen stale/revoked rows without exposing a partial page. A changed
-dataset epoch also clears notification-read outbox entries in this lane; lane 4
-owns the broader account-qualified cache/outbox security-boundary reset.
+Android requests 100 rows, follows `next_cursor` until null, rejects repeated
+cursors, and deduplicates by opaque `event_id`. A known `invalid_cursor` or an
+epoch change discards the partial traversal and permits one restart from page
+one; a repeated reset fails closed. Only a terminal traversal atomically
+replaces the owner-qualified local snapshot and deletes unseen revoked rows. A
+changed epoch also clears that owner's notification-read outbox.
 
 `event_id` is the idempotent notification identity for traversal deduplication.
 Android preserves the server `created_at` value and does not synthesize a local
@@ -83,12 +60,9 @@ clinical timestamp. Raw FCM content is ignored for display and deep linking:
 the client posts no system notification and only accepts the exact data-only
 envelope `{"event_id":"<opaque UUID>"}` before queuing an authenticated API
 sync. It rejects missing/invalid UUIDs, extra data keys, and notification
-title/body payloads. The worker revalidates `/api/me` before
-clinical/notification reads. Lane 2 must keep the server push payload opaque,
-PHI-free, and data-only because an
-Android notification payload can bypass `FirebaseMessagingService` in the
-background. PR #103/lane 4 must bind `/api/me` identity/auth generation to the
-account-qualified database before any authorized display is reintroduced.
+title/body payloads. The account-qualified worker revalidates `/api/me` before
+clinical/notification reads and commits only for the same session incarnation
+and Room account generation. No clinical lock-screen notification is produced.
 
 ## Search transport privacy
 
@@ -101,22 +75,19 @@ Patient search is the breaking `POST /api/patients/` contract. Its JSON body is
 20), and optional opaque `cursor`. The response is `next_cursor` plus minimal
 `id`, `uhid`, and `name` results ordered by `uhid ASC, id ASC`. The cursor is
 bound to normalized query, query class, page size/order, actor/scope/auth
-version, and snapshot boundary. Invalid/tampered/stale-auth cursor use must fail
-closed with 400/403. GET is rejected by the server, and Android has no
+version, and snapshot boundary. A known expired/invalid cursor clears partial
+results and restarts once from `cursor=null`; repeated or unknown failures stay
+closed. GET is rejected by the server, and Android has no
 query-parameter search method, so names, UHIDs, and phones never enter a
 patient-search URL. The server must enforce current patient scope on every page
 and a 30/minute authenticated-actor throttle.
 
-## Pending case-search integration
+## Case-search integration
 
-The current Android case list still uses the legacy `GET /api/cases/` list
-method and can pass `q`; that PHI-bearing search transport is not acceptable in
-the final server contract. Lane 2's frozen checkpoint defines
+Non-search lists retain `GET /api/cases/` without `q`. Search uses only
 `POST /api/cases/search/` with body fields `query`, `page_size`, `cursor`,
-`bucket`, `assigned_to`, `scope_context`, `category`, and `subcategory`, and a
-cursor response containing full case summaries plus stats. Android can consume
-that response shape and cursor traversal, but this dependency is deliberately
-deferred until the final pushed PR #99 head is authorized. At integration,
-remove case-list `q` use, keep ordinary non-search case-list filters on GET,
-and pin invalid-cursor restart behavior and all final field names to the exact
-published OpenAPI document.
+`bucket`, `assigned_to`, `scope_context`, `category`, and `subcategory`; the
+response contains `next_cursor`, full case summaries, and stats. Android keeps
+every filter fixed across cursor pages. A known `invalid_cursor` clears the
+partial result and restarts once from `cursor=null`; it never falls back to a
+PHI-bearing query URL.

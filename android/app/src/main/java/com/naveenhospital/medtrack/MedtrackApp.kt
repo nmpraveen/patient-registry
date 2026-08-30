@@ -215,12 +215,7 @@ private data class BiometricStatus(
 private fun UserProfileDto.headerName(): String = displayName.ifBlank { username }
 
 private fun UserProfileDto?.mobileDefaultCaseScope(): String {
-    val canSeeAllByDefault = this?.roles.orEmpty().any { role ->
-        role.equals("Admin", ignoreCase = true) ||
-            role.equals("Doctor", ignoreCase = true) ||
-            role.equals("Superuser", ignoreCase = true)
-    }
-    return if (canSeeAllByDefault) "all" else "me"
+    return if (this?.dataScope?.caseDataScope.equals("ALL", ignoreCase = true)) "all" else "me"
 }
 
 @Composable

@@ -846,15 +846,36 @@ internal suspend fun fetchAllNotifications(
     var datasetEpoch: String? = null
     var cursor: String? = null
     var requestCount = 0
-    while (true) {
+    var resetCount = 0
+    traversal@ while (true) {
         requestCount += 1
         check(requestCount <= MAX_NOTIFICATION_PAGES) { "Notification pagination exceeded the safety limit." }
-        val response = api.notifications(type = type, cursor = cursor, pageSize = NOTIFICATION_PAGE_SIZE)
+        val response = try {
+            api.notifications(type = type, cursor = cursor, pageSize = NOTIFICATION_PAGE_SIZE)
+        } catch (error: HttpException) {
+            if (cursor != null && resetCount < MAX_NOTIFICATION_CURSOR_RESETS && error.isInvalidCursor()) {
+                resetCount += 1
+                notificationsByEventId.clear()
+                seenCursors.clear()
+                datasetEpoch = null
+                cursor = null
+                continue@traversal
+            }
+            throw error
+        }
         UUID.fromString(response.datasetEpoch)
         if (datasetEpoch == null) {
             datasetEpoch = response.datasetEpoch
-        } else {
-            check(datasetEpoch == response.datasetEpoch) { "Notification dataset epoch changed during snapshot traversal." }
+        } else if (datasetEpoch != response.datasetEpoch) {
+            check(resetCount < MAX_NOTIFICATION_CURSOR_RESETS) {
+                "Notification dataset epoch changed repeatedly during snapshot traversal."
+            }
+            resetCount += 1
+            notificationsByEventId.clear()
+            seenCursors.clear()
+            datasetEpoch = null
+            cursor = null
+            continue@traversal
         }
         response.results.forEach { notification ->
             require(notification.eventId.isNotBlank()) { "Notification event_id must be present." }
@@ -910,7 +931,14 @@ internal suspend fun replaceNotificationSnapshot(
 
 private const val MAX_NOTIFICATION_PAGES = 5_000
 private const val NOTIFICATION_PAGE_SIZE = 100
+private const val MAX_NOTIFICATION_CURSOR_RESETS = 1
 internal const val MAX_PENDING_WRITE_ATTEMPTS = 3
+
+private fun HttpException.isInvalidCursor(): Boolean {
+    if (code() != 400) return false
+    val body = response()?.errorBody()?.string().orEmpty()
+    return body.contains("\"code\"") && body.contains("\"invalid_cursor\"")
+}
 
 
 private suspend fun MedtrackDatabase.markCacheFresh(ownerAccountId: String, cacheKey: String, now: Long) {

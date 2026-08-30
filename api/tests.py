@@ -2,6 +2,7 @@ import hashlib
 import uuid
 from datetime import timedelta
 from io import StringIO
+from unittest.mock import patch
 
 from django.contrib import admin
 from django.contrib.auth import get_user_model
@@ -16,7 +17,19 @@ from drf_spectacular.generators import SchemaGenerator
 from rest_framework.test import APIClient, APITestCase
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from patients.models import CaseDataScope, CallLog, Case, DepartmentConfig, RoleSetting, Task, TaskStatus, VitalEntry
+from patients.models import (
+    AuditEvent,
+    CallLog,
+    Case,
+    CaseDataScope,
+    DepartmentConfig,
+    RoleSetting,
+    StaffDeviceCredential,
+    Task,
+    TaskStatus,
+    UserSecurityState,
+    VitalEntry,
+)
 
 from .admin import MobileDeviceTokenAdmin
 from .models import (
@@ -26,7 +39,7 @@ from .models import (
     MobileNotificationType,
     MobileWriteReceipt,
 )
-from .notifications import invalidate_mobile_dataset
+from .notifications import invalidate_mobile_dataset, purge_expired_mobile_notifications
 from .push import (
     _build_multicast_message,
     _channel_id_for_notification,
@@ -34,6 +47,7 @@ from .push import (
     firebase_configured,
     send_mobile_notification,
 )
+from .views import _authorization_hash
 
 
 class MobileApiTests(APITestCase):
@@ -514,12 +528,16 @@ class MobileApiTests(APITestCase):
             ).status_code,
             404,
         )
-        assigned_patient_response = self.client.get(reverse("api:patient_search"), {"q": "Priya"})
-        blocked_patient_response = self.client.get(reverse("api:patient_search"), {"q": "Direct Blocked"})
+        assigned_patient_response = self.client.post(
+            reverse("api:patient_search"), {"query": "Priya"}, format="json"
+        )
+        blocked_patient_response = self.client.post(
+            reverse("api:patient_search"), {"query": "Direct Blocked"}, format="json"
+        )
         self.assertEqual(assigned_patient_response.status_code, 200)
-        self.assertEqual(assigned_patient_response.json()["count"], 1)
+        self.assertEqual(len(assigned_patient_response.json()["results"]), 1)
         self.assertEqual(blocked_patient_response.status_code, 200)
-        self.assertEqual(blocked_patient_response.json()["count"], 0)
+        self.assertEqual(blocked_patient_response.json()["results"], [])
 
         self.case.tasks.filter(assigned_user=scoped_user).update(assigned_user=self.user)
         self.assertEqual(self.client.get(reverse("api:case_detail", args=[self.case.pk])).status_code, 404)
@@ -933,6 +951,37 @@ class MobileApiTests(APITestCase):
         self.assertEqual(result["sent"], False)
         self.assertEqual(result["reason"], "fcm_not_configured")
 
+    @override_settings(FCM_ENABLED=True)
+    def test_push_delivery_failure_returns_only_sanitized_error_category(self):
+        sensitive_token = "sensitive-registration-token-value"
+        sensitive_path = "C:/private/firebase-service-account.json"
+        MobileDeviceToken.objects.create(user=self.user, token=sensitive_token)
+        notification = MobileNotification.objects.create(
+            user=self.user,
+            notification_type=MobileNotificationType.RED_FLAG,
+            title="MEDTRACK priority update",
+            case=self.case,
+        )
+        with (
+            patch("api.push._credentials_file", return_value=sensitive_path),
+            patch(
+                "api.push._deliver_fcm",
+                side_effect=RuntimeError(f"delivery failed for {sensitive_token} using {sensitive_path}"),
+            ),
+        ):
+            result = send_mobile_notification(notification)
+
+        self.assertEqual(
+            result,
+            {
+                "sent": False,
+                "reason": "fcm_delivery_failed",
+                "error_category": "unknown",
+            },
+        )
+        self.assertNotIn(sensitive_token, str(result))
+        self.assertNotIn(sensitive_path, str(result))
+
     def test_push_delivery_deactivates_permanently_failed_tokens(self):
         stale_device = MobileDeviceToken.objects.create(user=self.user, token="stale-token")
         transient_device = MobileDeviceToken.objects.create(user=self.user, token="transient-token")
@@ -955,23 +1004,118 @@ class MobileApiTests(APITestCase):
         self.assertTrue(transient_device.is_active)
         self.assertTrue(active_device.is_active)
 
-    def test_push_message_sets_android_channel_and_priority(self):
+    def test_every_push_payload_path_contains_only_generic_copy_and_opaque_event_id(self):
+        sensitive_values = [
+            "Priya Sharma",
+            "9876543210",
+            "Severe hypertension",
+            "Collect private lab report",
+            "CASE-ID-SENSITIVE-8472",
+        ]
+        expected_channels = {
+            MobileNotificationType.ASSIGNMENT: "assignments",
+            MobileNotificationType.RED_FLAG: "red_flags",
+            MobileNotificationType.OVERDUE: "overdue",
+        }
+        for notification_type, expected_channel in expected_channels.items():
+            with self.subTest(notification_type=notification_type):
+                notification = MobileNotification.objects.create(
+                    user=self.user,
+                    notification_type=notification_type,
+                    title=sensitive_values[0],
+                    body=f"{sensitive_values[2]}: {sensitive_values[3]}",
+                    case=self.case,
+                    payload={
+                        "phone": sensitive_values[1],
+                        "case_id": sensitive_values[4],
+                        "task_detail": sensitive_values[3],
+                    },
+                )
+
+                message = _build_multicast_message(
+                    FakeFirebaseMessaging,
+                    notification,
+                    ["safe-token"],
+                )
+                transmitted = " ".join(
+                    [
+                        message.notification.title,
+                        message.notification.body,
+                        str(message.data),
+                        message.android.notification.channel_id,
+                    ]
+                )
+
+                self.assertEqual(message.tokens, ["safe-token"])
+                self.assertEqual(message.data, {"event_id": str(notification.event_id)})
+                self.assertEqual(message.android.notification.channel_id, expected_channel)
+                for sensitive_value in sensitive_values:
+                    self.assertNotIn(sensitive_value, transmitted)
+
+    @override_settings(FCM_ENABLED=True)
+    def test_push_excludes_revoked_and_device_switched_tokens(self):
+        switched_token = "device-switched-token"
+        revoked_token = "revoked-token"
+        active_token = "current-active-token"
+        MobileDeviceToken.objects.create(user=self.user, token=switched_token)
+        MobileDeviceToken.objects.create(user=self.user, token=revoked_token, is_active=False)
+        MobileDeviceToken.objects.create(user=self.user, token=active_token)
+        new_owner = get_user_model().objects.create_user(username="device-new-owner", password="pass")
+        new_owner_client = APIClient()
+        new_owner_client.force_authenticate(new_owner)
+        switched = new_owner_client.post(
+            reverse("api:devices"),
+            {"token": switched_token, "device_label": "replacement account"},
+            format="json",
+        )
         notification = MobileNotification.objects.create(
             user=self.user,
             notification_type=MobileNotificationType.RED_FLAG,
-            title="Red flag patient",
-            body="Priya Sharma: High risk",
             case=self.case,
-            payload={"type": MobileNotificationType.RED_FLAG, "channel": "red_flags", "case_id": self.case.id},
         )
+        delivery_response = FakeFirebaseBatchResponse(success_count=1, failure_count=0)
 
-        message = _build_multicast_message(FakeFirebaseMessaging, notification, ["token-1"])
+        with (
+            patch("api.push._credentials_file", return_value="C:/test/firebase.json"),
+            patch("api.push._deliver_fcm", return_value=delivery_response) as deliver,
+        ):
+            result = send_mobile_notification(notification)
 
-        self.assertEqual(message.tokens, ["token-1"])
-        self.assertEqual(message.android.priority, "high")
-        self.assertEqual(message.android.notification.channel_id, "red_flags")
-        self.assertEqual(message.data, {"event_id": str(notification.event_id), "type": "red_flag"})
-        self.assertNotIn("Priya", str(message.notification.title) + str(message.notification.body) + str(message.data))
+        self.assertEqual(switched.status_code, 200)
+        self.assertTrue(result["sent"])
+        self.assertEqual(deliver.call_args.args[1], [active_token])
+        self.assertNotIn(switched_token, deliver.call_args.args[1])
+        self.assertNotIn(revoked_token, deliver.call_args.args[1])
+
+    @override_settings(FCM_ENABLED=True)
+    def test_opaque_event_send_fails_closed_after_role_scope_revocation(self):
+        role = RoleSetting.objects.create(
+            role_name="Push Scope Revocation",
+            case_data_scope=CaseDataScope.ASSIGNED,
+        )
+        group = Group.objects.create(name=role.role_name)
+        scoped_user = get_user_model().objects.create_user(username="push-scope-user", password="pass")
+        scoped_user.groups.add(group)
+        scoped_task = Task.objects.create(
+            case=self.case,
+            title="Scope-sensitive task",
+            due_date=timezone.localdate(),
+            assigned_user=scoped_user,
+            created_by=self.user,
+        )
+        MobileDeviceToken.objects.create(user=scoped_user, token="scope-revoked-token")
+        notification = MobileNotification.objects.get(user=scoped_user, task=scoped_task)
+        RoleSetting.objects.filter(pk=role.pk).update(case_data_scope=CaseDataScope.NONE)
+
+        with (
+            patch("api.push._credentials_file", return_value="C:/test/firebase.json"),
+            patch("api.push._deliver_fcm") as deliver,
+        ):
+            result = send_mobile_notification(notification)
+
+        self.assertEqual(result, {"sent": False, "reason": "authorization_revoked"})
+        self.assertFalse(MobileNotification.objects.filter(pk=notification.pk).exists())
+        deliver.assert_not_called()
 
     def test_push_channel_mapping_defaults_to_overdue(self):
         notification = MobileNotification(
@@ -1006,6 +1150,12 @@ class MobileApiTests(APITestCase):
 
     def test_task_reassignment_notifies_new_assignee(self):
         new_user = get_user_model().objects.create_user(username="new-assignee", password="pass")
+        role = RoleSetting.objects.create(
+            role_name="New Assignee Mobile",
+            case_data_scope=CaseDataScope.ASSIGNED,
+        )
+        group = Group.objects.create(name=role.role_name)
+        new_user.groups.add(group)
         self.task.assigned_user = new_user
         self.task.save(update_fields=["assigned_user", "updated_at"])
 
@@ -1104,7 +1254,11 @@ class MobileApiTests(APITestCase):
         self.assertEqual(forbidden.status_code, 404)
 
     def test_notification_list_read_and_send_reauthorize_current_assignment(self):
-        role = RoleSetting.objects.create(role_name="Notification Scoped", can_task_edit=True)
+        role = RoleSetting.objects.create(
+            role_name="Notification Scoped",
+            case_data_scope=CaseDataScope.ASSIGNED,
+            can_task_edit=True,
+        )
         group = Group.objects.create(name=role.role_name)
         scoped_user = get_user_model().objects.create_user(username="notification-scoped", password="pass")
         scoped_user.groups.add(group)
@@ -1149,6 +1303,170 @@ class MobileApiTests(APITestCase):
         self.assertEqual(send_result, {"sent": False, "reason": "authorization_revoked"})
         self.assertFalse(MobileNotification.objects.filter(pk=stale_send.pk).exists())
 
+    def test_notification_cursor_snapshot_is_stable_when_new_rows_are_inserted(self):
+        anchor = timezone.now().replace(microsecond=0)
+        original_ids = []
+        for offset in range(5):
+            notification = MobileNotification.objects.create(
+                user=self.user,
+                notification_type=MobileNotificationType.RED_FLAG,
+                title="MEDTRACK priority update",
+                case=self.case,
+            )
+            MobileNotification.objects.filter(pk=notification.pk).update(
+                created_at=anchor - timedelta(minutes=offset)
+            )
+            original_ids.append(notification.pk)
+
+        url = reverse("api:notifications")
+        first = self.client.get(url, {"page_size": 2})
+        cursor = first.json()["next_cursor"]
+        inserted = MobileNotification.objects.create(
+            user=self.user,
+            notification_type=MobileNotificationType.RED_FLAG,
+            title="MEDTRACK priority update",
+            case=self.case,
+        )
+        MobileNotification.objects.filter(pk=inserted.pk).update(
+            created_at=anchor + timedelta(minutes=1)
+        )
+
+        seen_ids = [row["id"] for row in first.json()["results"]]
+        while cursor:
+            response = self.client.get(url, {"page_size": 2, "cursor": cursor})
+            self.assertEqual(response.status_code, 200, response.content)
+            seen_ids.extend(row["id"] for row in response.json()["results"])
+            cursor = response.json()["next_cursor"]
+
+        fresh = self.client.get(url, {"page_size": 2})
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(
+            set(first.json()),
+            {"dataset_epoch", "next_cursor", "results"},
+        )
+        self.assertEqual(len(seen_ids), len(set(seen_ids)))
+        self.assertEqual(set(seen_ids), set(original_ids))
+        self.assertNotIn(inserted.pk, seen_ids)
+        self.assertEqual(fresh.json()["results"][0]["id"], inserted.pk)
+
+    def test_notification_cursor_rejects_filter_changes_and_legacy_pages(self):
+        for _ in range(2):
+            MobileNotification.objects.create(
+                user=self.user,
+                notification_type=MobileNotificationType.RED_FLAG,
+                title="MEDTRACK priority update",
+                case=self.case,
+            )
+        url = reverse("api:notifications")
+        first = self.client.get(url, {"type": "red_flag", "page_size": 1})
+        cursor = first.json()["next_cursor"]
+
+        type_mismatch = self.client.get(
+            url,
+            {"type": "overdue", "page_size": 1, "cursor": cursor},
+        )
+        unread_mismatch = self.client.get(
+            url,
+            {"type": "red_flag", "unread_only": "true", "page_size": 1, "cursor": cursor},
+        )
+        legacy_page = self.client.get(url, {"page": 2})
+
+        self.assertIsNotNone(cursor)
+        self.assertEqual(type_mismatch.status_code, 400)
+        self.assertEqual(type_mismatch.json()["code"], "invalid_cursor")
+        self.assertEqual(unread_mismatch.status_code, 400)
+        self.assertEqual(unread_mismatch.json()["code"], "invalid_cursor")
+        self.assertEqual(legacy_page.status_code, 400)
+        self.assertEqual(legacy_page.json()["code"], "page_not_supported")
+
+    def test_notification_cursor_reauthorizes_and_purges_revocation_between_pages(self):
+        role = RoleSetting.objects.create(
+            role_name="Notification Cursor Scoped",
+            case_data_scope=CaseDataScope.ASSIGNED,
+            can_task_edit=True,
+        )
+        group = Group.objects.create(name=role.role_name)
+        scoped_user = get_user_model().objects.create_user(
+            username="notification-cursor-scoped",
+            password="pass",
+        )
+        scoped_user.groups.add(group)
+        tasks = [
+            Task.objects.create(
+                case=self.case,
+                title=f"Cursor task {index}",
+                due_date=timezone.localdate(),
+                assigned_user=scoped_user,
+                created_by=self.user,
+            )
+            for index in range(2)
+        ]
+        client = APIClient()
+        client.force_authenticate(scoped_user)
+        url = reverse("api:notifications")
+        first = client.get(url, {"page_size": 1})
+        cursor = first.json()["next_cursor"]
+        first_task_id = first.json()["results"][0]["task_id"]
+        revoked_task = next(task for task in tasks if task.pk != first_task_id)
+        revoked_notification_id = MobileNotification.objects.get(
+            user=scoped_user,
+            task=revoked_task,
+        ).pk
+
+        Task.objects.filter(pk=revoked_task.pk).update(assigned_user=self.user)
+        continued = client.get(url, {"page_size": 1, "cursor": cursor})
+
+        self.assertIsNotNone(cursor)
+        self.assertEqual(continued.status_code, 200, continued.content)
+        self.assertEqual(continued.json()["results"], [])
+        self.assertIsNone(continued.json()["next_cursor"])
+        self.assertFalse(MobileNotification.objects.filter(pk=revoked_notification_id).exists())
+
+    def test_notification_retention_cleanup_is_bounded_and_expired_rows_are_hidden(self):
+        expired = [
+            MobileNotification.objects.create(
+                user=self.user,
+                notification_type=MobileNotificationType.RED_FLAG,
+                title="MEDTRACK priority update",
+                case=self.case,
+            )
+            for _ in range(3)
+        ]
+        MobileNotification.objects.filter(pk__in=[row.pk for row in expired]).update(
+            expires_at=timezone.now() - timedelta(seconds=1)
+        )
+
+        deleted = purge_expired_mobile_notifications(limit=2)
+        response = self.client.get(reverse("api:notifications"))
+
+        self.assertEqual(deleted, 2)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["results"], [])
+        self.assertFalse(MobileNotification.objects.filter(pk__in=[row.pk for row in expired]).exists())
+
+    def test_task_terminal_status_purges_notifications_and_reopen_emits_fresh_event(self):
+        task = Task.objects.create(
+            case=self.case,
+            title="Terminal notification lifecycle",
+            due_date=timezone.localdate(),
+            assigned_user=self.user,
+            created_by=self.user,
+        )
+        original_event_id = MobileNotification.objects.get(task=task).event_id
+
+        task.status = TaskStatus.COMPLETED
+        task.save(update_fields=["status", "updated_at"])
+        self.assertFalse(MobileNotification.objects.filter(task=task).exists())
+
+        task.status = TaskStatus.SCHEDULED
+        task.save(update_fields=["status", "updated_at"])
+        reopened = MobileNotification.objects.get(task=task)
+        self.assertNotEqual(reopened.event_id, original_event_id)
+
+        task.status = TaskStatus.CANCELLED
+        task.save(update_fields=["status", "updated_at"])
+        self.assertFalse(MobileNotification.objects.filter(task=task).exists())
+
     def test_idempotency_key_reuse_with_different_payload_returns_409(self):
         url = reverse("api:task_complete", kwargs={"pk": self.task.pk})
         first = self.client.post(url, {"client_write_id": "binding-payload"}, format="json")
@@ -1187,7 +1505,11 @@ class MobileApiTests(APITestCase):
         self.assertNotEqual(second_task.status, TaskStatus.COMPLETED)
 
     def test_idempotency_replay_is_bound_to_authorization_fingerprint(self):
-        role = RoleSetting.objects.create(role_name="Receipt Role", can_task_edit=True)
+        role = RoleSetting.objects.create(
+            role_name="Receipt Role",
+            case_data_scope=CaseDataScope.ASSIGNED,
+            can_task_edit=True,
+        )
         group = Group.objects.create(name=role.role_name)
         scoped_user = get_user_model().objects.create_user(username="receipt-user", password="pass")
         scoped_user.groups.add(group)
@@ -1203,11 +1525,19 @@ class MobileApiTests(APITestCase):
         url = reverse("api:task_complete", args=[scoped_task.pk])
         first = client.post(url, {"client_write_id": "binding-auth"}, format="json")
 
-        RoleSetting.objects.filter(pk=role.pk).update(can_note_add=True)
+        before_scope_change = _authorization_hash(scoped_user)
+        RoleSetting.objects.filter(pk=role.pk).update(can_intake_patient_lookup=True)
+        after_scope_change = _authorization_hash(scoped_user)
         mismatch = client.post(url, {"client_write_id": "binding-auth"}, format="json")
+        security_state = UserSecurityState.objects.get(user=scoped_user)
+        security_state.auth_version += 1
+        security_state.save(update_fields=["auth_version", "updated_at"])
+        after_auth_version_change = _authorization_hash(scoped_user)
 
         self.assertEqual(first.status_code, 200)
         self.assertEqual(mismatch.status_code, 409)
+        self.assertNotEqual(before_scope_change, after_scope_change)
+        self.assertNotEqual(after_scope_change, after_auth_version_change)
 
     def test_idempotency_replay_is_bound_to_dataset_epoch(self):
         url = reverse("api:case_vitals", kwargs={"pk": self.case.pk})
@@ -1234,9 +1564,25 @@ class MobileApiTests(APITestCase):
         self.assertNotIn(self.case.full_name, str(receipt.response_metadata))
         self.assertEqual(len(receipt.payload_hash), 64)
         self.assertEqual(len(receipt.authorization_hash), 64)
+        MobileWriteReceipt.objects.filter(pk=receipt.pk).update(
+            expires_at=timezone.now() - timedelta(seconds=1)
+        )
+
+        follow_up = self.client.post(
+            reverse("api:case_vitals", kwargs={"pk": self.case.pk}),
+            {"pr": 82, "client_write_id": "cleanup-trigger"},
+            format="json",
+        )
+
+        self.assertEqual(follow_up.status_code, 201)
+        self.assertFalse(MobileWriteReceipt.objects.filter(pk=receipt.pk).exists())
 
     def test_reassignment_revokes_notification_and_device_after_access_loss(self):
-        role = RoleSetting.objects.create(role_name="Assigned Mobile", can_task_edit=True)
+        role = RoleSetting.objects.create(
+            role_name="Assigned Mobile",
+            case_data_scope=CaseDataScope.ASSIGNED,
+            can_task_edit=True,
+        )
         group = Group.objects.create(name=role.role_name)
         assignee = get_user_model().objects.create_user(username="old-mobile-assignee", password="pass")
         assignee.groups.add(group)
@@ -1258,7 +1604,11 @@ class MobileApiTests(APITestCase):
         self.assertFalse(MobileNotification.objects.filter(user=assignee, case=self.case).exists())
 
     def test_role_change_revokes_device_and_receipts(self):
-        role = RoleSetting.objects.create(role_name="Mutable Mobile", can_task_edit=True)
+        role = RoleSetting.objects.create(
+            role_name="Mutable Mobile",
+            case_data_scope=CaseDataScope.ASSIGNED,
+            can_task_edit=True,
+        )
         group = Group.objects.create(name=role.role_name)
         mobile_user = get_user_model().objects.create_user(username="mutable-mobile", password="pass")
         mobile_user.groups.add(group)
@@ -1329,14 +1679,119 @@ class MobileApiTests(APITestCase):
         self.assertFalse(MobileWriteReceipt.objects.exists())
         self.assertFalse(MobileDeviceToken.objects.filter(is_active=True).exists())
 
-    def test_patient_search_requires_minimum_query_and_returns_minimal_identity(self):
-        short = self.client.get(reverse("api:patient_search"), {"q": "Pr"})
-        found = self.client.get(reverse("api:patient_search"), {"q": "Pri"})
+    def test_patient_search_is_post_only_minimal_and_never_places_phi_in_url(self):
+        search_url = reverse("api:patient_search")
+        sentinel = "Priya-Sensitive-Search"
+        rejected_get = self.client.get(search_url, {"q": sentinel})
+        short = self.client.post(search_url, {"query": "Pr"}, format="json")
+        found = self.client.post(search_url, {"query": "Pri"}, format="json")
+        phone = self.client.post(search_url, {"query": "987-654-3210"}, format="json")
 
+        self.assertEqual(rejected_get.status_code, 405)
+        self.assertNotIn(sentinel, rejected_get.content.decode("utf-8"))
         self.assertEqual(short.status_code, 400)
-        self.assertEqual(short.json()["code"], "query_too_short")
+        self.assertEqual(short.json()["code"], "invalid_search_request")
         self.assertEqual(found.status_code, 200)
+        self.assertEqual(found.wsgi_request.get_full_path(), search_url)
+        self.assertEqual(set(found.json()), {"next_cursor", "results"})
         self.assertEqual(set(found.json()["results"][0]), {"id", "uhid", "name"})
+        self.assertEqual(phone.json()["results"][0]["uhid"], self.case.uhid)
+
+    def test_patient_search_cursor_is_stable_and_bound_to_normalized_query(self):
+        second_case = Case.objects.create(
+            uhid="UH-API-2",
+            first_name="Second",
+            last_name="Patient",
+            patient_name="Second Patient",
+            phone_number="9876543212",
+            category=self.anc,
+            created_by=self.user,
+        )
+        search_url = reverse("api:patient_search")
+
+        first = self.client.post(
+            search_url,
+            {"query": "UH-", "page_size": 1},
+            format="json",
+        )
+        cursor = first.json()["next_cursor"]
+        second = self.client.post(
+            search_url,
+            {"query": "uh-", "page_size": 1, "cursor": cursor},
+            format="json",
+        )
+        mismatch = self.client.post(
+            search_url,
+            {"query": "Pri", "page_size": 1, "cursor": cursor},
+            format="json",
+        )
+
+        self.assertEqual(first.status_code, 200)
+        self.assertIsNotNone(cursor)
+        self.assertEqual(first.json()["results"][0]["uhid"], self.case.uhid)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(second.json()["results"][0]["uhid"], second_case.uhid)
+        self.assertIsNone(second.json()["next_cursor"])
+        self.assertEqual(mismatch.status_code, 400)
+        self.assertEqual(mismatch.json()["code"], "invalid_cursor")
+        self.assertNotIn("UH-API", cursor)
+
+    def test_patient_search_audit_is_phi_safe_and_captures_request_context(self):
+        credential = StaffDeviceCredential.objects.create(
+            user=self.user,
+            device_label="Search audit device",
+            credential_id="search-audit-credential",
+            public_key="test-public-key",
+        )
+        session = self.client.session
+        session["medtrack_device_credential_id"] = credential.pk
+        session.save()
+        search_url = reverse("api:patient_search")
+
+        found = self.client.post(
+            search_url,
+            {"query": "Priya"},
+            format="json",
+            HTTP_X_REQUEST_ID="patient-search-audit-request",
+        )
+        rejected = self.client.post(
+            search_url,
+            {"query": "Pr"},
+            format="json",
+            HTTP_X_REQUEST_ID="patient-search-denied-request",
+        )
+
+        events = AuditEvent.objects.filter(action="patient.search_attempt").order_by("occurred_at", "id")
+        success_event, denied_event = list(events)
+        self.assertEqual(found.status_code, 200)
+        self.assertEqual(rejected.status_code, 400)
+        self.assertEqual(success_event.actor_user_id, self.user.pk)
+        self.assertEqual(success_event.source, "api")
+        self.assertEqual(success_event.request_id, "patient-search-audit-request")
+        self.assertTrue(success_event.session_key_hash)
+        self.assertTrue(success_event.source_ip_hash)
+        self.assertEqual(success_event.device_credential_id, credential.pk)
+        self.assertEqual(success_event.outcome, AuditEvent.Outcome.SUCCESS)
+        self.assertEqual(
+            success_event.metadata,
+            {
+                "search_class": "name_or_uhid_prefix",
+                "normalized_length": 5,
+                "result_count": 1,
+                "scope": {
+                    "case_data_scope": CaseDataScope.ALL,
+                    "call_queue": True,
+                    "intake_patient_lookup": True,
+                },
+            },
+        )
+        self.assertEqual(denied_event.outcome, AuditEvent.Outcome.DENIED)
+        self.assertEqual(denied_event.request_id, "patient-search-denied-request")
+        self.assertEqual(denied_event.metadata["normalized_length"], 2)
+        audit_material = f"{success_event.metadata} {denied_event.metadata}"
+        self.assertNotIn("Priya", audit_material)
+        self.assertNotIn(self.case.uhid, audit_material)
+        self.assertNotIn(self.case.phone_number, audit_material)
 
     def test_client_event_timestamps_are_bounded(self):
         future = timezone.now() + timedelta(minutes=6)
@@ -1385,11 +1840,51 @@ class MobileApiTests(APITestCase):
             set(editable_case["properties"]),
             set(editable_case["required"]),
         )
+        patient_path = schema["paths"]["/api/patients/"]
+        self.assertIn("post", patient_path)
+        self.assertNotIn("get", patient_path)
+        patient_request = schema["components"]["schemas"]["PatientSearchRequest"]
+        self.assertEqual(
+            set(patient_request["properties"]),
+            {"query", "page_size", "cursor"},
+        )
+        self.assertEqual(patient_request["required"], ["query"])
+        patient_response = schema["components"]["schemas"]["PatientSearchResponse"]
+        self.assertEqual(set(patient_response["properties"]), {"next_cursor", "results"})
+        notification_parameters = {
+            parameter["name"] for parameter in schema["paths"]["/api/notifications/"]["get"]["parameters"]
+        }
+        self.assertEqual(
+            notification_parameters,
+            {"cursor", "page_size", "type", "unread_only"},
+        )
+        notification_response = schema["components"]["schemas"]["NotificationsResponse"]
+        self.assertEqual(
+            set(notification_response["properties"]),
+            {"dataset_epoch", "next_cursor", "results"},
+        )
+        me_response = schema["components"]["schemas"]["MeResponse"]
+        self.assertIn("data_scope", me_response["properties"])
+        self.assertEqual(
+            set(schema["components"]["schemas"]["DataScopeContract"]["properties"]),
+            {"case_data_scope", "call_queue", "intake_patient_lookup"},
+        )
+        self.assertEqual(
+            schema["components"]["securitySchemes"]["jwtAuth"],
+            {"type": "http", "scheme": "bearer", "bearerFormat": "JWT"},
+        )
 
 
 class FakeFirebaseSendResponse:
     def __init__(self, exception):
         self.exception = exception
+
+
+class FakeFirebaseBatchResponse:
+    def __init__(self, *, success_count, failure_count):
+        self.success_count = success_count
+        self.failure_count = failure_count
+        self.responses = [FakeFirebaseSendResponse(None)] * (success_count + failure_count)
 
 
 class FakeFirebaseError(Exception):
@@ -1694,7 +2189,11 @@ class MobileCaseCreateTests(APITestCase):
             }
         )
 
-        response = self.client.get(reverse("api:patient_search"), {"q": "Lakshmi"})
+        response = self.client.post(
+            reverse("api:patient_search"),
+            {"query": "Lakshmi"},
+            format="json",
+        )
 
         self.assertEqual(response.status_code, 200)
         results = response.json()["results"]

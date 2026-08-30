@@ -240,12 +240,19 @@ class VitalsThresholdsResponseSerializer(serializers.Serializer):
     status_labels = serializers.JSONField()
 
 
+class DataScopeContractSerializer(serializers.Serializer):
+    case_data_scope = serializers.ChoiceField(choices=["NONE", "ASSIGNED", "ALL"])
+    call_queue = serializers.BooleanField()
+    intake_patient_lookup = serializers.BooleanField()
+
+
 class MeResponseSerializer(serializers.Serializer):
     id = serializers.IntegerField()
     username = serializers.CharField()
     display_name = serializers.CharField()
     roles = serializers.ListField(child=serializers.CharField())
     capabilities = serializers.DictField(child=serializers.BooleanField())
+    data_scope = DataScopeContractSerializer()
 
 
 class LogoutResponseSerializer(serializers.Serializer):
@@ -275,9 +282,8 @@ class NotificationContractSerializer(serializers.Serializer):
 
 
 class NotificationsResponseSerializer(serializers.Serializer):
-    count = serializers.IntegerField()
-    next = serializers.URLField(allow_null=True)
-    previous = serializers.URLField(allow_null=True)
+    dataset_epoch = serializers.UUIDField()
+    next_cursor = serializers.CharField(allow_null=True)
     results = NotificationContractSerializer(many=True)
 
 
@@ -318,10 +324,14 @@ class PatientSearchResultSerializer(serializers.Serializer):
     name = serializers.CharField()
 
 
+class PatientSearchRequestSerializer(serializers.Serializer):
+    query = serializers.CharField(min_length=3, max_length=80)
+    page_size = serializers.IntegerField(required=False, default=10, min_value=1, max_value=20)
+    cursor = serializers.CharField(required=False, allow_null=True)
+
+
 class PatientSearchResponseSerializer(serializers.Serializer):
-    count = serializers.IntegerField()
-    next = serializers.URLField(allow_null=True)
-    previous = serializers.URLField(allow_null=True)
+    next_cursor = serializers.CharField(allow_null=True)
     results = PatientSearchResultSerializer(many=True)
 
 

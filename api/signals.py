@@ -3,7 +3,7 @@ from django.contrib.auth.models import Group
 from django.db.models.signals import m2m_changed, post_delete, post_save, pre_delete, pre_save
 from django.dispatch import receiver
 
-from patients.models import Case, RoleSetting, Task
+from patients.models import Case, RoleSetting, Task, TaskStatus
 
 from .notifications import (
     handle_task_assignment_change,
@@ -11,6 +11,7 @@ from .notifications import (
     notify_task_assignment,
     purge_mobile_artifacts_for_case,
     purge_mobile_artifacts_for_task,
+    purge_mobile_notifications_for_task,
     revoke_user_mobile_state,
 )
 
@@ -19,10 +20,11 @@ from .notifications import (
 def capture_previous_task_assignment(sender, instance, **kwargs):
     if not instance.pk:
         instance._previous_assigned_user_id = None
+        instance._previous_status = None
         return
-    instance._previous_assigned_user_id = (
-        sender.objects.filter(pk=instance.pk).values_list("assigned_user_id", flat=True).first()
-    )
+    previous = sender.objects.filter(pk=instance.pk).values("assigned_user_id", "status").first()
+    instance._previous_assigned_user_id = previous["assigned_user_id"] if previous else None
+    instance._previous_status = previous["status"] if previous else None
 
 
 @receiver(post_save, sender=Task)
@@ -32,6 +34,12 @@ def notify_mobile_task_assignment(sender, instance, created, raw=False, **kwargs
     previous_assigned_user_id = getattr(instance, "_previous_assigned_user_id", None)
     if created or previous_assigned_user_id != instance.assigned_user_id:
         handle_task_assignment_change(instance, previous_assigned_user_id)
+        notify_task_assignment(instance)
+    terminal_statuses = {TaskStatus.COMPLETED, TaskStatus.CANCELLED}
+    previous_status = getattr(instance, "_previous_status", None)
+    if instance.status in terminal_statuses and previous_status not in terminal_statuses:
+        purge_mobile_notifications_for_task(instance)
+    elif previous_status in terminal_statuses and instance.status not in terminal_statuses:
         notify_task_assignment(instance)
 
 

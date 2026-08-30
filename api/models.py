@@ -1,7 +1,16 @@
 import uuid
+from datetime import timedelta
 
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
+
+
+MOBILE_NOTIFICATION_RETENTION_DAYS = 30
+
+
+def mobile_notification_expiry():
+    return timezone.now() + timedelta(days=MOBILE_NOTIFICATION_RETENTION_DAYS)
 
 
 class MobileDatasetState(models.Model):
@@ -54,6 +63,7 @@ class MobileNotification(models.Model):
     payload = models.JSONField(default=dict, blank=True)
     dedupe_key = models.CharField(max_length=160, blank=True)
     read_at = models.DateTimeField(null=True, blank=True)
+    expires_at = models.DateTimeField(default=mobile_notification_expiry)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -62,6 +72,7 @@ class MobileNotification(models.Model):
             models.Index(fields=["user", "read_at", "-created_at"]),
             models.Index(fields=["notification_type"]),
             models.Index(fields=["dedupe_key"]),
+            models.Index(fields=["expires_at"], name="api_mobilen_expires_6bc68f_idx"),
         ]
         constraints = [
             models.UniqueConstraint(

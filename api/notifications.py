@@ -61,6 +61,7 @@ def create_mobile_notification(
     dedupe_key="",
 ):
     del title, body, payload  # Clinical content must never be persisted or sent through FCM.
+    purge_expired_mobile_notifications()
     if _notifications_suspended.get() or not user or not getattr(user, "is_active", True):
         return None
     if case is None or not _user_can_receive_case_notification(
@@ -158,9 +159,16 @@ def authorized_notification_queryset(user):
 
     accessible_case_ids = _accessible_case_queryset(user).values("pk")
     inactive_task_statuses = [TaskStatus.COMPLETED, TaskStatus.CANCELLED]
-    return MobileNotification.objects.filter(user=user, case_id__in=accessible_case_ids).filter(
-        Q(notification_type=MobileNotificationType.RED_FLAG, task__isnull=True)
-        | (Q(task__assigned_user=user) & ~Q(task__status__in=inactive_task_statuses))
+    return (
+        MobileNotification.objects.filter(
+            user=user,
+            case_id__in=accessible_case_ids,
+            expires_at__gt=timezone.now(),
+        )
+        .filter(
+            Q(notification_type=MobileNotificationType.RED_FLAG, task__isnull=True)
+            | (Q(task__assigned_user=user) & ~Q(task__status__in=inactive_task_statuses))
+        )
     )
 
 
@@ -190,6 +198,34 @@ def revoke_user_mobile_state(user_ids, *, purge_receipts=True):
         MobileWriteReceipt.objects.filter(user_id__in=normalized_ids).delete()
 
 
+def purge_expired_mobile_receipts(*, limit=500, as_of=None):
+    """Delete at most ``limit`` expired receipts during ordinary mobile write traffic."""
+
+    bounded_limit = max(1, min(int(limit), 5000))
+    expired_ids = list(
+        MobileWriteReceipt.objects.filter(expires_at__lte=as_of or timezone.now())
+        .order_by("expires_at", "pk")
+        .values_list("pk", flat=True)[:bounded_limit]
+    )
+    if not expired_ids:
+        return 0
+    return MobileWriteReceipt.objects.filter(pk__in=expired_ids).delete()[0]
+
+
+def purge_expired_mobile_notifications(*, limit=500, as_of=None):
+    """Delete at most ``limit`` expired notifications during ordinary mobile traffic."""
+
+    bounded_limit = max(1, min(int(limit), 5000))
+    expired_ids = list(
+        MobileNotification.objects.filter(expires_at__lte=as_of or timezone.now())
+        .order_by("expires_at", "pk")
+        .values_list("pk", flat=True)[:bounded_limit]
+    )
+    if not expired_ids:
+        return 0
+    return MobileNotification.objects.filter(pk__in=expired_ids).delete()[0]
+
+
 def handle_task_assignment_change(task, previous_user_id):
     if _notifications_suspended.get() or previous_user_id == task.assigned_user_id:
         return
@@ -211,6 +247,12 @@ def purge_mobile_artifacts_for_task(task):
         Q(target_type="task", target_id=str(task.pk))
         | Q(result_type="task", result_id=str(task.pk))
     ).delete()
+
+
+def purge_mobile_notifications_for_task(task):
+    if _notifications_suspended.get():
+        return 0
+    return MobileNotification.objects.filter(task_id=task.pk).delete()[0]
 
 
 def purge_mobile_artifacts_for_case(case):

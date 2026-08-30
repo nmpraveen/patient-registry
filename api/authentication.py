@@ -1,5 +1,6 @@
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
+from drf_spectacular.extensions import OpenApiAuthenticationExtension
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.exceptions import InvalidToken
@@ -64,3 +65,11 @@ class AuthVersionJWTAuthentication(JWTAuthentication):
         except InvalidToken as exc:
             raise AuthenticationFailed(str(exc), code="token_revoked") from exc
         return user
+
+
+class AuthVersionJWTAuthenticationScheme(OpenApiAuthenticationExtension):
+    target_class = "api.authentication.AuthVersionJWTAuthentication"
+    name = "jwtAuth"
+
+    def get_security_definition(self, auto_schema):
+        return {"type": "http", "scheme": "bearer", "bearerFormat": "JWT"}

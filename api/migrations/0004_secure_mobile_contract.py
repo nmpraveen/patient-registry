@@ -1,5 +1,6 @@
 import uuid
 
+import api.models
 from django.db import migrations, models
 from django.utils import timezone
 
@@ -38,6 +39,11 @@ class Migration(migrations.Migration):
             model_name="mobilenotification",
             name="event_id",
             field=models.UUIDField(default=uuid.uuid4, editable=False, unique=True),
+        ),
+        migrations.AddField(
+            model_name="mobilenotification",
+            name="expires_at",
+            field=models.DateTimeField(default=api.models.mobile_notification_expiry),
         ),
         migrations.RemoveIndex(
             model_name="mobilewritereceipt",
@@ -130,5 +136,9 @@ class Migration(migrations.Migration):
         migrations.AddIndex(
             model_name="mobilewritereceipt",
             index=models.Index(fields=["dataset_epoch"], name="api_mobilew_dataset_35cd43_idx"),
+        ),
+        migrations.AddIndex(
+            model_name="mobilenotification",
+            index=models.Index(fields=["expires_at"], name="api_mobilen_expires_6bc68f_idx"),
         ),
     ]

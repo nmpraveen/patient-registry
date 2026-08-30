@@ -1,5 +1,6 @@
 import hashlib
 import json
+import re
 from datetime import timedelta
 
 from django.contrib.auth import get_user_model
@@ -9,6 +10,7 @@ from django.db import transaction
 from django.db.models import Max, Min, Prefetch, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import permissions, status
@@ -47,6 +49,7 @@ from patients.models import (
     is_anc_case,
 )
 from patients.audit import record_audit_event
+from patients.auth_security import current_auth_version
 from patients.theme import build_theme_category_colors, resolve_category_theme
 from patients.vitals_thresholds import vitals_thresholds_payload
 from patients.forms import CaseForm, TaskForm
@@ -78,14 +81,22 @@ from patients.views import (
 )
 
 from . import contract_serializers as contract
+from .cursors import CursorValidationError, decode_cursor, encode_cursor
 from .models import MobileDatasetState, MobileDeviceToken, MobileNotification, MobileWriteReceipt
-from .notifications import authorized_notification_queryset, purge_stale_notifications_for_user
+from .notifications import (
+    GENERIC_NOTIFICATION_COPY,
+    authorized_notification_queryset,
+    purge_expired_mobile_notifications,
+    purge_expired_mobile_receipts,
+    purge_stale_notifications_for_user,
+)
 from .permissions import HasMobileCaseAccess
 from .serializers import (
     CallOutcomeSerializer,
     ClientWriteSerializer,
     DeviceTokenSerializer,
     LogoutSerializer,
+    PatientSearchSerializer,
     TaskCompleteSerializer,
     VitalEntryCreateSerializer,
     VitalEntryUpdateSerializer,
@@ -97,12 +108,6 @@ class MobilePagination(PageNumberPagination):
     page_size = 20
     page_size_query_param = "page_size"
     max_page_size = 50
-
-
-class PatientSearchPagination(PageNumberPagination):
-    page_size = 10
-    page_size_query_param = "page_size"
-    max_page_size = 20
 
 
 def _user_role_labels(user):
@@ -795,6 +800,7 @@ def _idempotent_response(
 
     binding = _idempotency_binding(request, operation, target_type, target_id)
     with transaction.atomic():
+        purge_expired_mobile_receipts()
         locked_user = get_user_model().objects.select_for_update().get(pk=request.user.pk)
         _authorize_idempotent_target(locked_user, operation, target_type, target_id)
         dataset_state, _ = MobileDatasetState.objects.select_for_update().get_or_create(pk=1)
@@ -871,6 +877,7 @@ def _idempotent_replay_response(
         return None
     binding = _idempotency_binding(request, operation, target_type, target_id)
     with transaction.atomic():
+        purge_expired_mobile_receipts()
         locked_user = get_user_model().objects.select_for_update().get(pk=request.user.pk)
         _authorize_idempotent_target(locked_user, operation, target_type, target_id)
         dataset_state, _ = MobileDatasetState.objects.select_for_update().get_or_create(pk=1)
@@ -918,25 +925,22 @@ def _canonical_payload_hash(data):
 
 def _authorization_hash(user):
     role_names = list(user.groups.order_by("name").values_list("name", flat=True))
+    role_binding_fields = [
+        field.name
+        for field in RoleSetting._meta.concrete_fields
+        if field.name not in {"id", "role_name"}
+    ]
     role_settings = list(
         RoleSetting.objects.filter(role_name__in=role_names)
         .order_by("role_name")
-        .values(
-            "role_name",
-            "can_case_create",
-            "can_case_edit",
-            "can_task_create",
-            "can_task_edit",
-            "can_task_reopen",
-            "can_note_add",
-            "can_patient_merge",
-            "can_manage_settings",
-        )
+        .values("role_name", *role_binding_fields)
     )
     material = {
         "user_id": user.pk,
         "is_active": user.is_active,
+        "is_staff": user.is_staff,
         "is_superuser": user.is_superuser,
+        "auth_version": current_auth_version(user),
         "role_names": role_names,
         "roles": role_settings,
     }
@@ -1570,51 +1574,195 @@ class DeviceTokenView(APIView):
         )
 
 
+def _mobile_authorization_scope_hash(user):
+    # Bind opaque cursors to the user's policy/authentication version, while
+    # deliberately excluding the current object-id set. Object authorization is
+    # queried again on every page, so an assignment revocation can purge the row
+    # and safely continue the same snapshot instead of turning the cursor into a
+    # denial-of-service boundary.
+    return _authorization_hash(user)
+
+
+def _notification_cursor_point(payload, field_name):
+    point = payload.get(field_name)
+    if not isinstance(point, dict):
+        raise CursorValidationError("Invalid notification cursor position.")
+    created_at = parse_datetime(str(point.get("created_at") or ""))
+    try:
+        row_id = int(point.get("id"))
+    except (TypeError, ValueError) as exc:
+        raise CursorValidationError("Invalid notification cursor position.") from exc
+    if created_at is None or timezone.is_naive(created_at) or row_id < 1:
+        raise CursorValidationError("Invalid notification cursor position.")
+    return created_at, row_id
+
+
+def _notification_cursor_value(notification):
+    return {
+        "created_at": notification.created_at.isoformat(),
+        "id": notification.id,
+    }
+
+
+def _serialize_notification(notification):
+    title, body, channel = GENERIC_NOTIFICATION_COPY[notification.notification_type]
+    return {
+        "id": notification.id,
+        "event_id": str(notification.event_id),
+        "type": notification.notification_type,
+        "title": title,
+        "body": body,
+        "case_id": notification.case_id,
+        "task_id": notification.task_id,
+        "payload": {
+            "event_id": str(notification.event_id),
+            "type": notification.notification_type,
+            "channel": channel,
+        },
+        "read_at": notification.read_at.isoformat() if notification.read_at else None,
+        "created_at": notification.created_at.isoformat(),
+    }
+
+
 class NotificationsView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     @extend_schema(
-        operation_id="mobile_notifications_list",
+        operation_id="mobile_notifications_snapshot",
         parameters=[
             OpenApiParameter("type", OpenApiTypes.STR, OpenApiParameter.QUERY, required=False),
             OpenApiParameter("unread_only", OpenApiTypes.BOOL, OpenApiParameter.QUERY, required=False),
-            OpenApiParameter("page", OpenApiTypes.INT, OpenApiParameter.QUERY, required=False),
-            OpenApiParameter("page_size", OpenApiTypes.INT, OpenApiParameter.QUERY, required=False),
+            OpenApiParameter("cursor", OpenApiTypes.STR, OpenApiParameter.QUERY, required=False),
+            OpenApiParameter(
+                "page_size",
+                OpenApiTypes.INT,
+                OpenApiParameter.QUERY,
+                required=False,
+                description="Default 50; maximum 100.",
+            ),
         ],
-        responses={200: contract.NotificationsResponseSerializer},
+        responses={
+            200: contract.NotificationsResponseSerializer,
+            400: contract.ErrorResponseSerializer,
+        },
     )
     def get(self, request):
-        purge_stale_notifications_for_user(request.user)
-        queryset = authorized_notification_queryset(request.user).select_related("case", "task")
+        if "page" in request.GET:
+            return Response(
+                {"code": "page_not_supported", "message": "Use the opaque notification cursor."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            page_size = int(request.GET.get("page_size", 50))
+        except (TypeError, ValueError):
+            page_size = 0
+        if not 1 <= page_size <= 100:
+            return Response(
+                {"code": "invalid_page_size", "message": "page_size must be between 1 and 100."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         notification_type = request.GET.get("type", "").strip()
-        if notification_type:
-            queryset = queryset.filter(notification_type=notification_type)
-        if request.GET.get("unread_only", "").lower() in {"1", "true", "yes"}:
-            queryset = queryset.filter(read_at__isnull=True)
-        paginator = MobilePagination()
-        page = paginator.paginate_queryset(queryset, request, view=self)
-        return Response(
-            {
-                "count": paginator.page.paginator.count,
-                "next": paginator.get_next_link(),
-                "previous": paginator.get_previous_link(),
-                "results": [
-                    {
-                        "id": item.id,
-                        "event_id": str(item.event_id),
-                        "type": item.notification_type,
-                        "title": item.title,
-                        "body": item.body,
-                        "case_id": item.case_id,
-                        "task_id": item.task_id,
-                        "payload": item.payload,
-                        "read_at": item.read_at.isoformat() if item.read_at else None,
-                        "created_at": item.created_at.isoformat(),
-                    }
-                    for item in page
-                ],
+        valid_types = {value for value, _ in MobileNotification._meta.get_field("notification_type").choices}
+        if notification_type and notification_type not in valid_types:
+            return Response(
+                {"code": "invalid_notification_type", "message": "Unknown notification type."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        unread_value = request.GET.get("unread_only", "").strip().lower()
+        if unread_value in {"", "0", "false", "no"}:
+            unread_only = False
+        elif unread_value in {"1", "true", "yes"}:
+            unread_only = True
+        else:
+            return Response(
+                {"code": "invalid_unread_filter", "message": "unread_only must be true or false."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        binding = {
+            "type": notification_type,
+            "unread_only": unread_only,
+            "order": ["-created_at", "-id"],
+        }
+        with transaction.atomic():
+            dataset_state, _ = MobileDatasetState.objects.select_for_update().get_or_create(pk=1)
+            purge_expired_mobile_notifications()
+            purge_stale_notifications_for_user(request.user)
+            authorization_scope = _mobile_authorization_scope_hash(request.user)
+            cursor_context = {
+                "user_id": request.user.pk,
+                "dataset_epoch": str(dataset_state.epoch),
+                "authorization_scope": authorization_scope,
             }
-        )
+            queryset = authorized_notification_queryset(request.user).select_related("case", "task")
+            if notification_type:
+                queryset = queryset.filter(notification_type=notification_type)
+            if unread_only:
+                queryset = queryset.filter(read_at__isnull=True)
+            queryset = queryset.order_by("-created_at", "-id")
+
+            cursor_token = request.GET.get("cursor", "").strip()
+            try:
+                if cursor_token:
+                    cursor_payload = decode_cursor(
+                        cursor_token,
+                        kind="notification_snapshot",
+                        binding=binding,
+                        context=cursor_context,
+                    )
+                    snapshot_created_at, snapshot_id = _notification_cursor_point(
+                        cursor_payload, "snapshot"
+                    )
+                    position_created_at, position_id = _notification_cursor_point(
+                        cursor_payload, "position"
+                    )
+                else:
+                    boundary = queryset.first()
+                    if boundary is None:
+                        return Response(
+                            {
+                                "dataset_epoch": str(dataset_state.epoch),
+                                "next_cursor": None,
+                                "results": [],
+                            }
+                        )
+                    snapshot_created_at, snapshot_id = boundary.created_at, boundary.id
+                    position_created_at = position_id = None
+            except CursorValidationError as exc:
+                return Response(
+                    {"code": "invalid_cursor", "message": str(exc)},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            queryset = queryset.filter(
+                Q(created_at__lt=snapshot_created_at)
+                | Q(created_at=snapshot_created_at, id__lte=snapshot_id)
+            )
+            if position_created_at is not None:
+                queryset = queryset.filter(
+                    Q(created_at__lt=position_created_at)
+                    | Q(created_at=position_created_at, id__lt=position_id)
+                )
+
+            rows = list(queryset[: page_size + 1])
+            page = rows[:page_size]
+            next_cursor = None
+            if len(rows) > page_size:
+                next_cursor = encode_cursor(
+                    kind="notification_snapshot",
+                    binding=binding,
+                    context=cursor_context,
+                    snapshot={"created_at": snapshot_created_at.isoformat(), "id": snapshot_id},
+                    position=_notification_cursor_value(page[-1]),
+                )
+            return Response(
+                {
+                    "dataset_epoch": str(dataset_state.epoch),
+                    "next_cursor": next_cursor,
+                    "results": [_serialize_notification(item) for item in page],
+                }
+            )
 
 
 class NotificationReadView(APIView):
@@ -1716,61 +1864,173 @@ def _serialize_patient_row(patient):
     }
 
 
+def _normalize_patient_search_query(query):
+    collapsed = " ".join(query.split())
+    if re.fullmatch(r"[0-9().+\-\s]+", collapsed):
+        digits = re.sub(r"\D", "", collapsed)
+        if len(digits) == 10:
+            return digits, digits
+    return collapsed.casefold(), None
+
+
+def _patient_search_class(normalized_query, normalized_phone):
+    if normalized_phone:
+        return "phone_exact"
+    if normalized_query.upper().startswith(("UH-", "TMP-", "TN-")):
+        return "uhid_prefix"
+    return "name_or_uhid_prefix"
+
+
+def _record_patient_search_audit(
+    request,
+    *,
+    search_class,
+    normalized_length,
+    result_count,
+    denied=False,
+):
+    return record_audit_event(
+        category=AuditEvent.Category.DATA,
+        action="patient.search_attempt",
+        outcome=AuditEvent.Outcome.DENIED if denied else AuditEvent.Outcome.SUCCESS,
+        actor=request.user,
+        request=request,
+        object_type="patient_directory",
+        metadata={
+            "search_class": search_class,
+            "normalized_length": normalized_length,
+            "result_count": result_count,
+            "scope": role_data_scope_payload(request.user),
+        },
+    )
+
+
 class PatientSearchView(APIView):
     permission_classes = [HasMobileCaseAccess]
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "patient_search"
 
     @extend_schema(
-        operation_id="mobile_patient_search",
-        parameters=[
-            OpenApiParameter(
-                "q",
-                OpenApiTypes.STR,
-                OpenApiParameter.QUERY,
-                required=True,
-                description="Minimum 3 characters; name/UHID prefix or exact 10-digit phone.",
-            ),
-            OpenApiParameter("page", OpenApiTypes.INT, OpenApiParameter.QUERY, required=False),
-            OpenApiParameter("page_size", OpenApiTypes.INT, OpenApiParameter.QUERY, required=False),
-        ],
+        operation_id="mobile_patient_search_create",
+        request=contract.PatientSearchRequestSerializer,
         responses={
             200: contract.PatientSearchResponseSerializer,
             400: contract.ErrorResponseSerializer,
             429: contract.ErrorResponseSerializer,
         },
     )
-    def get(self, request):
-        query = request.GET.get("q", "").strip()
-        if len(query) < 3:
+    def post(self, request):
+        if request.query_params:
+            _record_patient_search_audit(
+                request,
+                search_class="url_parameters_rejected",
+                normalized_length=0,
+                result_count=0,
+                denied=True,
+            )
             return Response(
                 {
-                    "code": "query_too_short",
-                    "message": "Enter at least 3 characters to search patients.",
+                    "code": "search_parameters_in_url",
+                    "message": "Patient search parameters must be sent in the JSON body.",
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        serializer = PatientSearchSerializer(data=request.data)
+        if not serializer.is_valid():
+            raw_query = request.data.get("query", "")
+            normalized_invalid = " ".join(raw_query.split()).casefold() if isinstance(raw_query, str) else ""
+            normalized_invalid, invalid_phone = _normalize_patient_search_query(normalized_invalid)
+            _record_patient_search_audit(
+                request,
+                search_class=_patient_search_class(normalized_invalid, invalid_phone),
+                normalized_length=len(normalized_invalid),
+                result_count=0,
+                denied=True,
+            )
+            return Response(
+                {
+                    "code": "invalid_search_request",
+                    "message": "Patient search request is invalid.",
+                    "errors": serializer.errors,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        query = serializer.validated_data["query"]
+        normalized_query, normalized_phone = _normalize_patient_search_query(query)
+        page_size = serializer.validated_data["page_size"]
+        binding = {
+            "query": normalized_query,
+            "phone": normalized_phone,
+            "order": ["uhid", "id"],
+        }
+        cursor_context = {
+            "user_id": request.user.pk,
+            "authorization_scope": _mobile_authorization_scope_hash(request.user),
+        }
+        cursor_token = serializer.validated_data.get("cursor")
+        try:
+            if cursor_token:
+                cursor_payload = decode_cursor(
+                    cursor_token,
+                    kind="patient_search",
+                    binding=binding,
+                    context=cursor_context,
+                )
+                position = cursor_payload["position"]
+                position_uhid = str(position.get("uhid") or "")
+                position_id = int(position.get("id"))
+                if not position_uhid or position_id < 1:
+                    raise CursorValidationError("Invalid patient search cursor position.")
+            else:
+                position_uhid = ""
+                position_id = 0
+        except (CursorValidationError, TypeError, ValueError) as exc:
+            return Response(
+                {"code": "invalid_cursor", "message": str(exc)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         queryset = _patient_search_queryset(
             "",
             user=request.user,
             allow_intake_lookup=True,
         )
-        filters = (
-            Q(uhid__istartswith=query)
-            | Q(first_name__istartswith=query)
-            | Q(last_name__istartswith=query)
-            | Q(patient_name__istartswith=query)
+        prefix_filters = (
+            Q(uhid__istartswith=normalized_query)
+            | Q(first_name__istartswith=normalized_query)
+            | Q(last_name__istartswith=normalized_query)
+            | Q(patient_name__istartswith=normalized_query)
         )
-        if query.isdigit() and len(query) == 10:
-            filters |= Q(phone_number=query) | Q(alternate_phone_number=query)
-        queryset = queryset.filter(filters)
-        paginator = PatientSearchPagination()
-        page = paginator.paginate_queryset(queryset, request, view=self)
+        if normalized_phone:
+            prefix_filters |= Q(phone_number=normalized_phone) | Q(
+                alternate_phone_number=normalized_phone
+            )
+        queryset = queryset.filter(prefix_filters).order_by("uhid", "id")
+        if position_uhid:
+            queryset = queryset.filter(
+                Q(uhid__gt=position_uhid) | Q(uhid=position_uhid, id__gt=position_id)
+            )
+
+        rows = list(queryset[: page_size + 1])
+        page = rows[:page_size]
+        next_cursor = None
+        if len(rows) > page_size:
+            next_cursor = encode_cursor(
+                kind="patient_search",
+                binding=binding,
+                context=cursor_context,
+                position={"uhid": page[-1].uhid, "id": page[-1].id},
+            )
+        _record_patient_search_audit(
+            request,
+            search_class=_patient_search_class(normalized_query, normalized_phone),
+            normalized_length=len(normalized_query),
+            result_count=len(page),
+        )
         return Response(
             {
-                "count": paginator.page.paginator.count,
-                "next": paginator.get_next_link(),
-                "previous": paginator.get_previous_link(),
+                "next_cursor": next_cursor,
                 "results": [_serialize_patient_row(patient) for patient in page],
             }
         )

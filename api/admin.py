@@ -38,9 +38,19 @@ class MobileDeviceTokenAdmin(admin.ModelAdmin):
 
 @admin.register(MobileNotification)
 class MobileNotificationAdmin(admin.ModelAdmin):
-    list_display = ("id", "event_id", "user", "notification_type", "case", "task", "read_at", "created_at")
+    list_display = (
+        "id",
+        "event_id",
+        "user",
+        "notification_type",
+        "case",
+        "task",
+        "read_at",
+        "expires_at",
+        "created_at",
+    )
     search_fields = ("user__username", "event_id")
-    list_filter = ("notification_type", "read_at", "created_at")
+    list_filter = ("notification_type", "read_at", "expires_at", "created_at")
 
 
 @admin.register(MobileWriteReceipt)

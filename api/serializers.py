@@ -40,6 +40,12 @@ class LogoutSerializer(serializers.Serializer):
     device_token = serializers.CharField(max_length=255, required=False, allow_blank=True)
 
 
+class PatientSearchSerializer(serializers.Serializer):
+    query = serializers.CharField(min_length=3, max_length=80, trim_whitespace=True)
+    page_size = serializers.IntegerField(required=False, default=10, min_value=1, max_value=20)
+    cursor = serializers.CharField(required=False, allow_null=True, allow_blank=False)
+
+
 class DeviceTokenSerializer(serializers.Serializer):
     token = serializers.CharField(max_length=255)
     platform = serializers.CharField(max_length=32, required=False, default="android")

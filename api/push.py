@@ -52,21 +52,13 @@ def send_mobile_notification(notification):
         return {"sent": False, "reason": "fcm_not_configured"}
 
     try:
-        import firebase_admin
-        from firebase_admin import credentials, initialize_app, messaging
-
-        if not firebase_admin._apps:
-            options = {}
-            project_id = getattr(settings, "FCM_PROJECT_ID", "")
-            if project_id:
-                options["projectId"] = project_id
-            cred = credentials.Certificate(str(credentials_file))
-            initialize_app(cred, options or None)
-
-        message = _build_multicast_message(messaging, notification, tokens)
-        response = messaging.send_each_for_multicast(message)
+        response = _deliver_fcm(notification, tokens, credentials_file)
     except Exception as exc:  # Firebase config must never break normal API writes.
-        return {"sent": False, "reason": "fcm_delivery_failed", "error": str(exc)}
+        return {
+            "sent": False,
+            "reason": "fcm_delivery_failed",
+            "error_category": _fcm_error_category(exc),
+        }
 
     inactive_count = _deactivate_permanently_failed_tokens(tokens, response.responses)
     return {
@@ -124,14 +116,43 @@ def _build_multicast_message(messaging, notification, tokens):
 def _message_data(notification):
     return {
         "event_id": str(notification.event_id),
-        "type": str(notification.notification_type),
     }
 
 
+def _deliver_fcm(notification, tokens, credentials_file):
+    import firebase_admin
+    from firebase_admin import credentials, initialize_app, messaging
+
+    if not firebase_admin._apps:
+        options = {}
+        project_id = getattr(settings, "FCM_PROJECT_ID", "")
+        if project_id:
+            options["projectId"] = project_id
+        cred = credentials.Certificate(str(credentials_file))
+        initialize_app(cred, options or None)
+
+    message = _build_multicast_message(messaging, notification, tokens)
+    return messaging.send_each_for_multicast(message)
+
+
+def _fcm_error_category(exception):
+    class_name = exception.__class__.__name__.lower()
+    code = str(getattr(exception, "code", "") or "").lower()
+    markers = f"{class_name} {code}"
+    if any(value in markers for value in ("credential", "auth", "permission", "unauthenticated")):
+        return "authentication"
+    if any(value in markers for value in ("timeout", "network", "connection", "unavailable")):
+        return "transport"
+    if any(value in markers for value in ("quota", "rate", "resource-exhausted")):
+        return "quota"
+    if any(value in markers for value in ("invalid", "argument", "configuration", "valueerror")):
+        return "configuration"
+    return "unknown"
+
+
 def _channel_id_for_notification(notification):
-    payload = notification.payload or {}
-    requested_channel = str(payload.get("channel") or payload.get("type") or notification.notification_type).strip()
-    return FCM_CHANNEL_IDS.get(requested_channel, "overdue")
+    notification_type = str(notification.notification_type).strip()
+    return FCM_CHANNEL_IDS.get(notification_type, "overdue")
 
 
 def _credentials_file():

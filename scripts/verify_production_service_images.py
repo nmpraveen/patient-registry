@@ -9,6 +9,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import tarfile
 import tempfile
 
 from build_canonical_image import (
@@ -51,6 +52,12 @@ def compose_image(path: Path, service: str) -> str:
 
 
 def copy_registry_image(reference: str, artifact: Path) -> None:
+    # Skopeo rejects the otherwise valid name:tag@digest form. Keep only the
+    # immutable digest while preserving an optional registry port.
+    name, digest = reference.rsplit("@", 1)
+    prefix, separator, leaf = name.rpartition("/")
+    leaf = leaf.split(":", 1)[0]
+    immutable_reference = f"{prefix}{separator}{leaf}@{digest}"
     artifact.unlink(missing_ok=True)
     subprocess.run(
         [
@@ -58,7 +65,7 @@ def copy_registry_image(reference: str, artifact: Path) -> None:
             "--volume", f"{artifact.parent.resolve()}:/output",
             SKOPEO_IMAGE,
             "copy", "--override-os", "linux", "--override-arch", "amd64",
-            f"docker://{reference}", f"oci-archive:/output/{artifact.name}",
+            f"docker://{immutable_reference}", f"oci-archive:/output/{artifact.name}",
         ],
         check=True,
     )
@@ -76,26 +83,29 @@ def scan_and_sbom(
     sbom = artifact.parent / f"{service}-sbom.cdx.json"
     output_mount = f"{artifact.parent.resolve()}:/output"
     cache_mount = f"{cache.resolve()}:/root/.cache/trivy"
-    subprocess.run(
-        [
-            "docker", "run", "--rm", "--volume", output_mount,
-            "--volume", cache_mount, TRIVY_IMAGE,
-            "image", "--input", f"/output/{artifact.name}",
-            "--scanners", "vuln,secret", "--severity", "HIGH,CRITICAL",
-            "--ignore-unfixed=false", "--exit-code", "0",
-            "--format", "json", "--output", f"/output/{report.name}",
-        ],
-        check=True,
-    )
-    subprocess.run(
-        [
-            sys.executable, str(repo_root / "scripts" / "verify_container_vulnerabilities.py"),
-            "--report", str(report), "--policy", str(policy),
-            "--image-digest", manifest_digest,
-        ],
-        cwd=repo_root,
-        check=True,
-    )
+    with tempfile.TemporaryDirectory(prefix="medtrack-service-oci-layout-") as layout_dir:
+        layout = Path(layout_dir)
+        with tarfile.open(artifact, mode="r:*") as archive:
+            for member in archive.getmembers():
+                target = (layout / member.name).resolve()
+                if layout.resolve() not in target.parents and target != layout.resolve():
+                    raise RuntimeError(f"unsafe OCI archive member: {member.name}")
+                if not (member.isfile() or member.isdir()):
+                    raise RuntimeError(f"unsupported OCI archive member type: {member.name}")
+            archive.extractall(layout)
+        for path in layout.rglob("*"):
+            path.chmod(0o700 if path.is_dir() else 0o600)
+        subprocess.run(
+            [
+                "docker", "run", "--rm", "--volume", output_mount,
+                "--volume", cache_mount, "--volume", f"{layout.resolve()}:/oci:ro",
+                TRIVY_IMAGE, "image", "--input", "/oci",
+                "--scanners", "vuln,secret", "--severity", "HIGH,CRITICAL",
+                "--ignore-unfixed=false", "--exit-code", "0",
+                "--format", "json", "--output", f"/output/{report.name}",
+            ],
+            check=True,
+        )
     subprocess.run(
         [
             "docker", "run", "--rm", "--volume", output_mount, SYFT_IMAGE,
@@ -112,6 +122,46 @@ def scan_and_sbom(
         "vex_policy": policy.relative_to(repo_root).as_posix(),
         "vex_policy_sha256": sha256_file(policy),
     }
+
+
+def verify_findings(
+    repo_root: Path, report: Path, policy: Path, manifest_digest: str
+) -> None:
+    subprocess.run(
+        [
+            sys.executable, str(repo_root / "scripts" / "verify_container_vulnerabilities.py"),
+            "--report", str(report), "--policy", str(policy),
+            "--image-digest", manifest_digest,
+        ],
+        cwd=repo_root,
+        check=True,
+    )
+
+
+def write_service_receipt(output: Path, record: dict[str, object]) -> None:
+    service = str(record["service"])
+    (output / f"{service}-image-receipt.json").write_text(
+        json.dumps({"schema": "medtrack.production-service-image/v1", **record}, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
+def write_set_receipt(
+    output: Path,
+    revision: str,
+    records: list[dict[str, object]],
+    gate: str,
+) -> Path:
+    receipt = {
+        "schema": "medtrack.production-image-set/v1",
+        "revision": revision,
+        "platform": "linux/amd64",
+        "gate": gate,
+        "services": records,
+    }
+    receipt_path = output / "production-service-images.json"
+    receipt_path.write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
+    return receipt_path
 
 
 def runtime_smoke(service: str, artifact: Path, revision: str) -> str:
@@ -194,20 +244,24 @@ def main() -> int:
                 **identity,
                 **evidence,
             }
-            (output / f"{service}-image-receipt.json").write_text(
-                json.dumps({"schema": "medtrack.production-service-image/v1", **record}, indent=2) + "\n",
-                encoding="utf-8",
-            )
+            try:
+                verify_findings(
+                    repo_root,
+                    output / str(evidence["trivy_report"]),
+                    policy,
+                    str(identity["manifest_digest"]),
+                )
+            except subprocess.CalledProcessError:
+                record["gate"] = "fail"
+                records.append(record)
+                write_service_receipt(output, record)
+                write_set_receipt(output, revision, records, "fail")
+                raise
+            record["gate"] = "pass"
             records.append(record)
+            write_service_receipt(output, record)
 
-    receipt = {
-        "schema": "medtrack.production-image-set/v1",
-        "revision": revision,
-        "platform": "linux/amd64",
-        "services": records,
-    }
-    receipt_path = output / "production-service-images.json"
-    receipt_path.write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
+    receipt_path = write_set_receipt(output, revision, records, "pass")
     print(
         "PRODUCTION_SERVICE_IMAGES_OK "
         f"revision={revision} services={','.join(services)} receipt={receipt_path}"

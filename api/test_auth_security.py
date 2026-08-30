@@ -27,6 +27,8 @@ from patients.models import (
     StaffMobileDeviceCredential,
 )
 
+from .models import MobileDeviceToken
+
 
 User = get_user_model()
 
@@ -53,10 +55,16 @@ class JwtAuthenticationSecurityTests(APITransactionTestCase):
 
         self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {access}")
         self.assertEqual(self.client.get(reverse("api:me")).status_code, 200)
+        device_token = MobileDeviceToken.objects.create(
+            user=self.user,
+            token="password-change-device-token",
+        )
 
         self.user.set_password("new-strong-password-456")
         self.user.save(update_fields=["password"])
 
+        device_token.refresh_from_db()
+        self.assertFalse(device_token.is_active)
         self.assertEqual(self.client.get(reverse("api:me")).status_code, 401)
         self.client.credentials()
         rejected_refresh = self.client.post(

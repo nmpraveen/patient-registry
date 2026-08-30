@@ -129,6 +129,10 @@ REST_FRAMEWORK = {
         "rest_framework.permissions.IsAuthenticated",
     ),
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    "EXCEPTION_HANDLER": "api.exceptions.mobile_api_exception_handler",
+    "DEFAULT_THROTTLE_RATES": {
+        "patient_search": "30/min",
+    },
 }
 
 AUTH_THROTTLE_ACCOUNT_LIMIT = env.int("AUTH_THROTTLE_ACCOUNT_LIMIT", default=5)
@@ -158,6 +162,7 @@ SPECTACULAR_SETTINGS = {
     "TITLE": "MEDTRACK Mobile API",
     "DESCRIPTION": "Native Android companion API for MEDTRACK case follow-up workflows.",
     "VERSION": "1.0.0",
+    "COMPONENT_SPLIT_PATCH": False,
 }
 
 CORS_ALLOWED_ORIGINS = [

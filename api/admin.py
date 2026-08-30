@@ -2,7 +2,20 @@ import hashlib
 
 from django.contrib import admin
 
-from .models import MobileDeviceToken, MobileNotification, MobileWriteReceipt
+from .models import (
+    MobileDatasetState,
+    MobileDeviceToken,
+    MobileNotification,
+    MobileNotificationState,
+    MobileOpaqueCursor,
+    MobileWriteReceipt,
+)
+
+
+@admin.register(MobileDatasetState)
+class MobileDatasetStateAdmin(admin.ModelAdmin):
+    list_display = ("id", "epoch", "updated_at")
+    readonly_fields = ("id", "epoch", "updated_at")
 
 
 @admin.register(MobileDeviceToken)
@@ -32,13 +45,83 @@ class MobileDeviceTokenAdmin(admin.ModelAdmin):
 
 @admin.register(MobileNotification)
 class MobileNotificationAdmin(admin.ModelAdmin):
-    list_display = ("id", "user", "notification_type", "title", "case", "task", "read_at", "created_at")
-    search_fields = ("user__username", "title", "body")
-    list_filter = ("notification_type", "read_at", "created_at")
+    list_display = (
+        "id",
+        "event_id",
+        "user",
+        "notification_type",
+        "case",
+        "task",
+        "read_at",
+        "expires_at",
+        "created_at",
+    )
+    search_fields = ("user__username", "event_id")
+    list_filter = ("notification_type", "read_at", "expires_at", "created_at")
+    readonly_fields = (
+        "event_id",
+        "user",
+        "notification_type",
+        "title",
+        "body",
+        "case",
+        "task",
+        "dedupe_key",
+        "read_at",
+        "expires_at",
+        "created_at",
+    )
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(MobileWriteReceipt)
 class MobileWriteReceiptAdmin(admin.ModelAdmin):
-    list_display = ("id", "user", "client_write_id", "write_type", "status", "response_status", "created_at")
-    search_fields = ("user__username", "client_write_id", "write_type")
-    list_filter = ("write_type", "status")
+    list_display = ("id", "user", "receipt_fingerprint", "operation", "status", "response_status", "expires_at")
+    search_fields = ("user__username", "operation")
+    list_filter = ("operation", "status")
+    readonly_fields = tuple(field.name for field in MobileWriteReceipt._meta.fields)
+
+    @admin.display(description="Receipt fingerprint")
+    def receipt_fingerprint(self, obj):
+        if not obj or not obj.client_write_id:
+            return ""
+        return hashlib.sha256(obj.client_write_id.encode("utf-8")).hexdigest()[:12]
+
+
+@admin.register(MobileNotificationState)
+class MobileNotificationStateAdmin(admin.ModelAdmin):
+    list_display = ("user", "epoch", "updated_at")
+    readonly_fields = ("user", "epoch", "updated_at")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(MobileOpaqueCursor)
+class MobileOpaqueCursorAdmin(admin.ModelAdmin):
+    list_display = ("id", "user", "kind", "expires_at", "created_at")
+    readonly_fields = tuple(field.name for field in MobileOpaqueCursor._meta.fields)
+    search_fields = ("user__username", "kind")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False

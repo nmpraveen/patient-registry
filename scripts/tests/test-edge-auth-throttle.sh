@@ -31,8 +31,11 @@ MSYS_NO_PATHCONV=1 docker run --rm --entrypoint sh -e MEDTRACK_DOMAIN=http://med
 adapted_config="$(MSYS_NO_PATHCONV=1 docker run --rm --entrypoint caddy -e MEDTRACK_DOMAIN=http://medtrack.invalid \
   -v "$docker_repo_root/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" "$image_ref" \
   adapt --config /etc/caddy/Caddyfile)"
-grep -Fq '"delete":["X-Medtrack-Client-IP"]' <<<"$adapted_config"
 grep -Fq '"X-Medtrack-Client-Ip":["{http.request.remote.host}"]' <<<"$adapted_config"
+if grep -Fq '"delete":["X-Medtrack-Client-IP"]' <<<"$adapted_config"; then
+  echo "Caddy must replace the trusted client-IP header without a conflicting delete operation" >&2
+  exit 1
+fi
 if env SECRET_KEY=synthetic-test-key POSTGRES_PASSWORD=synthetic \
   MEDTRACK_REQUIRE_TRUSTED_PROXY=True MEDTRACK_EXPECTED_PROXY_IP=172.30.0.10 \
   MEDTRACK_TRUSTED_PROXY_CIDRS=172.30.0.11/32 \
@@ -50,7 +53,8 @@ mkdir -p "$test_root/logs"
 chmod 3777 "$test_root/logs"
 docker network create "$network_name" >/dev/null
 docker run -d --name "$backend_name" --network "$network_name" --network-alias web \
-  --entrypoint caddy "$image_ref" respond --listen :8000 --body OK >/dev/null
+  --entrypoint caddy "$image_ref" respond --listen :8000 \
+  --body '{http.request.header.X-Medtrack-Client-IP}' >/dev/null
 for _ in $(seq 1 20); do
   docker exec "$backend_name" wget -qO- http://127.0.0.1:8000/ >/dev/null 2>&1 && break
   sleep 1
@@ -68,6 +72,16 @@ for _ in $(seq 1 30); do
   sleep 1
 done
 [[ "${ready_status:-}" == 200 ]]
+
+trusted_client_ip="$(curl --silent --show-error --header 'Host: medtrack.invalid' \
+  --header 'X-Medtrack-Client-IP: 198.51.100.77' "http://127.0.0.1:$port/")"
+[[ "$trusted_client_ip" != "198.51.100.77" ]]
+python - "$trusted_client_ip" <<'PY'
+from ipaddress import ip_address
+import sys
+
+ip_address(sys.argv[1])
+PY
 
 assert_429_after() {
   local path="$1" allowed="$2" response_headers="$test_root/headers.txt" response_body="$test_root/body.txt" status=""

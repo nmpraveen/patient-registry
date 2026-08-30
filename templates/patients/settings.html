@@ -397,7 +397,9 @@
         {% endfor %}
       </div>
       <div class="settings-card-links">
-        <a class="btn btn-primary btn-sm" href="{% url 'patients:settings_seed_mock_data' %}">Seed Mock Data</a>
+        {% if mock_data_seeding_enabled %}
+          <a class="btn btn-primary btn-sm" href="{% url 'patients:settings_seed_mock_data' %}">Seed Mock Data</a>
+        {% endif %}
         <a class="btn btn-outline-primary btn-sm" href="{% url 'patients:changelog' %}">View Changelog</a>
       </div>
     </div>

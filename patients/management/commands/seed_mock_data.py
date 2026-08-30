@@ -3,6 +3,7 @@ from decimal import Decimal
 import random
 import sys
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.core.management.base import BaseCommand, CommandError
@@ -256,7 +257,7 @@ class Command(BaseCommand):
                 user.is_active = True
                 changed_fields.append("is_active")
             if username != "admin":
-                user.set_password("pass")
+                user.set_unusable_password()
                 changed_fields.append("password")
             if changed_fields:
                 user.save(update_fields=list(dict.fromkeys(changed_fields)))
@@ -752,6 +753,10 @@ class Command(BaseCommand):
             )
 
     def handle(self, *args, **options):
+        if not settings.ALLOW_MOCK_DATA_SEEDING:
+            raise CommandError(
+                "Mock-data seeding is disabled. Set ALLOW_MOCK_DATA_SEEDING=true only in an authorized development environment."
+            )
         profile_name = options["profile"]
         count = options["count"] if options["count"] is not None else (12 if profile_name == "smoke" else 30)
         count = max(count, 1)

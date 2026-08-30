@@ -3,8 +3,9 @@ from decimal import Decimal, InvalidOperation
 
 from django import forms
 from django.utils import timezone
-from django.contrib.auth import get_user_model
+from django.contrib.auth import get_user_model, password_validation
 from django.contrib.auth.models import Group
+from django.core.exceptions import ValidationError
 from django.db.models import Q
 from django.forms import formset_factory, modelformset_factory
 
@@ -47,6 +48,7 @@ from .theme import (
     theme_field_definitions,
     unflatten_theme_tokens,
 )
+from .intake_access import case_intake_patient_queryset, resolve_case_intake_patient
 from .database_bundle import IMPORT_CONFIRMATION_PHRASE
 
 
@@ -248,11 +250,15 @@ class CaseForm(StyledModelForm):
         label="ANC High-Risk Reasons",
     )
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, actor=None, **kwargs):
         ensure_default_departments()
         super().__init__(*args, **kwargs)
+        self.actor = actor
         self._generated_temporary_uhid = ""
-        self.fields["selected_patient"].queryset = Patient.objects.filter(merged_into__isnull=True).order_by(
+        selected_patient_queryset = case_intake_patient_queryset(actor=actor)
+        if self.instance and self.instance.pk and self.instance.patient_id:
+            selected_patient_queryset = Patient.objects.filter(pk=self.instance.patient_id)
+        self.fields["selected_patient"].queryset = selected_patient_queryset.order_by(
             "patient_name", "uhid"
         )
         self.fields["prefix"].required = False
@@ -356,6 +362,38 @@ class CaseForm(StyledModelForm):
         patient.alternate_phone_number = (cleaned_data.get("alternate_phone_number") or "").strip()
         patient.is_temporary_id = bool(cleaned_data.get("use_temporary_uhid"))
 
+    @staticmethod
+    def _copy_selected_patient_identity(cleaned_data, selected_patient):
+        cleaned_data["uhid"] = selected_patient.uhid
+        cleaned_data["prefix"] = selected_patient.prefix
+        cleaned_data["first_name"] = selected_patient.first_name
+        cleaned_data["last_name"] = selected_patient.last_name
+        cleaned_data["gender"] = selected_patient.gender
+        cleaned_data["blood_group"] = selected_patient.blood_group
+        cleaned_data["date_of_birth"] = selected_patient.date_of_birth
+        cleaned_data["place"] = selected_patient.place
+        cleaned_data["age"] = selected_patient.age
+        cleaned_data["phone_number"] = selected_patient.phone_number
+        cleaned_data["alternate_phone_number"] = selected_patient.alternate_phone_number
+        cleaned_data["use_temporary_uhid"] = selected_patient.is_temporary_id
+        cleaned_data["patient_instance"] = selected_patient
+
+    def revalidate_intake_selection(self, *, lock=False):
+        if self.instance.pk or self.cleaned_data.get("patient_mode") != "existing":
+            return None
+        selected_patient = self.cleaned_data.get("selected_patient")
+        patient_id = getattr(selected_patient, "pk", None)
+        authorized_patient = resolve_case_intake_patient(
+            actor=self.actor,
+            patient_id=patient_id,
+            lock=lock,
+        )
+        if authorized_patient is None:
+            raise ValidationError("Existing patient selection is not permitted.")
+        self.cleaned_data["selected_patient"] = authorized_patient
+        self._copy_selected_patient_identity(self.cleaned_data, authorized_patient)
+        return authorized_patient
+
     def clean(self):
         cleaned_data = super().clean()
         patient_mode = cleaned_data.get("patient_mode") or ("existing" if self.instance.pk else "new")
@@ -365,19 +403,7 @@ class CaseForm(StyledModelForm):
             self.add_error("selected_patient", "Choose an existing patient before saving the case.")
 
         if patient_mode == "existing" and selected_patient and not self.instance.pk:
-            cleaned_data["uhid"] = selected_patient.uhid
-            cleaned_data["prefix"] = selected_patient.prefix
-            cleaned_data["first_name"] = selected_patient.first_name
-            cleaned_data["last_name"] = selected_patient.last_name
-            cleaned_data["gender"] = selected_patient.gender
-            cleaned_data["blood_group"] = selected_patient.blood_group
-            cleaned_data["date_of_birth"] = selected_patient.date_of_birth
-            cleaned_data["place"] = selected_patient.place
-            cleaned_data["age"] = selected_patient.age
-            cleaned_data["phone_number"] = selected_patient.phone_number
-            cleaned_data["alternate_phone_number"] = selected_patient.alternate_phone_number
-            cleaned_data["use_temporary_uhid"] = selected_patient.is_temporary_id
-            cleaned_data["patient_instance"] = selected_patient
+            self._copy_selected_patient_identity(cleaned_data, selected_patient)
         else:
             if cleaned_data.get("use_temporary_uhid"):
                 if not self._generated_temporary_uhid:
@@ -838,6 +864,9 @@ class RoleSettingForm(StyledModelForm):
         model = RoleSetting
         fields = [
             "role_name",
+            "case_data_scope",
+            "can_access_call_queue",
+            "can_intake_patient_lookup",
             "can_case_create",
             "can_case_edit",
             "can_task_create",
@@ -848,6 +877,9 @@ class RoleSettingForm(StyledModelForm):
             "can_manage_settings",
         ]
         widgets = {
+            "case_data_scope": forms.Select(),
+            "can_access_call_queue": forms.CheckboxInput(),
+            "can_intake_patient_lookup": forms.CheckboxInput(),
             "can_case_create": forms.CheckboxInput(),
             "can_case_edit": forms.CheckboxInput(),
             "can_task_create": forms.CheckboxInput(),
@@ -857,6 +889,13 @@ class RoleSettingForm(StyledModelForm):
             "can_patient_merge": forms.CheckboxInput(),
             "can_manage_settings": forms.CheckboxInput(),
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["case_data_scope"].label = "Case data scope"
+        self.fields["case_data_scope"].help_text = "Controls which case records this role can open."
+        self.fields["can_access_call_queue"].help_text = "Adds unassigned cases currently due in the calling queue."
+        self.fields["can_intake_patient_lookup"].help_text = "Allows identity lookup during new-case intake."
 
 
 class RoleSettingUpdateForm(RoleSettingForm):
@@ -1226,16 +1265,23 @@ class DeviceApprovalPolicyForm(forms.ModelForm):
         widget=forms.SelectMultiple(attrs={"class": "form-select", "size": 10}),
         help_text="Only selected users will require approved devices during the pilot.",
     )
+    target_groups = forms.ModelMultipleChoiceField(
+        queryset=Group.objects.none(),
+        required=False,
+        widget=forms.SelectMultiple(attrs={"class": "form-select", "size": 8}),
+        help_text="Every current member of a selected role/group requires approved browser and mobile credentials.",
+    )
 
     class Meta:
         model = DeviceApprovalPolicy
-        fields = ["enabled", "target_users"]
+        fields = ["enabled", "target_users", "target_groups"]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         User = get_user_model()
         self.fields["enabled"].widget.attrs["class"] = "form-check-input"
         self.fields["target_users"].queryset = User.objects.order_by("username")
+        self.fields["target_groups"].queryset = Group.objects.order_by("name")
 
 
 class UserManagementBaseForm(StyledModelForm):
@@ -1276,6 +1322,16 @@ class UserManagementCreateForm(UserManagementBaseForm):
         password2 = cleaned_data.get("password2")
         if password1 and password2 and password1 != password2:
             self.add_error("password2", "Passwords do not match.")
+        if password1:
+            candidate = User(
+                username=cleaned_data.get("username", ""),
+                first_name=cleaned_data.get("first_name", ""),
+                last_name=cleaned_data.get("last_name", ""),
+            )
+            try:
+                password_validation.validate_password(password1, user=candidate)
+            except ValidationError as exc:
+                self.add_error("password1", exc)
         return cleaned_data
 
     def save(self, commit=True, actor=None):
@@ -1332,6 +1388,17 @@ class UserManagementUpdateForm(UserManagementBaseForm):
         if password1 or password2:
             if password1 != password2:
                 self.add_error("password2", "Passwords do not match.")
+            elif password1:
+                candidate = User(
+                    pk=self.instance.pk,
+                    username=cleaned_data.get("username", self.instance.username),
+                    first_name=cleaned_data.get("first_name", self.instance.first_name),
+                    last_name=cleaned_data.get("last_name", self.instance.last_name),
+                )
+                try:
+                    password_validation.validate_password(password1, user=candidate)
+                except ValidationError as exc:
+                    self.add_error("password1", exc)
 
         role = cleaned_data.get("role")
         is_active = cleaned_data.get("is_active")

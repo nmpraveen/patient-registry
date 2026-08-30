@@ -54,6 +54,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "patients.middleware.AuditAndSessionSecurityMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -93,6 +94,8 @@ else:
         }
     }
 
+DATABASES["default"]["ATOMIC_REQUESTS"] = True
+
 AUTH_PASSWORD_VALIDATORS = [
     {
         "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
@@ -120,7 +123,7 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        "api.authentication.AuthVersionJWTAuthentication",
     ),
     "DEFAULT_PERMISSION_CLASSES": (
         "rest_framework.permissions.IsAuthenticated",
@@ -128,10 +131,26 @@ REST_FRAMEWORK = {
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
 }
 
+AUTH_THROTTLE_ACCOUNT_LIMIT = env.int("AUTH_THROTTLE_ACCOUNT_LIMIT", default=5)
+AUTH_THROTTLE_IP_LIMIT = env.int("AUTH_THROTTLE_IP_LIMIT", default=30)
+AUTH_THROTTLE_WINDOW_SECONDS = env.int("AUTH_THROTTLE_WINDOW_SECONDS", default=900)
+AUTH_THROTTLE_BLOCK_SECONDS = env.int("AUTH_THROTTLE_BLOCK_SECONDS", default=900)
+AUTH_THROTTLE_IDENTIFIER_MAX_LENGTH = env.int("AUTH_THROTTLE_IDENTIFIER_MAX_LENGTH", default=256)
+AUTH_THROTTLE_RETENTION_SECONDS = env.int("AUTH_THROTTLE_RETENTION_SECONDS", default=86400)
+AUTH_THROTTLE_CLEANUP_BATCH_SIZE = env.int("AUTH_THROTTLE_CLEANUP_BATCH_SIZE", default=1000)
+AUTH_TRUSTED_PROXY_CIDRS = [
+    value.strip()
+    for value in env("AUTH_TRUSTED_PROXY_CIDRS", default="").split(",")
+    if value.strip()
+]
+AUTH_CLIENT_IP_HEADER = env("AUTH_CLIENT_IP_HEADER", default="HTTP_X_FORWARDED_FOR").strip().upper()
+PATIENT_MERGE_RECOVERY_HOURS = env.int("PATIENT_MERGE_RECOVERY_HOURS", default=72)
+ALLOW_MOCK_DATA_SEEDING = env.bool("ALLOW_MOCK_DATA_SEEDING", default=DEBUG)
+
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=15),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=30),
-    "ROTATE_REFRESH_TOKENS": False,
+    "ROTATE_REFRESH_TOKENS": True,
     "BLACKLIST_AFTER_ROTATION": True,
 }
 

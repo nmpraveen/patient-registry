@@ -1,6 +1,17 @@
 from django.contrib import admin
 
-from .models import CallLog, Case, CaseActivityLog, DepartmentConfig, Patient, RoleSetting, Task, VitalEntry
+from .models import (
+    AuditEvent,
+    CallLog,
+    Case,
+    CaseActivityLog,
+    DepartmentConfig,
+    Patient,
+    RoleSetting,
+    StaffMobileDeviceCredential,
+    Task,
+    VitalEntry,
+)
 
 
 @admin.register(DepartmentConfig)
@@ -13,6 +24,9 @@ class DepartmentConfigAdmin(admin.ModelAdmin):
 class RoleSettingAdmin(admin.ModelAdmin):
     list_display = (
         "role_name",
+        "case_data_scope",
+        "can_access_call_queue",
+        "can_intake_patient_lookup",
         "can_case_create",
         "can_case_edit",
         "can_patient_merge",
@@ -22,6 +36,14 @@ class RoleSettingAdmin(admin.ModelAdmin):
         "can_note_add",
         "can_manage_settings",
     )
+
+
+@admin.register(StaffMobileDeviceCredential)
+class StaffMobileDeviceCredentialAdmin(admin.ModelAdmin):
+    list_display = ("user", "device_label", "device_id", "status", "created_at", "last_used_at")
+    list_filter = ("status", "created_at")
+    search_fields = ("user__username", "device_label", "device_id")
+    readonly_fields = ("device_id", "secret_hash", "created_at", "last_used_at")
 
 
 class TaskInline(admin.TabularInline):
@@ -101,3 +123,24 @@ class VitalEntryAdmin(admin.ModelAdmin):
     )
     search_fields = ("case__patient__uhid", "case__uhid", "case__first_name", "case__last_name")
     list_filter = ("recorded_at", "case__category")
+
+
+@admin.register(AuditEvent)
+class AuditEventAdmin(admin.ModelAdmin):
+    list_display = ("occurred_at", "category", "action", "outcome", "actor_username", "object_type", "object_id")
+    list_filter = ("category", "outcome", "action", "occurred_at")
+    search_fields = ("event_id", "actor_username", "object_type", "object_id", "request_id")
+    date_hierarchy = "occurred_at"
+    actions = None
+
+    def get_readonly_fields(self, request, obj=None):
+        return [field.name for field in self.model._meta.fields]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return bool(request.user.is_superuser)
+
+    def has_delete_permission(self, request, obj=None):
+        return False

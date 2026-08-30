@@ -31,11 +31,13 @@ from . import backup_scheduler
 from .models import (
     ActivityEventType,
     AncHighRiskReason,
+    AuditEvent,
     BloodGroup,
     CallCommunicationStatus,
     CallLog,
     CallOutcome,
     Case,
+    CaseDataScope,
     CaseActivityLog,
     CasePrefix,
     CaseSubcategory,
@@ -78,6 +80,10 @@ from .theme import (
     normalize_hex_color,
     rgba_string,
 )
+from .test_client import AuthVersionTestClient
+
+
+TestCase.client_class = AuthVersionTestClient
 
 
 class MedtrackModelTests(TestCase):
@@ -535,6 +541,7 @@ class ThemeSystemTests(TestCase):
         )
 
 
+@override_settings(ALLOW_MOCK_DATA_SEEDING=True)
 class MedtrackViewTests(TestCase):
     def setUp(self):
         ensure_default_role_settings()
@@ -560,6 +567,7 @@ class MedtrackViewTests(TestCase):
         return response
 
     def login_as_admin(self):
+        self.client.logout()
         ensure_default_role_settings()
         admin_group, _ = Group.objects.get_or_create(name="Admin")
         self.user.groups.clear()
@@ -880,7 +888,7 @@ class MedtrackViewTests(TestCase):
             )
 
         response = self.assert_max_queries(
-            13,  # Includes the database-session refresh required by the sliding inactivity timeout.
+            15,  # Includes sliding-session refresh plus auth-version and device-policy checks.
             reverse("patients:case_list"),
             {
                 "q": "Perf",
@@ -1397,6 +1405,7 @@ class MedtrackViewTests(TestCase):
         RoleSetting.objects.update_or_create(
             role_name="Staff",
             defaults={
+                "case_data_scope": CaseDataScope.ASSIGNED,
                 "can_case_create": True,
                 "can_case_edit": True,
                 "can_task_create": True,
@@ -1550,6 +1559,7 @@ class MedtrackViewTests(TestCase):
         RoleSetting.objects.update_or_create(
             role_name="Clerk",
             defaults={
+                "case_data_scope": CaseDataScope.ASSIGNED,
                 "can_case_create": True,
                 "can_case_edit": False,
                 "can_task_create": False,
@@ -1630,7 +1640,11 @@ class MedtrackViewTests(TestCase):
             username="scoped-web-user",
             password="strong-password-123",
         )
-        RoleSetting.objects.create(role_name="Scoped Web Staff", can_task_edit=True)
+        RoleSetting.objects.create(
+            role_name="Scoped Web Staff",
+            case_data_scope=CaseDataScope.ASSIGNED,
+            can_task_edit=True,
+        )
         scoped_group = Group.objects.create(name="Scoped Web Staff")
         scoped_user.groups.add(scoped_group)
         assigned_case = self.create_recent_case(first_name="AssignedWeb")
@@ -5136,6 +5150,7 @@ class MedtrackViewTests(TestCase):
                 "action": "create_role",
                 "tab": "roles",
                 "role_name": "Coordinator",
+                "case_data_scope": CaseDataScope.ASSIGNED,
                 "can_case_create": "on",
                 "can_case_edit": "on",
                 "can_note_add": "on",
@@ -5158,6 +5173,7 @@ class MedtrackViewTests(TestCase):
                 "action": "update_role",
                 "tab": "roles",
                 "role_id": str(role.pk),
+                "case_data_scope": role.case_data_scope,
                 "can_case_create": "on",
                 "can_case_edit": "on",
                 "can_task_create": "on",
@@ -5188,6 +5204,7 @@ class MedtrackViewTests(TestCase):
                 "action": "update_role",
                 "tab": "roles",
                 "role_id": str(role.pk),
+                "case_data_scope": role.case_data_scope,
                 "can_case_create": "on",
                 "can_case_edit": "on",
                 "can_task_create": "on",
@@ -5584,6 +5601,12 @@ class MedtrackViewTests(TestCase):
         self.assertFalse(CaseActivityLog.objects.filter(case_id=target_case.pk).exists())
         self.assertFalse(CallLog.objects.filter(case_id=target_case.pk).exists())
         self.assertContains(delete_response, "Deleted case UH-CASE-DELETE-001")
+        self.assertTrue(
+            AuditEvent.objects.filter(
+                action="case.permanently_deleted",
+                object_id=str(target_case.pk),
+            ).exists()
+        )
 
     def test_case_management_archive_hides_case_from_daily_views_but_keeps_record(self):
         archived_case = self.create_bundle_case(
@@ -5669,6 +5692,7 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(manifest["counts"]["call_logs"], 1)
         self.assertEqual(manifest["patient_data_sha256"], hashlib.sha256(patient_data_bytes).hexdigest())
         self.assertEqual(payload["cases"][0]["uhid"], "UH-EXPORT-001")
+        self.assertTrue(AuditEvent.objects.filter(action="patient_data.exported").exists())
 
     def test_database_management_backup_action_writes_bundle_and_shows_success(self):
         self.login_as_admin()
@@ -5986,8 +6010,12 @@ class MedtrackViewTests(TestCase):
         theme = ThemeSettings.get_solo()
         theme.tokens = {"nav": {"bg": "#123456"}}
         theme.save()
-        policy = self.enable_device_access_for(self.user)
-        credential = self.create_device_credential(user=self.user, credential_id="db-settings-device")
+        pilot_user = get_user_model().objects.create_user(
+            username="db-settings-pilot",
+            password="strong-password-123",
+        )
+        policy = self.enable_device_access_for(pilot_user)
+        credential = self.create_device_credential(user=pilot_user, credential_id="db-settings-device")
 
         source_case = self.create_bundle_case(uhid="UH-IMPORT-001", phone_number="9000000108")
         task = Task.objects.create(case=source_case, title="Imported task", due_date=timezone.localdate(), created_by=self.user)
@@ -6025,6 +6053,7 @@ class MedtrackViewTests(TestCase):
         self.assertTrue(policy.enabled)
         self.assertEqual(credential.credential_id, "db-settings-device")
         self.assertEqual(theme.tokens["nav"]["bg"], "#123456")
+        self.assertTrue(AuditEvent.objects.filter(action="patient_data.imported").exists())
 
     def test_database_management_import_maps_missing_users_to_null(self):
         self.login_as_admin()
@@ -6187,6 +6216,9 @@ class MedtrackViewTests(TestCase):
         RoleSetting.objects.update_or_create(
             role_name=STAFF_ROLE_NAME,
             defaults={
+                "case_data_scope": CaseDataScope.ASSIGNED,
+                "can_access_call_queue": True,
+                "can_intake_patient_lookup": True,
                 "can_case_create": True,
                 "can_case_edit": True,
                 "can_task_create": True,
@@ -9634,6 +9666,7 @@ class PatientDataBundleTests(TestCase):
             self.assertEqual(len(list(temp_path.glob("patient-data-bundle-yearly-*.zip"))), 1)
 
 
+@override_settings(ALLOW_MOCK_DATA_SEEDING=True)
 class SeedMockDataCommandTests(TestCase):
     def _seeded_vitals_snapshot(self):
         snapshot = {}
@@ -9757,7 +9790,7 @@ class SeedMockDataCommandTests(TestCase):
         }
         for username, role_name in expected_demo_users.items():
             demo_staff = User.objects.get(username=username)
-            self.assertTrue(demo_staff.check_password("pass"))
+            self.assertFalse(demo_staff.has_usable_password())
             self.assertTrue(demo_staff.groups.filter(name=role_name).exists())
 
         today = timezone.localdate()

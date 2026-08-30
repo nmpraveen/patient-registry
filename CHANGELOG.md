@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026.08.30.01.35
+- Made legacy sessions and JWTs fail closed, added rotating refresh-token replay response, and revoked delivery tokens atomically on every authentication-version change.
+- Enforced direct-user and group device-approval targets with distinct approved browser and server-issued mobile authentication credentials.
+- Hardened trusted-proxy authentication throttling with bounded identifiers, coarse-IP-first lockout, cleanup, and concurrency-safe counters.
+- Centralized explicit role, intake-search, and patient-selection policy; removed role-name grants and blocked hidden identity disclosure and stale merged-patient case writes.
+- Added bounded one-time patient-merge recovery, transaction-coupled clinical/IAM/data audits, immutable PostgreSQL evidence, and least-privilege migration and mock-seed behavior.
+
+## 2026.08.30.00.20
+- Replaced implicit role-name data access with explicit case, call-queue, and intake-lookup scopes enforced across website and API policy.
+- Hardened patient identity edits and merges with complete affected-set authorization, deterministic database locks, and terminal-target validation.
+- Added Django password validation, database-backed web/admin/JWT throttling, auth-version session and refresh-token revocation, and device-aware admin login.
+- Added shared vital-sign validators plus PostgreSQL range constraints, a concurrent-safe temporary-UHID allocator, and append-only clinical/IAM/data audit events.
+
 ## 2026.08.29.17.26
 - Changed website sessions to a sliding 12-hour inactivity timeout so normal authenticated activity refreshes the expiry instead of logging staff out roughly 30 minutes after login.
 - Documented the explicit production session settings and the shared-workstation logout precaution.

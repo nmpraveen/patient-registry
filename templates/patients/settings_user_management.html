@@ -374,6 +374,7 @@
                     <td>
                       <div class="fw-semibold">{{ role.role_name }}</div>
                       <div class="text-muted small">
+                        Scope: {{ role.get_case_data_scope_display }}{% if role.can_access_call_queue %} + call queue{% endif %}{% if role.can_intake_patient_lookup %} + intake lookup{% endif %}<br />
                         Case {{ role.can_case_create|yesno:"create,-" }} / {{ role.can_case_edit|yesno:"edit,-" }},
                         Task {{ role.can_task_create|yesno:"create,-" }} / {{ role.can_task_edit|yesno:"edit,-" }} / {{ role.can_task_reopen|yesno:"reopen,-" }}
                       </div>
@@ -426,12 +427,19 @@
                 {% if role_edit_form.role_name.help_text %}<div class="form-text">{{ role_edit_form.role_name.help_text }}</div>{% endif %}
                 {% if role_edit_form.role_name.errors %}<div class="text-danger small mt-1">{{ role_edit_form.role_name.errors|striptags }}</div>{% endif %}
               </div>
+              <div class="mb-3">
+                {{ role_edit_form.case_data_scope.label_tag }}
+                {{ role_edit_form.case_data_scope }}
+                {% if role_edit_form.case_data_scope.help_text %}<div class="form-text">{{ role_edit_form.case_data_scope.help_text }}</div>{% endif %}
+                {% if role_edit_form.case_data_scope.errors %}<div class="text-danger small mt-1">{{ role_edit_form.case_data_scope.errors|striptags }}</div>{% endif %}
+              </div>
               {% for field in role_edit_form %}
-                {% if field.name != 'role_name' %}
+                {% if field.name != 'role_name' and field.name != 'case_data_scope' %}
                   <div class="form-check mb-2">
                     {{ field }}
                     <label class="form-check-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
                   </div>
+                  {% if field.help_text %}<div class="form-text mb-2">{{ field.help_text }}</div>{% endif %}
                   {% if field.errors %}<div class="text-danger small mb-2">{{ field.errors|striptags }}</div>{% endif %}
                 {% endif %}
               {% endfor %}
@@ -465,14 +473,21 @@
           {{ role_create_form.role_name }}
           {% if role_create_form.role_name.errors %}<div class="text-danger small mt-1">{{ role_create_form.role_name.errors|striptags }}</div>{% endif %}
         </div>
+        <div class="mb-3">
+          {{ role_create_form.case_data_scope.label_tag }}
+          {{ role_create_form.case_data_scope }}
+          {% if role_create_form.case_data_scope.help_text %}<div class="form-text">{{ role_create_form.case_data_scope.help_text }}</div>{% endif %}
+          {% if role_create_form.case_data_scope.errors %}<div class="text-danger small mt-1">{{ role_create_form.case_data_scope.errors|striptags }}</div>{% endif %}
+        </div>
         <div class="row g-2">
           {% for field in role_create_form %}
-            {% if field.name != 'role_name' %}
+            {% if field.name != 'role_name' and field.name != 'case_data_scope' %}
               <div class="col-12 col-md-6">
                 <div class="form-check">
                   {{ field }}
                   <label class="form-check-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
                 </div>
+                {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
                 {% if field.errors %}<div class="text-danger small mt-1">{{ field.errors|striptags }}</div>{% endif %}
               </div>
             {% endif %}

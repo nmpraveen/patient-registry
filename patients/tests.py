@@ -1,4 +1,5 @@
 import io
+import importlib
 import re
 from copy import deepcopy
 import hashlib
@@ -5737,7 +5738,7 @@ class MedtrackViewTests(TestCase):
         schedule = PatientDataBackupSchedule.get_solo()
         self.assertTrue(schedule.enabled)
         self.assertEqual(schedule.daily_time.strftime("%H:%M"), "09:30")
-        self.assertContains(response, "Automatic backup schedules saved.")
+        self.assertContains(response, "Automatic backup schedules saved for the supervised backup runner.")
         self.assertContains(response, "Current schedule:")
         self.assertContains(response, "Daily backups")
         self.assertContains(response, "Monthly backups")
@@ -5777,7 +5778,7 @@ class MedtrackViewTests(TestCase):
         schedule = PatientDataBackupSchedule.get_solo()
         self.assertTrue(schedule.enabled)
         self.assertEqual(schedule.daily_time.strftime("%H:%M"), "09:30")
-        self.assertContains(response, "Automatic backup schedules saved.")
+        self.assertContains(response, "Automatic backup schedules saved for the supervised backup runner.")
 
     def test_database_management_schedule_runner_creates_daily_backup_and_updates_status(self):
         self.create_bundle_case(uhid="UH-SCHED-001", phone_number="9000000201")
@@ -5794,7 +5795,7 @@ class MedtrackViewTests(TestCase):
         ):
             ran = backup_scheduler.run_due_scheduled_backup(reference_time=reference_time)
 
-            self.assertTrue(ran)
+            self.assertEqual(ran, backup_scheduler.ScheduledBackupRunResult.CREATED)
             self.assertEqual(len(list(Path(temp_dir).glob("patient-data-bundle-daily-*.zip"))), 1)
             schedule.refresh_from_db()
             self.assertEqual(schedule.last_backup_status, PatientDataBackupStatus.SUCCESS)
@@ -5804,7 +5805,7 @@ class MedtrackViewTests(TestCase):
             self.assertGreater(schedule.next_backup_at(reference_time), reference_time)
 
             reran = backup_scheduler.run_due_scheduled_backup(reference_time=reference_time)
-            self.assertFalse(reran)
+            self.assertEqual(reran, backup_scheduler.ScheduledBackupRunResult.NOT_DUE)
             self.assertEqual(len(list(Path(temp_dir).glob("patient-data-bundle-daily-*.zip"))), 1)
 
     def test_database_management_schedule_runner_creates_monthly_and_yearly_archives(self):
@@ -5821,7 +5822,7 @@ class MedtrackViewTests(TestCase):
         ):
             ran = backup_scheduler.run_due_scheduled_backup(reference_time=reference_time)
 
-            self.assertTrue(ran)
+            self.assertEqual(ran, backup_scheduler.ScheduledBackupRunResult.CREATED)
             self.assertEqual(len(list(Path(temp_dir).glob("patient-data-bundle-monthly-*.zip"))), 1)
             self.assertEqual(len(list(Path(temp_dir).glob("patient-data-bundle-yearly-*.zip"))), 1)
             self.assertEqual(len(list(Path(temp_dir).glob("patient-data-bundle-daily-*.zip"))), 0)
@@ -5829,7 +5830,7 @@ class MedtrackViewTests(TestCase):
             self.assertIsNotNone(schedule.last_monthly_backup_at)
             self.assertIsNotNone(schedule.last_yearly_backup_at)
 
-    def test_database_management_schedule_save_runs_due_backup_when_time_has_passed(self):
+    def test_database_management_schedule_save_defers_due_backup_to_supervised_runner(self):
         self.login_as_admin()
         self.create_bundle_case(uhid="UH-SCHED-002", phone_number="9000000202")
         local_now = timezone.localtime()
@@ -5855,10 +5856,10 @@ class MedtrackViewTests(TestCase):
             )
 
             self.assertEqual(response.status_code, 200)
-            self.assertEqual(len(list(Path(temp_dir).glob("patient-data-bundle-daily-*.zip"))), 1)
+            self.assertEqual(len(list(Path(temp_dir).glob("patient-data-bundle-daily-*.zip"))), 0)
             schedule = PatientDataBackupSchedule.get_solo()
-            self.assertEqual(schedule.last_backup_trigger, PatientDataBackupTrigger.DAILY_SCHEDULED)
-            self.assertEqual(schedule.last_backup_status, PatientDataBackupStatus.SUCCESS)
+            self.assertEqual(schedule.last_backup_status, PatientDataBackupStatus.NEVER)
+            self.assertContains(response, "supervised backup runner")
 
     def test_database_management_import_requires_confirmation(self):
         self.login_as_admin()
@@ -9523,6 +9524,68 @@ class PatientDataBundleTests(TestCase):
         self.assertEqual(payload["cases"][0]["patient_uhid"], "UH-BUNDLE-001")
         self.assertEqual(payload["cases"][0]["blood_group"], BloodGroup.A_NEGATIVE)
         self.assertEqual(manifest["counts"]["patients"], 1)
+
+    def test_patient_data_bundle_rejects_unexpected_zip_entries(self):
+        archive_bytes, _, _ = database_bundle.create_bundle_archive()
+        rewritten = io.BytesIO()
+        with zipfile.ZipFile(io.BytesIO(archive_bytes), "r") as source_zip, zipfile.ZipFile(
+            rewritten, "w", compression=zipfile.ZIP_STORED
+        ) as target_zip:
+            for entry in source_zip.infolist():
+                target_zip.writestr(entry.filename, source_zip.read(entry.filename))
+            target_zip.writestr("unexpected.bin", b"unexpected")
+
+        with self.assertRaisesMessage(database_bundle.BundleValidationError, "too many entries"):
+            database_bundle.load_bundle_archive(rewritten.getvalue())
+
+    def test_patient_data_bundle_rejects_excessive_compression_ratio(self):
+        archive = io.BytesIO()
+        with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as bundle_zip:
+            bundle_zip.writestr(database_bundle.PATIENT_DATA_FILENAME, b"0" * 100_000)
+            bundle_zip.writestr(database_bundle.MANIFEST_FILENAME, b"{}")
+
+        with patch.object(database_bundle, "MAX_BUNDLE_COMPRESSION_RATIO", 2), self.assertRaisesMessage(
+            database_bundle.BundleValidationError, "compression ratio"
+        ):
+            database_bundle.load_bundle_archive(archive.getvalue())
+
+    def test_patient_data_upload_reader_is_bounded(self):
+        uploaded = SimpleUploadedFile("patient-data.zip", b"01234567890", content_type="application/zip")
+        with patch.object(database_bundle, "MAX_BUNDLE_COMPRESSED_BYTES", 10), self.assertRaisesMessage(
+            database_bundle.BundleValidationError, "upload limit"
+        ):
+            database_bundle.read_uploaded_bundle(uploaded)
+
+    def test_destructive_patient_link_reverse_migration_fails_closed(self):
+        migration_module = importlib.import_module(
+            "patients.migrations.0028_rolesetting_can_patient_merge_alter_case_uhid_and_more"
+        )
+        with self.assertRaisesMessage(RuntimeError, "intentionally blocked"):
+            migration_module.reverse_backfill_patients_and_case_links(None, None)
+
+    def test_supervised_due_backup_command_is_one_shot(self):
+        stdout = io.StringIO()
+        with patch(
+            "patients.management.commands.run_due_patient_backups.run_due_scheduled_backup",
+            return_value=backup_scheduler.ScheduledBackupRunResult.NOT_DUE,
+        ):
+            call_command("run_due_patient_backups", stdout=stdout)
+        self.assertIn("result=not-due", stdout.getvalue())
+
+        stdout = io.StringIO()
+        with patch(
+            "patients.management.commands.run_due_patient_backups.run_due_scheduled_backup",
+            return_value=backup_scheduler.ScheduledBackupRunResult.LOCK_HELD,
+        ):
+            call_command("run_due_patient_backups", stdout=stdout)
+        self.assertIn("result=lock-held", stdout.getvalue())
+
+        with patch(
+            "patients.management.commands.run_due_patient_backups.run_due_scheduled_backup",
+            side_effect=RuntimeError("synthetic backup failure"),
+        ):
+            with self.assertRaisesMessage(RuntimeError, "synthetic backup failure"):
+                call_command("run_due_patient_backups")
 
     def test_patient_data_bundle_round_trips_subcategory_and_accepts_legacy_payloads_without_it(self):
         Case.objects.create(

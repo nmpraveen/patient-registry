@@ -1,0 +1,11 @@
+[Unit]
+Description=Check MEDTRACK patient-data backup schedules every minute
+
+[Timer]
+OnCalendar=*-*-* *:*:00
+AccuracySec=1s
+Persistent=true
+Unit=medtrack-patient-backup-scheduler.service
+
+[Install]
+WantedBy=timers.target

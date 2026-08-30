@@ -63,7 +63,6 @@
 - Hardened Android case edits so missing server fields cannot be converted to destructive defaults, and added durable retry/discard recovery records for validation, conflict, authentication, and transient sync failures.
 - Replaced patient search with a PHI-minimal POST body and implemented terminal-only cursor notification reconciliation with opaque event identity and dataset-epoch handling.
 - Made FCM a generic wake-up signal, removed PHI-bearing push actions and release HTTP logging, and added API 36 dev/stage/prod release packaging with external signing, dependency locks, SBOM, hashes, provenance, and artifact auditing.
-
 ## 2026.08.29.17.26
 - Changed website sessions to a sliding 12-hour inactivity timeout so normal authenticated activity refreshes the expiry instead of logging staff out roughly 30 minutes after login.
 - Documented the explicit production session settings and the shared-workstation logout precaution.

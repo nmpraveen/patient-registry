@@ -1,7 +1,11 @@
 from datetime import timedelta
+from ipaddress import ip_address
 from pathlib import Path
 
 import environ
+from django.core.exceptions import ImproperlyConfigured
+
+from patient_registry.proxy_security import parse_proxy_cidrs
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -48,6 +52,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "patient_registry.proxy_security.TrustedProxyClientIPMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "corsheaders.middleware.CorsMiddleware",
@@ -96,6 +101,12 @@ else:
     }
 
 DATABASES["default"]["ATOMIC_REQUESTS"] = True
+
+# Bound request metadata in memory and spool larger uploads to disk. Patient-data
+# imports have a stricter 32 MiB application ceiling in patients.database_bundle.
+DATA_UPLOAD_MAX_MEMORY_SIZE = env.int("DATA_UPLOAD_MAX_MEMORY_SIZE", default=2_621_440)
+FILE_UPLOAD_MAX_MEMORY_SIZE = env.int("FILE_UPLOAD_MAX_MEMORY_SIZE", default=2_621_440)
+DATA_UPLOAD_MAX_NUMBER_FILES = 1
 
 AUTH_PASSWORD_VALIDATORS = [
     {
@@ -171,6 +182,16 @@ CORS_ALLOWED_ORIGINS = [
     for origin in env("CORS_ALLOWED_ORIGINS", default="").split(",")
     if origin.strip()
 ]
+
+MEDTRACK_TRUSTED_PROXY_CIDRS = env("MEDTRACK_TRUSTED_PROXY_CIDRS", default="")
+MEDTRACK_TRUSTED_PROXY_NETWORKS = parse_proxy_cidrs(MEDTRACK_TRUSTED_PROXY_CIDRS)
+MEDTRACK_EXPECTED_PROXY_IP = env("MEDTRACK_EXPECTED_PROXY_IP", default="")
+if env.bool("MEDTRACK_REQUIRE_TRUSTED_PROXY", default=False):
+    if not MEDTRACK_TRUSTED_PROXY_NETWORKS or not MEDTRACK_EXPECTED_PROXY_IP:
+        raise ImproperlyConfigured("Production requires trusted proxy CIDRs and the expected Caddy address")
+    expected_proxy = ip_address(MEDTRACK_EXPECTED_PROXY_IP)
+    if not any(expected_proxy in network for network in MEDTRACK_TRUSTED_PROXY_NETWORKS):
+        raise ImproperlyConfigured("The expected Caddy address is outside MEDTRACK_TRUSTED_PROXY_CIDRS")
 
 LOGIN_URL = "login"
 LOGIN_REDIRECT_URL = "patients:dashboard"

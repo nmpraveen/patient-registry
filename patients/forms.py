@@ -56,7 +56,7 @@ from .theme import (
     unflatten_theme_tokens,
 )
 from .intake_access import case_intake_patient_queryset, resolve_case_intake_patient
-from .database_bundle import IMPORT_CONFIRMATION_PHRASE
+from .database_bundle import IMPORT_CONFIRMATION_PHRASE, MAX_BUNDLE_COMPRESSED_BYTES
 
 
 User = get_user_model()
@@ -1332,6 +1332,10 @@ class DatabaseImportForm(forms.Form):
         bundle_file = self.cleaned_data["bundle_file"]
         if not bundle_file.name.lower().endswith(".zip"):
             raise forms.ValidationError("Upload a ZIP archive created by MEDTRACK.")
+        if bundle_file.size > MAX_BUNDLE_COMPRESSED_BYTES:
+            raise forms.ValidationError(
+                f"Backup ZIP must be at most {MAX_BUNDLE_COMPRESSED_BYTES // (1024 * 1024)} MiB."
+            )
         return bundle_file
 
     def clean_confirm_phrase(self):

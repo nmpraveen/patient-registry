@@ -36,10 +36,12 @@ Production uses the shared Compose file plus the tracked Caddy overlay:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.prod.yml config
-./scripts/deploy-production.sh "$(git rev-parse HEAD)"
+./scripts/deploy-production.sh plan "$(git rev-parse HEAD)" \
+  --backup-receipt /srv/medtrack/offsite-backups/state/latest-pre-deployment.receipt \
+  --evidence-dir /srv/medtrack/deploy-evidence/<deployment-id>
 ```
 
-The deployment script refuses a different commit or modified tracked files, pulls the pinned PostgreSQL and Caddy images, builds the pinned app commit, waits for Django to become healthy, and runs `manage.py check --deploy`.
+Review the generated migration plan and its SHA-256 before running the separate `apply` phase documented in `RUNBOOK.md`. The deployment script refuses a different commit or modified tracked files, requires a fresh encrypted pre-deployment receipt, runs migrations only through a controlled one-shot service, creates and scratch-restores rollback artifacts, checks all services and both TLS paths, and requires an external authenticated-login smoke hook. Web container startup never runs migrations.
 
 Create an untracked `.env` with fresh values. At minimum, production must set:
 
@@ -121,7 +123,7 @@ Important notes:
   - monthly backups every 1st of the month at `12:00 AM`, retaining all monthly bundles
   - yearly backups every `Jan 1` at `12:00 AM`, retaining all yearly bundles
 - The page shows the last backup and next backup timing for each schedule, plus the overall last backup status.
-- Built-in automatic scheduling runs while the web app is running; host-level scheduled commands are still a stronger option for unattended infrastructure.
+- Automatic scheduling is executed only by the supervised `medtrack-patient-backup-scheduler.timer`; Gunicorn workers and web requests do not own a scheduler.
 
 For WebAuthn / passkeys outside localhost, configure these env vars and serve the app over HTTPS:
 
@@ -182,23 +184,26 @@ docker compose up -d --build
 
 If the VPS uses a private `docker-compose.override.yml`, `git pull` leaves that file untouched because it is untracked and server-local.
 
-### 3) Apply migrations
+### 3) Apply migrations through a controlled one-shot job
 
 ```bash
-docker compose exec web python manage.py migrate
+docker compose --profile deploy run --rm migrate
 ```
 
-### 4) If something goes wrong, restore backup
+For production, use the plan/apply deployment gate in `RUNBOOK.md`; do not run the one-shot migration manually.
+
+### 4) Verify a full recovery backup
 
 ```bash
-./scripts/restore.sh backups/<timestamp>
+./scripts/restore.sh verify \
+  --archive /absolute/path/medtrack-prod-<tier>-<timestamp>.tar.age \
+  --checksum /absolute/path/medtrack-prod-<tier>-<timestamp>.tar.age.sha256 \
+  --identity /offline/path/age-identity.txt \
+  --expected-commit <full-git-sha> \
+  --receipt-dir /absolute/path/restore-receipt
 ```
 
-Then restart app:
-
-```bash
-docker compose up -d
-```
+This is scratch-only by default. It verifies ciphertext and both manifests, validates the PostgreSQL catalog and recorded version/commit, restores into an isolated database, runs Django/migration/ORM/login checks, and removes decrypted scratch material. Production activation has a separate environment gate and confirmation token, creates and scratch-restores a fresh rollback snapshot, retains the rollback database, and supports the documented `rollback` mode.
 
 ## Data persistence notes
 
@@ -226,8 +231,8 @@ Notes:
 
 - `/app/backups` maps to the repo `backups/` folder in this Docker setup.
 - `backups/` is gitignored and should be treated as PHI-containing server storage.
-- The built-in app scheduler creates separate daily, monthly, and yearly archive bundles; the management command creates manual bundles and prunes only other manual bundles.
-- Use the patient-data bundle flow for routine restores of patient records, and keep `scripts/backup.sh` / `scripts/restore.sh` for full-environment recovery.
+- The supervised host timer runs `python manage.py run_due_patient_backups` once per minute to create due daily, monthly, and yearly bundles; the management command above creates manual bundles and prunes only other manual bundles.
+- Use the patient-data bundle flow for routine restores of patient records. `scripts/backup.sh` remains a VPS-local upgrade snapshot only; full-environment recovery uses encrypted off-site triplets with the fail-closed `scripts/restore.sh` workflow above.
 
 ## Encrypted off-VPS recovery backups
 

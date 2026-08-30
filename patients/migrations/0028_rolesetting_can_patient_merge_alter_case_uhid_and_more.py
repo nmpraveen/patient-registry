@@ -56,13 +56,11 @@ def backfill_patients_and_case_links(apps, schema_editor):
 
 
 def reverse_backfill_patients_and_case_links(apps, schema_editor):
-    Case = apps.get_model("patients", "Case")
-    Patient = apps.get_model("patients", "Patient")
-    RoleSetting = apps.get_model("patients", "RoleSetting")
-
-    Case.objects.update(patient_id=None)
-    Patient.objects.all().delete()
-    RoleSetting.objects.update(can_patient_merge=False)
+    raise RuntimeError(
+        "Reverse migration across patients.0028 is intentionally blocked because it would delete master-patient "
+        "records and unlink every case. Restore a verified pre-migration database snapshot and the matching app "
+        "commit instead."
+    )
 
 
 class Migration(migrations.Migration):

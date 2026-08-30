@@ -15,11 +15,16 @@ services:
       retries: 5
 
   web:
-    build: .
+    image: ${MEDTRACK_APP_IMAGE:-medtrack-app:local}
+    build:
+      context: .
+      args:
+        VCS_REF: ${MEDTRACK_BUILD_REVISION:-unknown}
+        BUILD_CONTEXT_SHA256: ${MEDTRACK_BUILD_CONTEXT_SHA256:-unverified}
     restart: unless-stopped
-    command: sh -c "python manage.py migrate && python manage.py collectstatic --noinput && gunicorn patient_registry.wsgi:application --bind 0.0.0.0:8000 --workers ${GUNICORN_WORKERS:-3} --timeout ${GUNICORN_TIMEOUT:-60}"
+    command: sh -c "python manage.py collectstatic --noinput && gunicorn patient_registry.wsgi:application --bind 0.0.0.0:8000 --workers ${GUNICORN_WORKERS:-3} --timeout ${GUNICORN_TIMEOUT:-60} --access-logfile /var/log/medtrack/gunicorn-access.log --access-logformat '{\"timestamp\":\"%(t)s\",\"method\":\"%(m)s\",\"status\":%(s)s,\"duration_us\":%(D)s,\"bytes\":%(B)s}'"
     env_file:
-      - .env
+      - ${MEDTRACK_ENV_FILE:-.env}
     environment:
       DEBUG: ${DEBUG:-False}
       ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1,0.0.0.0}
@@ -33,12 +38,37 @@ services:
       - "127.0.0.1:${WEB_PORT:-8000}:8000"
     volumes:
       - "${BACKUP_HOST_DIR:-./backups}:/app/backups"
+      - "${MEDTRACK_SECURITY_LOG_DIR:-./security-logs}:/var/log/medtrack"
     healthcheck:
       test: ["CMD", "python", "-c", "import os, urllib.request; request = urllib.request.Request('http://127.0.0.1:8000/login/', headers={'Host': os.environ.get('MEDTRACK_DOMAIN', 'localhost'), 'X-Forwarded-Proto': 'https'}); urllib.request.urlopen(request, timeout=5)"]
       interval: 10s
       timeout: 5s
       retries: 12
       start_period: 30s
+
+  migrate:
+    image: ${MEDTRACK_APP_IMAGE:-medtrack-app:local}
+    build:
+      context: .
+      args:
+        VCS_REF: ${MEDTRACK_BUILD_REVISION:-unknown}
+        BUILD_CONTEXT_SHA256: ${MEDTRACK_BUILD_CONTEXT_SHA256:-unverified}
+    restart: "no"
+    command: python manage.py migrate --noinput
+    profiles: ["deploy"]
+    env_file:
+      - ${MEDTRACK_ENV_FILE:-.env}
+    environment:
+      DEBUG: ${DEBUG:-False}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1,0.0.0.0}
+      CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-}
+      POSTGRES_HOST: db
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - "${BACKUP_HOST_DIR:-./backups}:/app/backups"
 
 volumes:
   postgres_data:

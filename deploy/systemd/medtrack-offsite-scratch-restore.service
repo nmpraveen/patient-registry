@@ -1,7 +1,8 @@
 [Unit]
-Description=Verify MEDTRACK encrypted off-site backup freshness and retention
+Description=Independently scratch-restore a MEDTRACK encrypted off-site backup
 Documentation=file:///srv/medtrack/app/RUNBOOK.md
-After=network-online.target
+Requires=docker.service
+After=docker.service network-online.target
 Wants=network-online.target
 
 [Service]
@@ -10,23 +11,21 @@ User=root
 Group=root
 WorkingDirectory=/srv/medtrack/app
 Environment=MEDTRACK_BACKUP_CONFIG=/etc/medtrack-backup/backup.env
-Environment=MEDTRACK_HEALTH_PRODUCTION_MODE=1
-Environment=MEDTRACK_HEALTH_HASH_MODE=all
-ExecStart=/srv/medtrack/app/scripts/check-offsite-backups.sh
+ExecStart=/srv/medtrack/app/scripts/run-offsite-scratch-restore.sh
 UMask=0077
-TimeoutStartSec=15m
+TimeoutStartSec=2h
 NoNewPrivileges=yes
 PrivateDevices=yes
 PrivateTmp=yes
 ProtectClock=yes
 ProtectControlGroups=yes
-ProtectHome=yes
+ProtectHome=read-only
 ProtectHostname=yes
 ProtectKernelLogs=yes
 ProtectKernelModules=yes
 ProtectKernelTunables=yes
 ProtectSystem=strict
-ReadOnlyPaths=/srv/medtrack/app /srv/medtrack/backup-secrets /etc/medtrack-backup /srv/medtrack/offsite-backups /srv/medtrack/security-evidence
+ReadWritePaths=/var/lib/medtrack-backup-health /srv/medtrack/security-evidence
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 RestrictSUIDSGID=yes
 LockPersonality=yes

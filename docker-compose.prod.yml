@@ -1,6 +1,18 @@
 services:
+  web:
+    environment:
+      MEDTRACK_REQUIRE_TRUSTED_PROXY: "1"
+      MEDTRACK_EXPECTED_PROXY_IP: 172.30.0.10
+      MEDTRACK_TRUSTED_PROXY_CIDRS: ${MEDTRACK_TRUSTED_PROXY_CIDRS:-172.30.0.10/32}
+    networks:
+      default: {}
+      medtrack_edge: {}
+
   caddy:
-    image: caddy:2.11.4-alpine
+    image: medtrack-caddy:2.11.4-ratelimit
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.caddy
     restart: unless-stopped
     environment:
       MEDTRACK_DOMAIN: ${MEDTRACK_DOMAIN:?set MEDTRACK_DOMAIN in .env}
@@ -11,11 +23,15 @@ services:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
+      - "${MEDTRACK_SECURITY_LOG_DIR:-./security-logs}:/var/log/medtrack"
     depends_on:
       web:
         condition: service_healthy
+    networks:
+      medtrack_edge:
+        ipv4_address: 172.30.0.10
     healthcheck:
-      test: ["CMD", "caddy", "validate", "--config", "/etc/caddy/Caddyfile"]
+      test: ["CMD-SHELL", "caddy list-modules | grep -Fxq http.handlers.rate_limit && caddy validate --config /etc/caddy/Caddyfile"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -23,3 +39,9 @@ services:
 volumes:
   caddy_data:
   caddy_config:
+
+networks:
+  medtrack_edge:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24

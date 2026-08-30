@@ -6,9 +6,11 @@ MEDTRACK is a runnable Django + Postgres case-follow-up MVP with a native Androi
 
 The web app supports login-based role-aware workflows, case dashboards, case activity logs, configurable roles/categories/theme settings, patient-data import/export, server-side backup bundles, and seeded demo records.
 
-The Android v1 implementation is locally implemented and has local verification evidence from the Test NNH workflow. The release lane now has API 36 environment flavors, fail-closed case edits, cursor snapshot sync, durable recovery records, opaque push consumption, and auditable unsigned APK/AAB packaging. The release goal is not complete until the amended API PR #99 contract, account-boundary lane, external Firebase, and physical-device gates pass.
+The Android v1 implementation and its reviewed server contracts are merged in source, including API 36 environment flavors, fail-closed case edits, account-scoped encrypted state, cursor snapshot sync, durable recovery records, and data-only opaque FCM consumption. The release goal is not complete until external Firebase, physical-device, signing, and field gates pass.
 
 Production is deployed on the hardened VPS at commit `a5dff668b23c52e5a71431807a291573f9e0404c`: pinned Python/PostgreSQL/Caddy versions, loopback-only Django exposure, persistent host backup storage, health-gated startup, and exact-commit deployment. Website and API object authorization now enforce created, assigned, or current call-queue scope for restricted staff; Doctor/Admin retain full active-case scope. Non-superusers can no longer modify superusers or grant settings-admin access, and the plaintext temporary-password-note model/table/UI have been removed. Encrypted Google Drive backups and health timers are active, and a pull-only Synology ciphertext mirror provides an independent off-VPS copy.
+
+GitHub `main` is source-reviewed at `892a0c2a6095b346fcbb5a90804a481ec849ee76`, but this task did not query or modify the live VPS, Drive, NAS, or backup state. The rebased operations/recovery remediation branch adds fail-closed verified restore and rollback, two-phase deployment gates, supervised patient-data scheduling, stronger off-site triplet/hash health, destructive reverse-migration refusal, and bounded imports. Those controls remain pending PR merge and an explicitly approved live installation; they are not deployed.
 
 ## Last Verified Date
 
@@ -80,6 +82,7 @@ If `docker-compose.override.yml` exists locally, the local-dev PowerShell wrappe
 - Firebase/FCM integration boundary is implemented so missing Firebase config does not break normal local use.
 - Production Caddy/Docker deployment with exact-commit refusal, service healthchecks, secure loopback binding, and persistent `/app/backups` storage.
 - Encrypted off-VPS recovery tooling with immutable upload names, post-upload verification, exact-pattern retention, four scheduled tiers, a pre-deployment tier, and freshness/retention health checks.
+- Source-level operations remediation for encrypted scratch-first restore, tested rollback artifacts, reviewable one-shot migrations, supervised backup scheduling, complete-triplet/hash health, fail-closed reverse migration, and bounded ZIP imports. Live enablement remains coordinator-controlled.
 - Live encrypted canary `medtrack-prod-canary-20260811T165254Z.tar.age`, independently downloaded, checksum-verified, decrypted off VPS, restored into PostgreSQL 16.14, and validated by the exact deployed Django commit.
 - Pull-only Synology mirror at `Home/Backups/MEDTRACK` with a read-only SFTP export, networked incoming-only fetcher, network-disabled archive promoter, hard space/transfer ceilings, and no automatic deletion.
 - NAS-sourced restore proof for the same canary: external and internal checksums, PostgreSQL restore, exact-commit Django checks, ORM queries, and login HTTP 200 all passed; decrypted scratch material was removed.
@@ -93,8 +96,7 @@ If `docker-compose.override.yml` exists locally, the local-dev PowerShell wrappe
 - Low-end or representative physical Android phone smoke is not complete.
 - Two-user field-test record is not complete.
 - Final Android v1 audit remains incomplete until `.\android\scripts\medtrack-v1-audit.ps1` reports `goalComplete=true`.
-- Android account-scoped encrypted local storage/outbox isolation remains owned by the account-security lane. The Android push consumer is generic, but the server-side PHI-free FCM producer and real delivery still require integration proof.
-- Android patient-search/notification DTOs target the amended PR #99 cursor contract; final field-for-field validation must use its amended exact SHA before either lane merges.
+- The new operations/recovery gates have only local/synthetic and isolated validation until the coordinator approves installation and live acceptance. Do not run restore activation, deployment apply, or unit installation against production from this task.
 
 ## Known Risks
 
@@ -126,6 +128,6 @@ If `docker-compose.override.yml` exists locally, the local-dev PowerShell wrappe
 
 ## Next 3 Actions
 
-1. Review and merge the website frontend/privacy/accessibility hardening PR, then deploy only through the normal backup, exact-commit, and live-acceptance gates.
-2. Rotate temporary production credentials and resolve the HostDZire browser-console recovery issue; keep Drive/NAS health and monthly scratch restores monitored.
-3. Before enabling Android/FCM in production, validate the amended PR #99 schema at its exact SHA, merge the account-scoped encrypted local-state lane, prove opaque server push delivery, then complete physical-device and two-user field tests.
+1. Review and merge the operations/recovery PR at its exact head; do not deploy it based only on local or synthetic tests.
+2. With explicit live approval, install the supervised units and independent scratch-restore hook, generate a fresh pre-deployment receipt, review the migration-plan hash, and exercise the documented plan/apply/login/rollback gates without exposing credentials or PHI.
+3. Before enabling Android/FCM in production, prove external data-only Firebase delivery, signed release identity, physical-device behavior, and the two-user field test.

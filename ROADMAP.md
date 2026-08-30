@@ -8,8 +8,8 @@
 | Local demo workflow | Done | Test NNH server runs at `http://localhost:8000` with `admin` / `pass` through the `local-dev` wrappers. |
 | Mobile API | Done locally | DRF endpoints support Android auth, worklists, case detail, writes, notifications, and device registration. |
 | Android v1 app | Done locally | Kotlin/Compose app, offline writes, notifications surface, local smoke scripts, and screenshot/style handoff evidence exist. |
-| Android release readiness | In progress | API 36 flavors, unsigned AAB/APK production packaging, external signing, dependency locks, hashes/SBOM/provenance, PHI-redacted networking, and opaque push consumption are implemented locally; server-contract integration, account isolation, Firebase/device evidence, and final audit remain. |
-| Production hardening | Website operational; overall NO-GO | Website/API P0 authorization and admin-IAM containment are live at `a5dff668`; HTTPS, encrypted Drive timers, isolated Synology mirror, and restore evidence are verified. Android account isolation, server-side opaque FCM proof, credential rotation, and provider-console recovery remain follow-ups. |
+| Android release readiness | In progress | API 36 flavors, packaging, account isolation, server contracts, and data-only opaque push handling are merged in source; external Firebase/device evidence, release signing, field tests, and final audit remain. |
+| Production hardening | Website operational; overall NO-GO | Last verified live website commit remains `a5dff668`; GitHub `main` is `892a0c2`. Operations/recovery gates are source-reviewed on this branch but require PR merge and separately approved live installation/acceptance. |
 
 ## Near-Term Roadmap
 
@@ -18,8 +18,9 @@
    - Add a host-level VPS snapshot so application backups are not the only recovery layer.
    - Review Drive/NAS timer health and bounded storage use, and investigate failures without automatically deleting NAS archives.
    - Repeat an off-production scratch restore at least monthly and after any backup-system change.
+   - Install the supervised patient-backup timer and independent scratch-restore hook only after the operations/recovery PR is reviewed and live change approval is granted.
    - Keep the private `age` identity in at least two recoverable off-VPS locations and never place it on the VPS or NAS.
-   - Treat `a5dff668b23c52e5a71431807a291573f9e0404c` as the current live website commit and require a fresh pre-deployment backup before the next code deployment.
+   - Treat `a5dff668b23c52e5a71431807a291573f9e0404c` as the last verified live website commit until rechecked; require a fresh encrypted receipt, reviewed migration-plan hash, tested rollback artifacts, all-service/TLS/authenticated-login acceptance, and exact deployment receipt before the next code deployment.
 
 2. Continue the website-first Stage 7 cleanup.
    - Build role profiles and frontend behavior on the live created/assigned/call-queue/all object-scope boundary.
@@ -65,7 +66,7 @@
 ## Later Work
 
 - Provision Play App Signing/external upload-key secrets and run the documented signed `bundleProdForPlay` gate; never commit signing material.
-- Add recurring independent scratch-restore verification after the first manual restore proof.
+- Operate recurring independent scratch-restore verification through the fail-closed hook after approved installation; keep the private age identity off the VPS and NAS.
 - Design the permanent mobile worklist scope policy so elevated users can choose the operational queue intentionally instead of relying on the temporary `assigned_to=all` default.
 - Keep the app scoped as case-based follow-up tracking, not a full EHR.
 - Add new seed support whenever future workflows create or update patient data.

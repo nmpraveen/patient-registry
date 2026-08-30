@@ -12,7 +12,9 @@ Production is deployed on the hardened VPS at commit `a5dff668b23c52e5a71431807a
 
 ## Last Verified Date
 
-2026-08-23
+2026-08-30
+
+The unreleased `codex/remediate-frontend-a11y` branch adds website-only frontend, privacy, and accessibility hardening on base commit `920357a58a69bd2e18ed03023a4273cd1493a066`. Focused Django/template regressions and the Playwright Chromium matrix pass at 320, 390, 430, and 1440 pixels with no console or request failures, horizontal document overflow, external asset requests, or browser-back PHI exposure. Its 577-file vendor manifest is byte-stable in fresh Windows and Linux checkouts, and rendered theme interaction text is validated at 4.5:1 separately from the 3:1 focus-indicator boundary. This branch is not deployed; the production commit recorded below is unchanged.
 
 PR #95 was reviewed at exact head `4b591627d9fac0ff4ecff1230fc74162280c4e84` and merged/deployed as `a5dff668b23c52e5a71431807a291573f9e0404c`. Verification covered all 375 Django tests (2 skipped), migration drift and clean scratch migration, production migration state, healthy Compose services, origin-bypassed and public HTTPS, real administrator login, removal of the plaintext-note table/UI, and a rollback-only live forged-ID/revocation smoke with no persisted synthetic records. Immediately before deployment, encrypted pre-deployment backup `medtrack-prod-pre-deployment-20260823T174416Z.tar.age` passed Drive verification, NAS export, and off-site health checks.
 
@@ -78,6 +80,7 @@ If `docker-compose.override.yml` exists locally, the local-dev PowerShell wrappe
 - Live encrypted canary `medtrack-prod-canary-20260811T165254Z.tar.age`, independently downloaded, checksum-verified, decrypted off VPS, restored into PostgreSQL 16.14, and validated by the exact deployed Django commit.
 - Pull-only Synology mirror at `Home/Backups/MEDTRACK` with a read-only SFTP export, networked incoming-only fetcher, network-disabled archive promoter, hard space/transfer ceilings, and no automatic deletion.
 - NAS-sourced restore proof for the same canary: external and internal checksums, PostgreSQL restore, exact-commit Django checks, ORM queries, and login HTTP 200 all passed; decrypted scratch material was removed.
+- Unreleased website frontend hardening: hash-verified locally pinned assets, nonce/hash CSP without blob scripts, browser headers, universal dynamic-response no-store caching, unique form IDs, labeled controls, race-safe combobox semantics, complete affected-set merge review, text/interaction/focus contrast enforcement, responsive overflow fixes, and browser regressions.
 
 ## Not Done
 
@@ -103,6 +106,7 @@ If `docker-compose.override.yml` exists locally, the local-dev PowerShell wrappe
 - `MarkUS_Latest_API37` can appear attached while stuck behind a locked/black SystemUI state. For quick manual starts, switch to `MarkUS_Local` instead of debugging the APK.
 - Firebase readiness depends on external console configuration and local secrets that are intentionally excluded from Git.
 - The website-side authorization containment is live, but overall MEDTRACK production readiness remains NO-GO for Android until account isolation, generic push payloads, and the remaining release/recovery gates are completed.
+- The unreleased CSP still permits inline style attributes because the existing theme system applies per-category CSS variables that way. Executable scripts are self-hosted and nonce-bound, and the one runtime-generated Crayons style block is limited to a pinned SHA-256 hash; upgrading Crayons requires reviewing the vendor integrity manifest, revalidating that hash, and rerunning the browser suite.
 
 ## Important Generated Outputs
 
@@ -117,6 +121,6 @@ If `docker-compose.override.yml` exists locally, the local-dev PowerShell wrappe
 
 ## Next 3 Actions
 
-1. Resume the website Stage 7 role/profile and frontend cleanup on top of the now-live object-authorization boundary.
+1. Review and merge the website frontend/privacy/accessibility hardening PR, then deploy only through the normal backup, exact-commit, and live-acceptance gates.
 2. Rotate temporary production credentials and resolve the HostDZire browser-console recovery issue; keep Drive/NAS health and monthly scratch restores monitored.
 3. Before enabling Android/FCM in production, implement account-scoped encrypted local state and PHI-free push payloads, then complete physical-device and two-user field tests.

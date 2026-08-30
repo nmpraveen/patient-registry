@@ -13,7 +13,8 @@
 
       <form method="get" class="row g-2 mb-3">
         <div class="col-12 col-lg-6">
-          <input class="form-control" type="search" name="q" value="{{ query|default:'' }}" placeholder="UHID, name, phone, or place" />
+          <label class="visually-hidden" for="patient-list-search">Search patients by UHID, name, phone, or place</label>
+          <input id="patient-list-search" class="form-control" type="search" name="q" value="{{ query|default:'' }}" placeholder="UHID, name, phone, or place" />
         </div>
         <div class="col-12 col-lg-auto">
           <button class="btn btn-outline-primary w-100" type="submit">Search</button>

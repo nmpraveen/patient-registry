@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% block title %}Quick Entry | MEDTRACK{% endblock %}
 {% block content %}
-<style>
+<style nonce="{{ request.csp_nonce }}">
   .quick-entry-card {
     border: 1px solid var(--theme-shell-surface-border);
     border-radius: 1rem;
@@ -108,7 +108,7 @@
 </section>
 
 {{ form.subcategory_option_groups|json_script:"quick-entry-subcategory-options" }}
-<script>
+<script nonce="{{ request.csp_nonce }}">
   (() => {
     const categoryField = document.getElementById("{{ form.category.id_for_label }}");
     const subcategoryField = document.getElementById("{{ form.subcategory.id_for_label }}");

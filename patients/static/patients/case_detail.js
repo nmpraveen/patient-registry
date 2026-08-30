@@ -149,8 +149,6 @@
     }
   };
 
-  const feedbackMarkup = (lines) => lines.map((line) => `<div>${line}</div>`).join("");
-
   const collectErrors = (errors) => {
     if (!errors || typeof errors !== "object") {
       return [];
@@ -179,7 +177,12 @@
 
     feedback.hidden = false;
     feedback.className = `case-detail-feedback alert alert-${variant === "error" ? "danger" : "success"}`;
-    feedback.innerHTML = feedbackMarkup([message, ...errors]);
+    feedback.replaceChildren();
+    [message, ...errors].filter(Boolean).forEach((line) => {
+      const messageLine = document.createElement("div");
+      messageLine.textContent = String(line);
+      feedback.appendChild(messageLine);
+    });
   };
 
   const clearFeedback = () => {
@@ -188,7 +191,7 @@
     }
     feedback.hidden = true;
     feedback.className = "case-detail-feedback";
-    feedback.innerHTML = "";
+    feedback.replaceChildren();
   };
 
   const scrollToSection = (selector) => {

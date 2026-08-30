@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% block title %}Categories | MEDTRACK{% endblock %}
 {% block content %}
-<style>
+<style nonce="{{ request.csp_nonce }}">
   .category-settings-header {
     padding: 1.5rem;
     border: 1px solid var(--theme-shell-surface-border);
@@ -542,7 +542,7 @@
   </section>
 {% endif %}
 
-<script>
+<script nonce="{{ request.csp_nonce }}">
   (() => {
     function bindStarterPlan(shell) {
       const totalFormsInput = shell.querySelector('input[name$="-TOTAL_FORMS"]');

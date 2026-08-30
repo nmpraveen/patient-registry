@@ -3,7 +3,7 @@
 {% block title %}{% if is_edit %}Edit{% else %}Add{% endif %} Vitals | MEDTRACK{% endblock %}
 {% block extra_head %}
   <link rel="stylesheet" href="{% static 'patients/case_detail.css' %}?v={{ app_version }}" />
-  <style>
+  <style nonce="{{ request.csp_nonce }}">
     .vitals-form-page {
       display: grid;
       gap: 1rem;

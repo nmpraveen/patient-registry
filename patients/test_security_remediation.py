@@ -283,7 +283,11 @@ class AffectedSetAuthorizationTests(SecurityFixtureMixin, TestCase):
 
         response = self.client.post(
             reverse("patients:patient_merge", kwargs={"pk": source.pk}),
-            {"target_patient": target.pk},
+            {
+                "target_patient": target.pk,
+                "confirm_target_uhid": target.uhid,
+                "confirm_merge": "on",
+            },
         )
 
         self.assertEqual(response.status_code, 403)

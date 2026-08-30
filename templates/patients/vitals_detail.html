@@ -3,7 +3,7 @@
 {% block title %}Vitals {{ case.uhid }} | MEDTRACK{% endblock %}
 {% block extra_head %}
   <link rel="stylesheet" href="{% static 'patients/case_detail.css' %}?v={{ app_version }}" />
-  <style>
+  <style nonce="{{ request.csp_nonce }}">
     .vitals-page {
       display: grid;
       gap: 1rem;
@@ -350,8 +350,8 @@
 {% endblock %}
 {% block extra_scripts %}
   {% if vitals_trend_payload %}
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
-    <script>
+    <script src="{% static 'patients/vendor/chartjs/4.4.4/chart.umd.js' %}"></script>
+    <script nonce="{{ request.csp_nonce }}">
       (function() {
         const dataEl = document.getElementById("vitals-trend-data");
         if (!dataEl || typeof Chart === "undefined") return;

@@ -129,6 +129,9 @@ REST_FRAMEWORK = {
         "rest_framework.permissions.IsAuthenticated",
     ),
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    "DEFAULT_THROTTLE_RATES": {
+        "patient_search": "30/min",
+    },
 }
 
 AUTH_THROTTLE_ACCOUNT_LIMIT = env.int("AUTH_THROTTLE_ACCOUNT_LIMIT", default=5)

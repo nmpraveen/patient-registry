@@ -1,5 +1,19 @@
+import uuid
+
 from django.conf import settings
 from django.db import models
+
+
+class MobileDatasetState(models.Model):
+    """Singleton epoch separating receipts and device state across dataset replacement."""
+
+    id = models.PositiveSmallIntegerField(primary_key=True, default=1, editable=False)
+    epoch = models.UUIDField(default=uuid.uuid4, editable=False)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def save(self, *args, **kwargs):
+        self.pk = 1
+        super().save(*args, **kwargs)
 
 
 class MobileDeviceToken(models.Model):
@@ -31,6 +45,7 @@ class MobileNotificationType(models.TextChoices):
 
 class MobileNotification(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="mobile_notifications")
+    event_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     notification_type = models.CharField(max_length=32, choices=MobileNotificationType.choices)
     title = models.CharField(max_length=160)
     body = models.TextField(blank=True)
@@ -61,15 +76,29 @@ class MobileNotification(models.Model):
 
 
 class MobileWriteReceipt(models.Model):
+    STATUS_PENDING = "pending"
     STATUS_APPLIED = "applied"
     STATUS_FAILED = "failed"
+    STATUS_CHOICES = (
+        (STATUS_PENDING, "Pending"),
+        (STATUS_APPLIED, "Applied"),
+        (STATUS_FAILED, "Failed"),
+    )
 
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="mobile_write_receipts")
     client_write_id = models.CharField(max_length=80)
-    write_type = models.CharField(max_length=32)
-    status = models.CharField(max_length=16, default=STATUS_APPLIED)
+    operation = models.CharField(max_length=48)
+    target_type = models.CharField(max_length=32)
+    target_id = models.CharField(max_length=64, blank=True)
+    payload_hash = models.CharField(max_length=64)
+    authorization_hash = models.CharField(max_length=64)
+    dataset_epoch = models.UUIDField()
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=STATUS_PENDING)
     response_status = models.PositiveSmallIntegerField(default=200)
-    response_payload = models.JSONField(default=dict, blank=True)
+    response_metadata = models.JSONField(default=dict, blank=True)
+    result_type = models.CharField(max_length=32, blank=True)
+    result_id = models.CharField(max_length=64, blank=True)
+    expires_at = models.DateTimeField()
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -78,8 +107,10 @@ class MobileWriteReceipt(models.Model):
             models.UniqueConstraint(fields=["user", "client_write_id"], name="uniq_mobile_write_receipt_user_client")
         ]
         indexes = [
-            models.Index(fields=["user", "write_type"]),
+            models.Index(fields=["user", "operation"]),
+            models.Index(fields=["expires_at"]),
+            models.Index(fields=["dataset_epoch"]),
         ]
 
     def __str__(self):
-        return f"{self.write_type}:{self.client_write_id}"
+        return f"{self.operation}:{self.client_write_id}"

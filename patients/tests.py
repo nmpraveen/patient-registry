@@ -9632,6 +9632,53 @@ class PatientDataBundleTests(TestCase):
         self.assertEqual(imported_case.lscs, 1)
         self.assertEqual(imported_case.delivery_mode_total, imported_case.para)
 
+    def test_patient_data_bundle_replacement_revokes_mobile_state_and_advances_epoch(self):
+        from api.models import (
+            MobileDatasetState,
+            MobileDeviceToken,
+            MobileNotification,
+            MobileNotificationType,
+            MobileWriteReceipt,
+        )
+
+        source_case = self.create_case(
+            uhid="UH-BUNDLE-MOBILE-REVOKE",
+            phone_number="9555555511",
+        )
+        archive_bytes, _, _ = database_bundle.create_bundle_archive()
+        dataset_state, _ = MobileDatasetState.objects.get_or_create(pk=1)
+        original_epoch = dataset_state.epoch
+        MobileDeviceToken.objects.create(user=self.user, token="bundle-replacement-token")
+        MobileNotification.objects.create(
+            user=self.user,
+            notification_type=MobileNotificationType.RED_FLAG,
+            title="MEDTRACK priority update",
+            body="Open MEDTRACK to review a priority update.",
+            case=source_case,
+            payload={"type": MobileNotificationType.RED_FLAG},
+        )
+        MobileWriteReceipt.objects.create(
+            user=self.user,
+            client_write_id="bundle-replacement-receipt",
+            operation="case_create",
+            target_type="collection",
+            payload_hash="a" * 64,
+            authorization_hash="b" * 64,
+            dataset_epoch=original_epoch,
+            status=MobileWriteReceipt.STATUS_APPLIED,
+            response_status=201,
+            response_metadata={"message": "Case created."},
+            expires_at=timezone.now() + timedelta(days=7),
+        )
+
+        database_bundle.import_bundle_bytes(archive_bytes)
+
+        dataset_state.refresh_from_db()
+        self.assertNotEqual(dataset_state.epoch, original_epoch)
+        self.assertFalse(MobileNotification.objects.exists())
+        self.assertFalse(MobileWriteReceipt.objects.exists())
+        self.assertFalse(MobileDeviceToken.objects.get(token="bundle-replacement-token").is_active)
+
     def test_backup_patient_data_command_prunes_old_backups(self):
         self.create_case(uhid="UH-BUNDLE-002", phone_number="9555555502")
 

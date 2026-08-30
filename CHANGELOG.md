@@ -12,6 +12,10 @@
 - Hardened patient identity edits and merges with complete affected-set authorization, deterministic database locks, and terminal-target validation.
 - Added Django password validation, database-backed web/admin/JWT throttling, auth-version session and refresh-token revocation, and device-aware admin login.
 - Added shared vital-sign validators plus PostgreSQL range constraints, a concurrent-safe temporary-UHID allocator, and append-only clinical/IAM/data audit events.
+- Replaced clinical FCM content with generic copy and opaque event IDs, added current-object notification authorization, and revoked mobile state on assignment, role, deletion, and dataset-replacement boundaries while keeping FCM disabled by default.
+- Replaced full-response mobile write receipts with seven-day minimal receipts atomically bound to operation, target, canonical payload, authorization, and dataset epoch, with explicit conflict responses for mismatched reuse.
+- Added bounded client event times with separate immutable server receipt timestamps, minimum/throttled/minimal patient search, and dataset-safe call-log timestamp round trips.
+- Published a warning-free complete OpenAPI contract, made case PATCH preserve all omitted fields including `surgery_done`, and returned a complete editable case snapshot for safe client partial edits.
 
 ## 2026.08.29.17.26
 - Changed website sessions to a sliding 12-hour inactivity timeout so normal authenticated activity refreshes the expiry instead of logging staff out roughly 30 minutes after login.

@@ -22,6 +22,11 @@ FCM_CHANNEL_IDS = {
     "overdue": "overdue",
 }
 FCM_HIGH_PRIORITY_CHANNELS = {"assignments", "red_flags"}
+FCM_GENERIC_COPY = {
+    "assignment": ("MEDTRACK assignment", "Open MEDTRACK to review an assignment update."),
+    "red_flag": ("MEDTRACK priority update", "Open MEDTRACK to review a priority update."),
+    "overdue": ("MEDTRACK task update", "Open MEDTRACK to review a task update."),
+}
 
 
 def firebase_configured():
@@ -29,6 +34,13 @@ def firebase_configured():
 
 
 def send_mobile_notification(notification):
+    from .notifications import notification_is_authorized
+
+    if not notification_is_authorized(notification):
+        if notification.pk:
+            notification.delete()
+        return {"sent": False, "reason": "authorization_revoked"}
+
     tokens = list(
         notification.user.mobile_device_tokens.filter(is_active=True).values_list("token", flat=True)
     )
@@ -94,9 +106,13 @@ def _is_permanent_fcm_error(exception):
 
 def _build_multicast_message(messaging, notification, tokens):
     channel_id = _channel_id_for_notification(notification)
+    title, body = FCM_GENERIC_COPY.get(
+        notification.notification_type,
+        ("MEDTRACK update", "Open MEDTRACK to review an update."),
+    )
     return messaging.MulticastMessage(
         tokens=tokens,
-        notification=messaging.Notification(title=notification.title, body=notification.body),
+        notification=messaging.Notification(title=title, body=body),
         data=_message_data(notification),
         android=messaging.AndroidConfig(
             priority="high" if channel_id in FCM_HIGH_PRIORITY_CHANNELS else "normal",
@@ -106,16 +122,9 @@ def _build_multicast_message(messaging, notification, tokens):
 
 
 def _message_data(notification):
-    payload = notification.payload or {}
-    data = {
-        "title": notification.title,
-        "body": notification.body,
-        **payload,
-    }
     return {
-        key: str(value)
-        for key, value in data.items()
-        if value is not None
+        "event_id": str(notification.event_id),
+        "type": str(notification.notification_type),
     }
 
 

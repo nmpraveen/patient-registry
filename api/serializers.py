@@ -1,3 +1,4 @@
+from datetime import timedelta
 from decimal import Decimal
 
 from django.utils import timezone
@@ -17,6 +18,21 @@ from patients.models import (
     VITAL_WEIGHT_KG_MAX,
     VITAL_WEIGHT_KG_MIN,
 )
+
+
+MAX_CLIENT_FUTURE_SKEW = timedelta(minutes=5)
+MAX_CLIENT_EVENT_LOOKBACK = timedelta(days=30)
+
+
+def validate_client_event_timestamp(value):
+    if value is None:
+        return value
+    now = timezone.now()
+    if value > now + MAX_CLIENT_FUTURE_SKEW:
+        raise serializers.ValidationError("Client event time cannot be more than 5 minutes in the future.")
+    if value < now - MAX_CLIENT_EVENT_LOOKBACK:
+        raise serializers.ValidationError("Client event time cannot be more than 30 days old.")
+    return value
 
 
 class LogoutSerializer(serializers.Serializer):
@@ -55,6 +71,9 @@ class CallOutcomeSerializer(ClientWriteSerializer):
     task_id = serializers.IntegerField(required=False, allow_null=True)
     attempted_at = serializers.DateTimeField(required=False, allow_null=True)
 
+    def validate_attempted_at(self, value):
+        return validate_client_event_timestamp(value)
+
 
 class VitalEntryCreateSerializer(ClientWriteSerializer):
     recorded_at = serializers.DateTimeField(required=False)
@@ -66,6 +85,9 @@ class VitalEntryCreateSerializer(ClientWriteSerializer):
     hemoglobin = serializers.DecimalField(required=False, allow_null=True, max_digits=4, decimal_places=1)
 
     metric_fields = ["bp_systolic", "bp_diastolic", "pr", "spo2", "weight_kg", "hemoglobin"]
+
+    def validate_recorded_at(self, value):
+        return validate_client_event_timestamp(value)
 
     def validate(self, attrs):
         if not any(attrs.get(field) is not None for field in self.metric_fields):

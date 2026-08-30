@@ -1,3 +1,4 @@
+import hashlib
 import json
 from datetime import timedelta
 
@@ -8,10 +9,13 @@ from django.db import transaction
 from django.db.models import Max, Min, Prefetch, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import permissions, status
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -29,6 +33,7 @@ from patients.models import (
     Gender,
     NonCommunicableDisease,
     ReviewFrequency,
+    RoleSetting,
     SurgicalPathway,
     Task,
     TaskStatus,
@@ -72,7 +77,9 @@ from patients.views import (
     role_data_scope_payload,
 )
 
-from .models import MobileDeviceToken, MobileNotification, MobileWriteReceipt
+from . import contract_serializers as contract
+from .models import MobileDatasetState, MobileDeviceToken, MobileNotification, MobileWriteReceipt
+from .notifications import authorized_notification_queryset, purge_stale_notifications_for_user
 from .permissions import HasMobileCaseAccess
 from .serializers import (
     CallOutcomeSerializer,
@@ -92,6 +99,12 @@ class MobilePagination(PageNumberPagination):
     max_page_size = 50
 
 
+class PatientSearchPagination(PageNumberPagination):
+    page_size = 10
+    page_size_query_param = "page_size"
+    max_page_size = 20
+
+
 def _user_role_labels(user):
     if user.is_superuser:
         return ["Superuser"]
@@ -101,6 +114,10 @@ def _user_role_labels(user):
 class MeView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
+    @extend_schema(
+        operation_id="mobile_me_retrieve",
+        responses={200: contract.MeResponseSerializer},
+    )
     def get(self, request):
         return Response(
             {
@@ -125,6 +142,11 @@ class MeView(APIView):
 class LogoutView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
+    @extend_schema(
+        operation_id="mobile_auth_logout",
+        request=LogoutSerializer,
+        responses={200: contract.LogoutResponseSerializer, 400: contract.LogoutResponseSerializer},
+    )
     def post(self, request):
         serializer = LogoutSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -325,7 +347,8 @@ def _serialize_task(task, *, can_complete):
 def _serialize_vital(vital):
     return {
         "id": vital.id,
-        "recorded_at": vital.recorded_at.isoformat(),
+        "recorded_at": _iso_datetime(vital.recorded_at),
+        "server_received_at": _iso_datetime(vital.created_at),
         "bp_systolic": vital.bp_systolic,
         "bp_diastolic": vital.bp_diastolic,
         "blood_pressure_display": _blood_pressure_display(vital.bp_systolic, vital.bp_diastolic),
@@ -368,6 +391,7 @@ def _serialize_case_row(case, *, user, today, theme_category_colors):
         "red_flag": case.has_risk_factors,
         "red_flag_reasons": _risk_reasons(case),
         "diagnosis": case.diagnosis,
+        "surgery_done": case.surgery_done,
         "clinical_headline": case.clinical_headline_items,
         "task_counts": _task_counts(tasks, today),
         "next_task": _serialize_task(next_task, can_complete=can_complete) if next_task else None,
@@ -389,6 +413,20 @@ def _mobile_case_payload(case, *, user):
 class CaseListView(APIView):
     permission_classes = [HasMobileCaseAccess]
 
+    @extend_schema(
+        operation_id="mobile_cases_list",
+        parameters=[
+            OpenApiParameter("q", OpenApiTypes.STR, OpenApiParameter.QUERY, required=False),
+            OpenApiParameter("bucket", OpenApiTypes.STR, OpenApiParameter.QUERY, required=False),
+            OpenApiParameter("assigned_to", OpenApiTypes.STR, OpenApiParameter.QUERY, required=False),
+            OpenApiParameter("scope_context", OpenApiTypes.STR, OpenApiParameter.QUERY, required=False),
+            OpenApiParameter("category", OpenApiTypes.STR, OpenApiParameter.QUERY, many=True, required=False),
+            OpenApiParameter("subcategory", OpenApiTypes.STR, OpenApiParameter.QUERY, many=True, required=False),
+            OpenApiParameter("page", OpenApiTypes.INT, OpenApiParameter.QUERY, required=False),
+            OpenApiParameter("page_size", OpenApiTypes.INT, OpenApiParameter.QUERY, required=False),
+        ],
+        responses={200: contract.CaseListResponseSerializer},
+    )
     def get(self, request):
         today = timezone.localdate()
         base_queryset = _apply_scope_filters(
@@ -430,6 +468,16 @@ class CaseListView(APIView):
             }
         )
 
+    @extend_schema(
+        operation_id="mobile_cases_create",
+        request=contract.CaseWriteRequestSerializer,
+        responses={
+            201: contract.CaseWriteResponseSerializer,
+            400: contract.ErrorResponseSerializer,
+            403: contract.ErrorResponseSerializer,
+            409: contract.ErrorResponseSerializer,
+        },
+    )
     def post(self, request):
         if not has_capability(request.user, "case_create"):
             return Response(
@@ -438,7 +486,12 @@ class CaseListView(APIView):
             )
         write_serializer = ClientWriteSerializer(data=request.data)
         write_serializer.is_valid(raise_exception=True)
-        replay_response = _idempotent_replay_response(request, write_serializer)
+        replay_response = _idempotent_replay_response(
+            request,
+            write_serializer,
+            "case_create",
+            target_type="collection",
+        )
         if replay_response is not None:
             return replay_response
 
@@ -501,7 +554,13 @@ class CaseListView(APIView):
                 "case": _mobile_case_payload(case, user=request.user),
             }, status.HTTP_201_CREATED
 
-        return _idempotent_response(request, write_serializer, "case_create", apply_write)
+        return _idempotent_response(
+            request,
+            write_serializer,
+            "case_create",
+            apply_write,
+            target_type="collection",
+        )
 
 
 def _form_errors(form):
@@ -514,6 +573,10 @@ def _form_errors(form):
 class CaseDetailView(APIView):
     permission_classes = [HasMobileCaseAccess]
 
+    @extend_schema(
+        operation_id="mobile_case_retrieve",
+        responses={200: contract.CaseDetailResponseSerializer, 404: contract.ErrorResponseSerializer},
+    )
     def get(self, request, pk):
         case = get_object_or_404(
             _accessible_case_queryset(request.user, Case.objects.select_related("category")),
@@ -534,12 +597,23 @@ class CaseDetailView(APIView):
                 "outcome": log.outcome,
                 "outcome_label": log.get_outcome_display(),
                 "notes": log.notes,
+                "client_event_at": log.client_event_at.isoformat() if log.client_event_at else None,
                 "created_at": log.created_at.isoformat(),
             }
             for log in case.call_logs.select_related("task").order_by("-created_at", "-id")[:20]
         ]
         return Response(payload)
 
+    @extend_schema(
+        operation_id="mobile_case_partial_update",
+        request=contract.CaseWriteRequestSerializer,
+        responses={
+            200: contract.CaseWriteResponseSerializer,
+            400: contract.ErrorResponseSerializer,
+            403: contract.ErrorResponseSerializer,
+            404: contract.ErrorResponseSerializer,
+        },
+    )
     def patch(self, request, pk):
         if not has_capability(request.user, "case_edit"):
             return Response(
@@ -554,16 +628,11 @@ class CaseDetailView(APIView):
             pk=pk,
         )
         old_status = case.status
-        # The mobile wizard does not expose every patient identity field, so backfill the
-        # ones it omits from the existing record. Without this, a mobile edit would submit a
-        # full CaseForm without date_of_birth / alternate_phone_number and erase them.
-        # Only backfill when the key is ABSENT — an explicit blank ("") is treated as an
-        # intentional clear so the field can still be removed via the API.
-        data = request.data.copy()
-        if "date_of_birth" not in data and case.date_of_birth:
-            data["date_of_birth"] = case.date_of_birth.isoformat()
-        if "alternate_phone_number" not in data and case.alternate_phone_number:
-            data["alternate_phone_number"] = case.alternate_phone_number
+        # CaseForm is a full HTML form, but the API contract is PATCH. Seed every editable
+        # value from the current object, then overlay only keys actually supplied by the
+        # client. An explicit blank still clears a field; omission always preserves it.
+        data = _case_edit_payload(case)
+        data.update(request.data)
         form = CaseForm(data=data, instance=case)
         form.actor = request.user
         if not form.is_valid():
@@ -611,6 +680,7 @@ class CaseDetailView(APIView):
                 "message": "Case updated.",
                 "case_id": updated.id,
                 "case": _mobile_case_payload(updated, user=request.user),
+                "editable_case": _case_edit_payload(updated),
             }
         )
 
@@ -652,6 +722,7 @@ def _case_edit_payload(case):
         "edd": iso(case.edd),
         "usg_edd": iso(case.usg_edd),
         "surgical_pathway": case.surgical_pathway,
+        "surgery_done": case.surgery_done,
         "surgery_date": iso(case.surgery_date),
         "review_frequency": case.review_frequency,
         "review_date": iso(case.review_date),
@@ -669,6 +740,10 @@ class CaseEditFormView(APIView):
 
     permission_classes = [HasMobileCaseAccess]
 
+    @extend_schema(
+        operation_id="mobile_case_edit_form_retrieve",
+        responses={200: contract.CaseEditFormResponseSerializer, 404: contract.ErrorResponseSerializer},
+    )
     def get(self, request, pk):
         case = get_object_or_404(
             _accessible_case_queryset(
@@ -693,42 +768,315 @@ class CaseEditFormView(APIView):
         )
 
 
-def _idempotent_response(request, serializer, write_type, apply_write):
+IDEMPOTENCY_RECEIPT_TTL = timedelta(days=7)
+IDEMPOTENT_OPERATION_CAPABILITIES = {
+    "case_create": "case_create",
+    "task_create": "task_create",
+    "task_complete": "task_edit",
+    "call_outcome": "note_add",
+    "vitals_create": "task_edit",
+}
+
+
+def _idempotent_response(
+    request,
+    serializer,
+    operation,
+    apply_write,
+    *,
+    target_type,
+    target_id="",
+):
     client_write_id = serializer.validated_data.get("client_write_id", "").strip()
     if not client_write_id:
+        _authorize_idempotent_target(request.user, operation, target_type, target_id)
         payload, response_status = apply_write()
         return Response(payload, status=response_status)
 
+    binding = _idempotency_binding(request, operation, target_type, target_id)
     with transaction.atomic():
+        locked_user = get_user_model().objects.select_for_update().get(pk=request.user.pk)
+        _authorize_idempotent_target(locked_user, operation, target_type, target_id)
+        dataset_state, _ = MobileDatasetState.objects.select_for_update().get_or_create(pk=1)
+        binding["authorization_hash"] = _authorization_hash(locked_user)
+        binding["dataset_epoch"] = dataset_state.epoch
+
         receipt = MobileWriteReceipt.objects.select_for_update().filter(
-            user=request.user,
+            user=locked_user,
             client_write_id=client_write_id,
         ).first()
+        if receipt and receipt.expires_at <= timezone.now():
+            receipt.delete()
+            receipt = None
         if receipt:
-            return Response(receipt.response_payload, status=receipt.response_status)
-        payload, response_status = apply_write()
-        MobileWriteReceipt.objects.create(
-            user=request.user,
+            mismatch = _idempotency_binding_mismatch(receipt, binding)
+            if mismatch:
+                return _idempotency_mismatch_response()
+            return _replay_receipt(receipt, locked_user)
+
+        receipt = MobileWriteReceipt.objects.create(
+            user=locked_user,
             client_write_id=client_write_id,
-            write_type=write_type,
-            response_payload=_json_safe_payload(payload),
-            response_status=response_status,
-            status=MobileWriteReceipt.STATUS_APPLIED if response_status < 400 else MobileWriteReceipt.STATUS_FAILED,
+            operation=operation,
+            target_type=target_type,
+            target_id=str(target_id or ""),
+            payload_hash=binding["payload_hash"],
+            authorization_hash=binding["authorization_hash"],
+            dataset_epoch=binding["dataset_epoch"],
+            status=MobileWriteReceipt.STATUS_PENDING,
+            expires_at=timezone.now() + IDEMPOTENCY_RECEIPT_TTL,
+        )
+        payload, response_status = apply_write()
+        result_type, result_id = _receipt_result(operation, target_id, payload)
+        receipt.status = (
+            MobileWriteReceipt.STATUS_APPLIED
+            if response_status < 400
+            else MobileWriteReceipt.STATUS_FAILED
+        )
+        receipt.response_status = response_status
+        receipt.response_metadata = {
+            "message": str(payload.get("message", ""))[:240]
+            if isinstance(payload, dict)
+            else "",
+        }
+        if isinstance(payload, dict):
+            mobile_outcome = str((payload.get("call_log") or {}).get("mobile_outcome", ""))[:32]
+            if mobile_outcome:
+                receipt.response_metadata["mobile_outcome"] = mobile_outcome
+        receipt.result_type = result_type
+        receipt.result_id = str(result_id or "")
+        receipt.save(
+            update_fields=[
+                "status",
+                "response_status",
+                "response_metadata",
+                "result_type",
+                "result_id",
+                "updated_at",
+            ]
         )
         return Response(payload, status=response_status)
 
 
-def _idempotent_replay_response(request, serializer):
+def _idempotent_replay_response(
+    request,
+    serializer,
+    operation,
+    *,
+    target_type,
+    target_id="",
+):
     client_write_id = serializer.validated_data.get("client_write_id", "").strip()
     if not client_write_id:
         return None
-    receipt = MobileWriteReceipt.objects.filter(
-        user=request.user,
-        client_write_id=client_write_id,
-    ).first()
-    if not receipt:
-        return None
-    return Response(receipt.response_payload, status=receipt.response_status)
+    binding = _idempotency_binding(request, operation, target_type, target_id)
+    with transaction.atomic():
+        locked_user = get_user_model().objects.select_for_update().get(pk=request.user.pk)
+        _authorize_idempotent_target(locked_user, operation, target_type, target_id)
+        dataset_state, _ = MobileDatasetState.objects.select_for_update().get_or_create(pk=1)
+        receipt = MobileWriteReceipt.objects.select_for_update().filter(
+            user=locked_user,
+            client_write_id=client_write_id,
+        ).first()
+        if not receipt:
+            return None
+        if receipt.expires_at <= timezone.now():
+            receipt.delete()
+            return None
+        binding["authorization_hash"] = _authorization_hash(locked_user)
+        binding["dataset_epoch"] = dataset_state.epoch
+        if _idempotency_binding_mismatch(receipt, binding):
+            return _idempotency_mismatch_response()
+        return _replay_receipt(receipt, locked_user)
+
+
+def _idempotency_binding(request, operation, target_type, target_id):
+    return {
+        "operation": operation,
+        "target_type": target_type,
+        "target_id": str(target_id or ""),
+        "payload_hash": _canonical_payload_hash(request.data),
+    }
+
+
+def _canonical_payload_hash(data):
+    if hasattr(data, "lists"):
+        payload = {
+            key: values if len(values) > 1 else values[0]
+            for key, values in data.lists()
+            if key != "client_write_id"
+        }
+    else:
+        payload = {
+            key: value
+            for key, value in dict(data).items()
+            if key != "client_write_id"
+        }
+    canonical = json.dumps(_json_safe_payload(payload), sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _authorization_hash(user):
+    role_names = list(user.groups.order_by("name").values_list("name", flat=True))
+    role_settings = list(
+        RoleSetting.objects.filter(role_name__in=role_names)
+        .order_by("role_name")
+        .values(
+            "role_name",
+            "can_case_create",
+            "can_case_edit",
+            "can_task_create",
+            "can_task_edit",
+            "can_task_reopen",
+            "can_note_add",
+            "can_patient_merge",
+            "can_manage_settings",
+        )
+    )
+    material = {
+        "user_id": user.pk,
+        "is_active": user.is_active,
+        "is_superuser": user.is_superuser,
+        "role_names": role_names,
+        "roles": role_settings,
+    }
+    canonical = json.dumps(material, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _authorize_idempotent_target(user, operation, target_type, target_id):
+    capability = IDEMPOTENT_OPERATION_CAPABILITIES[operation]
+    if not user.is_active or not has_capability(user, capability):
+        raise PermissionDenied("Current authorization does not permit this operation.")
+    if target_type == "case":
+        return get_object_or_404(_accessible_case_queryset(user), pk=target_id)
+    if target_type == "task":
+        return get_object_or_404(_accessible_task_queryset(user), pk=target_id)
+    return None
+
+
+def _idempotency_binding_mismatch(receipt, binding):
+    return any(
+        [
+            receipt.operation != binding["operation"],
+            receipt.target_type != binding["target_type"],
+            receipt.target_id != binding["target_id"],
+            receipt.payload_hash != binding["payload_hash"],
+            receipt.authorization_hash != binding["authorization_hash"],
+            receipt.dataset_epoch != binding["dataset_epoch"],
+        ]
+    )
+
+
+def _idempotency_mismatch_response():
+    return Response(
+        {
+            "code": "idempotency_mismatch",
+            "message": (
+                "client_write_id is already bound to a different operation, target, "
+                "payload, authorization context, or dataset epoch."
+            ),
+        },
+        status=status.HTTP_409_CONFLICT,
+    )
+
+
+def _receipt_result(operation, target_id, payload):
+    if not isinstance(payload, dict):
+        return "", ""
+    if operation == "case_create":
+        return "case", payload.get("case_id")
+    if operation in {"task_create", "task_complete"}:
+        return "task", (payload.get("task") or {}).get("id") or target_id
+    if operation == "call_outcome":
+        return "call_log", (payload.get("call_log") or {}).get("id")
+    if operation == "vitals_create":
+        return "vital", (payload.get("vital") or {}).get("id")
+    return "", ""
+
+
+def _replay_receipt(receipt, user):
+    if receipt.status == MobileWriteReceipt.STATUS_PENDING:
+        return Response(
+            {"code": "idempotency_in_progress", "message": "This write is still in progress."},
+            status=status.HTTP_409_CONFLICT,
+        )
+    if receipt.status == MobileWriteReceipt.STATUS_FAILED:
+        return Response(receipt.response_metadata, status=receipt.response_status)
+
+    message = receipt.response_metadata.get("message", "")
+    result_id = receipt.result_id
+    if receipt.operation == "case_create":
+        case = get_object_or_404(
+            _accessible_case_queryset(user, Case.objects.select_related("category")),
+            pk=result_id,
+        )
+        payload = {
+            "message": message,
+            "case_id": case.pk,
+            "case": _mobile_case_payload(case, user=user),
+        }
+    elif receipt.operation in {"task_create", "task_complete"}:
+        task = get_object_or_404(
+            _accessible_task_queryset(
+                user,
+                Task.objects.select_related("case", "case__category", "assigned_user"),
+            ),
+            pk=result_id,
+        )
+        payload = {
+            "message": message,
+            "task": _serialize_task(task, can_complete=has_capability(user, "task_edit")),
+            "case": _mobile_case_payload(task.case, user=user),
+        }
+    elif receipt.operation == "call_outcome":
+        call_log = get_object_or_404(
+            CallLog.objects.select_related("case", "case__category").filter(
+                case_id__in=_accessible_case_queryset(user).values("pk")
+            ),
+            pk=result_id,
+        )
+        payload = {
+            "message": message,
+            "call_log": {
+                **_serialize_call_log_for_api(call_log),
+                "mobile_outcome": receipt.response_metadata.get("mobile_outcome", ""),
+            },
+            "case": _mobile_case_payload(call_log.case, user=user),
+        }
+    elif receipt.operation == "vitals_create":
+        vital = get_object_or_404(
+            _accessible_vital_queryset(
+                user,
+                VitalEntry.objects.select_related("case", "case__category"),
+            ),
+            pk=result_id,
+        )
+        payload = {
+            "message": message,
+            "latest_vital_id": vital.pk,
+            "vital": _serialize_vital(vital),
+            "case": _mobile_case_payload(vital.case, user=user),
+        }
+    else:
+        return _idempotency_mismatch_response()
+    return Response(payload, status=receipt.response_status)
+
+
+def _serialize_call_log_for_api(call_log):
+    return {
+        "id": call_log.id,
+        "task_id": call_log.task_id,
+        "outcome": call_log.outcome,
+        "outcome_label": call_log.get_outcome_display(),
+        "notes": call_log.notes,
+        "client_event_at": _iso_datetime(call_log.client_event_at),
+        "created_at": _iso_datetime(call_log.created_at),
+    }
+
+
+def _iso_datetime(value):
+    return timezone.localtime(value).isoformat() if value else None
 
 
 def _json_safe_payload(payload):
@@ -738,6 +1086,17 @@ def _json_safe_payload(payload):
 class TaskCompleteView(APIView):
     permission_classes = [HasMobileCaseAccess]
 
+    @extend_schema(
+        operation_id="mobile_task_complete",
+        request=TaskCompleteSerializer,
+        responses={
+            200: contract.TaskWriteResponseSerializer,
+            400: contract.ErrorResponseSerializer,
+            403: contract.ErrorResponseSerializer,
+            404: contract.ErrorResponseSerializer,
+            409: contract.ErrorResponseSerializer,
+        },
+    )
     def post(self, request, pk):
         if not has_capability(request.user, "task_edit"):
             return Response({"message": "You do not have permission to edit tasks."}, status=status.HTTP_403_FORBIDDEN)
@@ -761,7 +1120,14 @@ class TaskCompleteView(APIView):
                 "case": _mobile_case_payload(task.case, user=request.user),
             }, status.HTTP_200_OK
 
-        return _idempotent_response(request, serializer, "task_complete", apply_write)
+        return _idempotent_response(
+            request,
+            serializer,
+            "task_complete",
+            apply_write,
+            target_type="task",
+            target_id=pk,
+        )
 
 
 def _task_form_partial_data(task, request):
@@ -783,6 +1149,17 @@ def _task_form_partial_data(task, request):
 class TaskCreateView(APIView):
     permission_classes = [HasMobileCaseAccess]
 
+    @extend_schema(
+        operation_id="mobile_task_create",
+        request=contract.TaskWriteRequestSerializer,
+        responses={
+            201: contract.TaskWriteResponseSerializer,
+            400: contract.ErrorResponseSerializer,
+            403: contract.ErrorResponseSerializer,
+            404: contract.ErrorResponseSerializer,
+            409: contract.ErrorResponseSerializer,
+        },
+    )
     def post(self, request, pk):
         if not has_capability(request.user, "task_create"):
             return Response(
@@ -830,12 +1207,29 @@ class TaskCreateView(APIView):
                 status.HTTP_201_CREATED,
             )
 
-        return _idempotent_response(request, write_serializer, "task_create", apply_write)
+        return _idempotent_response(
+            request,
+            write_serializer,
+            "task_create",
+            apply_write,
+            target_type="case",
+            target_id=pk,
+        )
 
 
 class TaskDetailView(APIView):
     permission_classes = [HasMobileCaseAccess]
 
+    @extend_schema(
+        operation_id="mobile_task_partial_update",
+        request=contract.TaskWriteRequestSerializer,
+        responses={
+            200: contract.TaskWriteResponseSerializer,
+            400: contract.ErrorResponseSerializer,
+            403: contract.ErrorResponseSerializer,
+            404: contract.ErrorResponseSerializer,
+        },
+    )
     def patch(self, request, pk):
         if not has_capability(request.user, "task_edit"):
             return Response(
@@ -903,6 +1297,16 @@ class TaskDetailView(APIView):
 class TaskNoteView(APIView):
     permission_classes = [HasMobileCaseAccess]
 
+    @extend_schema(
+        operation_id="mobile_task_note_create",
+        request=contract.TaskNoteRequestSerializer,
+        responses={
+            200: contract.TaskWriteResponseSerializer,
+            400: contract.ErrorResponseSerializer,
+            403: contract.ErrorResponseSerializer,
+            404: contract.ErrorResponseSerializer,
+        },
+    )
     def post(self, request, pk):
         if not has_capability(request.user, "task_edit"):
             return Response(
@@ -932,6 +1336,10 @@ class TaskNoteView(APIView):
 class TaskFormMetadataView(APIView):
     permission_classes = [HasMobileCaseAccess]
 
+    @extend_schema(
+        operation_id="mobile_task_form_metadata_retrieve",
+        responses={200: contract.TaskFormMetadataResponseSerializer},
+    )
     def get(self, request):
         User = get_user_model()
         users = User.objects.filter(is_active=True).order_by("first_name", "last_name", "username")
@@ -954,6 +1362,16 @@ class TaskFormMetadataView(APIView):
 class VitalsDetailView(APIView):
     permission_classes = [HasMobileCaseAccess]
 
+    @extend_schema(
+        operation_id="mobile_vital_partial_update",
+        request=VitalEntryUpdateSerializer,
+        responses={
+            200: contract.VitalsWriteResponseSerializer,
+            400: contract.ErrorResponseSerializer,
+            403: contract.ErrorResponseSerializer,
+            404: contract.ErrorResponseSerializer,
+        },
+    )
     def patch(self, request, pk):
         if not has_capability(request.user, "task_edit"):
             return Response(
@@ -989,6 +1407,17 @@ class VitalsDetailView(APIView):
 class CallOutcomeView(APIView):
     permission_classes = [HasMobileCaseAccess]
 
+    @extend_schema(
+        operation_id="mobile_call_outcome_create",
+        request=CallOutcomeSerializer,
+        responses={
+            201: contract.CallWriteResponseSerializer,
+            400: contract.ErrorResponseSerializer,
+            403: contract.ErrorResponseSerializer,
+            404: contract.ErrorResponseSerializer,
+            409: contract.ErrorResponseSerializer,
+        },
+    )
     def post(self, request, pk):
         if not has_capability(request.user, "note_add"):
             return Response({"message": "You do not have permission to add call logs."}, status=status.HTTP_403_FORBIDDEN)
@@ -1016,10 +1445,8 @@ class CallOutcomeView(APIView):
                 outcome=outcome,
                 notes=note,
                 staff_user=request.user,
+                client_event_at=attempted_at,
             )
-            if attempted_at:
-                call_log.created_at = attempted_at
-                call_log.save(update_fields=["created_at"])
             create_case_activity(
                 case=case,
                 task=task,
@@ -1030,23 +1457,36 @@ class CallOutcomeView(APIView):
             return {
                 "message": "Call outcome logged.",
                 "call_log": {
-                    "id": call_log.id,
-                    "task_id": call_log.task_id,
+                    **_serialize_call_log_for_api(call_log),
                     "mobile_outcome": mobile_outcome,
-                    "outcome": call_log.outcome,
-                    "outcome_label": call_log.get_outcome_display(),
-                    "notes": call_log.notes,
-                    "created_at": call_log.created_at.isoformat(),
                 },
                 "case": _mobile_case_payload(case, user=request.user),
             }, status.HTTP_201_CREATED
 
-        return _idempotent_response(request, serializer, "call_outcome", apply_write)
+        return _idempotent_response(
+            request,
+            serializer,
+            "call_outcome",
+            apply_write,
+            target_type="case",
+            target_id=pk,
+        )
 
 
 class CaseVitalsView(APIView):
     permission_classes = [HasMobileCaseAccess]
 
+    @extend_schema(
+        operation_id="mobile_case_vital_create",
+        request=VitalEntryCreateSerializer,
+        responses={
+            201: contract.VitalsWriteResponseSerializer,
+            400: contract.ErrorResponseSerializer,
+            403: contract.ErrorResponseSerializer,
+            404: contract.ErrorResponseSerializer,
+            409: contract.ErrorResponseSerializer,
+        },
+    )
     def post(self, request, pk):
         if not has_capability(request.user, "task_edit"):
             return Response({"message": "You do not have permission to add vitals."}, status=status.HTTP_403_FORBIDDEN)
@@ -1072,12 +1512,23 @@ class CaseVitalsView(APIView):
                 "case": _mobile_case_payload(case, user=request.user),
             }, status.HTTP_201_CREATED
 
-        return _idempotent_response(request, serializer, "vitals_create", apply_write)
+        return _idempotent_response(
+            request,
+            serializer,
+            "vitals_create",
+            apply_write,
+            target_type="case",
+            target_id=pk,
+        )
 
 
 class VitalsThresholdsView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
+    @extend_schema(
+        operation_id="mobile_vitals_thresholds_retrieve",
+        responses={200: contract.VitalsThresholdsResponseSerializer},
+    )
     def get(self, request):
         return Response(vitals_thresholds_payload())
 
@@ -1085,6 +1536,15 @@ class VitalsThresholdsView(APIView):
 class DeviceTokenView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
+    @extend_schema(
+        operation_id="mobile_device_token_register",
+        request=DeviceTokenSerializer,
+        responses={
+            200: contract.DeviceTokenResponseSerializer,
+            201: contract.DeviceTokenResponseSerializer,
+            400: contract.ErrorResponseSerializer,
+        },
+    )
     def post(self, request):
         serializer = DeviceTokenSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -1113,8 +1573,19 @@ class DeviceTokenView(APIView):
 class NotificationsView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
+    @extend_schema(
+        operation_id="mobile_notifications_list",
+        parameters=[
+            OpenApiParameter("type", OpenApiTypes.STR, OpenApiParameter.QUERY, required=False),
+            OpenApiParameter("unread_only", OpenApiTypes.BOOL, OpenApiParameter.QUERY, required=False),
+            OpenApiParameter("page", OpenApiTypes.INT, OpenApiParameter.QUERY, required=False),
+            OpenApiParameter("page_size", OpenApiTypes.INT, OpenApiParameter.QUERY, required=False),
+        ],
+        responses={200: contract.NotificationsResponseSerializer},
+    )
     def get(self, request):
-        queryset = MobileNotification.objects.select_related("case", "task").filter(user=request.user)
+        purge_stale_notifications_for_user(request.user)
+        queryset = authorized_notification_queryset(request.user).select_related("case", "task")
         notification_type = request.GET.get("type", "").strip()
         if notification_type:
             queryset = queryset.filter(notification_type=notification_type)
@@ -1130,6 +1601,7 @@ class NotificationsView(APIView):
                 "results": [
                     {
                         "id": item.id,
+                        "event_id": str(item.event_id),
                         "type": item.notification_type,
                         "title": item.title,
                         "body": item.body,
@@ -1148,8 +1620,20 @@ class NotificationsView(APIView):
 class NotificationReadView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
+    @extend_schema(
+        operation_id="mobile_notification_mark_read",
+        request=None,
+        responses={
+            200: contract.NotificationReadResponseSerializer,
+            404: contract.ErrorResponseSerializer,
+        },
+    )
     def post(self, request, pk):
-        notification = get_object_or_404(MobileNotification, pk=pk, user=request.user)
+        purge_stale_notifications_for_user(request.user)
+        notification = get_object_or_404(
+            authorized_notification_queryset(request.user),
+            pk=pk,
+        )
         if notification.read_at is None:
             notification.read_at = timezone.now()
             notification.save(update_fields=["read_at"])
@@ -1191,6 +1675,10 @@ def _choice_payload(choices):
 class CategoryMetadataView(APIView):
     permission_classes = [HasMobileCaseAccess]
 
+    @extend_schema(
+        operation_id="mobile_category_metadata_retrieve",
+        responses={200: contract.CategoriesResponseSerializer},
+    )
     def get(self, request):
         return Response({"categories": _category_metadata_payload()})
 
@@ -1200,6 +1688,10 @@ class CaseFormMetadataView(APIView):
 
     permission_classes = [HasMobileCaseAccess]
 
+    @extend_schema(
+        operation_id="mobile_case_form_metadata_retrieve",
+        responses={200: contract.CaseFormMetadataResponseSerializer},
+    )
     def get(self, request):
         return Response(
             {
@@ -1221,34 +1713,58 @@ def _serialize_patient_row(patient):
         "id": patient.id,
         "uhid": patient.uhid,
         "name": patient.patient_name or patient.full_name,
-        "prefix": patient.prefix,
-        "first_name": patient.first_name,
-        "last_name": patient.last_name,
-        "gender": patient.gender,
-        "gender_label": patient.get_gender_display() if patient.gender else "",
-        "blood_group": patient.blood_group,
-        "date_of_birth": patient.date_of_birth.isoformat() if patient.date_of_birth else None,
-        "age": patient.age,
-        "place": patient.place,
-        "phone_number": patient.phone_number,
-        "alternate_phone_number": patient.alternate_phone_number,
-        "is_temporary_id": patient.is_temporary_id,
-        "active_case_count": getattr(patient, "active_case_count", None),
-        "total_case_count": getattr(patient, "total_case_count", None),
     }
 
 
 class PatientSearchView(APIView):
     permission_classes = [HasMobileCaseAccess]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "patient_search"
 
+    @extend_schema(
+        operation_id="mobile_patient_search",
+        parameters=[
+            OpenApiParameter(
+                "q",
+                OpenApiTypes.STR,
+                OpenApiParameter.QUERY,
+                required=True,
+                description="Minimum 3 characters; name/UHID prefix or exact 10-digit phone.",
+            ),
+            OpenApiParameter("page", OpenApiTypes.INT, OpenApiParameter.QUERY, required=False),
+            OpenApiParameter("page_size", OpenApiTypes.INT, OpenApiParameter.QUERY, required=False),
+        ],
+        responses={
+            200: contract.PatientSearchResponseSerializer,
+            400: contract.ErrorResponseSerializer,
+            429: contract.ErrorResponseSerializer,
+        },
+    )
     def get(self, request):
         query = request.GET.get("q", "").strip()
+        if len(query) < 3:
+            return Response(
+                {
+                    "code": "query_too_short",
+                    "message": "Enter at least 3 characters to search patients.",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         queryset = _patient_search_queryset(
-            query,
+            "",
             user=request.user,
             allow_intake_lookup=True,
         )
-        paginator = MobilePagination()
+        filters = (
+            Q(uhid__istartswith=query)
+            | Q(first_name__istartswith=query)
+            | Q(last_name__istartswith=query)
+            | Q(patient_name__istartswith=query)
+        )
+        if query.isdigit() and len(query) == 10:
+            filters |= Q(phone_number=query) | Q(alternate_phone_number=query)
+        queryset = queryset.filter(filters)
+        paginator = PatientSearchPagination()
         page = paginator.paginate_queryset(queryset, request, view=self)
         return Response(
             {

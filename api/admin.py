@@ -2,7 +2,13 @@ import hashlib
 
 from django.contrib import admin
 
-from .models import MobileDeviceToken, MobileNotification, MobileWriteReceipt
+from .models import MobileDatasetState, MobileDeviceToken, MobileNotification, MobileWriteReceipt
+
+
+@admin.register(MobileDatasetState)
+class MobileDatasetStateAdmin(admin.ModelAdmin):
+    list_display = ("id", "epoch", "updated_at")
+    readonly_fields = ("id", "epoch", "updated_at")
 
 
 @admin.register(MobileDeviceToken)
@@ -32,13 +38,13 @@ class MobileDeviceTokenAdmin(admin.ModelAdmin):
 
 @admin.register(MobileNotification)
 class MobileNotificationAdmin(admin.ModelAdmin):
-    list_display = ("id", "user", "notification_type", "title", "case", "task", "read_at", "created_at")
-    search_fields = ("user__username", "title", "body")
+    list_display = ("id", "event_id", "user", "notification_type", "case", "task", "read_at", "created_at")
+    search_fields = ("user__username", "event_id")
     list_filter = ("notification_type", "read_at", "created_at")
 
 
 @admin.register(MobileWriteReceipt)
 class MobileWriteReceiptAdmin(admin.ModelAdmin):
-    list_display = ("id", "user", "client_write_id", "write_type", "status", "response_status", "created_at")
-    search_fields = ("user__username", "client_write_id", "write_type")
-    list_filter = ("write_type", "status")
+    list_display = ("id", "user", "client_write_id", "operation", "status", "response_status", "expires_at")
+    search_fields = ("user__username", "client_write_id", "operation")
+    list_filter = ("operation", "status")

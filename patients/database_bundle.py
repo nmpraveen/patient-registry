@@ -402,6 +402,7 @@ def _serialize_call_log(entry):
         "notes": entry.notes,
         "staff_user_username": _username(entry.staff_user),
         "task_bundle_id": str(entry.task_id) if entry.task_id else None,
+        "client_event_at": _serialize_datetime(entry.client_event_at),
         "created_at": _serialize_datetime(entry.created_at),
     }
 
@@ -537,6 +538,8 @@ def _validate_manifest_and_payload(manifest, payload, patient_data_bytes):
 
 
 def _replace_patient_data(payload):
+    from api.notifications import invalidate_mobile_dataset, suspend_mobile_notifications
+
     payload = _normalize_payload_for_import(payload)
     usernames = sorted(_collect_usernames(payload))
     user_model = get_user_model()
@@ -549,7 +552,7 @@ def _replace_patient_data(payload):
         category["name"]: category for category in payload.get("categories", []) if isinstance(category, dict)
     }
 
-    with transaction.atomic():
+    with transaction.atomic(), suspend_mobile_notifications():
         for category_name, category_data in category_payload_by_name.items():
             if category_name in categories_by_name:
                 continue
@@ -569,6 +572,7 @@ def _replace_patient_data(payload):
         Case.objects.all().delete()
         Patient.objects.all().delete()
         _import_payload(payload, categories_by_name, users_by_username)
+        invalidate_mobile_dataset()
 
     return compute_payload_counts(payload)
 
@@ -760,6 +764,10 @@ def _import_payload(payload, categories_by_name, users_by_username):
                 outcome=call_data.get("outcome", ""),
                 notes=call_data.get("notes", ""),
                 staff_user=users_by_username.get(call_data.get("staff_user_username")),
+                client_event_at=_parse_datetime(
+                    call_data.get("client_event_at") or call_data.get("created_at"),
+                    "call log client_event_at",
+                ),
             )
             call_log.full_clean(exclude=_blank_model_fields(call_log, "task", "staff_user"))
             call_log.save()

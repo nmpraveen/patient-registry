@@ -1827,6 +1827,7 @@ class CallLog(MandatoryAuditModelMixin, models.Model):
     outcome = models.CharField(max_length=40, choices=CallOutcome.choices)
     notes = models.TextField(blank=True)
     staff_user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="call_logs")
+    client_event_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     FAILED_OUTCOMES = {

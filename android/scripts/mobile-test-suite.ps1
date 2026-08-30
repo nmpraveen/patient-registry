@@ -131,7 +131,7 @@ try {
         $androidResult = Invoke-ProcessLogged `
             -Name "android-test-debug-unit" `
             -FilePath (Join-Path $androidRoot "gradlew.bat") `
-            -Arguments @("--no-daemon", "testDebugUnitTest") `
+            -Arguments @("--no-daemon", "--max-workers=1", "testDevDebugUnitTest") `
             -WorkingDirectory $androidRoot
     }
 

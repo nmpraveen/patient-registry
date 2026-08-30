@@ -305,11 +305,11 @@ adb shell svc power stayon true
 adb shell input keyevent 224
 adb shell wm dismiss-keyguard
 cd android
-.\gradlew.bat --no-daemon :app:assembleDebug
-$apk = Join-Path $env:USERPROFILE ".codex\build\medtrack-android\app\outputs\apk\debug\app-debug.apk"
+.\gradlew.bat --no-daemon --max-workers=1 :app:assembleDevDebug
+$apk = Join-Path (Get-Location) ".build\app\outputs\apk\dev\debug\app-dev-debug.apk"
 adb install -r $apk
-adb shell pm clear com.naveenhospital.medtrack
-adb shell am start -W -n com.naveenhospital.medtrack/.MainActivity
+adb shell pm clear com.naveenhospital.medtrack.dev
+adb shell am start -W -n com.naveenhospital.medtrack.dev/com.naveenhospital.medtrack.MainActivity
 ```
 
 Log in with `admin` / `pass`. On first run after clearing app data, set the pattern with top-left, top-middle, top-right, then middle-right dots; tap Save and Continue. Deny the Android notification permission prompt unless notification behavior is being tested.
@@ -327,6 +327,21 @@ Backend plus Android unit tests:
 ```powershell
 .\android\scripts\mobile-test-suite.ps1
 ```
+
+Release-ready Android verification is serialized to avoid resource contention:
+
+```powershell
+cd android
+.\gradlew.bat --no-daemon --max-workers=1 test
+.\gradlew.bat --no-daemon --max-workers=1 lintProdRelease
+.\gradlew.bat --no-daemon --max-workers=1 assembleDevDebug
+.\gradlew.bat --no-daemon --max-workers=1 unsignedReleaseArtifacts
+.\scripts\verify-dependencies.ps1
+.\scripts\build-release-artifacts.ps1 -SkipBuild
+```
+
+See `android/RELEASE.md` for flavor endpoints, external signing inputs,
+Play/API compatibility, dependency-lock maintenance, and artifact contents.
 
 Emulator smoke:
 

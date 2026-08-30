@@ -31,6 +31,8 @@ class CaseFormState(
     var age by mutableStateOf("")
     var phone by mutableStateOf("")
     var place by mutableStateOf("")
+    private var preservedDateOfBirth: String? = null
+    private var preservedAlternatePhoneNumber: String? = null
 
     // Patient (existing)
     var patientQuery by mutableStateOf("")
@@ -65,6 +67,7 @@ class CaseFormState(
     // Surgery
     var surgicalPathway by mutableStateOf("")
     var surgeryDate by mutableStateOf("")
+    private var preservedSurgeryDone: Boolean? = null
 
     // Medicine
     var reviewFrequency by mutableStateOf("")
@@ -116,8 +119,10 @@ class CaseFormState(
         lastName = prefill.lastName.orEmpty()
         gender = prefill.gender.orEmpty()
         bloodGroup = prefill.bloodGroup.orEmpty()
+        preservedDateOfBirth = prefill.dateOfBirth
         age = prefill.age?.toString().orEmpty()
         phone = prefill.phoneNumber.orEmpty()
+        preservedAlternatePhoneNumber = prefill.alternatePhoneNumber
         place = prefill.place.orEmpty()
         prefill.categoryId?.let { id ->
             metadata.categories.firstOrNull { it.id == id }?.let { selectCategory(it) }
@@ -135,6 +140,7 @@ class CaseFormState(
         edd = prefill.edd.orEmpty()
         usgEdd = prefill.usgEdd.orEmpty()
         surgicalPathway = prefill.surgicalPathway.orEmpty()
+        preservedSurgeryDone = prefill.surgeryDone
         surgeryDate = prefill.surgeryDate.orEmpty()
         reviewFrequency = prefill.reviewFrequency.orEmpty()
         reviewDate = prefill.reviewDate.orEmpty()
@@ -246,9 +252,11 @@ class CaseFormState(
             lastName = lastName.ifBlank { null },
             gender = gender.ifBlank { null },
             bloodGroup = bloodGroup.ifBlank { null },
+            dateOfBirth = preservedDateOfBirth,
             place = place.ifBlank { null },
             age = age.toIntOrNull(),
             phoneNumber = phone.ifBlank { null },
+            alternatePhoneNumber = preservedAlternatePhoneNumber,
             categoryId = cat.id,
             categoryName = cat.name,
             subcategory = subcategory.ifBlank { null },
@@ -265,6 +273,7 @@ class CaseFormState(
             edd = if (isAncCat) edd.ifBlank { null } else null,
             usgEdd = if (isAncCat) usgEdd.ifBlank { null } else null,
             surgicalPathway = surgicalPathway.ifBlank { null },
+            surgeryDone = preservedSurgeryDone,
             surgeryDate = surgeryDate.ifBlank { null },
             reviewFrequency = reviewFrequency.ifBlank { null },
             reviewDate = reviewDate.ifBlank { null },

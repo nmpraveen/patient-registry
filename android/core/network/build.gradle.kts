@@ -5,7 +5,7 @@ plugins {
 
 android {
     namespace = "com.naveenhospital.medtrack.core.network"
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
         minSdk = 24
@@ -25,7 +25,7 @@ dependencies {
     implementation(project(":core:domain"))
     implementation(libs.coroutines.android)
     implementation(libs.moshi.kotlin)
-    implementation(libs.okhttp.logging)
+    implementation(libs.okhttp.core)
     implementation(libs.retrofit.core)
     implementation(libs.retrofit.moshi)
 

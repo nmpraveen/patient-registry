@@ -121,13 +121,13 @@ import kotlin.math.roundToInt
 @OptIn(ExperimentalLayoutApi::class)
 fun CaseListScreen(
     cases: List<PatientCase>,
+    onCallPatient: (PatientCase) -> Unit,
+    onOpenCase: (String) -> Unit,
+    modifier: Modifier = Modifier,
     isRefreshing: Boolean = false,
     pendingWriteCount: Int = 0,
     error: String? = null,
     onRefresh: () -> Unit = {},
-    onCallPatient: (PatientCase) -> Unit,
-    onOpenCase: (String) -> Unit,
-    modifier: Modifier = Modifier,
 ) {
     var query by remember { mutableStateOf("") }
     var filter by rememberSaveable { mutableStateOf("all") }

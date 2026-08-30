@@ -1,5 +1,6 @@
 package com.naveenhospital.medtrack.core.network.api
 
+import android.util.Log
 import com.naveenhospital.medtrack.core.network.model.AuthSessionDto
 import com.naveenhospital.medtrack.core.network.model.RefreshTokenRequestDto
 import okhttp3.Authenticator
@@ -13,7 +14,6 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import okhttp3.Route
-import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
 import retrofit2.HttpException
@@ -34,15 +34,13 @@ object MedtrackNetwork {
         expectedMobileDeviceIdProvider: () -> String? = { null },
         sessionIncarnationProvider: () -> String? = { null },
         sessionUpdater: (access: String, refresh: String?) -> Boolean = { _, _ -> false },
+        enableDebugLogging: Boolean = false,
     ): MedtrackApi {
         val normalizedBaseUrl = baseUrl.withTrailingSlash()
         val moshi = Moshi.Builder()
             .add(KotlinJsonAdapterFactory())
             .build()
-        val logging = HttpLoggingInterceptor().apply {
-            level = HttpLoggingInterceptor.Level.BASIC
-        }
-        val client = OkHttpClient.Builder()
+        val clientBuilder = OkHttpClient.Builder()
             .addInterceptor { chain ->
                 val token = accessTokenProvider()
                 val request = if (token.isNullOrBlank()) {
@@ -68,8 +66,16 @@ object MedtrackNetwork {
                     moshi = moshi,
                 ),
             )
-            .addInterceptor(logging)
-            .build()
+        if (enableDebugLogging) {
+            clientBuilder.addInterceptor { chain ->
+                val request = chain.request()
+                Log.d(DEBUG_LOG_TAG, "--> ${safeRequestLabel(request.method, request.url.encodedPath)}")
+                val response = chain.proceed(request)
+                Log.d(DEBUG_LOG_TAG, "<-- ${response.code} ${safeRequestLabel(request.method, request.url.encodedPath)}")
+                response
+            }
+        }
+        val client = clientBuilder.build()
         return Retrofit.Builder()
             .baseUrl(normalizedBaseUrl)
             .client(client)
@@ -77,6 +83,14 @@ object MedtrackNetwork {
             .build()
             .create(MedtrackApi::class.java)
     }
+
+    internal fun safeRequestLabel(method: String, encodedPath: String): String {
+        val redactedPath = encodedPath.replace(NUMERIC_PATH_SEGMENT, "/{id}")
+        return "$method $redactedPath"
+    }
+
+    private const val DEBUG_LOG_TAG = "MedtrackHttp"
+    private val NUMERIC_PATH_SEGMENT = Regex("/\\d+(?=/|$)")
 }
 
 private fun String.withTrailingSlash(): String = if (endsWith("/")) this else "$this/"

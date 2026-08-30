@@ -101,14 +101,14 @@ class MedtrackSyncWorkerTest {
             ),
         )
 
-        val canContinue = drainPendingWritesForSync(
+        val outcome = drainPendingWritesForSync(
             api = api,
             database = database,
             ownerAccountId = ACCOUNT_ID,
             accountGeneration = accountGeneration,
         )
 
-        assertTrue(canContinue)
+        assertEquals(SyncRunOutcome.COMPLETED, outcome)
         assertTrue(database.pendingWriteDao().pendingWrites(ACCOUNT_ID).isEmpty())
         val conflict = database.syncConflictDao().observeConflicts(ACCOUNT_ID).first().single()
         assertEquals("task-write-1", conflict.clientWriteId)
@@ -172,14 +172,14 @@ class MedtrackSyncWorkerTest {
             ),
         )
 
-        val canContinue = drainPendingWritesForSync(
+        val outcome = drainPendingWritesForSync(
             api = api,
             database = database,
             ownerAccountId = ACCOUNT_ID,
             accountGeneration = accountGeneration,
         )
 
-        assertTrue(canContinue)
+        assertEquals(SyncRunOutcome.COMPLETED, outcome)
         assertTrue(database.pendingWriteDao().pendingWrites(ACCOUNT_ID).isEmpty())
         val conflict = database.syncConflictDao().observeConflicts(ACCOUNT_ID).first().single()
         assertEquals(PendingWriteTypes.CALL_OUTCOME, conflict.writeType)
@@ -225,14 +225,14 @@ class MedtrackSyncWorkerTest {
             ),
         )
 
-        val canContinue = drainPendingWritesForSync(
+        val outcome = drainPendingWritesForSync(
             api = api,
             database = database,
             ownerAccountId = ACCOUNT_ID,
             accountGeneration = accountGeneration,
         )
 
-        assertTrue(canContinue)
+        assertEquals(SyncRunOutcome.COMPLETED, outcome)
         assertTrue(database.pendingWriteDao().pendingWrites(ACCOUNT_ID).isEmpty())
         val conflict = database.syncConflictDao().observeConflicts(ACCOUNT_ID).first().single()
         assertEquals(PendingWriteTypes.VITALS_CREATE, conflict.writeType)
@@ -593,6 +593,187 @@ class MedtrackSyncWorkerTest {
             ),
         )
 
+    @Test
+    fun notificationPaginationExhaustsAllPagesAndReconcilesStaleRows() = runTest {
+        database.notificationDao().upsertNotifications(
+            listOf(notificationEntity(id = "stale", type = "assignment")),
+        )
+        val api = FakeSyncApi(
+            notificationPages = mapOf(
+                null to notificationPage(
+                    nextCursor = "opaque-page-2",
+                    notification = notificationDto(101, "assignment"),
+                ),
+                "opaque-page-2" to notificationPage(nextCursor = null, notification = notificationDto(100, "red_flag")),
+            ),
+        )
+
+        val snapshot = fetchAllNotifications(api)
+        replaceNotificationSnapshot(
+            database,
+            type = null,
+            snapshot = NotificationSnapshot(
+                datasetEpoch = snapshot.datasetEpoch,
+                notifications = snapshot.notifications.map { it.toTestEntity() },
+            ),
+        )
+
+        assertEquals(listOf(null, "opaque-page-2"), api.notificationCursorsRequested)
+        assertEquals("11111111-1111-4111-8111-111111111111", snapshot.datasetEpoch)
+        assertEquals(listOf("101", "100"), database.notificationDao().observeNotifications().first().map { it.id })
+    }
+
+    @Test
+    fun notificationCursorFailureIsFailClosedAndDoesNotReconcileBeforeTerminalPage() = runTest {
+        database.notificationDao().upsertNotifications(
+            listOf(notificationEntity(id = "authorized-prior-snapshot", type = "assignment")),
+        )
+        val api = FakeSyncApi(
+            notificationPages = mapOf(
+                null to notificationPage(
+                    nextCursor = "tampered-or-stale-cursor",
+                    notification = notificationDto(101, "assignment"),
+                ),
+            ),
+            notificationErrors = mapOf(
+                "tampered-or-stale-cursor" to httpError(400, "Invalid cursor"),
+            ),
+        )
+
+        val result = runCatching { fetchAllNotifications(api) }
+
+        assertTrue(result.isFailure)
+        assertEquals(listOf(null, "tampered-or-stale-cursor"), api.notificationCursorsRequested)
+        assertEquals(
+            listOf("authorized-prior-snapshot"),
+            database.notificationDao().observeNotifications().first().map { it.id },
+        )
+    }
+
+    @Test
+    fun rowsRevokedBetweenPagesAreAbsentFromTerminalSnapshotAndPurged() = runTest {
+        database.notificationDao().upsertNotifications(
+            listOf(notificationEntity(id = "revoked-after-page-one", type = "red_flag")),
+        )
+        val api = FakeSyncApi(
+            notificationPages = mapOf(
+                null to notificationPage(
+                    nextCursor = "authorized-page-two",
+                    notification = notificationDto(101, "assignment"),
+                ),
+                "authorized-page-two" to NotificationsResponseDto(
+                    datasetEpoch = "11111111-1111-4111-8111-111111111111",
+                    nextCursor = null,
+                    results = emptyList(),
+                ),
+            ),
+        )
+
+        val snapshot = fetchAllNotifications(api)
+        replaceNotificationSnapshot(
+            database = database,
+            type = null,
+            snapshot = NotificationSnapshot(
+                datasetEpoch = snapshot.datasetEpoch,
+                notifications = snapshot.notifications.map { it.toTestEntity() },
+            ),
+        )
+
+        assertEquals(listOf("101"), database.notificationDao().observeNotifications().first().map { it.id })
+    }
+
+    @Test
+    fun changedDatasetEpochDiscardsNotificationReadOutboxButLeavesClinicalWriteForSecurityLane() = runTest {
+        val epochPrefix = com.naveenhospital.medtrack.core.data.repository.CACHE_KEY_NOTIFICATION_DATASET_EPOCH_PREFIX
+        database.cacheMetadataDao().upsertMetadata(
+            CacheMetadataEntity(
+                cacheKey = epochPrefix + "22222222-2222-4222-8222-222222222222",
+                updatedAtMillis = 1,
+            ),
+        )
+        database.pendingWriteDao().upsertPendingWrite(
+            pendingWrite(
+                clientWriteId = "notification-read",
+                writeType = PendingWriteTypes.NOTIFICATION_READ,
+                caseId = null,
+                payloadJson = PendingWriteJson.encodeNotificationRead(
+                    NotificationReadPayload(notificationId = "7", clientWriteId = "notification-read"),
+                ),
+            ),
+        )
+        database.pendingWriteDao().upsertPendingWrite(
+            pendingWrite(
+                clientWriteId = "clinical-write",
+                writeType = PendingWriteTypes.TASK_COMPLETE,
+                payloadJson = PendingWriteJson.encodeTaskComplete(ClientWriteRequestDto("clinical-write")),
+            ),
+        )
+
+        replaceNotificationSnapshot(
+            database = database,
+            type = null,
+            snapshot = NotificationSnapshot(
+                datasetEpoch = "11111111-1111-4111-8111-111111111111",
+                notifications = emptyList(),
+            ),
+        )
+
+        assertEquals(listOf("clinical-write"), database.pendingWriteDao().pendingWrites().map { it.clientWriteId })
+        assertEquals(
+            listOf(epochPrefix + "11111111-1111-4111-8111-111111111111"),
+            database.cacheMetadataDao().cacheKeysStartingWith(epochPrefix),
+        )
+    }
+
+    @Test
+    fun validationFailureRetainsStructuredRecoveryAndDoesNotPoisonQueue() = runTest {
+        val payload = PendingWriteJson.encodeTaskComplete(ClientWriteRequestDto("validation-write"))
+        val api = FakeSyncApi(completeTaskError = httpError(400, "{\"status\":[\"Invalid transition\"]}"))
+        database.pendingWriteDao().upsertPendingWrite(
+            pendingWrite(
+                clientWriteId = "validation-write",
+                writeType = PendingWriteTypes.TASK_COMPLETE,
+                caseId = "42",
+                taskId = "7",
+                payloadJson = payload,
+            ),
+        )
+
+        val outcome = drainPendingWritesForSync(api, database)
+
+        assertEquals(SyncRunOutcome.COMPLETED, outcome)
+        assertTrue(database.pendingWriteDao().pendingWrites().isEmpty())
+        val issue = database.syncConflictDao().conflictById("validation-write")
+        val recovery = SyncRecoveryJson.decode(issue?.serverPayloadJson)
+        assertEquals(SyncFailureKinds.VALIDATION, recovery?.failureKind)
+        assertEquals(payload, recovery?.localPayloadJson)
+        assertEquals("{\"status\":[\"Invalid transition\"]}", recovery?.serverPayloadJson)
+        assertEquals(400, recovery?.httpStatus)
+    }
+
+    @Test
+    fun authFailureStopsAndRetainsPendingWriteForReauthentication() = runTest {
+        val api = FakeSyncApi(completeTaskError = httpError(401, "token_not_valid"))
+        database.pendingWriteDao().upsertPendingWrite(
+            pendingWrite(
+                clientWriteId = "auth-write",
+                writeType = PendingWriteTypes.TASK_COMPLETE,
+                caseId = "42",
+                taskId = "7",
+                payloadJson = PendingWriteJson.encodeTaskComplete(ClientWriteRequestDto("auth-write")),
+            ),
+        )
+
+        val outcome = drainPendingWritesForSync(api, database)
+
+        assertEquals(SyncRunOutcome.AUTH_REQUIRED, outcome)
+        assertEquals("auth-write", database.pendingWriteDao().pendingWrites().single().clientWriteId)
+        val recovery = SyncRecoveryJson.decode(
+            database.syncConflictDao().conflictById("auth-write")?.serverPayloadJson,
+        )
+        assertEquals(SyncFailureKinds.AUTHENTICATION, recovery?.failureKind)
+    }
+
     private suspend fun assertServerVersionRefreshed() {
         val case = database.caseDao().caseById(ACCOUNT_ID, "42")
         assertEquals("Server Patient", case?.patientName)
@@ -628,12 +809,55 @@ class MedtrackSyncWorkerTest {
     }
 
     private fun conflictError(message: String): HttpException =
-        HttpException(
-            Response.error<Any>(
-                409,
-                message.toResponseBody("text/plain".toMediaType()),
-            ),
+        httpError(409, message)
+
+    private fun httpError(code: Int, message: String): HttpException = HttpException(
+        Response.error<Any>(code, message.toResponseBody("application/json".toMediaType())),
+    )
+
+    private fun notificationDto(id: Long, type: String) =
+        com.naveenhospital.medtrack.core.network.model.NotificationDto(
+            id = id,
+            eventId = "event-$id",
+            type = type,
+            title = "Test alert",
+            body = "Open MEDTRACK",
+            caseId = 42,
+            taskId = null,
+            readAt = null,
+            createdAt = "2026-08-29T18:00:0${id % 10}Z",
         )
+
+    private fun notificationPage(
+        nextCursor: String?,
+        notification: com.naveenhospital.medtrack.core.network.model.NotificationDto,
+    ) = NotificationsResponseDto(
+        datasetEpoch = "11111111-1111-4111-8111-111111111111",
+        nextCursor = nextCursor,
+        results = listOf(notification),
+    )
+
+    private fun notificationEntity(id: String, type: String) = NotificationEntity(
+        id = id,
+        type = type,
+        title = "Stale",
+        body = "Stale",
+        caseId = null,
+        taskId = null,
+        createdAt = "2026-01-01T00:00:00Z",
+        isRead = false,
+    )
+
+    private fun com.naveenhospital.medtrack.core.network.model.NotificationDto.toTestEntity() = NotificationEntity(
+        id = id.toString(),
+        type = type,
+        title = title,
+        body = body,
+        caseId = caseId?.toString(),
+        taskId = taskId?.toString(),
+        createdAt = createdAt,
+        isRead = readAt != null,
+    )
 }
 
 private fun jwt(accountId: String, marker: String, mobileDeviceId: String? = null): String {
@@ -649,10 +873,12 @@ private class FakeSyncApi(
     private val logCallError: Throwable? = null,
     private val addVitalsError: Throwable? = null,
     private val caseDetailError: Throwable? = null,
+    private val notificationPages: Map<String?, NotificationsResponseDto> = emptyMap(),
+    private val notificationErrors: Map<String?, Throwable> = emptyMap(),
 ) : MedtrackApi {
     var completeTaskCalls: Int = 0
         private set
-
+    val notificationCursorsRequested = mutableListOf<String?>()
     override suspend fun completeTask(taskId: String, request: ClientWriteRequestDto): TaskWriteResponseDto {
         completeTaskCalls += 1
         completeTaskError?.let { throw it }
@@ -703,16 +929,21 @@ private class FakeSyncApi(
         page: Int?,
     ): CaseListResponseDto = unused()
     override suspend fun vitalsThresholds(): VitalsThresholdsDto = unused()
-    override suspend fun notifications(type: String?, unreadOnly: Boolean?, page: Int?): NotificationsResponseDto = unused()
+    override suspend fun notifications(type: String?, unreadOnly: Boolean?, cursor: String?, pageSize: Int?): NotificationsResponseDto {
+        notificationCursorsRequested += cursor
+        assertEquals(100, pageSize)
+        notificationErrors[cursor]?.let { throw it }
+        return notificationPages[cursor] ?: unused()
+    }
     override suspend fun markNotificationRead(notificationId: String): ApiMessageDto = unused()
     override suspend fun registerPushToken(request: RegisterPushTokenRequestDto): ApiMessageDto = unused()
     override suspend fun categories(): CategoriesResponseDto = unused()
     override suspend fun createCase(request: com.naveenhospital.medtrack.core.network.model.CreateCaseRequestDto): com.naveenhospital.medtrack.core.network.model.CaseCreateResponseDto = unused()
-    override suspend fun searchPatients(query: String?, page: Int?): com.naveenhospital.medtrack.core.network.model.PatientSearchResponseDto = unused()
+    override suspend fun searchPatients(request: com.naveenhospital.medtrack.core.network.model.PatientSearchRequestDto): com.naveenhospital.medtrack.core.network.model.PatientSearchResponseDto = unused()
     override suspend fun caseFormMetadata(): com.naveenhospital.medtrack.core.network.model.CaseFormMetadataDto = unused()
     override suspend fun taskFormMetadata(): com.naveenhospital.medtrack.core.network.model.TaskFormMetadataDto = unused()
     override suspend fun caseEditForm(caseId: String): com.naveenhospital.medtrack.core.network.model.CaseEditFormDto = unused()
-    override suspend fun updateCase(caseId: String, request: com.naveenhospital.medtrack.core.network.model.CreateCaseRequestDto): com.naveenhospital.medtrack.core.network.model.CaseCreateResponseDto = unused()
+    override suspend fun updateCase(caseId: String, request: com.naveenhospital.medtrack.core.network.model.UpdateCaseRequestDto): com.naveenhospital.medtrack.core.network.model.CaseUpdateResponseDto = unused()
     override suspend fun createTask(caseId: String, request: com.naveenhospital.medtrack.core.network.model.CreateTaskRequestDto): TaskWriteResponseDto = unused()
     override suspend fun updateTask(taskId: String, request: com.naveenhospital.medtrack.core.network.model.UpdateTaskRequestDto): TaskWriteResponseDto = unused()
     override suspend fun addTaskNote(taskId: String, request: com.naveenhospital.medtrack.core.network.model.TaskNoteRequestDto): TaskWriteResponseDto = unused()

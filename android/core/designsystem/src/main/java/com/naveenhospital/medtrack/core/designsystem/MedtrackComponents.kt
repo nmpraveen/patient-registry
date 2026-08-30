@@ -316,8 +316,8 @@ fun MedtrackMiniPill(
 @Composable
 fun MedtrackSectionEyebrow(
     title: String,
-    trailing: String? = null,
     modifier: Modifier = Modifier,
+    trailing: String? = null,
 ) {
     Row(
         modifier = modifier.fillMaxWidth(),
@@ -367,8 +367,8 @@ fun MedtrackIconBadge(
 @Composable
 fun MedtrackSectionTitle(
     title: String,
-    trailing: String? = null,
     modifier: Modifier = Modifier,
+    trailing: String? = null,
 ) {
     Row(
         modifier = modifier.fillMaxWidth(),

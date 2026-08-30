@@ -15,6 +15,7 @@ import com.naveenhospital.medtrack.core.data.auth.refreshAndVerifyAccountSession
 import com.naveenhospital.medtrack.core.data.auth.isDefinitiveAccountAuthFailure
 import com.naveenhospital.medtrack.core.data.local.MedtrackDatabase
 import com.naveenhospital.medtrack.core.data.local.PushTokenEntity
+import com.naveenhospital.medtrack.core.data.sync.MedtrackSyncWorker
 import com.naveenhospital.medtrack.core.network.api.MedtrackNetwork
 import com.naveenhospital.medtrack.core.network.model.RefreshTokenRequestDto
 import com.naveenhospital.medtrack.core.network.model.RegisterPushTokenRequestDto
@@ -62,6 +63,11 @@ object MedtrackPush {
                     onToken(token)
                 }
             }
+    }
+
+    fun enqueueNotificationRefresh(context: Context) {
+        val baseUrl = apiBaseUrl(context.applicationContext) ?: return
+        MedtrackSyncWorker.enqueueOneTime(context.applicationContext, baseUrl)
     }
 
     suspend fun registerTokenForCurrentSession(

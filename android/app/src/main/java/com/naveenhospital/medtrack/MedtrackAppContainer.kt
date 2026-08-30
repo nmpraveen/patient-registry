@@ -114,6 +114,7 @@ class MedtrackAppContainer @Inject constructor(@ApplicationContext context: Cont
                 sessionUpdater = { access, refresh ->
                     tokenStore.updateSessionForIdentity(sessionIdentity, access, refresh)
                 },
+                enableDebugLogging = BuildConfig.DEBUG && BuildConfig.FLAVOR != "prod",
             )
         }
 }

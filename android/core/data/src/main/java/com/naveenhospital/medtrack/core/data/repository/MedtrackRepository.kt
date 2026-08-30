@@ -25,6 +25,12 @@ import com.naveenhospital.medtrack.core.data.local.VitalsThresholdEntity
 import com.naveenhospital.medtrack.core.data.sync.PendingWriteJson
 import com.naveenhospital.medtrack.core.data.sync.PendingWriteTypes
 import com.naveenhospital.medtrack.core.data.sync.NotificationReadPayload
+import com.naveenhospital.medtrack.core.data.sync.SyncFailureKinds
+import com.naveenhospital.medtrack.core.data.sync.SyncRecoveryJson
+import com.naveenhospital.medtrack.core.data.sync.SyncRecoveryPayload
+import com.naveenhospital.medtrack.core.data.sync.SyncResolutionStates
+import com.naveenhospital.medtrack.core.data.sync.fetchAllNotifications
+import com.naveenhospital.medtrack.core.data.sync.replaceNotificationSnapshot
 import com.naveenhospital.medtrack.core.domain.model.CaseCategory
 import com.naveenhospital.medtrack.core.domain.model.CaseCreateOutcome
 import com.naveenhospital.medtrack.core.domain.model.CaseEditOutcome
@@ -59,12 +65,15 @@ import com.naveenhospital.medtrack.core.network.model.CaseCategoryDto
 import com.naveenhospital.medtrack.core.network.model.ChoiceDto
 import com.naveenhospital.medtrack.core.network.model.CreateCaseRequestDto
 import com.naveenhospital.medtrack.core.network.model.CaseEditFormDto
+import com.naveenhospital.medtrack.core.network.model.CaseEditCaseDto
 import com.naveenhospital.medtrack.core.network.model.CreateTaskRequestDto
 import com.naveenhospital.medtrack.core.network.model.TaskFormMetadataDto
 import com.naveenhospital.medtrack.core.network.model.TaskNoteRequestDto
 import com.naveenhospital.medtrack.core.network.model.UpdateTaskRequestDto
+import com.naveenhospital.medtrack.core.network.model.UpdateCaseRequestDto
 import com.naveenhospital.medtrack.core.network.model.VitalsUpdateRequestDto
 import com.naveenhospital.medtrack.core.network.model.PatientLookupDto
+import com.naveenhospital.medtrack.core.network.model.PatientSearchRequestDto
 import com.naveenhospital.medtrack.core.network.model.CaseListResponseDto
 import com.naveenhospital.medtrack.core.network.model.CaseStatsDto
 import com.naveenhospital.medtrack.core.network.model.CaseSummaryDto
@@ -85,6 +94,7 @@ import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -98,6 +108,7 @@ const val CACHE_TTL_MILLIS: Long = 60 * 60 * 1000L
 const val CACHE_KEY_CATEGORY_OPTIONS = "category_options"
 const val CACHE_KEY_VITALS_THRESHOLDS = "vitals_thresholds"
 const val CACHE_KEY_NOTIFICATIONS = "notifications"
+const val CACHE_KEY_NOTIFICATION_DATASET_EPOCH_PREFIX = "notification_dataset_epoch:"
 private const val CASE_PAGE_SIZE = 20
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -136,6 +147,7 @@ class MedtrackRepository(
     val hasMoreCases: StateFlow<Boolean> = _hasMoreCases
     private var nextCasePage: Int? = null
     private var activeCaseListKey: String = ""
+    private val caseEditBaselines = ConcurrentHashMap<String, CaseEditCaseDto>()
     private val caseCreateErrorAdapter =
         Moshi.Builder().add(KotlinJsonAdapterFactory()).build().adapter(CaseCreateErrorDto::class.java)
 
@@ -173,6 +185,7 @@ class MedtrackRepository(
         _hasMoreCases.value = false
         nextCasePage = null
         activeCaseListKey = ""
+        caseEditBaselines.clear()
     }
 
     private fun activeSession(): AccountSession {
@@ -252,18 +265,17 @@ class MedtrackRepository(
             else database.pendingWriteDao().observePendingWriteCount(ownerAccountId)
         }
 
-    val syncConflictCount: Flow<Int> =
-        activeAccountId.flatMapLatest { ownerAccountId ->
-            if (ownerAccountId == null) flowOf(0)
-            else database.syncConflictDao().observeConflictCount(ownerAccountId)
-        }
-
     val syncConflicts: Flow<List<SyncConflict>> =
         activeAccountId.flatMapLatest { ownerAccountId ->
             if (ownerAccountId == null) flowOf(emptyList())
             else database.syncConflictDao().observeConflicts(ownerAccountId)
-                .map { entities -> entities.map { it.toDomain() } }
+                .map { entities ->
+                    entities.map { it.toDomain() }
+                        .filter { it.resolutionState == SyncResolutionStates.OPEN }
+                }
         }
+
+    val syncConflictCount: Flow<Int> = syncConflicts.map { it.size }
 
     fun observeCase(caseId: String): Flow<PatientCase?> =
         activeAccountId.flatMapLatest { ownerAccountId ->
@@ -369,7 +381,9 @@ class MedtrackRepository(
 
     suspend fun searchPatients(query: String): List<PatientLookup> {
         val session = activeSession()
-        val response = session.api.searchPatients(query = query.trim().ifBlank { null })
+        val normalizedQuery = query.trim()
+        require(normalizedQuery.length in 3..80) { "Patient search requires 3 to 80 characters." }
+        val response = session.api.searchPatients(PatientSearchRequestDto(query = normalizedQuery))
         requireStillActive(session)
         return response.results.map { it.toDomain() }
     }
@@ -403,16 +417,30 @@ class MedtrackRepository(
         val session = activeSession()
         val response = session.api.caseEditForm(caseId)
         requireStillActive(session)
+        caseEditBaselines[caseId] = response.case
         return response.toDomain()
     }
 
     suspend fun updateCase(caseId: String, input: NewCaseInput): CaseEditOutcome {
         val session = activeSession()
-        val request = input.toRequestDto(newClientWriteId("case-edit"))
+        val baseline = caseEditBaselines[caseId]
+            ?: return CaseEditOutcome.Failure(
+                "Case edit must be reloaded before saving. No changes were sent.",
+            )
+        if (input.categoryName.equals("Surgery", ignoreCase = true) && input.surgeryDone == null) {
+            return CaseEditOutcome.Failure(
+                "Case edit is temporarily unavailable because the server did not return the existing surgery completion value. No changes were sent.",
+            )
+        }
+        val request = input.toUpdateRequestDto(
+            clientWriteId = newClientWriteId("case-edit"),
+            baseline = baseline,
+        )
         return runCatching {
             val response = session.api.updateCase(caseId, request)
             commitAccountMutation(session) {
                 database.caseDao().upsertCase(response.case.toEntity(session.ownerAccountId))
+                caseEditBaselines.remove(caseId)
             }
             CaseEditOutcome.Success(caseId = response.caseId, message = response.message)
         }.getOrElse { throwable ->
@@ -602,9 +630,17 @@ class MedtrackRepository(
         val session = activeSession()
         // When a Me-page category is open, fetch that type server-side so paginated
         // matches beyond the untyped first page aren't missed by client-side filtering.
-        val response = session.api.notifications(type = type)
+        val snapshot = fetchAllNotifications(api = session.api, type = type)
         commitAccountMutation(session) {
-            database.notificationDao().upsertNotifications(response.results.map { it.toEntity(session.ownerAccountId) })
+            replaceNotificationSnapshot(
+                database = database,
+                ownerAccountId = session.ownerAccountId,
+                type = type,
+                snapshot = com.naveenhospital.medtrack.core.data.sync.NotificationSnapshot(
+                    datasetEpoch = snapshot.datasetEpoch,
+                    notifications = snapshot.notifications.map { it.toEntity(session.ownerAccountId) },
+                ),
+            )
             // Only a full (untyped) refresh covers every category, so only it may mark the
             // shared cache fresh. A typed refresh must not suppress the global sync, or the
             // Me badge/counts could miss other categories until "All" is opened.
@@ -693,6 +729,7 @@ class MedtrackRepository(
                         writeType = PendingWriteTypes.TASK_COMPLETE,
                         caseId = caseId,
                         taskId = taskId,
+                        payloadJson = PendingWriteJson.encodeTaskComplete(payload),
                         error = throwable,
                     )
                     WriteResult(
@@ -759,6 +796,7 @@ class MedtrackRepository(
                         writeType = PendingWriteTypes.CALL_OUTCOME,
                         caseId = caseId,
                         taskId = taskId,
+                        payloadJson = PendingWriteJson.encodeCallOutcome(payload),
                         error = throwable,
                     )
                     WriteResult(
@@ -829,6 +867,7 @@ class MedtrackRepository(
                         writeType = PendingWriteTypes.VITALS_CREATE,
                         caseId = caseId,
                         taskId = null,
+                        payloadJson = PendingWriteJson.encodeVitals(payload),
                         error = throwable,
                     )
                     WriteResult(
@@ -865,11 +904,69 @@ class MedtrackRepository(
         }
     }
 
-    suspend fun dismissSyncConflict(clientWriteId: String) {
+    suspend fun retrySyncConflict(clientWriteId: String) {
         val session = activeSession()
+        val conflict = database.syncConflictDao()
+            .conflictById(session.ownerAccountId, clientWriteId) ?: return
+        val recovery = SyncRecoveryJson.decode(conflict.serverPayloadJson)
+            ?: error("This sync issue predates durable recovery and cannot be retried.")
+        val localPayload = recovery.localPayloadJson
+            ?.takeIf { it.isNotBlank() }
+            ?: error("The original change is unavailable and cannot be retried.")
+        val now = System.currentTimeMillis()
         commitAccountMutation(session) {
-            database.syncConflictDao().deleteConflict(session.ownerAccountId, clientWriteId)
+            database.pendingWriteDao().upsertPendingWrite(
+                PendingWriteEntity(
+                    ownerAccountId = session.ownerAccountId,
+                    clientWriteId = conflict.clientWriteId,
+                    writeType = conflict.writeType,
+                    caseId = conflict.caseId,
+                    taskId = conflict.taskId,
+                    payloadJson = localPayload,
+                    retryCount = 0,
+                    lastError = conflict.message,
+                    createdAtMillis = conflict.createdAtMillis,
+                    updatedAtMillis = now,
+                ),
+            )
+            database.syncConflictDao().upsertConflict(
+                conflict.copy(
+                    serverPayloadJson = SyncRecoveryJson.encode(
+                        recovery.copy(
+                            resolutionState = SyncResolutionStates.RETRY_QUEUED,
+                            resolutionAtMillis = now,
+                        ),
+                    ),
+                ),
+            )
         }
+        onPendingWriteQueued(session.ownerAccountId)
+    }
+
+    suspend fun discardSyncConflict(clientWriteId: String) {
+        val session = activeSession()
+        val conflict = database.syncConflictDao()
+            .conflictById(session.ownerAccountId, clientWriteId) ?: return
+        val recovery = SyncRecoveryJson.decode(conflict.serverPayloadJson)
+            ?: SyncRecoveryPayload(failureKind = SyncFailureKinds.CONFLICT)
+        val now = System.currentTimeMillis()
+        commitAccountMutation(session) {
+            database.pendingWriteDao().deletePendingWrite(session.ownerAccountId, clientWriteId)
+            if (conflict.writeType == PendingWriteTypes.VITALS_CREATE) {
+                database.vitalDao().deleteVital(session.ownerAccountId, pendingVitalId(clientWriteId))
+            }
+            database.syncConflictDao().upsertConflict(
+                conflict.copy(
+                    serverPayloadJson = SyncRecoveryJson.encode(
+                        recovery.copy(
+                            resolutionState = SyncResolutionStates.DISCARDED,
+                            resolutionAtMillis = now,
+                        ),
+                    ),
+                ),
+            )
+        }
+        conflict.caseId?.let { runCatching { refreshCaseDetailForSession(session, it) } }
     }
 
     private suspend fun recordConflict(
@@ -878,8 +975,11 @@ class MedtrackRepository(
         writeType: String,
         caseId: String?,
         taskId: String?,
+        payloadJson: String,
         error: Throwable,
     ) {
+        val serverPayload = error.httpErrorBody()
+        val now = System.currentTimeMillis()
         commitAccountMutation(session) {
             database.syncConflictDao().upsertConflict(
                 SyncConflictEntity(
@@ -888,9 +988,16 @@ class MedtrackRepository(
                     writeType = writeType,
                     caseId = caseId,
                     taskId = taskId,
-                    message = conflictMessage(error),
-                    serverPayloadJson = null,
-                    createdAtMillis = System.currentTimeMillis(),
+                    message = serverPayload ?: "The server version was kept.",
+                    serverPayloadJson = SyncRecoveryJson.encode(
+                        SyncRecoveryPayload(
+                            failureKind = SyncFailureKinds.CONFLICT,
+                            localPayloadJson = payloadJson,
+                            serverPayloadJson = serverPayload,
+                            httpStatus = (error as? HttpException)?.code(),
+                        ),
+                    ),
+                    createdAtMillis = now,
                 ),
             )
         }
@@ -1028,20 +1135,20 @@ private fun CaseFormMetadataDto.toDomain(): CaseFormMetadata = CaseFormMetadata(
 private fun PatientLookupDto.toDomain(): PatientLookup = PatientLookup(
     id = id,
     uhid = uhid,
-    name = name.orEmpty(),
-    prefix = prefix.orEmpty(),
-    firstName = firstName.orEmpty(),
-    lastName = lastName.orEmpty(),
-    gender = gender.orEmpty(),
-    genderLabel = genderLabel.orEmpty(),
-    bloodGroup = bloodGroup.orEmpty(),
-    dateOfBirth = dateOfBirth,
-    age = age,
-    place = place.orEmpty(),
-    phoneNumber = phoneNumber.orEmpty(),
-    alternatePhoneNumber = alternatePhoneNumber.orEmpty(),
-    isTemporaryId = isTemporaryId,
-    activeCaseCount = activeCaseCount,
+    name = name,
+    prefix = "",
+    firstName = "",
+    lastName = "",
+    gender = "",
+    genderLabel = "",
+    bloodGroup = "",
+    dateOfBirth = null,
+    age = null,
+    place = "",
+    phoneNumber = "",
+    alternatePhoneNumber = "",
+    isTemporaryId = false,
+    activeCaseCount = null,
 )
 
 private fun NewCaseInput.toRequestDto(clientWriteId: String): CreateCaseRequestDto = CreateCaseRequestDto(
@@ -1074,6 +1181,7 @@ private fun NewCaseInput.toRequestDto(clientWriteId: String): CreateCaseRequestD
     edd = edd,
     usgEdd = usgEdd,
     surgicalPathway = surgicalPathway,
+    surgeryDone = surgeryDone ?: false,
     surgeryDate = surgeryDate,
     reviewFrequency = reviewFrequency,
     reviewDate = reviewDate,
@@ -1085,6 +1193,57 @@ private fun NewCaseInput.toRequestDto(clientWriteId: String): CreateCaseRequestD
     lscs = lscs,
     clientWriteId = clientWriteId,
 )
+
+internal fun NewCaseInput.toUpdateRequestDto(
+    clientWriteId: String,
+    baseline: CaseEditCaseDto,
+): UpdateCaseRequestDto = UpdateCaseRequestDto(
+    patientMode = changed(patientMode, baseline.patientMode),
+    selectedPatient = changed(selectedPatientId, baseline.selectedPatient),
+    useTemporaryUhid = changed(useTemporaryUhid, baseline.useTemporaryUhid),
+    uhid = changedText(uhid, baseline.uhid),
+    prefix = changedText(prefix, baseline.prefix),
+    firstName = changedText(firstName, baseline.firstName),
+    lastName = changedText(lastName, baseline.lastName),
+    gender = changedText(gender, baseline.gender),
+    bloodGroup = changedText(bloodGroup, baseline.bloodGroup),
+    dateOfBirth = changedText(dateOfBirth, baseline.dateOfBirth),
+    place = changedText(place, baseline.place),
+    age = changed(age, baseline.age),
+    phoneNumber = changedText(phoneNumber, baseline.phoneNumber),
+    alternatePhoneNumber = changedText(alternatePhoneNumber, baseline.alternatePhoneNumber),
+    category = changed(categoryId, baseline.category),
+    subcategory = changedText(subcategory, baseline.subcategory),
+    status = changedText(status, baseline.status),
+    diagnosis = changedText(diagnosis, baseline.diagnosis),
+    referredBy = changedText(referredBy, baseline.referredBy),
+    notes = changedText(notes, baseline.notes),
+    highRisk = changed(highRisk, baseline.highRisk),
+    ncdFlags = changed(ncdFlags, baseline.ncdFlags),
+    ancHighRiskReasons = changed(ancHighRiskReasons, baseline.ancHighRiskReasons),
+    rchNumber = changedText(rchNumber, baseline.rchNumber),
+    rchBypass = changed(rchBypass, baseline.rchBypass),
+    lmp = changedText(lmp, baseline.lmp),
+    edd = changedText(edd, baseline.edd),
+    usgEdd = changedText(usgEdd, baseline.usgEdd),
+    surgicalPathway = changedText(surgicalPathway, baseline.surgicalPathway),
+    surgeryDone = changed(surgeryDone, baseline.surgeryDone),
+    surgeryDate = changedText(surgeryDate, baseline.surgeryDate),
+    reviewFrequency = changedText(reviewFrequency, baseline.reviewFrequency),
+    reviewDate = changedText(reviewDate, baseline.reviewDate),
+    gravida = changed(gravida, baseline.gravida),
+    para = changed(para, baseline.para),
+    abortions = changed(abortions, baseline.abortions),
+    living = changed(living, baseline.living),
+    ftnd = changed(ftnd, baseline.ftnd),
+    lscs = changed(lscs, baseline.lscs),
+    clientWriteId = clientWriteId,
+)
+
+private fun <T> changed(current: T, baseline: T?): T? = current.takeIf { it != baseline }
+
+private fun changedText(current: String?, baseline: String?): String? =
+    if (current == baseline) null else current.orEmpty()
 
 private fun CaseEditFormDto.toDomain(): CaseEditPrefill {
     val metadata = CaseFormMetadata(
@@ -1119,9 +1278,11 @@ private fun CaseEditFormDto.toDomain(): CaseEditPrefill {
         lastName = case.lastName,
         gender = case.gender,
         bloodGroup = case.bloodGroup,
+        dateOfBirth = case.dateOfBirth,
         place = case.place,
         age = case.age,
         phoneNumber = case.phoneNumber,
+        alternatePhoneNumber = case.alternatePhoneNumber,
         categoryId = case.category,
         subcategory = case.subcategory,
         status = case.status,
@@ -1137,6 +1298,7 @@ private fun CaseEditFormDto.toDomain(): CaseEditPrefill {
         edd = case.edd,
         usgEdd = case.usgEdd,
         surgicalPathway = case.surgicalPathway,
+        surgeryDone = case.surgeryDone,
         surgeryDate = case.surgeryDate,
         reviewFrequency = case.reviewFrequency,
         reviewDate = case.reviewDate,
@@ -1190,12 +1352,12 @@ private fun Throwable.shouldQueue(): Boolean =
 private fun Throwable.isConflict(): Boolean =
     this is HttpException && code() == 409
 
-private fun conflictMessage(error: Throwable): String =
-    if (error is HttpException) {
-        error.response()?.errorBody()?.string()?.takeIf { it.isNotBlank() } ?: "The server version was kept."
-    } else {
-        "The server version was kept."
-    }
+private fun Throwable.httpErrorBody(): String? =
+    (this as? HttpException)
+        ?.response()
+        ?.errorBody()
+        ?.string()
+        ?.takeIf { it.isNotBlank() }
 
 private fun VitalsRequestDto.toPendingVitalEntity(
     ownerAccountId: String,
@@ -1397,7 +1559,7 @@ private fun NotificationDto.toEntity(ownerAccountId: String): NotificationEntity
         taskId = taskId?.toString(),
         createdAt = createdAt,
         isRead = readAt != null,
-        payloadJson = notificationPayloadToJson(payload),
+        payloadJson = notificationPayloadToJson(payload.orEmpty() + ("event_id" to eventId)),
     )
 
 private fun NotificationEntity.toDomain(): NotificationItem =
@@ -1414,14 +1576,19 @@ private fun NotificationEntity.toDomain(): NotificationItem =
     )
 
 private fun SyncConflictEntity.toDomain(): SyncConflict =
-    SyncConflict(
+    SyncRecoveryJson.decode(serverPayloadJson).let { recovery -> SyncConflict(
         clientWriteId = clientWriteId,
         writeType = writeType,
         caseId = caseId,
         taskId = taskId,
         message = message,
         createdAtMillis = createdAtMillis,
-    )
+        failureKind = recovery?.failureKind ?: SyncFailureKinds.CONFLICT,
+        localPayloadJson = recovery?.localPayloadJson,
+        serverPayloadJson = recovery?.serverPayloadJson,
+        httpStatus = recovery?.httpStatus,
+        resolutionState = recovery?.resolutionState ?: SyncResolutionStates.OPEN,
+    ) }
 
 private val vitalsThresholdsJsonAdapter = Moshi.Builder()
     .add(KotlinJsonAdapterFactory())

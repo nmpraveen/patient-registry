@@ -33,7 +33,7 @@ Preserve these V2a traits in implementation: search at top, tappable stat strip,
 
 | Phase | Current implementation surface | Verification |
 |---|---|---|
-| Phase 0 - Bootstrap | Gradle modules, app id `com.naveenhospital.medtrack`, Material 3 theme, Roboto Flex, Healthicons vector drawables. | `.\gradlew.bat --no-daemon :app:assembleDebug` |
+| Phase 0 - Bootstrap | Gradle modules, app id `com.naveenhospital.medtrack`, Material 3 theme, bundled OFL fonts, Healthicons vector drawables. | `.\gradlew.bat --no-daemon --max-workers=1 :app:assembleDevDebug` |
 | Phase 1 - Django API | `../api/` DRF app, JWT auth, case/task/vitals/notifications/devices endpoints, vitals thresholds extraction. | `docker compose exec web python manage.py test` |
 | Phase 2 - Auth and lock | Username/password login, encrypted refresh token, in-memory access token, pattern unlock, biometric unlock, 15-minute relock. | `.\android\scripts\local-emulator-smoke.ps1` covers login, biometric availability gating, and pattern unlock; `.\android\scripts\biometric-emulator-smoke.ps1` covers successful biometric auth on an enrolled AVD. |
 | Phase 3 - Home inbox | Canva V2a-inspired inbox, search, counters, filters, expandable cards, red sheet, swipe call/done. | `.\android\scripts\local-emulator-smoke.ps1` |
@@ -59,22 +59,26 @@ The account boundary necessarily touches `MedtrackSyncWorker`, repository queue/
 Open the `android/` directory in Android Studio. If you use the command line, run Gradle from this folder with an installed Android SDK:
 
 ```powershell
-.\gradlew.bat --no-daemon :app:assembleDebug
+.\gradlew.bat --no-daemon --max-workers=1 :app:assembleDevDebug
 ```
 
-## Backend
+## Backend and release flavors
 
-The debug build defaults to the live Patient Registry server:
+Debug builds are available only for `dev` and `stage`; there is no
+`prodDebug` variant. `devDebug` defaults to the emulator-local backend and the
+stage default uses a deliberately non-routable `.invalid` host, so an ordinary
+debug build cannot accidentally send clinic data to production.
 
-```text
-MEDTRACK_API_BASE_URL=https://book.naveenhospital.net/
-```
-
-Override it when a local or alternate backend is needed:
+Override a development backend when needed:
 
 ```powershell
-.\gradlew.bat --no-daemon :app:assembleDebug -PMEDTRACK_API_BASE_URL=https://example.com/
+.\gradlew.bat --no-daemon --max-workers=1 :app:assembleDevDebug -PMEDTRACK_DEV_API_BASE_URL=https://example.com/
 ```
+
+See [`RELEASE.md`](RELEASE.md) for dev/stage/prod identities, external signing,
+strict dependency locks, API 36 compatibility, unsigned review builds, and the
+audited AAB handoff workflow. Server contract requirements tracked with API lane
+2 are in [`API_CONTRACT_COORDINATION.md`](API_CONTRACT_COORDINATION.md).
 
 ## Local Emulator Smoke
 
@@ -140,7 +144,7 @@ Run the backend and Android unit-test gate from the repo root:
 .\android\scripts\mobile-test-suite.ps1
 ```
 
-The script starts or reuses Test NNH, runs `docker compose exec -T web python manage.py test`, runs `.\gradlew.bat --no-daemon testDebugUnitTest` from `android/`, writes logs plus `summary.json` under `output/mobile-test-suite-*`, and stops only the Test NNH server it started.
+The script starts or reuses Test NNH, runs `docker compose exec -T web python manage.py test`, runs `.\gradlew.bat --no-daemon --max-workers=1 testDevDebugUnitTest` from `android/`, writes logs plus `summary.json` under `output/mobile-test-suite-*`, and stops only the Test NNH server it started.
 
 For manual testing, start or reuse the local Django backend from the repo root:
 
@@ -151,13 +155,16 @@ For manual testing, start or reuse the local Django backend from the repo root:
 Then build and install the debug APK from `android/` with a local backend override:
 
 ```powershell
-.\gradlew.bat --no-daemon :app:assembleDebug -PMEDTRACK_API_BASE_URL=http://10.0.2.2:8000/
-$apk = Join-Path $env:USERPROFILE ".codex\build\medtrack-android\app\outputs\apk\debug\app-debug.apk"
+.\gradlew.bat --no-daemon --max-workers=1 :app:assembleDevDebug -PMEDTRACK_DEV_API_BASE_URL=http://10.0.2.2:8000/
+$apk = Join-Path $PSScriptRoot ".build\app\outputs\apk\dev\debug\app-dev-debug.apk"
 adb install -r $apk
 adb shell monkey -p com.naveenhospital.medtrack 1
 ```
 
-Gradle writes Android build outputs to `%USERPROFILE%\.codex\build\medtrack-android` by default so Dropbox does not convert generated `.class` files into placeholder reparse points. Set `MEDTRACK_ANDROID_BUILD_DIR` before running Gradle if you need a different local build-output path.
+Gradle writes Android build outputs to the current worktree at `android/.build/`
+by default. This prevents parallel remediation worktrees from sharing or
+overwriting build state. Set `MEDTRACK_ANDROID_BUILD_DIR` only when an isolated
+external build root is required.
 
 If no emulator is running for manual testing, start `MarkUS_Local` first:
 
@@ -189,7 +196,7 @@ For low-end phone verification over USB, connect the phone with USB debugging en
 .\android\scripts\physical-device-smoke.ps1 -OfflineWrites
 ```
 
-The wrapper uses `adb reverse tcp:8000 tcp:8000`, builds the debug APK with `MEDTRACK_API_BASE_URL=http://127.0.0.1:8000/`, runs the same login/home/card/case/notification/offline-write smoke against the local Test NNH server, and writes evidence under `output/android-physical-device-smoke-*`. This avoids LAN exposure for the local Django server. The v1 audit only counts the physical-device gate when this summary also proves offline task, call, and vitals writes queued and synced.
+The wrapper uses `adb reverse tcp:8000 tcp:8000`, builds the `devDebug` APK with `MEDTRACK_DEV_API_BASE_URL=http://127.0.0.1:8000/`, runs the same login/home/card/case/notification/offline-write smoke against the local Test NNH server, and writes evidence under `output/android-physical-device-smoke-*`. This avoids LAN exposure for the local Django server. The v1 audit only counts the physical-device gate when this summary also proves offline task, call, and vitals writes queued and synced.
 
 ## Two-user Field Test Record
 

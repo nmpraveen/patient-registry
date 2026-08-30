@@ -72,6 +72,7 @@ import com.naveenhospital.medtrack.core.domain.model.CaseFormMetadata
 import com.naveenhospital.medtrack.core.domain.model.FormChoice
 import com.naveenhospital.medtrack.core.domain.model.NewCaseInput
 import com.naveenhospital.medtrack.core.domain.model.PatientLookup
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -85,7 +86,6 @@ private fun String.isSurgery() = trim().equals("Surgery", ignoreCase = true)
 @Composable
 fun CaseCreationScreen(
     initialCategory: CaseCategory,
-    pathwayLabel: String,
     loadMetadata: suspend () -> CaseFormMetadata,
     searchPatients: suspend (String) -> List<PatientLookup>,
     submit: suspend (NewCaseInput) -> CaseCreateOutcome,
@@ -350,9 +350,17 @@ private fun ExistingPatientPicker(state: CaseFormState) {
             value = state.patientQuery,
             onValueChange = {
                 state.patientQuery = it
+                val normalizedQuery = it.trim()
+                if (normalizedQuery.length !in 3..80) {
+                    state.patientResults = emptyList()
+                    state.searching = false
+                    return@SearchField
+                }
                 scope.launch {
+                    delay(300)
+                    if (state.patientQuery.trim() != normalizedQuery) return@launch
                     state.searching = true
-                    state.patientResults = runCatching { state.searchPatients(it) }.getOrDefault(emptyList())
+                    state.patientResults = runCatching { state.searchPatients(normalizedQuery) }.getOrDefault(emptyList())
                     state.searching = false
                 }
             },

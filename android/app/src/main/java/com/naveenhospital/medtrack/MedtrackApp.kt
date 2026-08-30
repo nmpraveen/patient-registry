@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.core.content.ContextCompat
+import androidx.core.net.toUri
 import androidx.fragment.app.FragmentActivity
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.material.icons.Icons
@@ -1074,11 +1075,8 @@ fun MedtrackApp(
                     val category = runCatching {
                         CaseCategory.valueOf(entry.arguments?.getString("category").orEmpty())
                     }.getOrDefault(CaseCategory.ANC)
-                    val label = Uri.decode(entry.arguments?.getString("label") ?: category.label)
-
                     CaseCreationScreen(
                         modifier = Modifier.fillMaxSize(),
-                        pathwayLabel = label,
                         initialCategory = category,
                         loadMetadata = { container.medtrackRepository.loadCaseFormMetadata() },
                         searchPatients = { query -> container.medtrackRepository.searchPatients(query) },
@@ -1103,7 +1101,7 @@ fun MedtrackApp(
                         searchPatients = { query -> container.medtrackRepository.searchPatients(query) },
                         submit = { input -> container.medtrackRepository.updateCase(caseId, input) },
                         onBack = { navController.popBackStack() },
-                        onSaved = { savedCaseId, message ->
+                        onSaved = { _, message ->
                             scope.launch { snackbarHostState.showSnackbar(message) }
                             navController.popBackStack()
                         },
@@ -1360,10 +1358,8 @@ fun MedtrackApp(
         }?.let { conflict ->
             val conflictCase = cachedCases.firstOrNull { it.id == conflict.caseId }
             AlertDialog(
-                onDismissRequest = {
-                    scope.launch { container.medtrackRepository.dismissSyncConflict(conflict.clientWriteId) }
-                },
-                title = { Text("Sync conflict") },
+                onDismissRequest = { /* Recovery items remain until an explicit action. */ },
+                title = { Text(conflict.failureTitle()) },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(
@@ -1375,6 +1371,13 @@ fun MedtrackApp(
                             text = conflict.message.ifBlank { "Server version was kept for an offline change." },
                             color = MedtrackColors.Muted,
                         )
+                        conflict.httpStatus?.let { status ->
+                            Text(
+                                text = "Server response $status · original change retained",
+                                color = MedtrackColors.Faint,
+                                style = MaterialTheme.typography.labelSmall,
+                            )
+                        }
                         Surface(
                             shape = RoundedCornerShape(12.dp),
                             color = MedtrackColors.WarningSoft,
@@ -1388,29 +1391,41 @@ fun MedtrackApp(
                                 modifier = Modifier.padding(10.dp),
                             )
                         }
+                        conflict.caseId?.let { caseId ->
+                            TextButton(
+                                onClick = {
+                                    navController.navigate(Routes.caseDetail(caseId)) {
+                                        launchSingleTop = true
+                                    }
+                                },
+                            ) {
+                                Text("Review server record")
+                            }
+                        }
                     }
                 },
                 confirmButton = {
                     TextButton(
                         onClick = {
-                            conflict.caseId?.let { caseId ->
-                                navController.navigate(Routes.caseDetail(caseId)) {
-                                    launchSingleTop = true
+                            scope.launch {
+                                runCatching {
+                                    container.medtrackRepository.retrySyncConflict(conflict.clientWriteId)
+                                }.onFailure { error ->
+                                    snackbarHostState.showSnackbar(error.message ?: "Unable to retry the original change")
                                 }
                             }
-                            scope.launch { container.medtrackRepository.dismissSyncConflict(conflict.clientWriteId) }
                         },
                     ) {
-                        Text("View server version")
+                        Text("Retry original")
                     }
                 },
                 dismissButton = {
                     TextButton(
                         onClick = {
-                            scope.launch { container.medtrackRepository.dismissSyncConflict(conflict.clientWriteId) }
+                            scope.launch { container.medtrackRepository.discardSyncConflict(conflict.clientWriteId) }
                         },
                     ) {
-                        Text("Dismiss")
+                        Text("Discard local change")
                     }
                 },
             )
@@ -2092,6 +2107,14 @@ private fun SyncConflict.localChangeLabel(): String =
         else -> "local change"
     }
 
+private fun SyncConflict.failureTitle(): String =
+    when (failureKind) {
+        "AUTHENTICATION" -> "Sign in to finish syncing"
+        "VALIDATION" -> "Change needs attention"
+        "MALFORMED" -> "Saved change cannot be read"
+        else -> "Sync conflict"
+    }
+
 private fun categoryColor(category: CaseCategory): Color =
     when (category) {
         CaseCategory.ANC -> MedtrackColors.Anc
@@ -2231,7 +2254,7 @@ private fun DialerOutcomeSheet(
 private fun openDialer(context: android.content.Context, patientCase: PatientCase): Boolean {
     val number = patientCase.phoneNumber?.takeIf { it.isNotBlank() } ?: return false
     val intent = Intent(Intent.ACTION_DIAL).apply {
-        data = Uri.parse("tel:$number")
+        data = "tel:$number".toUri()
     }
     return try {
         context.startActivity(intent)
@@ -2244,7 +2267,7 @@ private fun openDialer(context: android.content.Context, patientCase: PatientCas
 private fun openWhatsApp(context: android.content.Context, patientCase: PatientCase): Boolean {
     val number = patientCase.phoneNumber?.toWaMeNumber() ?: return false
     val intent = Intent(Intent.ACTION_VIEW).apply {
-        data = Uri.parse("https://wa.me/$number")
+        data = "https://wa.me/$number".toUri()
     }
     return try {
         context.startActivity(intent)

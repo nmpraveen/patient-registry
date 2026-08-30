@@ -28,7 +28,7 @@ are passing.
 - Latest audit summary:
   `output/medtrack-v1-audit-20260518-201658/summary.json`
 - Current debug APK:
-  `%USERPROFILE%/.codex/build/medtrack-android/app/outputs/apk/debug/app-debug.apk`
+  `android/.build/app/outputs/apk/dev/debug/app-dev-debug.apk`
 - Current debug APK SHA256:
   `4851E6738C8B00435E2E3B6C1EE449B9717F8DA9A88FC1AA6138AB8618469E79`
 - Full emulator/offline smoke:

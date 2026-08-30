@@ -1,4 +1,5 @@
 import java.io.File
+import org.gradle.api.artifacts.dsl.LockMode
 
 plugins {
     alias(libs.plugins.android.application) apply false
@@ -13,11 +14,15 @@ plugins {
 val medtrackBuildRoot = providers.environmentVariable("MEDTRACK_ANDROID_BUILD_DIR")
     .orElse(
         providers.provider {
-            File(System.getProperty("user.home"), ".codex/build/medtrack-android").absolutePath
+            File(rootDir, ".build").absolutePath
         },
     )
 
 allprojects {
     val projectBuildName = if (path == ":") "root" else path.removePrefix(":").replace(':', '_')
     layout.buildDirectory.set(file("${medtrackBuildRoot.get()}/$projectBuildName"))
+    dependencyLocking {
+        lockAllConfigurations()
+        lockMode.set(LockMode.STRICT)
+    }
 }

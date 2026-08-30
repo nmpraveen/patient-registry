@@ -137,6 +137,12 @@ interface NotificationDao {
 
     @Query("DELETE FROM notifications WHERE ownerAccountId = :ownerAccountId")
     suspend fun clearForOwner(ownerAccountId: String)
+
+    @Query("DELETE FROM notifications WHERE ownerAccountId = :ownerAccountId")
+    suspend fun clearNotifications(ownerAccountId: String)
+
+    @Query("DELETE FROM notifications WHERE ownerAccountId = :ownerAccountId AND type = :type")
+    suspend fun clearNotificationsByType(ownerAccountId: String, type: String)
 }
 
 @Dao
@@ -190,6 +196,9 @@ interface PendingWriteDao {
 
     @Query("DELETE FROM pending_writes WHERE ownerAccountId = :ownerAccountId")
     suspend fun clearForOwner(ownerAccountId: String)
+
+    @Query("DELETE FROM pending_writes WHERE ownerAccountId = :ownerAccountId AND writeType = :writeType")
+    suspend fun deletePendingWritesByType(ownerAccountId: String, writeType: String)
 }
 
 @Dao
@@ -199,6 +208,9 @@ interface SyncConflictDao {
 
     @Query("SELECT COUNT(*) FROM sync_conflicts WHERE ownerAccountId = :ownerAccountId")
     fun observeConflictCount(ownerAccountId: String): Flow<Int>
+
+    @Query("SELECT * FROM sync_conflicts WHERE ownerAccountId = :ownerAccountId AND clientWriteId = :clientWriteId LIMIT 1")
+    suspend fun conflictById(ownerAccountId: String, clientWriteId: String): SyncConflictEntity?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertConflict(conflict: SyncConflictEntity)
@@ -222,4 +234,7 @@ interface CacheMetadataDao {
     suspend fun upsertMetadata(metadata: CacheMetadataEntity)
     @Query("DELETE FROM cache_metadata WHERE ownerAccountId = :ownerAccountId")
     suspend fun clearForOwner(ownerAccountId: String)
+
+    @Query("DELETE FROM cache_metadata WHERE ownerAccountId = :ownerAccountId AND cacheKey LIKE :prefix || '%'")
+    suspend fun deleteKeysStartingWith(ownerAccountId: String, prefix: String)
 }

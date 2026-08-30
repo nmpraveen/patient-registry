@@ -11,7 +11,10 @@ import com.naveenhospital.medtrack.core.data.local.PushTokenEntity
 import com.naveenhospital.medtrack.core.data.local.TaskEntity
 import com.naveenhospital.medtrack.core.data.sync.PendingWriteJson
 import com.naveenhospital.medtrack.core.data.sync.PendingWriteTypes
+import com.naveenhospital.medtrack.core.data.sync.SyncRecoveryJson
+import com.naveenhospital.medtrack.core.data.sync.SyncResolutionStates
 import com.naveenhospital.medtrack.core.domain.model.CaseCategory
+import com.naveenhospital.medtrack.core.domain.model.NewCaseInput
 import com.naveenhospital.medtrack.core.domain.model.NotificationPayload
 import com.naveenhospital.medtrack.core.network.api.MedtrackApi
 import com.naveenhospital.medtrack.core.network.model.ApiMessageDto
@@ -20,6 +23,7 @@ import com.naveenhospital.medtrack.core.network.model.CallLogDto
 import com.naveenhospital.medtrack.core.network.model.CallWriteResponseDto
 import com.naveenhospital.medtrack.core.network.model.CaseCategoryDto
 import com.naveenhospital.medtrack.core.network.model.CaseDetailDto
+import com.naveenhospital.medtrack.core.network.model.CaseEditCaseDto
 import com.naveenhospital.medtrack.core.network.model.CaseListResponseDto
 import com.naveenhospital.medtrack.core.network.model.CaseStatsDto
 import com.naveenhospital.medtrack.core.network.model.CaseSummaryDto
@@ -126,18 +130,18 @@ class MedtrackRepositoryTest {
     fun refreshNotificationsPreservesPayloadJsonAndParsedDomainPayload() = runTest {
         val api = FakeMedtrackApi(
             notificationsResponse = NotificationsResponseDto(
-                count = 1,
-                next = null,
-                previous = null,
+                datasetEpoch = "11111111-1111-4111-8111-111111111111",
+                nextCursor = null,
                 results = listOf(
                     NotificationDto(
                         id = 5543,
+                        eventId = "event-red-5543",
                         type = "red_flag",
-                        title = "Red flag patient",
-                        body = "Ms. Harini Sivakumar: High risk",
+                        title = "MEDTRACK update",
+                        body = "Open MEDTRACK to review this update.",
                         caseId = 6364,
                         taskId = null,
-                        payload = mapOf("channel" to "red_flags", "reasons" to listOf("High risk")),
+                        payload = mapOf("channel" to "red_flags", "type" to "red_flag"),
                         readAt = null,
                         createdAt = "2026-06-01T10:00:00Z",
                     ),
@@ -150,9 +154,9 @@ class MedtrackRepositoryTest {
 
         val entity = database.notificationDao().observeNotifications(ACCOUNT_ID).first().single()
         val storedJson = JSONObject(entity.payloadJson)
-        assertEquals("High risk", storedJson.getJSONArray("reasons").getString(0))
+        assertEquals("event-red-5543", storedJson.getString("event_id"))
         val item = repository.notifications.first().single()
-        assertEquals(NotificationPayload.RedFlag(listOf("High risk")), item.payload)
+        assertEquals(NotificationPayload.RedFlag(emptyList()), item.payload)
     }
 
     @Test
@@ -291,7 +295,11 @@ class MedtrackRepositoryTest {
     @Test
     fun completeTaskRecordsConflictWhenServerReturns409() = runTest {
         val api = FakeMedtrackApi(completeTaskError = conflictError("Task was already changed on the server."))
-        val repository = repository(api)
+        var queuedCallbacks = 0
+        val repository = repository(
+            api = api,
+            onPendingWriteQueued = { queuedCallbacks += 1 },
+        )
 
         val result = repository.completeTask(taskId = "7", caseId = "42")
 
@@ -303,6 +311,78 @@ class MedtrackRepositoryTest {
         assertEquals("42", conflict.caseId)
         assertEquals("7", conflict.taskId)
         assertEquals("Task was already changed on the server.", conflict.message)
+        val recovery = SyncRecoveryJson.decode(conflict.serverPayloadJson)
+        assertNotNull(recovery?.localPayloadJson)
+        assertEquals("Task was already changed on the server.", recovery?.serverPayloadJson)
+
+        repository.retrySyncConflict(result.clientWriteId)
+
+        assertEquals(1, queuedCallbacks)
+        assertEquals(result.clientWriteId, database.pendingWriteDao().pendingWrites().single().clientWriteId)
+        assertTrue(repository.syncConflicts.first().isEmpty())
+        assertEquals(
+            SyncResolutionStates.RETRY_QUEUED,
+            SyncRecoveryJson.decode(
+                database.syncConflictDao().conflictById(result.clientWriteId)?.serverPayloadJson,
+            )?.resolutionState,
+        )
+    }
+
+    @Test
+    fun casePatchContainsOnlyUserChangedFieldsAndPreservesSurgeryDone() {
+        val baseline = CaseEditCaseDto(
+            id = 42,
+            patientMode = "existing",
+            category = 2,
+            diagnosis = "Original diagnosis",
+            highRisk = true,
+            surgeryDone = true,
+        )
+        val input = NewCaseInput(
+            patientMode = "existing",
+            categoryId = 2,
+            categoryName = "Surgery",
+            diagnosis = "Updated diagnosis",
+            highRisk = true,
+            surgeryDone = true,
+        )
+
+        val request = input.toUpdateRequestDto("case-edit-test", baseline)
+
+        assertEquals("Updated diagnosis", request.diagnosis)
+        assertEquals("case-edit-test", request.clientWriteId)
+        assertNull(request.surgeryDone)
+        assertNull(request.highRisk)
+        assertNull(request.category)
+        assertNull(request.patientMode)
+        assertNull(request.useTemporaryUhid)
+        assertNull(request.ncdFlags)
+        assertNull(request.phoneNumber)
+    }
+
+    @Test
+    fun discardSyncIssueKeepsLocalResolutionEvidence() = runTest {
+        val api = FakeMedtrackApi(addVitalsError = conflictError("Vitals conflict."))
+        val repository = MedtrackRepository(api = api, database = database)
+        val result = repository.addVitals(
+            caseId = "42",
+            bpSystolic = 120,
+            bpDiastolic = 80,
+            pulse = null,
+            spo2 = null,
+            weightKg = null,
+            hemoglobin = null,
+        )
+
+        repository.discardSyncConflict(result.clientWriteId)
+
+        assertTrue(repository.syncConflicts.first().isEmpty())
+        val retained = database.syncConflictDao().conflictById(result.clientWriteId)
+        assertNotNull(retained)
+        assertEquals(
+            SyncResolutionStates.DISCARDED,
+            SyncRecoveryJson.decode(retained?.serverPayloadJson)?.resolutionState,
+        )
     }
 
     @Test
@@ -585,9 +665,8 @@ private class FakeMedtrackApi(
         results = emptyList(),
     ),
     private val notificationsResponse: NotificationsResponseDto = NotificationsResponseDto(
-        count = 0,
-        next = null,
-        previous = null,
+        datasetEpoch = "11111111-1111-4111-8111-111111111111",
+        nextCursor = null,
         results = emptyList(),
     ),
     private val categoriesError: Throwable? = null,
@@ -636,11 +715,11 @@ private class FakeMedtrackApi(
 
     override suspend fun caseDetail(caseId: String): CaseDetailDto = unused()
     override suspend fun createCase(request: com.naveenhospital.medtrack.core.network.model.CreateCaseRequestDto): com.naveenhospital.medtrack.core.network.model.CaseCreateResponseDto = unused()
-    override suspend fun searchPatients(query: String?, page: Int?): com.naveenhospital.medtrack.core.network.model.PatientSearchResponseDto = unused()
+    override suspend fun searchPatients(request: com.naveenhospital.medtrack.core.network.model.PatientSearchRequestDto): com.naveenhospital.medtrack.core.network.model.PatientSearchResponseDto = unused()
     override suspend fun caseFormMetadata(): com.naveenhospital.medtrack.core.network.model.CaseFormMetadataDto = unused()
     override suspend fun taskFormMetadata(): com.naveenhospital.medtrack.core.network.model.TaskFormMetadataDto = unused()
     override suspend fun caseEditForm(caseId: String): com.naveenhospital.medtrack.core.network.model.CaseEditFormDto = unused()
-    override suspend fun updateCase(caseId: String, request: com.naveenhospital.medtrack.core.network.model.CreateCaseRequestDto): com.naveenhospital.medtrack.core.network.model.CaseCreateResponseDto = unused()
+    override suspend fun updateCase(caseId: String, request: com.naveenhospital.medtrack.core.network.model.UpdateCaseRequestDto): com.naveenhospital.medtrack.core.network.model.CaseUpdateResponseDto = unused()
     override suspend fun createTask(caseId: String, request: com.naveenhospital.medtrack.core.network.model.CreateTaskRequestDto): TaskWriteResponseDto = unused()
     override suspend fun updateTask(taskId: String, request: com.naveenhospital.medtrack.core.network.model.UpdateTaskRequestDto): TaskWriteResponseDto = unused()
     override suspend fun addTaskNote(taskId: String, request: com.naveenhospital.medtrack.core.network.model.TaskNoteRequestDto): TaskWriteResponseDto = unused()
@@ -689,7 +768,7 @@ private class FakeMedtrackApi(
         )
     }
     override suspend fun vitalsThresholds(): VitalsThresholdsDto = unused()
-    override suspend fun notifications(type: String?, unreadOnly: Boolean?, page: Int?): NotificationsResponseDto =
+    override suspend fun notifications(type: String?, unreadOnly: Boolean?, cursor: String?, pageSize: Int?): NotificationsResponseDto =
         notificationsResponse
     override suspend fun markNotificationRead(notificationId: String): ApiMessageDto {
         notificationReadCalls += 1

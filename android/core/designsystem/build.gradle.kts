@@ -5,7 +5,7 @@ plugins {
 
 android {
     namespace = "com.naveenhospital.medtrack.core.designsystem"
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
         minSdk = 24
@@ -26,6 +26,11 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    lint {
+        // Approved source artwork is intentionally retained as vector assets.
+        disable += "VectorPath"
     }
 }
 

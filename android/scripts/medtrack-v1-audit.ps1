@@ -133,9 +133,9 @@ $gradleBuildRoot = if ($env:MEDTRACK_ANDROID_BUILD_DIR) {
     $env:MEDTRACK_ANDROID_BUILD_DIR
 }
 else {
-    Join-Path $env:USERPROFILE ".codex\build\medtrack-android"
+    Join-Path $androidRoot ".build"
 }
-$apkPath = Join-Path $gradleBuildRoot "app\outputs\apk\debug\app-debug.apk"
+$apkPath = Join-Path $gradleBuildRoot "app\outputs\apk\dev\debug\app-dev-debug.apk"
 $apkHash = if (Test-Path $apkPath) { (Get-FileHash -Path $apkPath -Algorithm SHA256).Hash } else { "" }
 
 $apiSmoke = Find-LatestPassingSummary -Filter "mobile-api-smoke-*" -Predicate {

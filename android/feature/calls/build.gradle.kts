@@ -5,7 +5,7 @@ plugins {
 
 android {
     namespace = "com.naveenhospital.medtrack.feature.calls"
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
         minSdk = 24

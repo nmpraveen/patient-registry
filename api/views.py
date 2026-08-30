@@ -55,6 +55,7 @@ from patients.theme import build_theme_category_colors, resolve_category_theme
 from patients.vitals_thresholds import vitals_thresholds_payload
 from patients.forms import CaseForm, TaskForm
 from patients.intake_access import resolve_case_intake_patient
+from patients.policy import effective_role_policy
 from patients.views import (
     CASE_CATEGORY_GROUP_FILTERS,
     _blood_pressure_display,
@@ -740,8 +741,7 @@ class CaseDetailView(APIView):
             data.update(
                 {key: value for key, value in request.data.items() if key not in PATCH_CONTROL_FIELDS}
             )
-            form = CaseForm(data=data, instance=case)
-            form.actor = request.user
+            form = CaseForm(data=data, instance=case, actor=request.user)
             if not form.is_valid():
                 return {
                     "code": "invalid_request",
@@ -756,9 +756,9 @@ class CaseDetailView(APIView):
             if (
                 has_grey_tasks
                 and new_status in [CaseStatus.LOSS_TO_FOLLOW_UP, CaseStatus.ACTIVE]
-                and not is_doctor_admin(request.user)
+                and not can_transition_grey_tasks(request.user, fresh=True)
             ):
-                message = "Only Doctor/Admin can set Grey List cases to Active or Loss to Follow-up."
+                message = "Your role does not allow this Grey List status transition."
                 return {
                     "code": "invalid_request",
                     "message": message,
@@ -1068,7 +1068,12 @@ def _lock_mobile_authorization_context(user):
     )
     role_names = list(locked_user.groups.order_by("name").values_list("name", flat=True))
     list(RoleSetting.objects.select_for_update().filter(role_name__in=role_names).order_by("pk"))
-    for cache_name in ("_cached_role_settings", "_capability_cache", "_cached_group_names"):
+    for cache_name in (
+        "_medtrack_effective_role_policy",
+        "_cached_role_settings",
+        "_capability_cache",
+        "_cached_group_names",
+    ):
         if hasattr(locked_user, cache_name):
             delattr(locked_user, cache_name)
     return locked_user
@@ -1093,6 +1098,7 @@ def _canonical_payload_hash(data):
 
 def _authorization_hash(user):
     role_names = list(user.groups.order_by("name").values_list("name", flat=True))
+    policy = effective_role_policy(user, fresh=True)
     role_binding_fields = [
         field.name
         for field in RoleSetting._meta.concrete_fields
@@ -1110,6 +1116,13 @@ def _authorization_hash(user):
         "is_superuser": user.is_superuser,
         "auth_version": current_auth_version(user),
         "role_names": role_names,
+        "effective_policy": {
+            "case_data_scope": policy.case_data_scope,
+            "can_access_call_queue": policy.can_access_call_queue,
+            "can_intake_patient_lookup": policy.can_intake_patient_lookup,
+            "capabilities": sorted(policy.capabilities),
+            "matched_role_names": sorted(policy.role_names),
+        },
         "roles": role_settings,
     }
     canonical = json.dumps(material, sort_keys=True, separators=(",", ":"))

@@ -1925,12 +1925,15 @@ class MobileApiTests(APITestCase):
     def test_patient_search_allows_intake_only_scope_and_phone_is_exact_only(self):
         role = RoleSetting.objects.create(
             role_name="Intake Lookup Only",
-            case_data_scope=CaseDataScope.NONE,
+            case_data_scope=CaseDataScope.ASSIGNED,
+            can_case_create=True,
             can_intake_patient_lookup=True,
         )
         group = Group.objects.create(name=role.role_name)
         intake_user = get_user_model().objects.create_user(username="intake-only-api", password="pass")
         intake_user.groups.add(group)
+        self.case.patient.created_by = intake_user
+        self.case.patient.save(update_fields=["created_by"])
         misleading = Case.objects.create(
             uhid=self.case.phone_number,
             first_name="Numeric",

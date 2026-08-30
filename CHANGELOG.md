@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026.08.30.01.52
+- Replaced notification and patient/case search pagination with stable, server-side opaque snapshot cursors bound to account, policy, authentication version, filters, page size, order, and dataset epoch.
+- Restricted FCM and persisted mobile notifications to generic PHI-free copy plus opaque event identifiers, with current-object reauthorization, bounded retention, deterministic device limits, and revocation-triggered snapshot resets.
+- Added POST-only, throttled, PHI-safe audited patient and case search contracts with exact-phone matching, minimum query lengths, minimal patient results, and immutable traversal boundaries.
+- Hardened mobile write idempotency and concurrent case/task/vitals PATCH operations with digested receipt keys, current locked authorization, seven-day retention, optimistic field revisions, and complete editable case responses including `surgery_done`.
+- Integrated the published explicit role policy, authentication-version, approved mobile-device, and centralized intake-selection interfaces; preserved fail-closed token and notification revocation across security changes.
+- Published and regression-tested the complete warning-free OpenAPI contract while keeping FCM disabled by default.
+
 ## 2026.08.30.01.35
 - Made legacy sessions and JWTs fail closed, added rotating refresh-token replay response, and revoked delivery tokens atomically on every authentication-version change.
 - Enforced direct-user and group device-approval targets with distinct approved browser and server-issued mobile authentication credentials.

@@ -5,7 +5,6 @@ from django.utils import timezone
 from django.utils.crypto import salted_hmac
 from rest_framework.throttling import BaseThrottle
 
-from patients.audit import record_audit_event
 from patients.models import AuditEvent, AuthenticationThrottleBucket
 from patients.views import role_data_scope_payload
 
@@ -71,19 +70,22 @@ class DatabaseSearchThrottle(BaseThrottle):
     def _audit_throttled(self, request, view):
         raw_query = request.data.get("query", "") if isinstance(request.data, dict) else ""
         normalized_length = len(" ".join(raw_query.split())) if isinstance(raw_query, str) else 0
-        record_audit_event(
-            category=AuditEvent.Category.DATA,
-            action=getattr(view, "search_audit_action", "directory.search_attempt"),
-            outcome=AuditEvent.Outcome.DENIED,
-            actor=request.user if getattr(request.user, "is_authenticated", False) else None,
-            request=request,
-            object_type=getattr(view, "search_object_type", "directory"),
-            metadata={
-                "search_class": "throttled",
-                "normalized_length": normalized_length,
-                "result_count": 0,
-                "scope": role_data_scope_payload(request.user)
-                if getattr(request.user, "is_authenticated", False)
-                else {},
+        django_request = getattr(request, "_request", request)
+        deferred_audits = getattr(django_request, "_medtrack_deferred_audits", [])
+        deferred_audits.append(
+            {
+                "category": AuditEvent.Category.DATA,
+                "action": getattr(view, "search_audit_action", "directory.search_attempt"),
+                "outcome": AuditEvent.Outcome.DENIED,
+                "object_type": getattr(view, "search_object_type", "directory"),
+                "metadata": {
+                    "search_class": "throttled",
+                    "normalized_length": normalized_length,
+                    "result_count": 0,
+                    "scope": role_data_scope_payload(request.user)
+                    if getattr(request.user, "is_authenticated", False)
+                    else {},
+                },
             },
         )
+        django_request._medtrack_deferred_audits = deferred_audits

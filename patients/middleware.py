@@ -22,9 +22,20 @@ class AuditAndSessionSecurityMiddleware:
             denial = self._enforce_session_security(request)
             if denial is not None:
                 return denial
-            return self.get_response(request)
+            response = self.get_response(request)
+            self._record_deferred_audits(request)
+            return response
         finally:
             reset_current_request(token)
+
+    @staticmethod
+    def _record_deferred_audits(request):
+        for audit in getattr(request, "_medtrack_deferred_audits", []):
+            record_audit_event(
+                actor=request.user if getattr(request.user, "is_authenticated", False) else None,
+                request=request,
+                **audit,
+            )
 
     @staticmethod
     def _device_policy_targets(user):

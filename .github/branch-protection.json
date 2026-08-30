@@ -1,0 +1,32 @@
+{
+  "required_status_checks": {
+    "strict": true,
+    "checks": [
+      { "context": "Django tests", "app_id": 15368 },
+      { "context": "Migration integrity", "app_id": 15368 },
+      { "context": "Strict OpenAPI", "app_id": 15368 },
+      { "context": "Supply-chain scans", "app_id": 15368 },
+      { "context": "Compose and shell", "app_id": 15368 },
+      { "context": "Container integrity", "app_id": 15368 },
+      { "context": "Android (unit)", "app_id": 15368 },
+      { "context": "Android (lint)", "app_id": 15368 },
+      { "context": "Android (release)", "app_id": 15368 },
+      { "context": "Frontend no-overflow", "app_id": 15368 }
+    ]
+  },
+  "enforce_admins": true,
+  "required_pull_request_reviews": {
+    "dismiss_stale_reviews": false,
+    "require_code_owner_reviews": false,
+    "required_approving_review_count": 0,
+    "require_last_push_approval": false
+  },
+  "restrictions": null,
+  "required_linear_history": true,
+  "allow_force_pushes": false,
+  "allow_deletions": false,
+  "block_creations": false,
+  "required_conversation_resolution": true,
+  "lock_branch": false,
+  "allow_fork_syncing": true
+}

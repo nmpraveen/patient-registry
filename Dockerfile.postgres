@@ -1,0 +1,15 @@
+ARG POSTGRES_BASE_IMAGE=postgres:16.14-alpine3.24@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
+FROM ${POSTGRES_BASE_IMAGE}
+
+# Patch the exact Alpine security fixes and replace gosu's stale Go runtime
+# with Alpine's small, CLI-compatible su-exec implementation.
+RUN apk add --no-cache \
+        libcrypto3=3.5.8-r0 \
+        libssl3=3.5.8-r0 \
+        su-exec=0.3-r0 \
+    && rm /usr/local/bin/gosu \
+    && sed -i 's/exec gosu postgres/exec su-exec postgres/' /usr/local/bin/docker-entrypoint.sh \
+    && ! grep -q 'gosu' /usr/local/bin/docker-entrypoint.sh \
+    && su-exec postgres true
+
+USER 70:70

@@ -1,6 +1,9 @@
 services:
   db:
-    image: postgres:16.14-alpine3.24
+    image: medtrack-postgres:16.14-hardened
+    build:
+      context: ${MEDTRACK_BUILD_CONTEXT:-.}
+      dockerfile: Dockerfile.postgres
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-patient_registry}
@@ -17,7 +20,7 @@ services:
   web:
     image: ${MEDTRACK_APP_IMAGE:-medtrack-app:local}
     build:
-      context: .
+      context: ${MEDTRACK_BUILD_CONTEXT:-.}
       args:
         VCS_REF: ${MEDTRACK_BUILD_REVISION:-unknown}
         BUILD_CONTEXT_SHA256: ${MEDTRACK_BUILD_CONTEXT_SHA256:-unverified}

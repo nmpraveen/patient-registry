@@ -1,0 +1,100 @@
+name: MEDTRACK trusted image attestation
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: medtrack-trusted-attestation-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  EXPECTED_SHA: ${{ github.sha }}
+  PYTHON_VERSION: "3.12.13"
+
+jobs:
+  build-verify:
+    name: Build and verify canonical OCI
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      manifest-digest: ${{ steps.identity.outputs.manifest-digest }}
+      artifact-name: ${{ steps.identity.outputs.artifact-name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.EXPECTED_SHA }}
+          fetch-depth: 0
+      - uses: ./.github/actions/verify-exact-head
+        with:
+          expected-sha: ${{ env.EXPECTED_SHA }}
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+        id: buildx
+      - name: Write build-context receipt
+        run: |
+          mkdir -p output
+          python scripts/build_context_receipt.py \
+            --revision "${EXPECTED_SHA}" \
+            --output output/medtrack-build-context-receipt.json
+      - name: Reproducibly build, load, and test the reviewed main SHA
+        run: |
+          python scripts/build_canonical_image.py \
+            --revision "${EXPECTED_SHA}" \
+            --image "medtrack-release:${EXPECTED_SHA}" \
+            --builder "${{ steps.buildx.outputs.name }}" \
+            --artifact output/medtrack-image.oci.tar \
+            --metadata output/medtrack-canonical-image.json
+          bash scripts/verify_canonical_artifact.sh "${EXPECTED_SHA}" output
+          python scripts/verify_production_service_images.py \
+            --revision "${EXPECTED_SHA}" \
+            --builder "${{ steps.buildx.outputs.name }}" \
+            --output output/production-images
+      - name: Export immutable subject identity
+        id: identity
+        run: |
+          manifest_digest="$(jq -er '.manifest_digest | select(test("^sha256:[0-9a-f]{64}$"))' output/medtrack-canonical-image.json)"
+          echo "manifest-digest=$manifest_digest" >> "$GITHUB_OUTPUT"
+          echo "artifact-name=medtrack-trusted-oci-${EXPECTED_SHA}" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: medtrack-trusted-oci-${{ env.EXPECTED_SHA }}
+          path: output/
+          if-no-files-found: error
+          retention-days: 90
+
+  attest:
+    name: Sign verified OCI manifest
+    needs: build-verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ needs.build-verify.outputs.artifact-name }}
+          path: output
+      - name: Verify downloaded subject receipt
+        env:
+          EXPECTED_MANIFEST_DIGEST: ${{ needs.build-verify.outputs.manifest-digest }}
+        run: |
+          set -euo pipefail
+          test "$(jq -r '.manifest_digest' output/medtrack-canonical-image.json)" = "${EXPECTED_MANIFEST_DIGEST}"
+          expected_archive_sha="$(jq -r '.artifact_sha256' output/medtrack-canonical-image.json)"
+          test "${expected_archive_sha}" = "sha256:$(sha256sum output/medtrack-image.oci.tar | cut -d' ' -f1)"
+      - name: Sign build provenance for the exact OCI manifest
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        with:
+          subject-name: ghcr.io/nmpraveen/patient-registry
+          subject-digest: ${{ needs.build-verify.outputs.manifest-digest }}
+      - name: Sign the SBOM for the same OCI manifest
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        with:
+          subject-name: ghcr.io/nmpraveen/patient-registry
+          subject-digest: ${{ needs.build-verify.outputs.manifest-digest }}
+          sbom-path: output/medtrack-sbom.cdx.json

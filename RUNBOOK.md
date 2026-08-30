@@ -1,5 +1,122 @@
 # RUNBOOK.md
 
+## Reproducible Build And Exact-Head CI
+
+Production image inputs are immutable and the Docker context is closed by
+default. Never replace the explicit Dockerfile copies with `COPY .` or broaden
+`.dockerignore` to include the checkout.
+
+Review dependency/image updates:
+
+```powershell
+python .\scripts\update-python-locks.py
+python .\scripts\check_image_digests.py --remote
+git diff -- requirements.in requirements.txt requirements-ci.in requirements-ci.txt Dockerfile docker-compose.yml docker-compose.prod.yml
+```
+
+After reviewing an upstream image tag and release notes, refresh its digest and
+re-run all gates:
+
+```powershell
+python .\scripts\check_image_digests.py --update
+```
+
+Android dependency verification metadata must be updated serially, only after
+the owning application lanes have made all three Android gates green:
+
+```bash
+bash scripts/update-android-verification-metadata.sh
+git diff -- android/gradle/verification-metadata.xml
+```
+
+The script uses a fresh temporary Linux Gradle home and the same three tasks as
+CI with `--no-daemon --max-workers=1`. Review every added artifact/checksum. Do
+not use verification-metadata updates to mask a source compile, unit, lint, or
+release failure.
+
+Build one canonical OCI artifact for an exact committed revision, load/test
+that same artifact, and scan it with unfixed findings included:
+
+```powershell
+docker buildx create --name medtrack-canonical --driver docker-container --use
+python .\scripts\build_canonical_image.py --revision <full-git-sha> --image medtrack-review:<short-sha> --builder medtrack-canonical
+bash scripts/verify_canonical_artifact.sh <full-git-sha> output
+```
+
+This stages the exact Git tree into a temporary directory, adds fake canaries
+at credential/Firebase/backup/age/rclone/output/node-module/override/PHI paths,
+builds a scratch context-audit image and exactly one canonical OCI runtime
+artifact. The verifier derives the archive manifest digest, loads that archive,
+and scans the immutable layers and exported filesystem. It never reads ignored
+credential values. Trivy's JSON, the CycloneDX SBOM, provenance, canonical
+metadata, receipt, and OCI tar remain in `output/`.
+
+`security/container-vex.json` is empty while the image is clean. Any future
+HIGH/CRITICAL residual must match exact CVE, package, installed version, target,
+and canonical image digest and include status, HTTPS source, owner,
+justification, creation time, and unexpired expiry. New, mismatched, stale, or
+expired findings/waivers fail closed; secret findings can never be waived.
+
+The same contract applies to every production service image:
+
+```powershell
+python .\scripts\verify_production_service_images.py --revision <full-git-sha> --builder medtrack-canonical --output output\production-images
+```
+
+This builds the exact committed `Dockerfile.postgres` and
+`deploy/Dockerfile.caddy` from the requested Git revision, exports each build
+once as a local canonical OCI archive, derives each `linux/amd64` manifest and
+config digest, loads/smoke-tests the same archive, and writes separate Trivy,
+SBOM, receipt, and VEX-policy hashes. No registry publication or invented
+remote Caddy reference is part of this gate. PostgreSQL and Caddy use
+independent empty ledgers in `security/postgres-vex.json` and
+`security/caddy-vex.json`; a finding in either blocks supply-chain CI and the
+trusted post-merge release/attestation workflow.
+
+The deployment trust contract is `medtrack.build-context/v1`. Its digest is a
+canonical SHA-256 over the Git mode, UTF-8 path, byte length, and blob bytes for
+the committed Docker policy files and runtime allowlist. Ignored tests,
+credentials, Firebase/service-account files, backups, age/rclone material,
+outputs, node modules, local overrides, dumps, and PHI bundles cannot affect or
+enter the receipt. Compute and verify it without trusting the working-tree diff:
+
+```powershell
+python .\scripts\build_context_receipt.py --revision <full-git-sha>
+python .\scripts\build_context_receipt.py --revision <full-git-sha> --verify-image medtrack-review:<short-sha>
+```
+
+The verifier requires exact equality for these OCI labels:
+
+- `org.opencontainers.image.revision=<40-character-git-sha>`
+- `org.medtrack.build-context.schema=medtrack.build-context/v1`
+- `org.medtrack.build-context.digest=sha256:<64-hex-context-digest>`
+
+`deploy-production.sh` computes the digest from Git objects, stages that exact
+commit with `git archive` into a temporary build context, passes the digest as a
+build argument, reads the labels back before startup, and emits a single receipt
+line: `MEDTRACK_BUILD_RECEIPT revision=<sha>
+build_context_sha256=<digest> image=<image-id>`. Ops must store that line with
+the reviewed deployment record and reject an image that fails the verifier.
+
+The web image runs as the fixed non-root UID/GID `10001:10001`. Before the first
+deployment of this image, the host backup directory named by `BACKUP_HOST_DIR`
+must exist and be writable only by the intended operator and UID/GID 10001. The
+deployment script tests both `/app/backups` and `/app/staticfiles` before it
+starts or replaces the web service, also verifies `/tmp`, and fails closed if
+any runtime write location is not writable.
+
+GitHub Actions tests the pull request head SHA directly. The required checks are
+listed in `.github/BRANCH_PROTECTION.md`. Branch protection is a post-merge
+administrator action:
+
+```powershell
+.\scripts\apply-branch-protection.ps1
+.\scripts\apply-branch-protection.ps1 -Apply -ExpectedMainSha <40-character-merged-main-sha>
+```
+
+The first command is read-only. Do not use `-Apply` before the workflow exists
+on `main` and has emitted all required check names.
+
 ## Local Demo Server
 
 Use the local-only Test NNH server for demos and quick verification.
@@ -203,7 +320,7 @@ Required root-only paths:
 /srv/medtrack/backup-secrets/rclone.conf        mode 0600
 /srv/medtrack/backup-secrets/age-recipient.txt  mode 0644 (public key only)
 /srv/medtrack/offsite-backups/                  mode 0700
-/srv/medtrack/security-logs/                     mode 0700
+/srv/medtrack/security-logs/                     owner root, group 10001, mode 3770
 /srv/medtrack/security-evidence/                 mode 0700
 ```
 
@@ -218,7 +335,8 @@ OAuth requirements:
 On the VPS, install the writer-side configuration and units after the reviewed commit is deployed. Do not install the independent scratch-restore runner or copy an `age` identity to this host:
 
 ```bash
-install -d -m 0700 /srv/medtrack/backup-secrets /srv/medtrack/offsite-backups /srv/medtrack/security-logs /srv/medtrack/security-evidence
+install -d -m 0700 /srv/medtrack/backup-secrets /srv/medtrack/offsite-backups /srv/medtrack/security-evidence
+install -d -m 3770 -o root -g 10001 /srv/medtrack/security-logs
 install -d -m 0755 /etc/medtrack-backup
 install -m 0600 deploy/backup/backup.env.example /etc/medtrack-backup/backup.env
 install -m 0644 deploy/systemd/medtrack-offsite-backup@.service /etc/systemd/system/
@@ -315,9 +433,9 @@ A successful upload is not restore proof. On a separate scratch host, download o
 
 PR #103 defines `public.patients_auditevent`, migration `patients.0037_backend_auth_clinical_security`, and trigger `patients_auditevent_append_only`. Do not enable the production backup/evidence units until that exact schema is integrated and the combined-head scratch tests pass. The backup records the running source commit/image/schema separately from the intended target commit; the source image must restore the pre-deployment database, while the deployment receipt binds the target.
 
-Gunicorn and Caddy write only timestamp, method, status, duration, and response size to the root-only security-log directory. Never add request bodies, URI/path/query strings, authorization or cookie headers, client IPs, usernames, patient search text, or clinical payloads. The hourly exporter selects only coarse AuditEvent identity/time/category/action/outcome/source fields, bounds rows and log bytes, creates a SHA-256 chained segment, alerts on lag/discontinuity or sustained safe failure/429 counts, and retains 2,160 hourly segments (90 days) with a continuity anchor. Encrypted Drive archives and the pull-only NAS mirror contain the retained segments, anchor, checkpoint, and their manifest hashes. Recovery starts from the anchor, verifies every retained segment, and cross-checks the final chain with the backup marker/receipt.
+Gunicorn runs as UID `10001`; Caddy runs separately as UID `10002`; both use the restricted runtime-log GID `10001`. They write only timestamp, method, status, duration, and response size to the root-owned, setgid/sticky, group-writable security-log directory. Never add request bodies, URI/path/query strings, authorization or cookie headers, client IPs, usernames, patient search text, or clinical payloads. The hourly root exporter selects only coarse AuditEvent identity/time/category/action/outcome/source fields, bounds rows and log bytes, creates a SHA-256 chained segment, alerts on lag/discontinuity or sustained safe failure/429 counts, and retains 2,160 hourly segments (90 days) with a continuity anchor. Encrypted Drive archives and the pull-only NAS mirror contain the retained segments, anchor, checkpoint, and their manifest hashes. Recovery starts from the anchor, verifies every retained segment, and cross-checks the final chain with the backup marker/receipt.
 
-The custom Caddy image is built from digest-pinned Caddy 2.11.4 builder/runtime images with `github.com/mholt/caddy-ratelimit` pinned at commit `5625512f24f6f59d6f64fb3aafe5eecff0b286db`. Startup, deploy, and restore validation require `http.handlers.rate_limit`; stock Caddy fails this gate. Web/admin login, JWT obtain, JWT refresh, and device-verification paths have separate coarse endpoint classes with global static caps followed by per-client burst and sustained windows. The global handler bounds the number of dynamic client buckets that can be created per window; IPv6 is grouped at `/64`; the module sweeps expired buckets every minute; 429 responses include `Retry-After` and a fixed PHI-free body. Backend application throttles remain mandatory and must not be weakened.
+The custom Caddy image is built from digest-pinned Caddy 2.11.4 builder/runtime images with `github.com/mholt/caddy-ratelimit` pinned at commit `5625512f24f6f59d6f64fb3aafe5eecff0b286db`. It runs as `10002:10001` with all capabilities dropped except `NET_BIND_SERVICE` and `no-new-privileges` enabled. Before the first non-root deployment, run `docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm --no-deps --user 0:0 caddy chown -R 10002:10001 /data /config` once for any existing Caddy volumes and verify `/srv/medtrack/security-logs` has the ownership and mode above; new volumes inherit the reviewed image ownership. CI builds the exact committed Dockerfile into one canonical OCI archive and binds its BuildKit manifest, OCI manifest/config, loaded image ID, Dockerfile/Caddyfile hashes, Trivy report, SBOM, and VEX policy in the service receipt. Startup, deploy, and restore validation require UID/GID `10002:10001`, `http.handlers.rate_limit`, and the exact Caddyfile; stock Caddy fails this gate. Web/admin login, JWT obtain, JWT refresh, and device-verification paths have separate coarse endpoint classes with global static caps followed by per-client burst and sustained windows. The global handler bounds the number of dynamic client buckets that can be created per window; IPv6 is grouped at `/64`; the module sweeps expired buckets every minute; 429 responses include `Retry-After` and a fixed PHI-free body. Backend application throttles remain mandatory and must not be weakened.
 
 Caddy is currently the public edge, so `{remote_host}` is the direct TCP peer and forwarded client-IP headers are not trusted. Caddy deletes any inbound `X-Medtrack-Client-IP`, overwrites it with that direct peer, and connects to Django from the fixed `172.30.0.10` edge address. Django accepts the replacement header only from the exact `172.30.0.10/32` allowlist, canonicalizes IPv4/IPv6 addresses, and otherwise uses `REMOTE_ADDR`. Production startup fails if the expected Caddy address is absent from the configured allowlist. The web container intentionally has no fixed edge address so one-shot planning containers cannot collide with a running web instance. If a CDN or load balancer is introduced, stop and review explicit provider CIDRs, enable strict right-to-left trusted-proxy parsing, prove direct-origin bypass is blocked, and rerun the edge runtime fixture. Never use arbitrary client-supplied forwarding headers or broad private-range trust as the limiter key.
 

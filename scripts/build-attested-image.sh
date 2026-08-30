@@ -40,7 +40,8 @@ docker build --pull \
 image_id="$(docker image inspect --format '{{.Id}}' "$image_ref")"
 "$python_command" "$verifier" --revision "$commit" --verify-image "$image_id"
 
-mkdir -p -m 0700 "$(dirname "$attestation")"
+mkdir -p "$(dirname "$attestation")"
+chmod 0700 "$(dirname "$attestation")"
 attestation="$(realpath "$(dirname "$attestation")")/$(basename "$attestation")"
 attestation_tmp="$(mktemp "$(dirname "$attestation")/.image-attestation.XXXXXX")"
 {

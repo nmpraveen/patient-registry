@@ -9,8 +9,6 @@ if [[ -r "$config_file" ]]; then
   set +a
 fi
 
-backup_root="${MEDTRACK_OFFSITE_ROOT:-/srv/medtrack/offsite-backups}"
-state_root="${MEDTRACK_BACKUP_STATE_ROOT:-$backup_root/state}"
 rclone_config="${RCLONE_CONFIG:-/srv/medtrack/backup-secrets/rclone.conf}"
 rclone_remote="${RCLONE_REMOTE:-medtrack-drive:Naveen-Hospital-Backups/MEDTRACK/production}"
 hash_mode="${MEDTRACK_HEALTH_HASH_MODE:-all}"

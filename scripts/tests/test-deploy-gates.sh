@@ -149,7 +149,8 @@ export MEDTRACK_ENV_FILE="$test_root/test.env"
 export MEDTRACK_BUILD_CONTEXT_VERIFIER="$test_root/build-context-verifier.py"
 export PYTHON_COMMAND=python
 export FAKE_IMAGE_REVISION="$commit"
-export FAKE_GIT_TREE="$(git -C "$repo_root" rev-parse "$commit^{tree}")"
+FAKE_GIT_TREE="$(git -C "$repo_root" rev-parse "$commit^{tree}")"
+export FAKE_GIT_TREE
 export FAKE_CONTEXT_POLICY="$context_policy"
 plan_log="$test_root/plan-docker.log"
 export FAKE_DOCKER_LOG="$plan_log"

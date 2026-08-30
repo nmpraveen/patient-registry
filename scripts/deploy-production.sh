@@ -75,8 +75,8 @@ receipt_value() {
 
 wait_for_service_health() {
   local service="$1"
-  local container_id status attempt
-  for attempt in $(seq 1 24); do
+  local container_id status
+  for _ in $(seq 1 24); do
     container_id="$("${compose[@]}" ps -q "$service")"
     status=""
     if [[ -n "$container_id" ]]; then
@@ -128,8 +128,10 @@ verify_caddy_edge_image() {
   local image_id="$1"
   [[ -n "$image_id" ]] || { echo "Required custom Caddy image is missing" >&2; return 1; }
   docker run --rm --entrypoint sh -e MEDTRACK_DOMAIN=medtrack.invalid \
+    --cap-drop ALL --cap-add NET_BIND_SERVICE --security-opt no-new-privileges:true \
+    --tmpfs /var/log/medtrack:rw,noexec,nosuid,nodev,mode=0770,uid=10002,gid=10001 \
     -v "$repo_root/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" "$image_id" -ceu \
-    'caddy list-modules | grep -Fxq http.handlers.rate_limit && caddy validate --config /etc/caddy/Caddyfile'
+    'test "$(id -u)" = 10002 && test "$(id -g)" = 10001 && caddy list-modules | grep -Fxq http.handlers.rate_limit && caddy validate --config /etc/caddy/Caddyfile'
 }
 
 verify_running_caddy_edge_image() {
@@ -319,7 +321,8 @@ if [[ -z "$backup_receipt" || ! -f "$backup_receipt" || -z "$evidence_dir" || "$
   echo "A backup receipt and absolute evidence directory are required" >&2
   exit 1
 fi
-mkdir -p -m 0700 "$evidence_dir"
+mkdir -p "$evidence_dir"
+chmod 0700 "$evidence_dir"
 backup_receipt="$(realpath -e "$backup_receipt")"
 evidence_dir="$(realpath "$evidence_dir")"
 

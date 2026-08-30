@@ -71,6 +71,10 @@ POSTGRES_PORT=5432
 BACKUP_HOST_DIR=/srv/medtrack/backups
 ```
 
+The web container runs as non-root UID/GID `10001:10001`. Create the selected
+`BACKUP_HOST_DIR` with ownership/access for that identity before deployment;
+the production deploy script verifies writability before starting the service.
+
 The two session settings above implement a sliding 12-hour inactivity timeout: each authenticated request refreshes the session expiry. Staff should still log out manually on shared workstations.
 
 Django is published only on `127.0.0.1:8000`; Caddy is the public entry point on ports 80 and 443 and obtains HTTPS automatically. PostgreSQL is not published to the host. Do not seed demo patients in production.

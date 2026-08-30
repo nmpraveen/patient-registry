@@ -7,6 +7,6 @@
     compress
     delaycompress
     copytruncate
-    create 0600 root root
+    create 0660 10001 10001
     su root root
 }

@@ -13,6 +13,13 @@ services:
     build:
       context: .
       dockerfile: deploy/Dockerfile.caddy
+    user: "10002:10001"
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
     environment:
       MEDTRACK_DOMAIN: ${MEDTRACK_DOMAIN:?set MEDTRACK_DOMAIN in .env}

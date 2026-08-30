@@ -1,0 +1,18 @@
+name: Verify exact head
+description: Fail if Actions checked out anything other than the requested immutable commit.
+inputs:
+  expected-sha:
+    description: Full Git commit that this job must test.
+    required: true
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        EXPECTED_SHA: ${{ inputs.expected-sha }}
+      run: |
+        set -euo pipefail
+        actual_sha="$(git rev-parse HEAD)"
+        test "${#EXPECTED_SHA}" -eq 40
+        test "$actual_sha" = "$EXPECTED_SHA"
+        echo "EXACT_HEAD_OK sha=$actual_sha"

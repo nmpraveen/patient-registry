@@ -138,8 +138,8 @@ receipt_value_from_file() {
 
 wait_for_service_health() {
   local service="$1"
-  local container_id status attempt
-  for attempt in $(seq 1 24); do
+  local container_id status
+  for _ in $(seq 1 24); do
     container_id="$("${compose[@]}" ps -q "$service")"
     status=""
     if [[ -n "$container_id" ]]; then
@@ -181,8 +181,10 @@ verify_caddy_edge_image() {
   fi
   [[ -n "$image_id" ]] || { echo "Required custom Caddy image is missing" >&2; return 1; }
   docker run --rm --entrypoint sh -e MEDTRACK_DOMAIN=medtrack.invalid \
+    --cap-drop ALL --cap-add NET_BIND_SERVICE --security-opt no-new-privileges:true \
+    --tmpfs /var/log/medtrack:rw,noexec,nosuid,nodev,mode=0770,uid=10002,gid=10001 \
     -v "$repo_root/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" "$image_id" -ceu \
-    'caddy list-modules | grep -Fxq http.handlers.rate_limit && caddy validate --config /etc/caddy/Caddyfile'
+    'test "$(id -u)" = 10002 && test "$(id -g)" = 10001 && caddy list-modules | grep -Fxq http.handlers.rate_limit && caddy validate --config /etc/caddy/Caddyfile'
   verified_caddy_image_id="$image_id"
 }
 
@@ -628,7 +630,8 @@ if [[ -e "$rollback_dir" && -n "$(find "$rollback_dir" -mindepth 1 -print -quit 
   echo "Rollback directory must be absent or empty" >&2
   exit 1
 fi
-mkdir -p -m 0700 "$rollback_dir"
+mkdir -p "$rollback_dir"
+chmod 0700 "$rollback_dir"
 rollback_dir="$(realpath "$rollback_dir")"
 
 echo "[6/7] Creating and scratch-restoring a fresh production rollback snapshot"

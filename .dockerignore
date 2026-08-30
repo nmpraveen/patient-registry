@@ -2,6 +2,7 @@
 # then reopen only the inputs named by the Dockerfile.
 **
 !Dockerfile
+!Dockerfile.postgres
 !requirements.txt
 !manage.py
 !VERSION

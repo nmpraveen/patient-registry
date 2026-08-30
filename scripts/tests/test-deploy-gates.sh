@@ -15,7 +15,7 @@ cat > "$fake_bin/docker" <<'FAKE_DOCKER'
 set -Eeuo pipefail
 joined="$*"
 if [[ -n "${FAKE_DOCKER_LOG:-}" ]]; then
-  printf '%s\n' "$joined" >> "$FAKE_DOCKER_LOG"
+  printf 'MEDTRACK_APP_IMAGE=%s %s\n' "${MEDTRACK_APP_IMAGE:-}" "$joined" >> "$FAKE_DOCKER_LOG"
 fi
 if [[ "${FAKE_FAIL_TERMINATE:-0}" == "1" && "$joined" == *"pg_terminate_backend"* ]]; then
   exit 42
@@ -23,23 +23,34 @@ elif [[ "${FAKE_FAIL_ROLLBACK_CREATEDB:-0}" == "1" && "$joined" == *"createdb"* 
   exit 43
 elif [[ "$1" == "build" ]]; then
   exit 0
+elif [[ "$1" == "run" ]]; then
+  exit 0
 elif [[ "$1" == "image" && "$2" == "inspect" && "$joined" == *"{{.Id}}"* ]]; then
-  echo "sha256:synthetic-planned-image"
+  if [[ "$joined" == *"medtrack-caddy:2.11.4-ratelimit"* ]]; then
+    echo "sha256:synthetic-caddy-image"
+  else
+    echo "sha256:synthetic-planned-image"
+  fi
 elif [[ "$1" == "image" && "$2" == "inspect" && "$joined" == *"org.opencontainers.image.revision"* ]]; then
   echo "${FAKE_IMAGE_REVISION:?set FAKE_IMAGE_REVISION}"
-elif [[ "$1" == "image" && "$2" == "inspect" && "$joined" == *"medtrack.git-tree"* ]]; then
-  echo "${FAKE_GIT_TREE:?set FAKE_GIT_TREE}"
-elif [[ "$1" == "image" && "$2" == "inspect" && "$joined" == *"medtrack.build-context"* ]]; then
-  echo "git-archive-allowlist-v1"
-elif [[ "$1" == "image" && "$2" == "inspect" && "$joined" == *"medtrack.context-policy"* ]]; then
-  echo "${FAKE_CONTEXT_POLICY:?set FAKE_CONTEXT_POLICY}"
+elif [[ "$1" == "image" && "$2" == "inspect" && "$joined" == *"build-context.schema"* ]]; then
+  echo "medtrack.build-context/v1"
+elif [[ "$1" == "image" && "$2" == "inspect" && "$joined" == *"build-context.digest"* ]]; then
+  echo "sha256:$(printf '%064d' 1)"
 elif [[ "$1" == "inspect" && "$joined" == *"{{.Image}}"* ]]; then
-  echo "sha256:synthetic-previous-image"
+  if [[ "$joined" == *"synthetic-caddy-container"* ]]; then
+    echo "sha256:synthetic-caddy-image"
+  elif [[ -f "${FAKE_DEPLOY_STATE:-/nonexistent}" ]]; then
+    echo "sha256:synthetic-planned-image"
+  else
+    echo "sha256:synthetic-previous-image"
+  fi
 elif [[ "$1" == "inspect" && "$joined" == *"{{.Config.Image}}"* ]]; then
   echo "patient-registry-web:synthetic-previous"
 elif [[ "$1" == "inspect" ]]; then
   echo "healthy"
 elif [[ "$1" == "tag" ]]; then
+  [[ -z "${FAKE_DEPLOY_STATE:-}" ]] || rm -f -- "$FAKE_DEPLOY_STATE"
   exit 0
 elif [[ "$joined" == *" ps -q db"* ]]; then
   echo "synthetic-db-container"
@@ -51,6 +62,8 @@ elif [[ "$joined" == *" images -q web"* ]]; then
   echo "sha256:synthetic-planned-image"
 elif [[ "$joined" == *" images -q migrate"* ]]; then
   echo "sha256:synthetic-planned-image"
+elif [[ "$joined" == *" images -q caddy"* ]]; then
+  echo "sha256:synthetic-caddy-image"
 elif [[ "$joined" == *"pg_dump"* ]]; then
   printf 'PGDMP-synthetic-deploy-rollback\n'
 elif [[ "$joined" == *"pg_restore --list"* ]]; then
@@ -70,6 +83,8 @@ elif [[ "$joined" == *"FROM pg_database"* ]]; then
   echo "1"
 elif [[ "$joined" == *"migrate --plan"* ]]; then
   printf 'Planned operations:\n  patients.9999_synthetic\n'
+elif [[ "$joined" == *"up -d --no-build --remove-orphans db web caddy"* ]]; then
+  [[ -z "${FAKE_DEPLOY_STATE:-}" ]] || : > "$FAKE_DEPLOY_STATE"
 elif [[ "$joined" == *" compose "* || "$1" == "compose" ]]; then
   exit 0
 else
@@ -82,6 +97,14 @@ cat > "$fake_bin/curl" <<'FAKE_CURL'
 exit 0
 FAKE_CURL
 chmod +x "$fake_bin/docker" "$fake_bin/curl"
+cat > "$test_root/build-context-verifier.py" <<'PY'
+#!/usr/bin/env python3
+import sys
+if "--format" in sys.argv:
+    print("sha256:" + "0" * 63 + "1")
+else:
+    print("BUILD_CONTEXT_IMAGE_VERIFIED schema=medtrack.build-context/v1")
+PY
 
 commit="$(git -C "$repo_root" rev-parse HEAD)"
 context_policy="$(printf '%s\n%s\n' "$(git -C "$repo_root" rev-parse "$commit:Dockerfile")" "$(git -C "$repo_root" rev-parse "$commit:.dockerignore")" | sha256sum | awk '{print $1}')"
@@ -98,15 +121,14 @@ printf '%s  %s\n' "$hash" "$archive" > "$triplet_dir/$archive.sha256"
 } > "$triplet_dir/$archive.complete"
 receipt="$test_root/predeployment.receipt"
 {
-  printf 'receipt_format=medtrack-offsite-receipt-v2\n'
+  printf 'receipt_format=medtrack-offsite-receipt-v3\n'
   printf 'tier=pre-deployment\n'
   printf 'archive=%s\n' "$archive"
   printf 'sha256=%s\n' "$hash"
   printf 'source_commit=%s\n' "$commit"
   printf 'source_image_id=sha256:synthetic-previous-image\n'
-  printf 'source_git_tree=%s\n' "$(git -C "$repo_root" rev-parse "$commit^{tree}")"
-  printf 'source_build_context=git-archive-allowlist-v1\n'
-  printf 'source_context_policy_sha256=%s\n' "$context_policy"
+  printf 'source_build_context_schema=medtrack.build-context/v1\n'
+  printf 'source_build_context_sha256=sha256:%064d\n' 1
   printf 'source_schema_migration_sha256=%064d\n' 1
   printf 'target_commit=%s\n' "$commit"
   printf 'completed_epoch=%s\n' "$(date -u +%s)"
@@ -124,11 +146,14 @@ receipt="$test_root/predeployment.receipt"
 
 export PATH="$fake_bin:$PATH"
 export MEDTRACK_ENV_FILE="$test_root/test.env"
+export MEDTRACK_BUILD_CONTEXT_VERIFIER="$test_root/build-context-verifier.py"
+export PYTHON_COMMAND=python
 export FAKE_IMAGE_REVISION="$commit"
 export FAKE_GIT_TREE="$(git -C "$repo_root" rev-parse "$commit^{tree}")"
 export FAKE_CONTEXT_POLICY="$context_policy"
 plan_log="$test_root/plan-docker.log"
 export FAKE_DOCKER_LOG="$plan_log"
+export FAKE_DEPLOY_STATE="$test_root/deployed.state"
 
 "$repo_root/scripts/deploy-production.sh" plan "$commit" \
   --backup-receipt "$receipt" \
@@ -173,6 +198,7 @@ assert_preclone_failure_recovers() {
   fi
   grep -Fq 'stop caddy web' "$FAKE_DOCKER_LOG"
   grep -Fq 'up -d --no-build db web caddy' "$FAKE_DOCKER_LOG"
+  grep -Fq 'MEDTRACK_APP_IMAGE=patient-registry-web:synthetic-previous compose' "$FAKE_DOCKER_LOG"
 }
 
 assert_preclone_failure_recovers FAKE_FAIL_TERMINATE terminate-connections
@@ -192,6 +218,7 @@ if (( apply_exit == 0 )) || [[ "$apply_output" != *"restoring the retained datab
   printf '%s\n' "$apply_output" >&2
   exit 1
 fi
+grep -Fq 'MEDTRACK_APP_IMAGE=patient-registry-web:synthetic-previous compose' "$FAKE_DOCKER_LOG"
 
 if "$repo_root/scripts/deploy-production.sh" "$commit" >/dev/null 2>&1; then
   echo "Legacy one-step deployment unexpectedly bypassed the plan gate" >&2
@@ -208,6 +235,7 @@ stale_receipt="$test_root/stale-deployment.receipt"
   printf 'previous_image_id=sha256:synthetic-previous-image\n'
   printf 'previous_image_ref=patient-registry-web:synthetic-previous\n'
   printf 'deployed_image_id=sha256:synthetic-planned-image\n'
+  printf 'build_context_sha256=sha256:%064d\n' 2
 } > "$stale_receipt"
 export FAKE_DOCKER_LOG="$test_root/stale-rollback-docker.log"
 if "$repo_root/scripts/deploy-production.sh" rollback \

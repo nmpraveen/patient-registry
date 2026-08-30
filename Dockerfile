@@ -1,14 +1,12 @@
 FROM python:3.12.13-slim-trixie
 
 ARG VCS_REF=unknown
-ARG MEDTRACK_GIT_TREE=unknown
-ARG MEDTRACK_CONTEXT_POLICY=unverified
+ARG BUILD_CONTEXT_SHA256=unverified
 
 LABEL org.opencontainers.image.source="https://github.com/nmpraveen/patient-registry" \
       org.opencontainers.image.revision="${VCS_REF}" \
-      net.naveenhospital.medtrack.git-tree="${MEDTRACK_GIT_TREE}" \
-      net.naveenhospital.medtrack.build-context="git-archive-allowlist-v1" \
-      net.naveenhospital.medtrack.context-policy="${MEDTRACK_CONTEXT_POLICY}"
+      org.medtrack.build-context.schema="medtrack.build-context/v1" \
+      org.medtrack.build-context.digest="${BUILD_CONTEXT_SHA256}"
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1

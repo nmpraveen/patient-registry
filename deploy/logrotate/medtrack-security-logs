@@ -1,0 +1,12 @@
+/srv/medtrack/security-logs/gunicorn-access.log {
+    hourly
+    rotate 24
+    size 10M
+    missingok
+    notifempty
+    compress
+    delaycompress
+    copytruncate
+    create 0600 root root
+    su root root
+}

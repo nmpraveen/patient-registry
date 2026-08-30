@@ -48,6 +48,7 @@ for tier in rapid daily weekly monthly; do
     printf 'archive=%s\n' "$archive"
     printf 'sha256=%s\n' "$hash"
     printf 'completed_utc=%s\n' "$remote_stamp"
+    printf 'security_evidence_chain_sha256=%064d\n' 1
   } > "$tier_dir/$archive.complete"
   printf '0\n' > "$state_root/last-success-$tier.epoch"
 done
@@ -102,14 +103,24 @@ scratch_receipt="$test_root/independent-scratch.receipt"
   printf 'alert_contract=required\n'
 } > "$scratch_receipt"
 MEDTRACK_HEALTH_PRODUCTION_MODE=1 MEDTRACK_HEALTH_HASH_MODE=all \
+  MEDTRACK_SECURITY_EVIDENCE_HEALTH_HOOK="$test_root/scratch-hook" \
   MEDTRACK_SCRATCH_RESTORE_RECEIPT="$scratch_receipt" \
   "$repo_root/scripts/check-offsite-backups.sh"
 
 printf '0\n' > "$scratch_receipt"
 if MEDTRACK_HEALTH_PRODUCTION_MODE=1 MEDTRACK_HEALTH_HASH_MODE=all \
+  MEDTRACK_SECURITY_EVIDENCE_HEALTH_HOOK="$test_root/scratch-hook" \
   MEDTRACK_SCRATCH_RESTORE_RECEIPT="$scratch_receipt" \
   "$repo_root/scripts/check-offsite-backups.sh" >/dev/null 2>&1; then
   echo "Production health unexpectedly accepted a stale/invalid independent restore receipt" >&2
+  exit 1
+fi
+
+if MEDTRACK_HEALTH_PRODUCTION_MODE=1 MEDTRACK_HEALTH_HASH_MODE=all \
+  MEDTRACK_SCRATCH_RESTORE_RECEIPT="$scratch_receipt" \
+  MEDTRACK_SECURITY_EVIDENCE_HEALTH_HOOK="$test_root/missing-evidence-hook" \
+  "$repo_root/scripts/check-offsite-backups.sh" >/dev/null 2>&1; then
+  echo "Production health unexpectedly accepted a missing evidence chain hook" >&2
   exit 1
 fi
 

@@ -92,10 +92,11 @@ Verify an encrypted full-recovery backup without changing production:
   --checksum /absolute/path/medtrack-prod-<tier>-<timestamp>.tar.age.sha256 \
   --identity /offline/path/age-identity.txt \
   --expected-commit <full-git-sha> \
+  --image-attestation /absolute/path/image.attestation \
   --receipt-dir /absolute/path/restore-receipt
 ```
 
-Verification checks the ciphertext checksum, safe archive paths, regular-file/directory-only member types, every internal manifest hash, PostgreSQL catalog, recorded PostgreSQL version, exact clean Git commit, the running web image and prepared web/migrate image revision labels, a new isolated database restore, migration state, Django deployment checks, ORM access, and `/login/`. Decrypted material and the scratch database are removed on exit. Images must be built with `MEDTRACK_GIT_COMMIT=<exact-full-sha>`; the controlled deployment plan does this automatically.
+Verification checks the ciphertext checksum, safe archive paths, regular-file/directory-only member types, every internal manifest hash, PostgreSQL catalog, recorded PostgreSQL version, exact clean Git commit, the canonical `medtrack.build-context/v1` revision/schema/digest labels, a new isolated database restore, migration state, the append-only AuditEvent table/trigger and recorded row/id lower bound, the security-evidence hash chain, Django deployment checks, ORM access, and `/login/`. Decrypted material and the scratch database are removed on exit. The build-context verifier delivered by PR #100 is mandatory; a missing verifier or mismatched label fails closed.
 
 Production activation is an emergency operation, not the default restore mode. It additionally requires `MEDTRACK_ALLOW_PRODUCTION_RESTORE=1`, the exact `ACTIVATE_VERIFIED_MEDTRACK_RESTORE` confirmation token, an empty absolute rollback directory, and the same root-owned authenticated-login hook used by deployment. Before any switch it creates a fresh custom-format snapshot of the current production database, verifies its catalog, scratch-restores it, and runs the same Django checks. It then quiesces writes and renames databases rather than dropping production. Activation is accepted only after DB/web/Caddy health, exact running image identity, origin-bypassed and public HTTPS login-page checks, and the authenticated-login hook; a failed gate restores the retained database. Run activation as:
 
@@ -105,6 +106,7 @@ MEDTRACK_ALLOW_PRODUCTION_RESTORE=1 ./scripts/restore.sh activate \
   --checksum /absolute/path/medtrack-prod-<tier>-<timestamp>.tar.age.sha256 \
   --identity /offline/path/age-identity.txt \
   --expected-commit <full-git-sha> \
+  --image-attestation /absolute/path/image.attestation \
   --receipt-dir /absolute/path/restore-receipt \
   --rollback-dir /absolute/empty/path/restore-rollback \
   --login-smoke-hook /root/medtrack-authenticated-login-smoke \
@@ -140,7 +142,7 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml config --quiet
 Create a fresh encrypted pre-deployment backup and capture its receipt:
 
 ```bash
-MEDTRACK_BACKUP_CONFIG=/etc/medtrack-backup/backup.env ./scripts/backup-offsite.sh --tier pre-deployment
+MEDTRACK_BACKUP_CONFIG=/etc/medtrack-backup/backup.env ./scripts/backup-offsite.sh --tier pre-deployment --target-commit <expected-full-git-commit>
 systemctl start medtrack-nas-export.service
 test "$(systemctl show medtrack-nas-export.service --property=Result --value)" = success
 ```
@@ -155,7 +157,7 @@ evidence_dir=/srv/medtrack/deploy-evidence/<deployment-id>
 sha256sum "$evidence_dir/migration-plan.txt"
 ```
 
-The plan command requires the existing `db` container to already report healthy. It builds commit-labeled web/migrate images and runs read-only Django planning in a disposable `--no-deps` container; it never pulls, starts, stops, or recreates `db`, `web`, or Caddy.
+The plan command requires the existing `db` container to already report healthy. It builds the reviewed Git-object-only web image and the pinned custom Caddy image, verifies their receipts/modules, and runs read-only Django planning in a disposable `--no-deps` container; it never pulls, starts, stops, or recreates the live `db`, `web`, or Caddy services. Preserve the emitted `MEDTRACK_BUILD_RECEIPT` line with the deployment evidence.
 
 Review the migration plan. Then apply only the exact approved hash, using a root-owned executable login-smoke hook that obtains credentials outside the repository and emits no secrets or PHI:
 
@@ -201,6 +203,8 @@ Required root-only paths:
 /srv/medtrack/backup-secrets/rclone.conf        mode 0600
 /srv/medtrack/backup-secrets/age-recipient.txt  mode 0644 (public key only)
 /srv/medtrack/offsite-backups/                  mode 0700
+/srv/medtrack/security-logs/                     mode 0700
+/srv/medtrack/security-evidence/                 mode 0700
 ```
 
 OAuth requirements:
@@ -211,18 +215,20 @@ OAuth requirements:
 - do not use Drive `sync` or `purge`; the scripts upload immutable unique names and delete only expired, exact-pattern tier files
 - keep at least two recoverable off-VPS copies of the private `age` identity; the second copy was confirmed on 2026-08-11
 
-Install the configuration and units after the reviewed commit is deployed:
+On the VPS, install the writer-side configuration and units after the reviewed commit is deployed. Do not install the independent scratch-restore runner or copy an `age` identity to this host:
 
 ```bash
-install -d -m 0700 /srv/medtrack/backup-secrets /srv/medtrack/offsite-backups
+install -d -m 0700 /srv/medtrack/backup-secrets /srv/medtrack/offsite-backups /srv/medtrack/security-logs /srv/medtrack/security-evidence
 install -d -m 0755 /etc/medtrack-backup
 install -m 0600 deploy/backup/backup.env.example /etc/medtrack-backup/backup.env
 install -m 0644 deploy/systemd/medtrack-offsite-backup@.service /etc/systemd/system/
-install -m 0644 deploy/systemd/medtrack-offsite-backup-*.timer /etc/systemd/system/
-install -m 0644 deploy/systemd/medtrack-offsite-backup-health.service /etc/systemd/system/
+install -m 0644 deploy/systemd/medtrack-offsite-backup-{rapid,daily,weekly,monthly}.timer /etc/systemd/system/
+install -m 0644 deploy/systemd/medtrack-security-evidence-export.service /etc/systemd/system/
+install -m 0644 deploy/systemd/medtrack-security-evidence-export.timer /etc/systemd/system/
+install -m 0644 deploy/logrotate/medtrack-security-logs /etc/logrotate.d/medtrack-security-logs
 install -m 0644 deploy/systemd/medtrack-patient-backup-scheduler.service /etc/systemd/system/
 install -m 0644 deploy/systemd/medtrack-patient-backup-scheduler.timer /etc/systemd/system/
-systemd-analyze verify /etc/systemd/system/medtrack-offsite-backup@.service /etc/systemd/system/medtrack-offsite-backup-*.timer /etc/systemd/system/medtrack-offsite-backup-health.service
+systemd-analyze verify /etc/systemd/system/medtrack-offsite-backup@.service /etc/systemd/system/medtrack-offsite-backup-{rapid,daily,weekly,monthly}.timer /etc/systemd/system/medtrack-security-evidence-export.service /etc/systemd/system/medtrack-security-evidence-export.timer
 systemctl daemon-reload
 ```
 
@@ -246,7 +252,7 @@ systemctl enable --now \
   medtrack-offsite-backup-daily.timer \
   medtrack-offsite-backup-weekly.timer \
   medtrack-offsite-backup-monthly.timer \
-  medtrack-offsite-backup-health.timer
+  medtrack-security-evidence-export.timer
 systemctl list-timers 'medtrack-offsite-backup*'
 ```
 
@@ -260,7 +266,20 @@ Schedule and retention (all calendar times are `Asia/Kolkata`):
 | Monthly | Day 1 at 04:15, up to 20-minute jitter | 12 |
 | Pre-deployment | Manual before deployment | 14 |
 
-Run and inspect health checks:
+On the independent verifier, use a separate exact reviewed checkout and separate root-only config. This host—not the VPS or NAS—holds the offline restore identity. Its `MEDTRACK_SCRATCH_RESTORE_HOOK` must download a completed Drive triplet, run `restore.sh verify` against isolated PostgreSQL/Django, retain the verified security-evidence tree at `MEDTRACK_SECURITY_EVIDENCE_ROOT`, and return nonzero on any mismatch. Its alert hook must deliver outside that host. Install and enable both independent timers:
+
+```bash
+install -d -m 0700 /var/lib/medtrack-backup-health /srv/medtrack/security-evidence
+install -m 0644 deploy/systemd/medtrack-offsite-backup-health.service /etc/systemd/system/
+install -m 0644 deploy/systemd/medtrack-offsite-backup-health.timer /etc/systemd/system/
+install -m 0644 deploy/systemd/medtrack-offsite-scratch-restore.service /etc/systemd/system/
+install -m 0644 deploy/systemd/medtrack-offsite-scratch-restore.timer /etc/systemd/system/
+systemd-analyze verify /etc/systemd/system/medtrack-offsite-backup-health.service /etc/systemd/system/medtrack-offsite-backup-health.timer /etc/systemd/system/medtrack-offsite-scratch-restore.service /etc/systemd/system/medtrack-offsite-scratch-restore.timer
+systemctl daemon-reload
+systemctl enable --now medtrack-offsite-scratch-restore.timer medtrack-offsite-backup-health.timer
+```
+
+Run and inspect health checks on that independent verifier:
 
 ```bash
 systemctl start medtrack-offsite-backup-health.service
@@ -268,7 +287,7 @@ systemctl status --no-pager medtrack-offsite-backup-health.service
 journalctl -u 'medtrack-offsite-backup*' --since '24 hours ago' --no-pager
 ```
 
-Every health pass now requires complete archive/checksum/marker triplets for each retained set, cross-checks marker and checksum metadata, and streams the newest ciphertext in every tier through SHA-256 (`MEDTRACK_HEALTH_HASH_MODE=all` verifies every retained ciphertext). `MEDTRACK_SCRATCH_RESTORE_HOOK` can point to an absolute executable on an independent scratch host; set `MEDTRACK_REQUIRE_SCRATCH_RESTORE_HOOK=1` there to fail health when the periodic isolated restore hook is missing or fails. Keep the private `age` identity off the VPS and NAS.
+Every production health pass requires complete archive/checksum/marker triplets for each retained set, cross-checks marker/checksum/evidence-chain metadata, streams every retained ciphertext through SHA-256, runs the independently restored evidence-chain/lag hook, and requires a fresh scratch-restore receipt whose runner has a mandatory alert hook. These requirements are not optional in `MEDTRACK_HEALTH_PRODUCTION_MODE=1`. The VPS-side schedules remain green only as upload evidence; the independent verifier is the authoritative recovery-health signal. Keep the private `age` identity off the VPS and NAS.
 
 Enable the single-owner patient-data schedule runner after installing its units:
 
@@ -283,14 +302,24 @@ Gunicorn workers and management-command startup do not create scheduler threads.
 Before each production deployment:
 
 ```bash
-MEDTRACK_BACKUP_CONFIG=/etc/medtrack-backup/backup.env ./scripts/backup-offsite.sh --tier pre-deployment
+MEDTRACK_BACKUP_CONFIG=/etc/medtrack-backup/backup.env ./scripts/backup-offsite.sh --tier pre-deployment --target-commit <expected-full-git-commit>
 systemctl start medtrack-nas-export.service
 test "$(systemctl show medtrack-nas-export.service --property=Result --value)" = success
 ```
 
 The second command publishes the newly completed pre-deployment ciphertext immediately instead of waiting for the hourly export timer. It does not contact the NAS; the NAS remains pull-only and fetches on its normal six-hour cadence.
 
-A successful upload is not restore proof. On a separate scratch host, download one completed ciphertext plus its checksum, verify SHA-256, decrypt it with the offline identity, verify the internal `manifest.sha256`, list `database.dump` with `pg_restore --list`, and restore it into a new empty PostgreSQL database. Never test a restore over production.
+A successful upload is not restore proof. On a separate scratch host, download one completed ciphertext plus its checksum, verify SHA-256, decrypt it with the offline identity, verify the internal `manifest.sha256` and security-evidence chain, list `database.dump` with `pg_restore --list`, and restore it into a new empty PostgreSQL database. Prove the AuditEvent table, append-only trigger, migration, row lower bound, and max-id lower bound. Never test a restore over production.
+
+### Audit, request-log, and edge-auth evidence
+
+PR #103 defines `public.patients_auditevent`, migration `patients.0037_backend_auth_clinical_security`, and trigger `patients_auditevent_append_only`. Do not enable the production backup/evidence units until that exact schema is integrated and the combined-head scratch tests pass. The backup records the running source commit/image/schema separately from the intended target commit; the source image must restore the pre-deployment database, while the deployment receipt binds the target.
+
+Gunicorn and Caddy write only timestamp, method, status, duration, and response size to the root-only security-log directory. Never add request bodies, URI/path/query strings, authorization or cookie headers, client IPs, usernames, patient search text, or clinical payloads. The hourly exporter selects only coarse AuditEvent identity/time/category/action/outcome/source fields, bounds rows and log bytes, creates a SHA-256 chained segment, alerts on lag/discontinuity or sustained safe failure/429 counts, and retains 2,160 hourly segments (90 days) with a continuity anchor. Encrypted Drive archives and the pull-only NAS mirror contain the retained segments, anchor, checkpoint, and their manifest hashes. Recovery starts from the anchor, verifies every retained segment, and cross-checks the final chain with the backup marker/receipt.
+
+The custom Caddy image is built from digest-pinned Caddy 2.11.4 builder/runtime images with `github.com/mholt/caddy-ratelimit` pinned at commit `5625512f24f6f59d6f64fb3aafe5eecff0b286db`. Startup, deploy, and restore validation require `http.handlers.rate_limit`; stock Caddy fails this gate. Web/admin login, JWT obtain, JWT refresh, and device-verification paths have separate coarse endpoint classes with global static caps followed by per-client burst and sustained windows. The global handler bounds the number of dynamic client buckets that can be created per window; IPv6 is grouped at `/64`; the module sweeps expired buckets every minute; 429 responses include `Retry-After` and a fixed PHI-free body. Backend application throttles remain mandatory and must not be weakened.
+
+Caddy is currently the public edge, so `{remote_host}` is the direct TCP peer and forwarded client-IP headers are not trusted. Caddy deletes any inbound `X-Medtrack-Client-IP`, overwrites it with that direct peer, and connects to Django from the fixed `172.30.0.10` edge address. Django accepts the replacement header only from the exact `172.30.0.10/32` allowlist, canonicalizes IPv4/IPv6 addresses, and otherwise uses `REMOTE_ADDR`. Production startup fails if the expected Caddy address is absent from the configured allowlist. The web container intentionally has no fixed edge address so one-shot planning containers cannot collide with a running web instance. If a CDN or load balancer is introduced, stop and review explicit provider CIDRs, enable strict right-to-left trusted-proxy parsing, prove direct-origin bypass is blocked, and rerun the edge runtime fixture. Never use arbitrary client-supplied forwarding headers or broad private-range trust as the limiter key.
 
 Verified 2026-08-11 recovery proof:
 

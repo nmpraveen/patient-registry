@@ -44,15 +44,20 @@ rclone_config="${RCLONE_CONFIG:-/srv/medtrack/backup-secrets/rclone.conf}"
 rclone_remote="${RCLONE_REMOTE:-medtrack-drive:Naveen-Hospital-Backups/MEDTRACK/production}"
 recipient_file="${AGE_RECIPIENT_FILE:-/srv/medtrack/backup-secrets/age-recipient.txt}"
 production_env="${MEDTRACK_ENV_FILE:-$repo_root/.env}"
+evidence_root="${MEDTRACK_SECURITY_EVIDENCE_ROOT:-/srv/medtrack/security-evidence}"
+require_audit_schema="${MEDTRACK_REQUIRE_AUDIT_EVENT_SCHEMA:-1}"
+build_context_verifier="${MEDTRACK_BUILD_CONTEXT_VERIFIER:-$repo_root/scripts/build_context_receipt.py}"
 
-for command_name in age docker flock git install mktemp rclone sha256sum tar; do
+python_command="${PYTHON_COMMAND:-python3}"
+for command_name in age docker flock git install mktemp "$python_command" rclone sha256sum tar; do
   if ! command -v "$command_name" >/dev/null 2>&1; then
     echo "Missing required command: $command_name" >&2
     exit 1
   fi
 done
 
-if [[ "$repo_root" != /* || "$backup_root" != /* || "$state_root" != /* ]]; then
+if [[ "$repo_root" != /* || "$backup_root" != /* || "$state_root" != /* || "$evidence_root" != /* ||
+  ! "$require_audit_schema" =~ ^[01]$ ]]; then
   echo "Repository, backup, and state paths must be absolute" >&2
   exit 1
 fi
@@ -70,6 +75,10 @@ if [[ ! -f "$rclone_config" ]]; then
 fi
 if [[ ! -f "$recipient_file" ]]; then
   echo "age recipient file not found at $recipient_file" >&2
+  exit 1
+fi
+if [[ ! -f "$build_context_verifier" ]]; then
+  echo "Canonical medtrack.build-context/v1 verifier is missing (requires build PR #100)" >&2
   exit 1
 fi
 
@@ -136,13 +145,50 @@ if [[ -z "$web_container_id" ]]; then
 fi
 source_image_id="$(docker inspect --format '{{.Image}}' "$web_container_id")"
 source_commit="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$source_image_id")"
-source_git_tree="$(docker image inspect --format '{{ index .Config.Labels "net.naveenhospital.medtrack.git-tree" }}' "$source_image_id")"
-source_build_context="$(docker image inspect --format '{{ index .Config.Labels "net.naveenhospital.medtrack.build-context" }}' "$source_image_id")"
-source_context_policy="$(docker image inspect --format '{{ index .Config.Labels "net.naveenhospital.medtrack.context-policy" }}' "$source_image_id")"
-if [[ ! "$source_commit" =~ ^[0-9a-f]{40}$ || ! "$source_git_tree" =~ ^[0-9a-f]{40}$ ||
-  "$source_build_context" != "git-archive-allowlist-v1" || ! "$source_context_policy" =~ ^[0-9a-f]{64}$ ]]; then
+source_build_context_schema="$(docker image inspect --format '{{ index .Config.Labels "org.medtrack.build-context.schema" }}' "$source_image_id")"
+source_build_context_sha256="$(docker image inspect --format '{{ index .Config.Labels "org.medtrack.build-context.digest" }}' "$source_image_id")"
+if [[ ! "$source_commit" =~ ^[0-9a-f]{40}$ || "$source_build_context_schema" != "medtrack.build-context/v1" ||
+  ! "$source_build_context_sha256" =~ ^sha256:[0-9a-f]{64}$ ]] ||
+  ! "$python_command" "$build_context_verifier" --revision "$source_commit" --verify-image "$source_image_id"; then
   echo "The running web image lacks committed allowlisted-context attestation" >&2
   exit 1
+fi
+
+query_live_scalar() {
+  "${compose[@]}" exec -T db sh -ceu \
+    'exec psql --tuples-only --no-align --username="$POSTGRES_USER" --dbname="$POSTGRES_DB" --command="$1"' sh "$1" |
+    tr -d '[:space:]'
+}
+audit_table_present="$(query_live_scalar "SELECT CASE WHEN to_regclass('public.patients_auditevent') IS NOT NULL THEN 1 ELSE 0 END")"
+audit_trigger_present="$(query_live_scalar "SELECT count(*) FROM pg_trigger WHERE tgname='patients_auditevent_append_only' AND NOT tgisinternal")"
+if [[ "$require_audit_schema" == "1" && ( "$audit_table_present" != "1" || "$audit_trigger_present" != "1" ) ]]; then
+  echo "AuditEvent table or append-only trigger is absent; refusing production backup promotion" >&2
+  exit 1
+fi
+audit_row_count=0
+audit_max_id=0
+audit_max_occurred_at=none
+if [[ "$audit_table_present" == "1" ]]; then
+  audit_row_count="$(query_live_scalar 'SELECT count(*) FROM public.patients_auditevent')"
+  audit_max_id="$(query_live_scalar 'SELECT COALESCE(max(id),0) FROM public.patients_auditevent')"
+  audit_max_occurred_at="$(query_live_scalar "SELECT COALESCE(to_char(max(occurred_at) AT TIME ZONE 'UTC','YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"'),'none') FROM public.patients_auditevent")"
+fi
+if [[ ! "$audit_row_count" =~ ^[0-9]+$ || ! "$audit_max_id" =~ ^[0-9]+$ ]]; then
+  echo "Could not capture a safe AuditEvent backup checkpoint" >&2
+  exit 1
+fi
+
+if [[ "$require_audit_schema" == "1" ]]; then
+  MEDTRACK_SECURITY_EVIDENCE_ALLOW_STALE=1 "$repo_root/scripts/verify-security-evidence.sh"
+  evidence_chain_sha256="$(sed -n 's/^chain_sha256=//p' "$evidence_root/state/checkpoint.env" | tail -n 1)"
+  evidence_sequence="$(sed -n 's/^sequence=//p' "$evidence_root/state/checkpoint.env" | tail -n 1)"
+  if [[ ! "$evidence_chain_sha256" =~ ^[0-9a-f]{64}$ || ! "$evidence_sequence" =~ ^[1-9][0-9]*$ ]]; then
+    echo "Security evidence checkpoint is invalid" >&2
+    exit 1
+  fi
+else
+  evidence_chain_sha256=none
+  evidence_sequence=0
 fi
 if [[ -z "$target_commit" ]]; then
   if [[ "$tier" == "pre-deployment" ]]; then
@@ -174,6 +220,10 @@ if [[ ! -s "$payload_dir/database.list" ]]; then
   echo "pg_restore did not produce a dump catalog" >&2
   exit 1
 fi
+if [[ "$audit_table_present" == "1" ]] && ! grep -Eq 'TABLE DATA[[:space:]]+public[[:space:]]+patients_auditevent' "$payload_dir/database.list"; then
+  echo "PostgreSQL dump catalog does not contain AuditEvent application data" >&2
+  exit 1
+fi
 
 echo "[3/8] Collecting recovery configuration and runtime identity"
 "${compose[@]}" exec -T db sh -ceu \
@@ -183,7 +233,30 @@ if [[ ! -s "$payload_dir/schema-migrations.txt" ]]; then
   echo "Could not capture the live migration schema identity" >&2
   exit 1
 fi
+if [[ "$require_audit_schema" == "1" ]] && ! grep -Fxq 'patients.0037_backend_auth_clinical_security' "$payload_dir/schema-migrations.txt"; then
+  echo "AuditEvent schema migration from PR #103 is not applied" >&2
+  exit 1
+fi
 schema_migration_sha256="$(sha256sum "$payload_dir/schema-migrations.txt" | awk '{print $1}')"
+{
+  printf 'checkpoint_format=medtrack-audit-backup-checkpoint-v1\n'
+  printf 'audit_table_present=%s\n' "$audit_table_present"
+  printf 'audit_trigger_present=%s\n' "$audit_trigger_present"
+  printf 'minimum_row_count=%s\n' "$audit_row_count"
+  printf 'minimum_max_id=%s\n' "$audit_max_id"
+  printf 'maximum_occurred_at=%s\n' "$audit_max_occurred_at"
+} > "$payload_dir/audit-checkpoint.env"
+if [[ "$require_audit_schema" == "1" ]]; then
+  if find "$evidence_root/state" "$evidence_root/segments" ! -type f ! -type d -print -quit | grep -q .; then
+    echo "Security evidence contains a link or special file" >&2
+    exit 1
+  fi
+  install -d -m 0700 "$payload_dir/security-evidence"
+  (cd "$evidence_root" && tar -cf - state segments) |
+    tar -xf - -C "$payload_dir/security-evidence" --no-same-owner --no-same-permissions
+  MEDTRACK_SECURITY_EVIDENCE_ROOT="$payload_dir/security-evidence" \
+    MEDTRACK_SECURITY_EVIDENCE_ALLOW_STALE=1 "$repo_root/scripts/verify-security-evidence.sh"
+fi
 install -m 0600 "$production_env" "$payload_dir/config/environment.env"
 for relative_path in docker-compose.yml docker-compose.prod.yml deploy/Caddyfile; do
   if [[ -f "$repo_root/$relative_path" ]]; then
@@ -198,16 +271,20 @@ if [[ -f /etc/audit/rules.d/medtrack-app.rules ]]; then
 fi
 
 {
-  printf 'backup_format=medtrack-offsite-v2\n'
+  printf 'backup_format=medtrack-offsite-v3\n'
   printf 'created_utc=%s\n' "$stamp"
   printf 'tier=%s\n' "$tier"
   printf 'source_commit=%s\n' "$source_commit"
   printf 'source_image_id=%s\n' "$source_image_id"
-  printf 'source_git_tree=%s\n' "$source_git_tree"
-  printf 'source_build_context=%s\n' "$source_build_context"
-  printf 'source_context_policy_sha256=%s\n' "$source_context_policy"
+  printf 'source_build_context_schema=%s\n' "$source_build_context_schema"
+  printf 'source_build_context_sha256=%s\n' "$source_build_context_sha256"
   printf 'source_schema_migration_sha256=%s\n' "$schema_migration_sha256"
   printf 'intended_target_commit=%s\n' "$target_commit"
+  printf 'audit_table_present=%s\n' "$audit_table_present"
+  printf 'audit_minimum_row_count=%s\n' "$audit_row_count"
+  printf 'audit_minimum_max_id=%s\n' "$audit_max_id"
+  printf 'security_evidence_sequence=%s\n' "$evidence_sequence"
+  printf 'security_evidence_chain_sha256=%s\n' "$evidence_chain_sha256"
   printf 'postgres_server_version=%s\n' "$("${compose[@]}" exec -T db sh -ceu 'exec psql --tuples-only --no-align --username="$POSTGRES_USER" --dbname="$POSTGRES_DB" --command="SHOW server_version"')"
   docker --version
   docker compose version
@@ -219,7 +296,7 @@ echo "[4/8] Building the recovery-content integrity manifest"
   cd "$payload_dir"
   while IFS= read -r -d '' payload_file; do
     sha256sum "$payload_file"
-  done < <(find . -type f ! -name manifest.sha256 -print0 | sort -z)
+  done < <(find . -type f ! -path './manifest.sha256' -print0 | sort -z)
 ) > "$payload_dir/manifest.sha256"
 
 echo "[5/8] Encrypting the complete recovery archive"
@@ -253,6 +330,7 @@ rclone --config "$rclone_config" check "$local_tier_dir" "$remote_tier" \
   printf 'completed_utc=%s\n' "$stamp"
   printf 'source_commit=%s\n' "$source_commit"
   printf 'intended_target_commit=%s\n' "$target_commit"
+  printf 'security_evidence_chain_sha256=%s\n' "$evidence_chain_sha256"
 } > "$local_tier_dir/$marker_name.tmp"
 mv "$local_tier_dir/$marker_name.tmp" "$local_tier_dir/$marker_name"
 rclone --config "$rclone_config" copyto "$local_tier_dir/$marker_name" "$remote_tier/$marker_name" --immutable
@@ -314,17 +392,20 @@ mv "$state_tmp" "$state_root/last-success-$tier.epoch"
 receipt_path="$state_root/receipt-${tier}-${stamp}.env"
 receipt_tmp="$(mktemp "$state_root/.receipt-${tier}-${stamp}.XXXXXX")"
 {
-  printf 'receipt_format=medtrack-offsite-receipt-v2\n'
+  printf 'receipt_format=medtrack-offsite-receipt-v3\n'
   printf 'tier=%s\n' "$tier"
   printf 'archive=%s\n' "$archive_name"
   printf 'sha256=%s\n' "$(cut -d ' ' -f 1 "$local_tier_dir/$checksum_name")"
   printf 'source_commit=%s\n' "$source_commit"
   printf 'source_image_id=%s\n' "$source_image_id"
-  printf 'source_git_tree=%s\n' "$source_git_tree"
-  printf 'source_build_context=%s\n' "$source_build_context"
-  printf 'source_context_policy_sha256=%s\n' "$source_context_policy"
+  printf 'source_build_context_schema=%s\n' "$source_build_context_schema"
+  printf 'source_build_context_sha256=%s\n' "$source_build_context_sha256"
   printf 'source_schema_migration_sha256=%s\n' "$schema_migration_sha256"
   printf 'target_commit=%s\n' "$target_commit"
+  printf 'audit_minimum_row_count=%s\n' "$audit_row_count"
+  printf 'audit_minimum_max_id=%s\n' "$audit_max_id"
+  printf 'security_evidence_sequence=%s\n' "$evidence_sequence"
+  printf 'security_evidence_chain_sha256=%s\n' "$evidence_chain_sha256"
   printf 'completed_epoch=%s\n' "$completed_epoch"
   printf 'local_archive=%s\n' "$local_tier_dir/$archive_name"
   printf 'local_checksum=%s\n' "$local_tier_dir/$checksum_name"

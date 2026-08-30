@@ -9572,6 +9572,14 @@ class PatientDataBundleTests(TestCase):
             call_command("run_due_patient_backups", stdout=stdout)
         self.assertIn("result=not-due", stdout.getvalue())
 
+        stdout = io.StringIO()
+        with patch(
+            "patients.management.commands.run_due_patient_backups.run_due_scheduled_backup",
+            return_value=backup_scheduler.ScheduledBackupRunResult.LOCK_HELD,
+        ):
+            call_command("run_due_patient_backups", stdout=stdout)
+        self.assertIn("result=lock-held", stdout.getvalue())
+
         with patch(
             "patients.management.commands.run_due_patient_backups.run_due_scheduled_backup",
             side_effect=RuntimeError("synthetic backup failure"),

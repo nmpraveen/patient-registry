@@ -2,7 +2,7 @@
 Description=Run an independent MEDTRACK encrypted-backup scratch restore every week
 
 [Timer]
-OnCalendar=Sun *-*-* 03:30:00
+OnCalendar=Sun *-*-* 03:30:00 Asia/Kolkata
 RandomizedDelaySec=30m
 Persistent=true
 Unit=medtrack-offsite-scratch-restore.service

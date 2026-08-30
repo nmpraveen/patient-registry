@@ -41,6 +41,8 @@
 **/*.keystore
 **/media/
 **/media/**
+**/security-logs/
+**/security-logs/**
 **/output/
 **/output/**
 **/outputs/

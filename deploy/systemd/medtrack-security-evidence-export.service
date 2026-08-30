@@ -1,8 +1,8 @@
 [Unit]
-Description=Verify MEDTRACK encrypted off-site backup freshness and retention
+Description=Export PHI-safe MEDTRACK audit and request security evidence
 Documentation=file:///srv/medtrack/app/RUNBOOK.md
-After=network-online.target
-Wants=network-online.target
+Requires=docker.service
+After=docker.service
 
 [Service]
 Type=oneshot
@@ -10,11 +10,9 @@ User=root
 Group=root
 WorkingDirectory=/srv/medtrack/app
 Environment=MEDTRACK_BACKUP_CONFIG=/etc/medtrack-backup/backup.env
-Environment=MEDTRACK_HEALTH_PRODUCTION_MODE=1
-Environment=MEDTRACK_HEALTH_HASH_MODE=all
-ExecStart=/srv/medtrack/app/scripts/check-offsite-backups.sh
+ExecStart=/srv/medtrack/app/scripts/export-security-evidence.sh
 UMask=0077
-TimeoutStartSec=15m
+TimeoutStartSec=30m
 NoNewPrivileges=yes
 PrivateDevices=yes
 PrivateTmp=yes
@@ -26,7 +24,8 @@ ProtectKernelLogs=yes
 ProtectKernelModules=yes
 ProtectKernelTunables=yes
 ProtectSystem=strict
-ReadOnlyPaths=/srv/medtrack/app /srv/medtrack/backup-secrets /etc/medtrack-backup /srv/medtrack/offsite-backups /srv/medtrack/security-evidence
+ReadOnlyPaths=/srv/medtrack/app /etc/medtrack-backup /srv/medtrack/security-logs
+ReadWritePaths=/srv/medtrack/security-evidence
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 RestrictSUIDSGID=yes
 LockPersonality=yes

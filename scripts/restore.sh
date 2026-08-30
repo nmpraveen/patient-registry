@@ -59,7 +59,8 @@ done
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
-for command_name in comm docker git mktemp realpath sha256sum sort tar; do
+python_command="${PYTHON_COMMAND:-python3}"
+for command_name in comm docker git mktemp "$python_command" realpath sha256sum sort tar; do
   if ! command -v "$command_name" >/dev/null 2>&1; then
     echo "Missing required command: $command_name" >&2
     exit 1
@@ -78,7 +79,9 @@ set +a
 database_name="${POSTGRES_DB:-patient_registry}"
 database_user="${POSTGRES_USER:-patient_registry}"
 domain="${MEDTRACK_DOMAIN:-}"
-if [[ ! "$database_name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ || ! "$database_user" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+require_audit_schema="${MEDTRACK_REQUIRE_AUDIT_EVENT_SCHEMA:-1}"
+if [[ ! "$database_name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ || ! "$database_user" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ||
+  ! "$require_audit_schema" =~ ^[01]$ ]]; then
   echo "POSTGRES_DB and POSTGRES_USER must be simple PostgreSQL identifiers" >&2
   exit 1
 fi
@@ -93,6 +96,12 @@ db_exists() {
   local target_db="$1"
   "${compose[@]}" exec -T db psql --tuples-only --no-align --username="$database_user" --dbname=postgres \
     --command="SELECT 1 FROM pg_database WHERE datname = '$target_db'" | tr -d '[:space:]'
+}
+
+database_oid() {
+  local target_db="$1"
+  "${compose[@]}" exec -T db psql --tuples-only --no-align --username="$database_user" --dbname=postgres \
+    --command="SELECT oid::text FROM pg_database WHERE datname = '$target_db'" | tr -d '[:space:]'
 }
 
 drop_database() {
@@ -155,28 +164,54 @@ image_label() {
   docker image inspect --format "{{ index .Config.Labels \"$label\" }}" "$image_id"
 }
 
+build_context_verifier="${MEDTRACK_BUILD_CONTEXT_VERIFIER:-$repo_root/scripts/build_context_receipt.py}"
+verify_canonical_image() {
+  local image_id="$1" revision="$2"
+  if [[ ! -f "$build_context_verifier" ]]; then
+    echo "Canonical medtrack.build-context/v1 verifier is missing (requires build PR #100)" >&2
+    return 1
+  fi
+  "$python_command" "$build_context_verifier" --revision "$revision" --verify-image "$image_id"
+}
+
+verify_caddy_edge_image() {
+  local image_id="${1:-}"
+  if [[ -z "$image_id" ]]; then
+    image_id="$(docker image inspect --format '{{.Id}}' medtrack-caddy:2.11.4-ratelimit)"
+  fi
+  [[ -n "$image_id" ]] || { echo "Required custom Caddy image is missing" >&2; return 1; }
+  docker run --rm --entrypoint sh -e MEDTRACK_DOMAIN=medtrack.invalid \
+    -v "$repo_root/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" "$image_id" -ceu \
+    'caddy list-modules | grep -Fxq http.handlers.rate_limit && caddy validate --config /etc/caddy/Caddyfile'
+  verified_caddy_image_id="$image_id"
+}
+
+verify_running_caddy_edge_image() {
+  local container_id running_image_id
+  container_id="$("${compose[@]}" ps -q caddy)"
+  [[ -n "$container_id" ]] || { echo "Running Caddy container is missing" >&2; return 1; }
+  running_image_id="$(docker inspect --format '{{.Image}}' "$container_id")"
+  if [[ "$running_image_id" != "$verified_caddy_image_id" ]]; then
+    echo "Running Caddy image does not match the reviewed edge image" >&2
+    return 1
+  fi
+}
+
 verify_image_attestation() {
-  local expected_tree expected_policy inspected_id
-  if [[ ! -f "$image_attestation" || "$(receipt_value_from_file "$image_attestation" attestation_format)" != "medtrack-committed-image-v1" ]]; then
+  local inspected_id
+  if [[ ! -f "$image_attestation" || "$(receipt_value_from_file "$image_attestation" attestation_format)" != "medtrack-build-receipt-v1" ]]; then
     echo "Restore requires a committed allowlisted-context image attestation" >&2
     return 1
   fi
-  attested_commit="$(receipt_value_from_file "$image_attestation" git_commit)"
-  attested_tree="$(receipt_value_from_file "$image_attestation" git_tree)"
-  attested_context="$(receipt_value_from_file "$image_attestation" build_context)"
-  attested_policy="$(receipt_value_from_file "$image_attestation" context_policy_sha256)"
+  attested_commit="$(receipt_value_from_file "$image_attestation" revision)"
+  attested_context_schema="$(receipt_value_from_file "$image_attestation" build_context_schema)"
+  attested_context_digest="$(receipt_value_from_file "$image_attestation" build_context_sha256)"
   attested_image_ref="$(receipt_value_from_file "$image_attestation" image_ref)"
   attested_image_id="$(receipt_value_from_file "$image_attestation" image_id)"
-  expected_tree="$(git rev-parse "$expected_commit^{tree}")"
-  expected_policy="$(printf '%s\n%s\n' "$(git rev-parse "$expected_commit:Dockerfile")" "$(git rev-parse "$expected_commit:.dockerignore")" | sha256sum | awk '{print $1}')"
   inspected_id="$(docker image inspect --format '{{.Id}}' "$attested_image_ref")"
-  if [[ "$attested_commit" != "$expected_commit" || "$attested_tree" != "$expected_tree" ||
-    "$attested_context" != "git-archive-allowlist-v1" || "$attested_policy" != "$expected_policy" ||
-    -z "$attested_image_id" || "$inspected_id" != "$attested_image_id" ||
-    "$(image_revision "$attested_image_id")" != "$expected_commit" ||
-    "$(image_label "$attested_image_id" net.naveenhospital.medtrack.git-tree)" != "$expected_tree" ||
-    "$(image_label "$attested_image_id" net.naveenhospital.medtrack.build-context)" != "$attested_context" ||
-    "$(image_label "$attested_image_id" net.naveenhospital.medtrack.context-policy)" != "$attested_policy" ]]; then
+  if [[ "$attested_commit" != "$expected_commit" || "$attested_context_schema" != "medtrack.build-context/v1" ||
+    ! "$attested_context_digest" =~ ^sha256:[0-9a-f]{64}$ || -z "$attested_image_id" ||
+    "$inspected_id" != "$attested_image_id" ]] || ! verify_canonical_image "$attested_image_id" "$expected_commit"; then
     echo "Restore image attestation does not match the committed allowlisted context" >&2
     return 1
   fi
@@ -184,8 +219,7 @@ verify_image_attestation() {
   verified_migrate_image_id="$attested_image_id"
   export MEDTRACK_APP_IMAGE="$attested_image_ref"
   export MEDTRACK_BUILD_REVISION="$attested_commit"
-  export MEDTRACK_BUILD_GIT_TREE="$attested_tree"
-  export MEDTRACK_CONTEXT_POLICY="$attested_policy"
+  export MEDTRACK_BUILD_CONTEXT_SHA256="$attested_context_digest"
 }
 
 verify_application_images() {
@@ -196,7 +230,8 @@ verify_application_images() {
     return 1
   fi
   running_web_image_id="$(docker inspect --format '{{.Image}}' "$web_container_id")"
-  if [[ "$running_web_image_id" != "$verified_web_image_id" || "$(image_revision "$running_web_image_id")" != "$expected_commit" ]]; then
+  if [[ "$running_web_image_id" != "$verified_web_image_id" || "$(image_revision "$running_web_image_id")" != "$expected_commit" ]] ||
+    ! verify_canonical_image "$running_web_image_id" "$expected_commit"; then
     echo "Restore application image identity does not match the exact expected commit" >&2
     return 1
   fi
@@ -265,12 +300,33 @@ if [[ "$mode" == "rollback" ]]; then
   fi
   receipt_commit="$(receipt_value_from_file "$activation_receipt" git_commit)"
   rollback_database="$(receipt_value_from_file "$activation_receipt" rollback_database)"
-  if [[ ! "$receipt_commit" =~ ^[0-9a-f]{40}$ || ! "$rollback_database" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+  receipt_web_image_id="$(receipt_value_from_file "$activation_receipt" web_image_id)"
+  receipt_caddy_image_id="$(receipt_value_from_file "$activation_receipt" caddy_security_image_id)"
+  deployed_database_oid="$(receipt_value_from_file "$activation_receipt" deployed_database_oid)"
+  rollback_database_oid="$(receipt_value_from_file "$activation_receipt" rollback_database_oid)"
+  current_web_container="$("${compose[@]}" ps -q web)"
+  current_caddy_container="$("${compose[@]}" ps -q caddy)"
+  current_web_image=""
+  current_caddy_image=""
+  if [[ -n "$current_web_container" ]]; then
+    current_web_image="$(docker inspect --format '{{.Image}}' "$current_web_container")"
+  fi
+  if [[ -n "$current_caddy_container" ]]; then
+    current_caddy_image="$(docker inspect --format '{{.Image}}' "$current_caddy_container")"
+  fi
+  if [[ ! "$receipt_commit" =~ ^[0-9a-f]{40}$ || ! "$rollback_database" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ||
+    -z "$receipt_web_image_id" || -z "$receipt_caddy_image_id" ||
+    ! "$deployed_database_oid" =~ ^[0-9]+$ || ! "$rollback_database_oid" =~ ^[0-9]+$ ]]; then
     echo "Activation receipt contains invalid rollback identity" >&2
     exit 1
   fi
-  if [[ "$(git rev-parse HEAD)" != "$receipt_commit" || "$(db_exists "$rollback_database")" != "1" ]]; then
-    echo "Rollback commit or retained rollback database does not match the activation receipt" >&2
+  if [[ "$(git rev-parse HEAD)" != "$receipt_commit" || "$current_web_image" != "$receipt_web_image_id" ||
+    "$current_caddy_image" != "$receipt_caddy_image_id" ||
+    "$(database_oid "$database_name")" != "$deployed_database_oid" ||
+    "$(database_oid "$rollback_database")" != "$rollback_database_oid" ]] ||
+    ! verify_canonical_image "$current_web_image" "$receipt_commit" ||
+    ! verify_caddy_edge_image "$current_caddy_image"; then
+    echo "Rollback active release or retained database does not match the activation receipt" >&2
     exit 1
   fi
   failed_database="${database_name}_failed_$(date -u +%Y%m%d%H%M%S)"
@@ -337,6 +393,7 @@ mkdir -m 0700 "$payload_dir"
 
 echo "[1/7] Decrypting verified ciphertext into disposable scratch storage"
 verify_application_images
+verify_caddy_edge_image
 age --decrypt -i "$identity" -o "$plaintext_tar" "$archive"
 if [[ ! -s "$plaintext_tar" ]]; then
   echo "Decrypted recovery archive is empty" >&2
@@ -364,7 +421,7 @@ if find "$payload_dir" -type l -print -quit | grep -q .; then
   exit 1
 fi
 
-for required_file in database.dump database.list manifest.sha256 runtime.txt schema-migrations.txt; do
+for required_file in database.dump database.list manifest.sha256 runtime.txt schema-migrations.txt audit-checkpoint.env; do
   if [[ ! -s "$payload_dir/$required_file" ]]; then
     echo "Recovery archive is missing $required_file" >&2
     exit 1
@@ -373,7 +430,7 @@ done
 
 echo "[3/7] Verifying every internal manifest entry"
 while IFS= read -r manifest_line; do
-  if [[ ! "$manifest_line" =~ ^[0-9a-f]{64}[[:space:]][[:space:]]\./[A-Za-z0-9._/-]+$ || "$manifest_line" == *"../"* ]]; then
+  if [[ ! "$manifest_line" =~ ^[0-9a-f]{64}[[:space:]][\ \*]\./[A-Za-z0-9._/-]+$ || "$manifest_line" == *"../"* ]]; then
     echo "Internal manifest contains an unsafe or invalid entry" >&2
     exit 1
   fi
@@ -381,8 +438,8 @@ done < "$payload_dir/manifest.sha256"
 (
   cd "$payload_dir"
   sha256sum --check --strict manifest.sha256
-  awk '{print $2}' manifest.sha256 | sort > "$stage_dir/manifest-files.txt"
-  find . -type f ! -name manifest.sha256 -print | sort > "$stage_dir/extracted-files.txt"
+  awk '{print $2}' manifest.sha256 | sed 's/^\*//' | sort > "$stage_dir/manifest-files.txt"
+  find . -type f ! -path './manifest.sha256' -print | sort > "$stage_dir/extracted-files.txt"
 )
 if [[ -n "$(comm -3 "$stage_dir/manifest-files.txt" "$stage_dir/extracted-files.txt")" ]]; then
   echo "Internal manifest does not cover the exact extracted recovery payload" >&2
@@ -395,17 +452,36 @@ runtime_value() {
 }
 source_schema_migration_sha256="$(runtime_value source_schema_migration_sha256)"
 intended_target_commit="$(runtime_value intended_target_commit)"
-if [[ "$(runtime_value backup_format)" != "medtrack-offsite-v2" ||
+audit_table_present="$(runtime_value audit_table_present)"
+security_evidence_sequence="$(runtime_value security_evidence_sequence)"
+security_evidence_chain_sha256="$(runtime_value security_evidence_chain_sha256)"
+if [[ "$(runtime_value backup_format)" != "medtrack-offsite-v3" ||
   "$(runtime_value source_commit)" != "$expected_commit" ||
   "$(runtime_value source_image_id)" != "$verified_web_image_id" ||
-  "$(runtime_value source_git_tree)" != "$attested_tree" ||
-  "$(runtime_value source_build_context)" != "$attested_context" ||
-  "$(runtime_value source_context_policy_sha256)" != "$attested_policy" ||
+  "$(runtime_value source_build_context_schema)" != "$attested_context_schema" ||
+  "$(runtime_value source_build_context_sha256)" != "$attested_context_digest" ||
   ! "$source_schema_migration_sha256" =~ ^[0-9a-f]{64}$ ||
   "$(sha256sum "$payload_dir/schema-migrations.txt" | awk '{print $1}')" != "$source_schema_migration_sha256" ||
-  ! "$intended_target_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  ! "$intended_target_commit" =~ ^[0-9a-f]{40}$ || ! "$audit_table_present" =~ ^[01]$ ]]; then
   echo "Backup source commit, image, schema identity, or intended target provenance does not match" >&2
   exit 1
+fi
+if [[ "$require_audit_schema" == "1" && ( "$audit_table_present" != "1" ||
+  ! "$security_evidence_sequence" =~ ^[1-9][0-9]*$ || ! "$security_evidence_chain_sha256" =~ ^[0-9a-f]{64}$ ) ]]; then
+  echo "Backup lacks the required AuditEvent/security evidence contract" >&2
+  exit 1
+fi
+if [[ "$audit_table_present" == "1" ]]; then
+  if [[ ! -d "$payload_dir/security-evidence" ]]; then
+    echo "Backup is missing integrity-protected security evidence" >&2
+    exit 1
+  fi
+  evidence_result="$(MEDTRACK_SECURITY_EVIDENCE_ROOT="$payload_dir/security-evidence" \
+    MEDTRACK_SECURITY_EVIDENCE_ALLOW_STALE=1 "$repo_root/scripts/verify-security-evidence.sh")"
+  if [[ "$evidence_result" != *"chain_sha256=$security_evidence_chain_sha256"* ]]; then
+    echo "Security evidence chain does not match the backup runtime identity" >&2
+    exit 1
+  fi
 fi
 
 echo "[4/7] Inspecting the PostgreSQL dump catalog"
@@ -413,6 +489,23 @@ catalog_file="$stage_dir/current-catalog.txt"
 "${compose[@]}" exec -T db pg_restore --list < "$payload_dir/database.dump" > "$catalog_file"
 if [[ ! -s "$catalog_file" ]] || ! grep -Eq 'TABLE|TABLE DATA|SCHEMA' "$catalog_file"; then
   echo "PostgreSQL dump catalog validation failed" >&2
+  exit 1
+fi
+if [[ "$audit_table_present" == "1" ]] && ! grep -Eq 'TABLE DATA[[:space:]]+public[[:space:]]+patients_auditevent' "$catalog_file"; then
+  echo "PostgreSQL dump catalog is missing AuditEvent application data" >&2
+  exit 1
+fi
+
+audit_checkpoint_value() {
+  sed -n "s/^$1=//p" "$payload_dir/audit-checkpoint.env" | tail -n 1 | tr -d '\r'
+}
+audit_minimum_row_count="$(audit_checkpoint_value minimum_row_count)"
+audit_minimum_max_id="$(audit_checkpoint_value minimum_max_id)"
+audit_checkpoint_table="$(audit_checkpoint_value audit_table_present)"
+audit_checkpoint_trigger="$(audit_checkpoint_value audit_trigger_present)"
+if [[ "$audit_checkpoint_table" != "$audit_table_present" || ! "$audit_minimum_row_count" =~ ^[0-9]+$ ||
+  ! "$audit_minimum_max_id" =~ ^[0-9]+$ || ( "$audit_table_present" == "1" && "$audit_checkpoint_trigger" != "1" ) ]]; then
+  echo "AuditEvent backup checkpoint is invalid" >&2
   exit 1
 fi
 recorded_postgres_version="$(runtime_value postgres_server_version)"
@@ -449,6 +542,25 @@ verify_dump_in_scratch() {
     echo "Scratch restore migration schema identity does not match the backup" >&2
     return 1
   fi
+  if [[ "$audit_table_present" == "1" ]]; then
+    restored_audit_table="$("${compose[@]}" exec -T db psql --tuples-only --no-align --username="$database_user" --dbname="$target_db" \
+      --command="SELECT CASE WHEN to_regclass('public.patients_auditevent') IS NOT NULL THEN 1 ELSE 0 END" | tr -d '[:space:]')"
+    restored_audit_trigger="$("${compose[@]}" exec -T db psql --tuples-only --no-align --username="$database_user" --dbname="$target_db" \
+      --command="SELECT count(*) FROM pg_trigger WHERE tgname='patients_auditevent_append_only' AND NOT tgisinternal" | tr -d '[:space:]')"
+    restored_audit_rows="$("${compose[@]}" exec -T db psql --tuples-only --no-align --username="$database_user" --dbname="$target_db" \
+      --command='SELECT count(*) FROM public.patients_auditevent' | tr -d '[:space:]')"
+    restored_audit_max_id="$("${compose[@]}" exec -T db psql --tuples-only --no-align --username="$database_user" --dbname="$target_db" \
+      --command='SELECT COALESCE(max(id),0) FROM public.patients_auditevent' | tr -d '[:space:]')"
+    if [[ "$restored_audit_table" != "1" || "$restored_audit_trigger" != "1" ||
+      ! "$restored_audit_rows" =~ ^[0-9]+$ || ! "$restored_audit_max_id" =~ ^[0-9]+$ ||
+      "$restored_audit_rows" -lt "$audit_minimum_row_count" || "$restored_audit_max_id" -lt "$audit_minimum_max_id" ]]; then
+      echo "Scratch restore did not preserve the append-only AuditEvent checkpoint" >&2
+      return 1
+    fi
+  else
+    restored_audit_rows=0
+    restored_audit_max_id=0
+  fi
   "${compose[@]}" run --rm --no-deps -e DATABASE_URL= -e POSTGRES_DB="$target_db" web python manage.py migrate --check
   "${compose[@]}" run --rm --no-deps -e DATABASE_URL= -e POSTGRES_DB="$target_db" web python manage.py check --deploy --fail-level ERROR
   "${compose[@]}" run --rm --no-deps -e DATABASE_URL= -e POSTGRES_DB="$target_db" web python -c \
@@ -478,6 +590,10 @@ verification_receipt="$receipt_dir/verification.receipt"
   printf 'catalog_sha256=%s\n' "$catalog_sha256"
   printf 'restored_public_tables=%s\n' "$restored_table_count"
   printf 'restored_migration_rows=%s\n' "$restored_migration_count"
+  printf 'restored_audit_rows=%s\n' "$restored_audit_rows"
+  printf 'restored_audit_max_id=%s\n' "$restored_audit_max_id"
+  printf 'security_evidence_sequence=%s\n' "$security_evidence_sequence"
+  printf 'security_evidence_chain_sha256=%s\n' "$security_evidence_chain_sha256"
   printf 'verified_epoch=%s\n' "$(date -u +%s)"
 } > "$verification_receipt"
 chmod 0600 "$verification_receipt"
@@ -552,6 +668,7 @@ activation_ok=1
 if (( activation_ok )); then wait_for_service_health db || activation_ok=0; fi
 if (( activation_ok )); then wait_for_service_health web || activation_ok=0; fi
 if (( activation_ok )); then wait_for_service_health caddy || activation_ok=0; fi
+if (( activation_ok )); then verify_running_caddy_edge_image || activation_ok=0; fi
 if (( activation_ok )); then "${compose[@]}" exec -T web python manage.py migrate --check || activation_ok=0; fi
 if (( activation_ok )); then "${compose[@]}" exec -T web python manage.py check --deploy --fail-level ERROR || activation_ok=0; fi
 if (( activation_ok )); then verify_application_images || activation_ok=0; fi
@@ -565,14 +682,19 @@ if (( ! activation_ok )); then
 fi
 
 activation_receipt="$receipt_dir/activation.receipt"
+deployed_database_oid="$(database_oid "$database_name")"
+rollback_database_oid="$(database_oid "$rollback_database")"
 {
   printf 'receipt_format=medtrack-restore-activation-v1\n'
   printf 'git_commit=%s\n' "$expected_commit"
   printf 'web_image_id=%s\n' "$verified_web_image_id"
   printf 'migrate_image_id=%s\n' "$verified_migrate_image_id"
+  printf 'caddy_security_image_id=%s\n' "$verified_caddy_image_id"
   printf 'archive=%s\n' "$archive_name"
   printf 'ciphertext_sha256=%s\n' "$actual_archive_hash"
   printf 'rollback_database=%s\n' "$rollback_database"
+  printf 'deployed_database_oid=%s\n' "$deployed_database_oid"
+  printf 'rollback_database_oid=%s\n' "$rollback_database_oid"
   printf 'rollback_dump=%s\n' "$rollback_dump"
   printf 'rollback_manifest=%s\n' "$rollback_dir/manifest.sha256"
   printf 'activated_epoch=%s\n' "$(date -u +%s)"

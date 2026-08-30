@@ -113,29 +113,76 @@ image_label() {
   docker image inspect --format "{{ index .Config.Labels \"$label\" }}" "$image_id"
 }
 
+build_context_verifier="${MEDTRACK_BUILD_CONTEXT_VERIFIER:-$repo_root/scripts/build_context_receipt.py}"
+python_command="${PYTHON_COMMAND:-python3}"
+verify_canonical_image() {
+  local image_id="$1" revision="$2"
+  if [[ ! -f "$build_context_verifier" ]]; then
+    echo "Canonical medtrack.build-context/v1 verifier is missing (requires build PR #100)" >&2
+    return 1
+  fi
+  "$python_command" "$build_context_verifier" --revision "$revision" --verify-image "$image_id"
+}
+
+verify_caddy_edge_image() {
+  local image_id="$1"
+  [[ -n "$image_id" ]] || { echo "Required custom Caddy image is missing" >&2; return 1; }
+  docker run --rm --entrypoint sh -e MEDTRACK_DOMAIN=medtrack.invalid \
+    -v "$repo_root/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" "$image_id" -ceu \
+    'caddy list-modules | grep -Fxq http.handlers.rate_limit && caddy validate --config /etc/caddy/Caddyfile'
+}
+
+verify_running_caddy_edge_image() {
+  local expected_image_id="$1" container_id running_image_id
+  container_id="$("${compose[@]}" ps -q caddy)"
+  [[ -n "$container_id" ]] || { echo "Running Caddy container is missing" >&2; return 1; }
+  running_image_id="$(docker inspect --format '{{.Image}}' "$container_id")"
+  if [[ "$running_image_id" != "$expected_image_id" ]]; then
+    echo "Running Caddy image does not match the reviewed edge image" >&2
+    return 1
+  fi
+  verify_caddy_edge_image "$running_image_id"
+}
+
+verify_running_application_image() {
+  local expected_image_id="$1" revision="$2" container_id running_image_id
+  container_id="$("${compose[@]}" ps -q web)"
+  [[ -n "$container_id" ]] || { echo "Running web container is missing" >&2; return 1; }
+  running_image_id="$(docker inspect --format '{{.Image}}' "$container_id")"
+  if [[ "$running_image_id" != "$expected_image_id" ]]; then
+    echo "Running web image does not match the reviewed application image" >&2
+    return 1
+  fi
+  verify_canonical_image "$running_image_id" "$revision"
+}
+
+verify_running_image_id() {
+  local expected_image_id="$1" container_id running_image_id
+  container_id="$("${compose[@]}" ps -q web)"
+  [[ -n "$container_id" ]] || { echo "Running web container is missing" >&2; return 1; }
+  running_image_id="$(docker inspect --format '{{.Image}}' "$container_id")"
+  if [[ "$running_image_id" != "$expected_image_id" ]]; then
+    echo "Recovery restarted an application image other than the retained previous image" >&2
+    return 1
+  fi
+}
+
 verify_image_attestation() {
   local attestation_file="$1" expected="$2"
-  local expected_tree expected_policy inspected_id
-  if [[ ! -f "$attestation_file" || "$(receipt_value "$attestation_file" attestation_format)" != "medtrack-committed-image-v1" ]]; then
+  local inspected_id
+  if [[ ! -f "$attestation_file" || "$(receipt_value "$attestation_file" attestation_format)" != "medtrack-build-receipt-v1" ]]; then
     echo "Missing or invalid committed-image attestation" >&2
     return 1
   fi
-  attested_commit="$(receipt_value "$attestation_file" git_commit)"
-  attested_tree="$(receipt_value "$attestation_file" git_tree)"
-  attested_context="$(receipt_value "$attestation_file" build_context)"
-  attested_policy="$(receipt_value "$attestation_file" context_policy_sha256)"
+  attested_commit="$(receipt_value "$attestation_file" revision)"
+  attested_context_schema="$(receipt_value "$attestation_file" build_context_schema)"
+  attested_context_digest="$(receipt_value "$attestation_file" build_context_sha256)"
   attested_image_ref="$(receipt_value "$attestation_file" image_ref)"
   attested_image_id="$(receipt_value "$attestation_file" image_id)"
-  expected_tree="$(git rev-parse "$expected^{tree}")"
-  expected_policy="$(printf '%s\n%s\n' "$(git rev-parse "$expected:Dockerfile")" "$(git rev-parse "$expected:.dockerignore")" | sha256sum | awk '{print $1}')"
   inspected_id="$(docker image inspect --format '{{.Id}}' "$attested_image_ref")"
-  if [[ "$attested_commit" != "$expected" || "$attested_tree" != "$expected_tree" ||
-    "$attested_context" != "git-archive-allowlist-v1" || "$attested_policy" != "$expected_policy" ||
-    -z "$attested_image_id" || "$inspected_id" != "$attested_image_id" ||
-    "$(image_revision "$attested_image_id")" != "$expected" ||
-    "$(image_label "$attested_image_id" net.naveenhospital.medtrack.git-tree)" != "$expected_tree" ||
-    "$(image_label "$attested_image_id" net.naveenhospital.medtrack.build-context)" != "$attested_context" ||
-    "$(image_label "$attested_image_id" net.naveenhospital.medtrack.context-policy)" != "$attested_policy" ]]; then
+  if [[ "$attested_commit" != "$expected" || "$attested_context_schema" != "medtrack.build-context/v1" ||
+    ! "$attested_context_digest" =~ ^sha256:[0-9a-f]{64}$ || -z "$attested_image_id" ||
+    "$inspected_id" != "$attested_image_id" ]] || ! verify_canonical_image "$attested_image_id" "$expected"; then
     echo "Image attestation does not match the committed allowlisted context or local image" >&2
     return 1
   fi
@@ -170,11 +217,13 @@ rollback_release() {
     rename_database "$database_name" "$failed_database" || recovery_status=1
   fi
   rename_database "$rollback_database" "$database_name" || recovery_status=1
+  export MEDTRACK_APP_IMAGE="$previous_image_ref"
   docker tag "$previous_image_id" "$previous_image_ref" || recovery_status=1
   "${compose[@]}" up -d --no-build db web caddy || recovery_status=1
   wait_for_service_health db || recovery_status=1
   wait_for_service_health web || recovery_status=1
   wait_for_service_health caddy || recovery_status=1
+  verify_running_image_id "$previous_image_id" || recovery_status=1
   return "$recovery_status"
 }
 
@@ -182,11 +231,13 @@ restart_previous_release_without_database_rollback() {
   local previous_image_id="$1" previous_image_ref="$2"
   local recovery_status=0
   echo "Deployment gate failed before the rollback database was ready; restarting the prior release" >&2
+  export MEDTRACK_APP_IMAGE="$previous_image_ref"
   docker tag "$previous_image_id" "$previous_image_ref" || recovery_status=1
   "${compose[@]}" up -d --no-build db web caddy || recovery_status=1
   wait_for_service_health db || recovery_status=1
   wait_for_service_health web || recovery_status=1
   wait_for_service_health caddy || recovery_status=1
+  verify_running_image_id "$previous_image_id" || recovery_status=1
   return "$recovery_status"
 }
 
@@ -221,22 +272,38 @@ if [[ "$mode" == "rollback" ]]; then
   previous_image_ref="$(receipt_value "$deployment_receipt" previous_image_ref)"
   deployed_commit="$(receipt_value "$deployment_receipt" git_commit)"
   deployed_image_id="$(receipt_value "$deployment_receipt" deployed_image_id)"
+  deployed_caddy_image_id="$(receipt_value "$deployment_receipt" caddy_security_image_id)"
+  deployed_context_digest="$(receipt_value "$deployment_receipt" build_context_sha256)"
   deployed_database_oid="$(receipt_value "$deployment_receipt" deployed_database_oid)"
   rollback_database_oid="$(receipt_value "$deployment_receipt" rollback_database_oid)"
   current_web_container="$("${compose[@]}" ps -q web)"
   current_web_image=""
   current_web_revision=""
+  current_caddy_container="$("${compose[@]}" ps -q caddy)"
+  current_caddy_image=""
   if [[ -n "$current_web_container" ]]; then
     current_web_image="$(docker inspect --format '{{.Image}}' "$current_web_container")"
     current_web_revision="$(image_revision "$current_web_image")"
   fi
+  if [[ -n "$current_caddy_container" ]]; then
+    current_caddy_image="$(docker inspect --format '{{.Image}}' "$current_caddy_container")"
+  fi
   if [[ ! "$rollback_database" =~ ^[A-Za-z_][A-Za-z0-9_]*$ || -z "$previous_image_id" || -z "$previous_image_ref" ||
-    ! "$deployed_commit" =~ ^[0-9a-f]{40}$ || -z "$deployed_image_id" ||
+    ! "$deployed_commit" =~ ^[0-9a-f]{40}$ || -z "$deployed_image_id" || -z "$deployed_caddy_image_id" ||
     ! "$deployed_database_oid" =~ ^[0-9]+$ || ! "$rollback_database_oid" =~ ^[0-9]+$ ||
     "$(git rev-parse HEAD)" != "$deployed_commit" || "$current_web_image" != "$deployed_image_id" ||
-    "$current_web_revision" != "$deployed_commit" || "$(database_oid "$database_name")" != "$deployed_database_oid" ||
+    "$current_web_revision" != "$deployed_commit" || ! "$deployed_context_digest" =~ ^sha256:[0-9a-f]{64}$ ||
+    "$(image_label "$current_web_image" org.medtrack.build-context.digest)" != "$deployed_context_digest" ||
+    "$(image_label "$current_web_image" org.medtrack.build-context.schema)" != "medtrack.build-context/v1" ||
+    "$current_caddy_image" != "$deployed_caddy_image_id" ||
+    "$(database_oid "$database_name")" != "$deployed_database_oid" ||
     "$(database_oid "$rollback_database")" != "$rollback_database_oid" ]]; then
     echo "Deployment receipt has invalid rollback identity" >&2
+    exit 1
+  fi
+  if ! verify_canonical_image "$current_web_image" "$deployed_commit" ||
+    ! verify_caddy_edge_image "$current_caddy_image"; then
+    echo "Deployment receipt no longer matches the reviewed application/edge images" >&2
     exit 1
   fi
   failed_database="${database_name}_failed_$(date -u +%Y%m%d%H%M%S)"
@@ -260,9 +327,8 @@ receipt_format="$(receipt_value "$backup_receipt" receipt_format)"
 receipt_tier="$(receipt_value "$backup_receipt" tier)"
 receipt_source_commit="$(receipt_value "$backup_receipt" source_commit)"
 receipt_source_image_id="$(receipt_value "$backup_receipt" source_image_id)"
-receipt_source_tree="$(receipt_value "$backup_receipt" source_git_tree)"
-receipt_source_context="$(receipt_value "$backup_receipt" source_build_context)"
-receipt_source_policy="$(receipt_value "$backup_receipt" source_context_policy_sha256)"
+receipt_source_context_schema="$(receipt_value "$backup_receipt" source_build_context_schema)"
+receipt_source_context_digest="$(receipt_value "$backup_receipt" source_build_context_sha256)"
 receipt_schema_hash="$(receipt_value "$backup_receipt" source_schema_migration_sha256)"
 receipt_target_commit="$(receipt_value "$backup_receipt" target_commit)"
 receipt_epoch="$(receipt_value "$backup_receipt" completed_epoch)"
@@ -271,10 +337,10 @@ receipt_hash="$(receipt_value "$backup_receipt" sha256)"
 local_archive="$(receipt_value "$backup_receipt" local_archive)"
 local_checksum="$(receipt_value "$backup_receipt" local_checksum)"
 local_marker="$(receipt_value "$backup_receipt" local_marker)"
-if [[ "$receipt_format" != "medtrack-offsite-receipt-v2" || "$receipt_tier" != "pre-deployment" ||
+if [[ "$receipt_format" != "medtrack-offsite-receipt-v3" || "$receipt_tier" != "pre-deployment" ||
   ! "$receipt_source_commit" =~ ^[0-9a-f]{40}$ || -z "$receipt_source_image_id" ||
-  ! "$receipt_source_tree" =~ ^[0-9a-f]{40}$ || "$receipt_source_context" != "git-archive-allowlist-v1" ||
-  ! "$receipt_source_policy" =~ ^[0-9a-f]{64}$ ||
+  "$receipt_source_context_schema" != "medtrack.build-context/v1" ||
+  ! "$receipt_source_context_digest" =~ ^sha256:[0-9a-f]{64}$ ||
   ! "$receipt_schema_hash" =~ ^[0-9a-f]{64}$ || "$receipt_target_commit" != "$expected_commit" || ! "$receipt_epoch" =~ ^[0-9]+$ ||
   ! "$receipt_hash" =~ ^[0-9a-f]{64}$ || ! -f "$local_archive" || ! -f "$local_checksum" || ! -f "$local_marker" ]]; then
   echo "Pre-deployment backup receipt is incomplete or does not match the exact commit" >&2
@@ -305,21 +371,23 @@ require_existing_healthy_database
 source_web_container="$("${compose[@]}" ps -q web)"
 if [[ -z "$source_web_container" || "$(docker inspect --format '{{.Image}}' "$source_web_container")" != "$receipt_source_image_id" ||
   "$(image_revision "$receipt_source_image_id")" != "$receipt_source_commit" ||
-  "$(image_label "$receipt_source_image_id" net.naveenhospital.medtrack.git-tree)" != "$receipt_source_tree" ||
-  "$(image_label "$receipt_source_image_id" net.naveenhospital.medtrack.build-context)" != "$receipt_source_context" ||
-  "$(image_label "$receipt_source_image_id" net.naveenhospital.medtrack.context-policy)" != "$receipt_source_policy" ]]; then
+  "$(image_label "$receipt_source_image_id" org.medtrack.build-context.schema)" != "$receipt_source_context_schema" ||
+  "$(image_label "$receipt_source_image_id" org.medtrack.build-context.digest)" != "$receipt_source_context_digest" ]] ||
+  ! verify_canonical_image "$receipt_source_image_id" "$receipt_source_commit"; then
   echo "The running source release does not match the pre-deployment backup provenance" >&2
   exit 1
 fi
 image_attestation="$evidence_dir/image.attestation"
 if [[ "$mode" == "plan" ]]; then
   "$repo_root/scripts/build-attested-image.sh" "$expected_commit" "$image_attestation"
+  "${compose[@]}" build caddy
 fi
 verify_image_attestation "$image_attestation" "$expected_commit"
+caddy_security_image_id="$(docker image inspect --format '{{.Id}}' medtrack-caddy:2.11.4-ratelimit)"
+verify_caddy_edge_image "$caddy_security_image_id"
 export MEDTRACK_APP_IMAGE="$attested_image_ref"
 export MEDTRACK_BUILD_REVISION="$attested_commit"
-export MEDTRACK_BUILD_GIT_TREE="$attested_tree"
-export MEDTRACK_CONTEXT_POLICY="$attested_policy"
+export MEDTRACK_BUILD_CONTEXT_SHA256="$attested_context_digest"
 
 plan_receipt="$evidence_dir/plan.receipt"
 if [[ "$mode" == "apply" ]]; then
@@ -330,6 +398,7 @@ if [[ "$mode" == "apply" ]]; then
   reviewed_plan_hash="$(receipt_value "$plan_receipt" migration_plan_sha256)"
   reviewed_image_id="$(receipt_value "$plan_receipt" planned_image_id)"
   reviewed_migrate_image_id="$(receipt_value "$plan_receipt" planned_migrate_image_id)"
+  reviewed_caddy_image_id="$(receipt_value "$plan_receipt" planned_caddy_image_id)"
   reviewed_commit="$(receipt_value "$plan_receipt" git_commit)"
   reviewed_backup_archive="$(receipt_value "$plan_receipt" backup_archive)"
   reviewed_backup_hash="$(receipt_value "$plan_receipt" backup_sha256)"
@@ -339,7 +408,8 @@ if [[ "$mode" == "apply" ]]; then
   if [[ "$reviewed_plan_hash" != "$approved_plan_hash" || "$reviewed_commit" != "$expected_commit" ||
     "$reviewed_backup_archive" != "$receipt_archive" || "$reviewed_backup_hash" != "$receipt_hash" ||
     "$reviewed_source_commit" != "$receipt_source_commit" || "$reviewed_source_image_id" != "$receipt_source_image_id" ||
-    "$reviewed_attestation_hash" != "$(sha256sum "$image_attestation" | awk '{print $1}')" ]]; then
+    "$reviewed_attestation_hash" != "$(sha256sum "$image_attestation" | awk '{print $1}')" ||
+    "$reviewed_caddy_image_id" != "$caddy_security_image_id" ]]; then
     echo "Approved migration hash, backup, or exact commit does not match the retained plan receipt" >&2
     exit 1
   fi
@@ -372,6 +442,9 @@ if [[ "$mode" == "plan" ]]; then
     printf 'migration_plan_sha256=%s\n' "$plan_hash"
     printf 'planned_image_id=%s\n' "$planned_image_id"
     printf 'planned_migrate_image_id=%s\n' "$planned_migrate_image_id"
+    printf 'planned_caddy_image_id=%s\n' "$caddy_security_image_id"
+    printf 'build_context_schema=%s\n' "$attested_context_schema"
+    printf 'build_context_sha256=%s\n' "$attested_context_digest"
     printf 'backup_archive=%s\n' "$receipt_archive"
     printf 'backup_sha256=%s\n' "$receipt_hash"
     printf 'source_commit=%s\n' "$receipt_source_commit"
@@ -452,6 +525,8 @@ rollback_database_ready=1
 wait_for_service_health db
 wait_for_service_health web
 wait_for_service_health caddy
+verify_running_application_image "$planned_image_id" "$expected_commit"
+verify_running_caddy_edge_image "$caddy_security_image_id"
 "${compose[@]}" exec -T web python manage.py migrate --check
 "${compose[@]}" exec -T web python manage.py check --deploy --fail-level ERROR
 curl --fail --silent --show-error --resolve "$domain:443:127.0.0.1" "https://$domain/login/" >/dev/null
@@ -482,8 +557,11 @@ deployment_receipt="$evidence_dir/deployment.receipt"
   printf 'previous_image_id=%s\n' "$previous_image_id"
   printf 'previous_image_ref=%s\n' "$previous_image_ref"
   printf 'deployed_image_id=%s\n' "$planned_image_id"
+  printf 'build_context_schema=%s\n' "$attested_context_schema"
+  printf 'build_context_sha256=%s\n' "$attested_context_digest"
   printf 'deployed_database_oid=%s\n' "$deployed_database_oid"
   printf 'migration_image_id=%s\n' "$planned_migrate_image_id"
+  printf 'caddy_security_image_id=%s\n' "$caddy_security_image_id"
   printf 'deployed_epoch=%s\n' "$(date -u +%s)"
 } > "$deployment_receipt"
 chmod 0600 "$deployment_receipt"

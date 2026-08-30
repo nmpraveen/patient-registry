@@ -1,0 +1,11 @@
+[Unit]
+Description=Export MEDTRACK audit and security evidence hourly
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+RandomizedDelaySec=5m
+Unit=medtrack-security-evidence-export.service
+
+[Install]
+WantedBy=timers.target

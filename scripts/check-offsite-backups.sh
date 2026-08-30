@@ -19,6 +19,7 @@ require_scratch_restore_hook="${MEDTRACK_REQUIRE_SCRATCH_RESTORE_HOOK:-0}"
 production_mode="${MEDTRACK_HEALTH_PRODUCTION_MODE:-0}"
 scratch_restore_receipt="${MEDTRACK_SCRATCH_RESTORE_RECEIPT:-}"
 scratch_restore_max_age="${MEDTRACK_SCRATCH_RESTORE_MAX_AGE_SECONDS:-691200}"
+security_evidence_health_hook="${MEDTRACK_SECURITY_EVIDENCE_HEALTH_HOOK:-}"
 
 if [[ ! -f "$rclone_config" ]]; then
   echo "Missing rclone configuration: $rclone_config" >&2
@@ -67,7 +68,7 @@ check_tier() {
   local maximum_count="$3"
   local success_epoch age marker_count remote_tier latest_marker marker listing remote_listing
   local marker_content checksum_content archive checksum expected_hash marker_hash checksum_hash checksum_file
-  local completed_utc marker_stamp
+  local completed_utc marker_stamp evidence_chain
   local -a remote_files=()
   local -a markers=()
 
@@ -119,6 +120,7 @@ check_tier() {
     marker_content="$(remote_cat "$remote_tier/$marker")"
     checksum_content="$(remote_cat "$remote_tier/$checksum")"
     marker_hash="$(receipt_value "$marker_content" sha256)"
+    evidence_chain="$(receipt_value "$marker_content" security_evidence_chain_sha256)"
     completed_utc="$(receipt_value "$marker_content" completed_utc)"
     marker_stamp="${archive#medtrack-prod-${tier}-}"
     marker_stamp="${marker_stamp%.tar.age}"
@@ -127,7 +129,8 @@ check_tier() {
     if [[ "$(receipt_value "$marker_content" archive)" != "$archive" ||
       ! "$marker_hash" =~ ^[0-9a-f]{64}$ ||
       "$checksum_hash" != "$marker_hash" ||
-      "$checksum_file" != "$archive" || "$completed_utc" != "$marker_stamp" ]]; then
+      "$checksum_file" != "$archive" || "$completed_utc" != "$marker_stamp" ||
+      ! "$evidence_chain" =~ ^[0-9a-f]{64}$ ]]; then
       echo "OFFSITE_BACKUP_HEALTH_FAIL tier=$tier reason=invalid-marker-or-checksum marker=$marker" >&2
       failed=1
       return
@@ -163,6 +166,19 @@ check_tier rapid 28800 28
 check_tier daily 129600 30
 check_tier weekly 691200 12
 check_tier monthly 3024000 12
+
+if [[ "$production_mode" == "1" ]]; then
+  if [[ -z "$security_evidence_health_hook" || "$security_evidence_health_hook" != /* ||
+    ! -x "$security_evidence_health_hook" ]]; then
+    echo "OFFSITE_BACKUP_HEALTH_FAIL reason=missing-security-evidence-health-hook" >&2
+    failed=1
+  elif ! "$security_evidence_health_hook"; then
+    echo "OFFSITE_BACKUP_HEALTH_FAIL reason=security-evidence-chain-or-lag" >&2
+    failed=1
+  else
+    echo "OFFSITE_BACKUP_SECURITY_EVIDENCE_OK"
+  fi
+fi
 
 if [[ "$production_mode" == "1" ]]; then
   if [[ -z "$scratch_restore_receipt" || "$scratch_restore_receipt" != /* || ! -f "$scratch_restore_receipt" ]]; then

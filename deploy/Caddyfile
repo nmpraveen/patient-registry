@@ -1,9 +1,147 @@
+(medtrack_upstream) {
+	reverse_proxy web:8000 {
+		header_up -X-Medtrack-Client-IP
+		header_up X-Medtrack-Client-IP {remote_host}
+	}
+}
+
 {$MEDTRACK_DOMAIN} {
-    encode zstd gzip
+	encode zstd gzip
 
-    header {
-        -Server
-    }
+	header {
+		-Server
+	}
 
-    reverse_proxy web:8000
+	log {
+		output file /var/log/medtrack/caddy-access.json {
+			roll_size 10MiB
+			roll_keep 24
+			roll_keep_for 168h
+		}
+		format filter {
+			wrap json
+			fields {
+				request>uri delete
+				request>headers delete
+				request>remote_ip delete
+				request>client_ip delete
+				resp_headers delete
+			}
+		}
+	}
+
+	@web_auth path /login/ /admin/login/
+	route @web_auth {
+		rate_limit {
+			zone web_auth_global {
+				key static
+				events 600
+				window 1m
+			}
+		}
+		rate_limit {
+			sweep_interval 1m
+			zone web_auth_burst {
+				key {remote_host}
+				events 12
+				window 1m
+				ipv6_prefix 64
+			}
+			zone web_auth_sustained {
+				key {remote_host}
+				events 60
+				window 15m
+				ipv6_prefix 64
+			}
+		}
+		import medtrack_upstream
+	}
+
+	@jwt_obtain path /api/auth/token/
+	route @jwt_obtain {
+		rate_limit {
+			zone jwt_obtain_global {
+				key static
+				events 600
+				window 1m
+			}
+		}
+		rate_limit {
+			sweep_interval 1m
+			zone jwt_obtain_burst {
+				key {remote_host}
+				events 12
+				window 1m
+				ipv6_prefix 64
+			}
+			zone jwt_obtain_sustained {
+				key {remote_host}
+				events 60
+				window 15m
+				ipv6_prefix 64
+			}
+		}
+		import medtrack_upstream
+	}
+
+	@jwt_refresh path /api/auth/token/refresh/
+	route @jwt_refresh {
+		rate_limit {
+			zone jwt_refresh_global {
+				key static
+				events 1200
+				window 1m
+			}
+		}
+		rate_limit {
+			sweep_interval 1m
+			zone jwt_refresh_burst {
+				key {remote_host}
+				events 30
+				window 1m
+				ipv6_prefix 64
+			}
+			zone jwt_refresh_sustained {
+				key {remote_host}
+				events 180
+				window 15m
+				ipv6_prefix 64
+			}
+		}
+		import medtrack_upstream
+	}
+
+	@device_verification path /login/device/*
+	route @device_verification {
+		rate_limit {
+			zone device_verification_global {
+				key static
+				events 600
+				window 1m
+			}
+		}
+		rate_limit {
+			sweep_interval 1m
+			zone device_verification_burst {
+				key {remote_host}
+				events 15
+				window 1m
+				ipv6_prefix 64
+			}
+			zone device_verification_sustained {
+				key {remote_host}
+				events 75
+				window 15m
+				ipv6_prefix 64
+			}
+		}
+		import medtrack_upstream
+	}
+
+	handle_errors {
+		@rate_limited expression {http.error.status_code} == 429
+		respond @rate_limited "Too many authentication attempts. Retry later." 429
+	}
+
+	import medtrack_upstream
 }

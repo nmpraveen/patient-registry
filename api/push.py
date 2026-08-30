@@ -14,19 +14,7 @@ PERMANENT_FCM_ERROR_MARKERS = {
     "sender-id-mismatch",
     "unregistered",
 }
-FCM_CHANNEL_IDS = {
-    "assignment": "assignments",
-    "assignments": "assignments",
-    "red_flag": "red_flags",
-    "red_flags": "red_flags",
-    "overdue": "overdue",
-}
-FCM_HIGH_PRIORITY_CHANNELS = {"assignments", "red_flags"}
-FCM_GENERIC_COPY = {
-    "assignment": ("MEDTRACK assignment", "Open MEDTRACK to review an assignment update."),
-    "red_flag": ("MEDTRACK priority update", "Open MEDTRACK to review a priority update."),
-    "overdue": ("MEDTRACK task update", "Open MEDTRACK to review a task update."),
-}
+FCM_HIGH_PRIORITY_TYPES = {"assignment", "red_flag"}
 
 
 def firebase_configured():
@@ -99,18 +87,12 @@ def _is_permanent_fcm_error(exception):
 
 
 def _build_multicast_message(messaging, notification, tokens):
-    channel_id = _channel_id_for_notification(notification)
-    title, body = FCM_GENERIC_COPY.get(
-        notification.notification_type,
-        ("MEDTRACK update", "Open MEDTRACK to review an update."),
-    )
+    notification_type = str(notification.notification_type).strip()
     return messaging.MulticastMessage(
         tokens=tokens,
-        notification=messaging.Notification(title=title, body=body),
         data=_message_data(notification),
         android=messaging.AndroidConfig(
-            priority="high" if channel_id in FCM_HIGH_PRIORITY_CHANNELS else "normal",
-            notification=messaging.AndroidNotification(channel_id=channel_id),
+            priority="high" if notification_type in FCM_HIGH_PRIORITY_TYPES else "normal",
         ),
     )
 
@@ -150,11 +132,6 @@ def _fcm_error_category(exception):
     if any(value in markers for value in ("invalid", "argument", "configuration", "valueerror")):
         return "configuration"
     return "unknown"
-
-
-def _channel_id_for_notification(notification):
-    notification_type = str(notification.notification_type).strip()
-    return FCM_CHANNEL_IDS.get(notification_type, "overdue")
 
 
 def _credentials_file():

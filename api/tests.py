@@ -44,7 +44,6 @@ from .models import (
 from .notifications import invalidate_mobile_dataset, purge_expired_mobile_notifications
 from .push import (
     _build_multicast_message,
-    _channel_id_for_notification,
     _deactivate_permanently_failed_tokens,
     firebase_configured,
     send_mobile_notification,
@@ -1104,7 +1103,7 @@ class MobileApiTests(APITestCase):
         self.assertTrue(transient_device.is_active)
         self.assertTrue(active_device.is_active)
 
-    def test_every_push_payload_path_contains_only_generic_copy_and_opaque_event_id(self):
+    def test_every_push_payload_path_is_data_only_with_opaque_event_id(self):
         sensitive_values = [
             "Priya Sharma",
             "9876543210",
@@ -1112,10 +1111,10 @@ class MobileApiTests(APITestCase):
             "Collect private lab report",
             "CASE-ID-SENSITIVE-8472",
         ]
-        expected_channels = {
-            MobileNotificationType.ASSIGNMENT: "assignments",
-            MobileNotificationType.RED_FLAG: "red_flags",
-            MobileNotificationType.OVERDUE: "overdue",
+        expected_priorities = {
+            MobileNotificationType.ASSIGNMENT: "high",
+            MobileNotificationType.RED_FLAG: "high",
+            MobileNotificationType.OVERDUE: "normal",
         }
         with self.assertRaises(IntegrityError), transaction.atomic():
             MobileNotification.objects.bulk_create(
@@ -1129,7 +1128,7 @@ class MobileApiTests(APITestCase):
                     )
                 ]
             )
-        for notification_type, expected_channel in expected_channels.items():
+        for notification_type, expected_priority in expected_priorities.items():
             with self.subTest(notification_type=notification_type):
                 with self.assertRaises(ValidationError):
                     MobileNotification.objects.create(
@@ -1150,18 +1149,13 @@ class MobileApiTests(APITestCase):
                     notification,
                     ["safe-token"],
                 )
-                transmitted = " ".join(
-                    [
-                        message.notification.title,
-                        message.notification.body,
-                        str(message.data),
-                        message.android.notification.channel_id,
-                    ]
-                )
+                transmitted = str(message.data)
 
                 self.assertEqual(message.tokens, ["safe-token"])
+                self.assertIsNone(message.notification)
                 self.assertEqual(message.data, {"event_id": str(notification.event_id)})
-                self.assertEqual(message.android.notification.channel_id, expected_channel)
+                self.assertEqual(message.android.priority, expected_priority)
+                self.assertIsNone(message.android.notification)
                 for sensitive_value in sensitive_values:
                     self.assertNotIn(sensitive_value, transmitted)
 
@@ -1229,14 +1223,6 @@ class MobileApiTests(APITestCase):
         self.assertEqual(result, {"sent": False, "reason": "authorization_revoked"})
         self.assertFalse(MobileNotification.objects.filter(pk=notification.pk).exists())
         deliver.assert_not_called()
-
-    def test_push_channel_mapping_defaults_to_overdue(self):
-        notification = MobileNotification(
-            user=self.user,
-            notification_type="unexpected",
-        )
-
-        self.assertEqual(_channel_id_for_notification(notification), "overdue")
 
     def test_task_assignment_creates_deduped_mobile_notification(self):
         task = Task.objects.create(
@@ -2133,22 +2119,13 @@ class FakeFirebaseError(Exception):
 
 
 class FakeFirebaseMessaging:
-    class Notification:
-        def __init__(self, title, body):
-            self.title = title
-            self.body = body
-
-    class AndroidNotification:
-        def __init__(self, channel_id):
-            self.channel_id = channel_id
-
     class AndroidConfig:
-        def __init__(self, priority, notification):
+        def __init__(self, priority, notification=None):
             self.priority = priority
             self.notification = notification
 
     class MulticastMessage:
-        def __init__(self, tokens, notification, data, android):
+        def __init__(self, tokens, data, android, notification=None):
             self.tokens = tokens
             self.notification = notification
             self.data = data

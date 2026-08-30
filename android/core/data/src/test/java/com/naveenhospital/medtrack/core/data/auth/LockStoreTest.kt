@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import androidx.test.core.app.ApplicationProvider
 import org.junit.After
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -31,35 +32,35 @@ class LockStoreTest {
 
     @Test
     fun patternIsSaltedPersistedAndVerified() {
-        val lockStore = LockStore(prefs)
+        val lockStore = LockStore(prefs).also { it.activateAccount(ACCOUNT_ID) }
 
         lockStore.savePattern(listOf(0, 1, 4, 8))
 
         assertTrue(lockStore.hasPattern())
         assertTrue(lockStore.hasAnyLock())
-        assertTrue(lockStore.verifyPattern(listOf(0, 1, 4, 8)))
-        assertFalse(lockStore.verifyPattern(listOf(0, 1, 5, 8)))
+        assertEquals(LockVerificationResult.Success, lockStore.verifyPattern(listOf(0, 1, 4, 8)))
+        assertEquals(LockVerificationResult.Invalid, lockStore.verifyPattern(listOf(0, 1, 5, 8)))
 
-        val restoredStore = LockStore(prefs)
+        val restoredStore = LockStore(prefs).also { it.activateAccount(ACCOUNT_ID) }
         assertTrue(restoredStore.hasPattern())
-        assertTrue(restoredStore.verifyPattern(listOf(0, 1, 4, 8)))
+        assertEquals(LockVerificationResult.Success, restoredStore.verifyPattern(listOf(0, 1, 4, 8)))
     }
 
     @Test
     fun patternRequiresAtLeastFourDots() {
-        val lockStore = LockStore(prefs)
+        val lockStore = LockStore(prefs).also { it.activateAccount(ACCOUNT_ID) }
 
         assertThrows(IllegalArgumentException::class.java) {
             lockStore.savePattern(listOf(0, 1, 2))
         }
 
         assertFalse(lockStore.hasPattern())
-        assertFalse(lockStore.verifyPattern(listOf(0, 1, 2)))
+        assertEquals(LockVerificationResult.ReauthenticationRequired, lockStore.verifyPattern(listOf(0, 1, 2)))
     }
 
     @Test
     fun biometricFlagContributesToAnyLockState() {
-        val lockStore = LockStore(prefs)
+        val lockStore = LockStore(prefs).also { it.activateAccount(ACCOUNT_ID) }
 
         assertFalse(lockStore.isBiometricEnabled())
         assertFalse(lockStore.hasAnyLock())
@@ -69,22 +70,78 @@ class LockStoreTest {
         assertTrue(lockStore.isBiometricEnabled())
         assertTrue(lockStore.hasAnyLock())
 
-        val restoredStore = LockStore(prefs)
+        val restoredStore = LockStore(prefs).also { it.activateAccount(ACCOUNT_ID) }
         assertTrue(restoredStore.isBiometricEnabled())
         assertTrue(restoredStore.hasAnyLock())
     }
 
     @Test
     fun clearRemovesPatternAndBiometricState() {
-        val lockStore = LockStore(prefs)
+        val lockStore = LockStore(prefs).also { it.activateAccount(ACCOUNT_ID) }
         lockStore.savePattern(listOf(0, 1, 4, 8))
         lockStore.setBiometricEnabled(true)
 
-        lockStore.clear()
+        lockStore.clearActiveAccount()
 
-        val restoredStore = LockStore(prefs)
+        val restoredStore = LockStore(prefs).also { it.activateAccount(ACCOUNT_ID) }
         assertFalse(restoredStore.hasPattern())
         assertFalse(restoredStore.isBiometricEnabled())
         assertFalse(restoredStore.hasAnyLock())
+    }
+
+    @Test
+    fun lockNeverTransfersToAnotherAccount() {
+        val lockStore = LockStore(prefs).also { it.activateAccount(ACCOUNT_ID) }
+        lockStore.savePattern(listOf(0, 1, 4, 8))
+
+        lockStore.activateAccount("2")
+
+        assertFalse(lockStore.hasAnyLock())
+        assertEquals(LockVerificationResult.ReauthenticationRequired, lockStore.verifyPattern(listOf(0, 1, 4, 8)))
+    }
+
+    @Test
+    fun repeatedFailuresAreThrottledAndEventuallyRequirePassword() {
+        var now = 10_000L
+        val lockStore = LockStore(prefs, nowMillis = { now }).also { it.activateAccount(ACCOUNT_ID) }
+        lockStore.savePattern(listOf(0, 1, 4, 8))
+
+        repeat(4) {
+            assertEquals(LockVerificationResult.Invalid, lockStore.verifyPattern(listOf(0, 1, 5, 8)))
+        }
+        val throttled = lockStore.verifyPattern(listOf(0, 1, 5, 8))
+        assertTrue(throttled is LockVerificationResult.Throttled)
+        repeat(5) {
+            now += 10 * 60_000L
+            lockStore.verifyPattern(listOf(0, 1, 5, 8))
+        }
+
+        assertFalse(lockStore.hasAnyLock())
+    }
+
+    @Test
+    fun failedPreferenceCommitCannotUnlockOrCreateLockState() {
+        prefs.edit().putBoolean("owner_lock_migration_complete", true).commit()
+        val failingStore = LockStore(failingCommitPreferences(prefs)).also { it.activateAccount(ACCOUNT_ID) }
+        assertThrows(IllegalStateException::class.java) {
+            failingStore.savePattern(listOf(0, 1, 4, 8))
+        }
+        assertFalse(failingStore.hasPattern())
+        assertEquals(null, failingStore.activeAccountId())
+
+        val goodStore = LockStore(prefs).also { it.activateAccount(ACCOUNT_ID) }
+        goodStore.savePattern(listOf(0, 1, 4, 8))
+        val failingVerificationStore = LockStore(failingCommitPreferences(prefs)).also {
+            it.activateAccount(ACCOUNT_ID)
+        }
+        assertEquals(
+            LockVerificationResult.ReauthenticationRequired,
+            failingVerificationStore.verifyPattern(listOf(0, 1, 4, 8)),
+        )
+        assertEquals(null, failingVerificationStore.activeAccountId())
+    }
+
+    private companion object {
+        const val ACCOUNT_ID = "1"
     }
 }

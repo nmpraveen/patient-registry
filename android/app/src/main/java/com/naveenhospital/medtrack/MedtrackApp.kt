@@ -106,6 +106,8 @@ import com.naveenhospital.medtrack.core.designsystem.MedtrackTheme
 import com.naveenhospital.medtrack.core.designsystem.MedtrackPage
 import com.naveenhospital.medtrack.core.designsystem.MedtrackSectionTitle
 import com.naveenhospital.medtrack.core.data.sync.PendingWriteTypes
+import com.naveenhospital.medtrack.core.data.auth.LockVerificationResult
+import com.naveenhospital.medtrack.core.data.auth.SessionRestoreResult
 import com.naveenhospital.medtrack.core.domain.model.CategoryFilterOption
 import com.naveenhospital.medtrack.core.domain.model.PatientCase
 import com.naveenhospital.medtrack.core.domain.model.CaseCategory
@@ -479,23 +481,28 @@ fun MedtrackApp(
                             }
                             scope.launch {
                                 if (lockSetupRequiresSessionRestore) {
-                                    val restoredProfile = if (container.authRepository.restoreSession()) {
-                                        runCatching { container.authRepository.currentUser() }.getOrNull()
-                                    } else {
-                                        null
-                                    }
-                                    if (restoredProfile == null) {
-                                        currentUserProfile = null
-                                        currentUserDisplayName = null
-                                        lockSetupRequiresSessionRestore = false
-                                        snackbarHostState.showSnackbar("Session expired. Please sign in again.")
-                                        navController.navigate(Routes.LOGIN) {
-                                            popUpTo(Routes.LOCK_SETUP) { inclusive = true }
+                                    when (val restored = container.authRepository.restoreSession()) {
+                                        is SessionRestoreResult.Verified -> {
+                                            setCurrentUser(restored.profile)
+                                            lockSetupRequiresSessionRestore = false
                                         }
-                                        return@launch
+                                        is SessionRestoreResult.Retryable -> {
+                                            snackbarHostState.showSnackbar(
+                                                "Unable to verify the session. Check the connection and retry.",
+                                            )
+                                            return@launch
+                                        }
+                                        SessionRestoreResult.NoSession -> {
+                                            currentUserProfile = null
+                                            currentUserDisplayName = null
+                                            lockSetupRequiresSessionRestore = false
+                                            snackbarHostState.showSnackbar("Session expired. Please sign in again.")
+                                            navController.navigate(Routes.LOGIN) {
+                                                popUpTo(Routes.LOCK_SETUP) { inclusive = true }
+                                            }
+                                            return@launch
+                                        }
                                     }
-                                    setCurrentUser(restoredProfile)
-                                    lockSetupRequiresSessionRestore = false
                                 }
                                 onAuthenticated()
                                 navController.navigate(Routes.HOME) {
@@ -515,23 +522,38 @@ fun MedtrackApp(
                         biometricAvailable = biometricStatus.available,
                         biometricMessage = biometricMessage ?: biometricStatus.message,
                         onPatternUnlock = { pattern ->
-                            if (!container.lockStore.verifyPattern(pattern)) {
-                                return@UnlockScreen "Pattern did not match."
+                            when (val verification = container.lockStore.verifyPattern(pattern)) {
+                                LockVerificationResult.Invalid -> return@UnlockScreen "Pattern did not match."
+                                is LockVerificationResult.Throttled -> {
+                                    val seconds = (verification.retryAfterMillis + 999L) / 1_000L
+                                    return@UnlockScreen "Too many attempts. Try again in $seconds seconds."
+                                }
+                                LockVerificationResult.ReauthenticationRequired -> {
+                                    container.abandonLockedSession()
+                                    navController.navigate(Routes.LOGIN) {
+                                        popUpTo(Routes.UNLOCK) { inclusive = true }
+                                    }
+                                    return@UnlockScreen "Local unlock was reset. Sign in again."
+                                }
+                                LockVerificationResult.Success -> Unit
                             }
-                            return@UnlockScreen if (container.authRepository.restoreSession()) {
-                                runCatching {
-                                    setCurrentUser(container.authRepository.currentUser())
+                            return@UnlockScreen when (val restored = container.authRepository.restoreSession()) {
+                                is SessionRestoreResult.Verified -> {
+                                    setCurrentUser(restored.profile)
+                                    onAuthenticated()
+                                    navController.navigate(Routes.HOME) {
+                                        popUpTo(Routes.UNLOCK) { inclusive = true }
+                                    }
+                                    null
                                 }
-                                onAuthenticated()
-                                navController.navigate(Routes.HOME) {
-                                    popUpTo(Routes.UNLOCK) { inclusive = true }
+                                is SessionRestoreResult.Retryable ->
+                                    "Unable to verify the session. Check the connection and retry."
+                                SessionRestoreResult.NoSession -> {
+                                    navController.navigate(Routes.LOGIN) {
+                                        popUpTo(Routes.UNLOCK) { inclusive = true }
+                                    }
+                                    "Session expired. Please sign in again."
                                 }
-                                null
-                            } else {
-                                navController.navigate(Routes.LOGIN) {
-                                    popUpTo(Routes.UNLOCK) { inclusive = true }
-                                }
-                                "Session expired. Please sign in again."
                             }
                         },
                         onBiometricUnlock = {
@@ -540,17 +562,22 @@ fun MedtrackApp(
                                 context = context,
                                 onSuccess = {
                                     scope.launch {
-                                        if (container.authRepository.restoreSession()) {
-                                            runCatching {
-                                                setCurrentUser(container.authRepository.currentUser())
+                                        when (val restored = container.authRepository.restoreSession()) {
+                                            is SessionRestoreResult.Verified -> {
+                                                setCurrentUser(restored.profile)
+                                                onAuthenticated()
+                                                navController.navigate(Routes.HOME) {
+                                                    popUpTo(Routes.UNLOCK) { inclusive = true }
+                                                }
                                             }
-                                            onAuthenticated()
-                                            navController.navigate(Routes.HOME) {
-                                                popUpTo(Routes.UNLOCK) { inclusive = true }
+                                            is SessionRestoreResult.Retryable -> {
+                                                biometricMessage =
+                                                    "Unable to verify the session. Check the connection and retry."
                                             }
-                                        } else {
-                                            navController.navigate(Routes.LOGIN) {
-                                                popUpTo(Routes.UNLOCK) { inclusive = true }
+                                            SessionRestoreResult.NoSession -> {
+                                                navController.navigate(Routes.LOGIN) {
+                                                    popUpTo(Routes.UNLOCK) { inclusive = true }
+                                                }
                                             }
                                         }
                                     }
@@ -563,8 +590,11 @@ fun MedtrackApp(
                             currentUserProfile = null
                             currentUserDisplayName = null
                             lockSetupRequiresSessionRestore = false
-                            navController.navigate(Routes.LOGIN) {
-                                popUpTo(Routes.UNLOCK) { inclusive = true }
+                            scope.launch {
+                                container.abandonLockedSession()
+                                navController.navigate(Routes.LOGIN) {
+                                    popUpTo(Routes.UNLOCK) { inclusive = true }
+                                }
                             }
                         },
                     )

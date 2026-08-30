@@ -5,6 +5,18 @@ import com.squareup.moshi.Json
 data class LoginRequestDto(
     val username: String,
     val password: String,
+    @Json(name = "device_id") val deviceId: String? = null,
+    @Json(name = "device_secret") val deviceSecret: String? = null,
+    @Json(name = "device_label") val deviceLabel: String? = null,
+)
+
+data class LoginResponseDto(
+    val access: String? = null,
+    val refresh: String? = null,
+    @Json(name = "device_approval_required") val deviceApprovalRequired: Boolean? = null,
+    val status: String? = null,
+    @Json(name = "device_id") val deviceId: String? = null,
+    @Json(name = "device_secret") val deviceSecret: String? = null,
 )
 
 data class AuthSessionDto(

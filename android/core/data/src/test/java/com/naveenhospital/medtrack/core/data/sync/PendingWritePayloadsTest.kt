@@ -124,6 +124,7 @@ class PendingWritePayloadsTest {
         payloadJson: String,
     ): PendingWriteEntity =
         PendingWriteEntity(
+            ownerAccountId = "1",
             clientWriteId = "write-1",
             writeType = writeType,
             caseId = caseId,

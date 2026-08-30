@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.mutableStateOf
 import androidx.core.app.ActivityCompat
@@ -24,13 +25,16 @@ class MainActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         notificationCaseId.value = intent.notificationCaseId()
-        container.startBackgroundSync()
         MedtrackPush.createChannels(this)
         setContent {
             MedtrackApp(
                 container = container,
-                onAuthenticated = { enablePushForAuthenticatedSession() },
+                onAuthenticated = {
+                    container.startBackgroundSync()
+                    enablePushForAuthenticatedSession()
+                },
                 notificationCaseId = notificationCaseId.value,
                 onNotificationCaseConsumed = { notificationCaseId.value = null },
             )
@@ -41,6 +45,14 @@ class MainActivity : FragmentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         notificationCaseId.value = intent.notificationCaseId()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        // Never serialize the PHI navigation back stack or Compose saveable registry.
+        // A recreated process must derive LOGIN/LOCK_SETUP/UNLOCK from the verified
+        // encrypted session boundary instead of restoring a clinical destination.
+        outState.clear()
     }
 
     private fun syncPushTokenIfConfigured() {

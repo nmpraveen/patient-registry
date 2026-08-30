@@ -129,9 +129,9 @@ fun CaseListScreen(
     onOpenCase: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var query by rememberSaveable { mutableStateOf("") }
+    var query by remember { mutableStateOf("") }
     var filter by rememberSaveable { mutableStateOf("all") }
-    var expandedCaseId by rememberSaveable { mutableStateOf<String?>(null) }
+    var expandedCaseId by remember { mutableStateOf<String?>(null) }
     val chipScrollState = rememberScrollState()
     val dedupedCases = cases.distinctBy { it.dedupeKey() }
     val redCaseCount = remember(dedupedCases) { dedupedCases.count { it.isHighRisk } }

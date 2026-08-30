@@ -19,8 +19,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -40,8 +40,8 @@ fun LockSetupScreen(
     onContinue: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var pattern by rememberSaveable { mutableStateOf(emptyList<Int>()) }
-    var message by rememberSaveable { mutableStateOf<String?>(null) }
+    var pattern by remember { mutableStateOf(emptyList<Int>()) }
+    var message by remember { mutableStateOf<String?>(null) }
 
     Column(
         modifier = modifier
@@ -81,6 +81,7 @@ fun LockSetupScreen(
                     Button(
                         onClick = {
                             onSavePattern(pattern)
+                            pattern = emptyList()
                             message = "Pattern saved"
                         },
                         modifier = Modifier.weight(1f).height(46.dp),

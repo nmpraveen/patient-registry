@@ -1,9 +1,19 @@
 package com.naveenhospital.medtrack.core.data.sync
 
+import android.content.Context
+import android.content.SharedPreferences
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.naveenhospital.medtrack.core.data.local.MedtrackDatabase
 import com.naveenhospital.medtrack.core.data.local.PendingWriteEntity
+import com.naveenhospital.medtrack.core.data.local.CacheMetadataEntity
+import com.naveenhospital.medtrack.core.data.local.NotificationEntity
+import com.naveenhospital.medtrack.core.data.local.PushTokenEntity
+import com.naveenhospital.medtrack.core.data.auth.AccountSessionInvalidator
+import com.naveenhospital.medtrack.core.data.auth.AccountVisibilityInvalidations
+import com.naveenhospital.medtrack.core.data.auth.LockStore
+import com.naveenhospital.medtrack.core.data.auth.TokenStore
+import com.naveenhospital.medtrack.core.data.repository.MedtrackRepository
 import com.naveenhospital.medtrack.core.data.local.VitalEntity
 import com.naveenhospital.medtrack.core.network.api.MedtrackApi
 import com.naveenhospital.medtrack.core.network.model.ApiMessageDto
@@ -31,11 +41,14 @@ import com.naveenhospital.medtrack.core.network.model.VitalsThresholdsDto
 import com.naveenhospital.medtrack.core.network.model.VitalsWriteResponseDto
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.runBlocking
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -47,20 +60,32 @@ import org.robolectric.RobolectricTestRunner
 @RunWith(RobolectricTestRunner::class)
 class MedtrackSyncWorkerTest {
     private lateinit var database: MedtrackDatabase
+    private var accountGeneration: Long = 0L
+    private lateinit var context: Context
+    private lateinit var authPrefs: SharedPreferences
+    private lateinit var lockPrefs: SharedPreferences
 
     @Before
     fun setUp() {
+        context = ApplicationProvider.getApplicationContext()
+        authPrefs = context.getSharedPreferences("worker_auth_boundary", Context.MODE_PRIVATE)
+        lockPrefs = context.getSharedPreferences("worker_lock_boundary", Context.MODE_PRIVATE)
+        authPrefs.edit().clear().commit()
+        lockPrefs.edit().clear().commit()
         database = Room.inMemoryDatabaseBuilder(
-            ApplicationProvider.getApplicationContext(),
+            context,
             MedtrackDatabase::class.java,
         )
             .allowMainThreadQueries()
             .build()
+        accountGeneration = runBlocking { database.activateAccount(ACCOUNT_ID) }
     }
 
     @After
     fun tearDown() {
         database.close()
+        authPrefs.edit().clear().commit()
+        lockPrefs.edit().clear().commit()
     }
 
     @Test
@@ -76,17 +101,54 @@ class MedtrackSyncWorkerTest {
             ),
         )
 
-        val canContinue = drainPendingWritesForSync(api = api, database = database)
+        val canContinue = drainPendingWritesForSync(
+            api = api,
+            database = database,
+            ownerAccountId = ACCOUNT_ID,
+            accountGeneration = accountGeneration,
+        )
 
         assertTrue(canContinue)
-        assertTrue(database.pendingWriteDao().pendingWrites().isEmpty())
-        val conflict = database.syncConflictDao().observeConflicts().first().single()
+        assertTrue(database.pendingWriteDao().pendingWrites(ACCOUNT_ID).isEmpty())
+        val conflict = database.syncConflictDao().observeConflicts(ACCOUNT_ID).first().single()
         assertEquals("task-write-1", conflict.clientWriteId)
         assertEquals(PendingWriteTypes.TASK_COMPLETE, conflict.writeType)
         assertEquals("42", conflict.caseId)
         assertEquals("7", conflict.taskId)
         assertEquals("Task already changed on the server.", conflict.message)
         assertServerVersionRefreshed()
+    }
+
+    @Test
+    fun postConflictRefresh401PropagatesToAccountInvalidationBoundary() = runTest {
+        val unauthorized = authError(401)
+        val api = FakeSyncApi(
+            completeTaskError = conflictError("Task already changed on the server."),
+            caseDetailError = unauthorized,
+        )
+        database.pendingWriteDao().upsertPendingWrite(
+            pendingWrite(
+                clientWriteId = "task-write-auth-revoked",
+                writeType = PendingWriteTypes.TASK_COMPLETE,
+                caseId = "42",
+                taskId = "7",
+                payloadJson = PendingWriteJson.encodeTaskComplete(
+                    ClientWriteRequestDto("task-write-auth-revoked"),
+                ),
+            ),
+        )
+
+        val failure = runCatching {
+            drainPendingWritesForSync(
+                api = api,
+                database = database,
+                ownerAccountId = ACCOUNT_ID,
+                accountGeneration = accountGeneration,
+            )
+        }.exceptionOrNull()
+
+        assertTrue(failure is HttpException)
+        assertEquals(401, (failure as HttpException).code())
     }
 
     @Test
@@ -110,11 +172,16 @@ class MedtrackSyncWorkerTest {
             ),
         )
 
-        val canContinue = drainPendingWritesForSync(api = api, database = database)
+        val canContinue = drainPendingWritesForSync(
+            api = api,
+            database = database,
+            ownerAccountId = ACCOUNT_ID,
+            accountGeneration = accountGeneration,
+        )
 
         assertTrue(canContinue)
-        assertTrue(database.pendingWriteDao().pendingWrites().isEmpty())
-        val conflict = database.syncConflictDao().observeConflicts().first().single()
+        assertTrue(database.pendingWriteDao().pendingWrites(ACCOUNT_ID).isEmpty())
+        val conflict = database.syncConflictDao().observeConflicts(ACCOUNT_ID).first().single()
         assertEquals(PendingWriteTypes.CALL_OUTCOME, conflict.writeType)
         assertEquals("42", conflict.caseId)
         assertEquals("7", conflict.taskId)
@@ -127,6 +194,7 @@ class MedtrackSyncWorkerTest {
         val api = FakeSyncApi(addVitalsError = conflictError("Vitals already updated on the server."))
         database.vitalDao().upsertVital(
             VitalEntity(
+                ownerAccountId = ACCOUNT_ID,
                 id = "pending-vitals-write-1",
                 caseId = "42",
                 recordedAt = "2026-05-18T11:11:36Z",
@@ -157,27 +225,380 @@ class MedtrackSyncWorkerTest {
             ),
         )
 
-        val canContinue = drainPendingWritesForSync(api = api, database = database)
+        val canContinue = drainPendingWritesForSync(
+            api = api,
+            database = database,
+            ownerAccountId = ACCOUNT_ID,
+            accountGeneration = accountGeneration,
+        )
 
         assertTrue(canContinue)
-        assertTrue(database.pendingWriteDao().pendingWrites().isEmpty())
-        val conflict = database.syncConflictDao().observeConflicts().first().single()
+        assertTrue(database.pendingWriteDao().pendingWrites(ACCOUNT_ID).isEmpty())
+        val conflict = database.syncConflictDao().observeConflicts(ACCOUNT_ID).first().single()
         assertEquals(PendingWriteTypes.VITALS_CREATE, conflict.writeType)
         assertEquals("42", conflict.caseId)
         assertEquals(null, conflict.taskId)
         assertEquals("Vitals already updated on the server.", conflict.message)
-        val vitals = database.vitalDao().observeVitalsForCase("42").first()
+        val vitals = database.vitalDao().observeVitalsForCase(ACCOUNT_ID, "42").first()
         assertFalse(vitals.any { it.id == "pending-vitals-write-1" })
         assertEquals("200", vitals.single().id)
         assertEquals("PR 76 | SpO2 98", vitals.single().summary)
     }
 
+    @Test
+    fun accountSwitchNeverSendsFirstAccountsQueuedMutation() = runTest {
+        val api = FakeSyncApi()
+        database.pendingWriteDao().upsertPendingWrite(
+            pendingWrite(
+                clientWriteId = "account-a-write",
+                writeType = PendingWriteTypes.TASK_COMPLETE,
+                caseId = "42",
+                taskId = "7",
+                payloadJson = PendingWriteJson.encodeTaskComplete(ClientWriteRequestDto("account-a-write")),
+            ),
+        )
+
+        val canContinue = drainPendingWritesForSync(
+            api = api,
+            database = database,
+            ownerAccountId = ACCOUNT_ID,
+            accountGeneration = accountGeneration,
+            activeAccountId = { "account-b" },
+        )
+
+        assertTrue(canContinue)
+        assertEquals(0, api.completeTaskCalls)
+        assertEquals(
+            listOf("account-a-write"),
+            database.pendingWriteDao().pendingWrites(ACCOUNT_ID).map { it.clientWriteId },
+        )
+        assertTrue(database.pendingWriteDao().pendingWrites("account-b").isEmpty())
+    }
+
+    @Test
+    fun workIdentityAndInputAreQualifiedByVerifiedAccount() {
+        assertNotEquals(
+            MedtrackSyncWorker.periodicWorkName("account-a"),
+            MedtrackSyncWorker.periodicWorkName("account-b"),
+        )
+        assertNotEquals(
+            MedtrackSyncWorker.oneTimeWorkName("account-a"),
+            MedtrackSyncWorker.oneTimeWorkName("account-b"),
+        )
+        assertEquals(
+            "account-a",
+            MedtrackSyncWorker.oneTimeRequest("https://example.invalid/", "account-a")
+                .workSpec.input.getString("account_id"),
+        )
+    }
+
+    @Test
+    fun worker401And403InvalidateTokenDataOutboxCacheAndLock() = runTest {
+        listOf(401, 403).forEach { status ->
+            val tokenStore = TokenStore(authPrefs)
+            val lockStore = LockStore(lockPrefs)
+            database.activateAccount(ACCOUNT_ID)
+            seedTrustedOwnerState(tokenStore, lockStore)
+            val expectedSession = requireNotNull(tokenStore.sessionIdentityFor(ACCOUNT_ID))
+            val expectedGeneration = requireNotNull(database.activeAccountGeneration(ACCOUNT_ID))
+            val invalidator = testInvalidator(tokenStore, lockStore)
+
+            val result = authenticateWorkerAccount(
+                expectedSession = expectedSession,
+                expectedGeneration = expectedGeneration,
+                tokenStore = tokenStore,
+                invalidator = invalidator,
+                refreshSession = { throw authError(status) },
+                verifyProfile = { error("must not verify") },
+            )
+
+            assertEquals(WorkerAuthenticationResult.Invalidated, result)
+            assertOwnerPurged(tokenStore, lockStore)
+        }
+    }
+
+    @Test
+    fun workerIdentityMismatchInvalidatesTrustedOwnerState() = runTest {
+        val tokenStore = TokenStore(authPrefs)
+        val lockStore = LockStore(lockPrefs)
+        val repository = MedtrackRepository(api = FakeSyncApi(), database = database)
+        repository.activateAccount(ACCOUNT_ID)
+        val visibilityListener: (String) -> Unit = { accountId ->
+            if (repository.activeAccountId() == accountId) repository.deactivateAccount()
+        }
+        AccountVisibilityInvalidations.register(visibilityListener)
+        seedTrustedOwnerState(tokenStore, lockStore)
+        val expectedSession = requireNotNull(tokenStore.sessionIdentityFor(ACCOUNT_ID))
+        val expectedGeneration = requireNotNull(database.activeAccountGeneration(ACCOUNT_ID))
+
+        val result = try {
+            authenticateWorkerAccount(
+                expectedSession = expectedSession,
+                expectedGeneration = expectedGeneration,
+                tokenStore = tokenStore,
+                invalidator = testInvalidator(tokenStore, lockStore),
+                refreshSession = {
+                    AuthSessionDto(
+                        jwt(ACCOUNT_ID, "candidate-access"),
+                        jwt(ACCOUNT_ID, "rotated-refresh"),
+                    )
+                },
+                verifyProfile = {
+                    UserProfileDto(2, "other", "Other", emptyList(), emptyMap())
+                },
+            )
+        } finally {
+            AccountVisibilityInvalidations.unregister(visibilityListener)
+        }
+
+        assertEquals(WorkerAuthenticationResult.Invalidated, result)
+        assertNull(repository.activeAccountId())
+        assertTrue(repository.cases.first().isEmpty())
+        assertOwnerPurged(tokenStore, lockStore)
+    }
+
+    @Test
+    fun targetedWorkerRefreshWithoutApprovedMobileClaimInvalidatesSession() = runTest {
+        val tokenStore = TokenStore(authPrefs)
+        val lockStore = LockStore(lockPrefs)
+        database.activateAccount(ACCOUNT_ID)
+        seedTrustedOwnerState(tokenStore, lockStore)
+        assertTrue(
+            tokenStore.commitVerifiedSession(
+                ACCOUNT_ID,
+                "old-access",
+                "old-refresh",
+                MOBILE_DEVICE_ID,
+            ),
+        )
+        val expectedSession = requireNotNull(tokenStore.sessionIdentityFor(ACCOUNT_ID))
+        val expectedGeneration = requireNotNull(database.activeAccountGeneration(ACCOUNT_ID))
+        var verifyCalls = 0
+
+        val result = authenticateWorkerAccount(
+            expectedSession = expectedSession,
+            expectedGeneration = expectedGeneration,
+            tokenStore = tokenStore,
+            invalidator = testInvalidator(tokenStore, lockStore),
+            refreshSession = {
+                AuthSessionDto(
+                    jwt(ACCOUNT_ID, "access-without-device"),
+                    jwt(ACCOUNT_ID, "refresh-without-device"),
+                )
+            },
+            verifyProfile = {
+                verifyCalls += 1
+                UserProfileDto(1, "same", "Same", emptyList(), emptyMap())
+            },
+        )
+
+        assertEquals(WorkerAuthenticationResult.Invalidated, result)
+        assertEquals(0, verifyCalls)
+        assertOwnerPurged(tokenStore, lockStore)
+    }
+
+    @Test
+    fun workerTransportAndServerFailuresRetainTrustedOwnerStateForRetry() = runTest {
+        listOf(java.io.IOException("offline"), authError(503)).forEach { failure ->
+            val tokenStore = TokenStore(authPrefs)
+            val lockStore = LockStore(lockPrefs)
+            database.activateAccount(ACCOUNT_ID)
+            seedTrustedOwnerState(tokenStore, lockStore)
+            val expectedSession = requireNotNull(tokenStore.sessionIdentityFor(ACCOUNT_ID))
+            val expectedGeneration = requireNotNull(database.activeAccountGeneration(ACCOUNT_ID))
+
+            val result = authenticateWorkerAccount(
+                expectedSession = expectedSession,
+                expectedGeneration = expectedGeneration,
+                tokenStore = tokenStore,
+                invalidator = testInvalidator(tokenStore, lockStore),
+                refreshSession = { throw failure },
+                verifyProfile = { error("must not verify") },
+            )
+
+            assertEquals(WorkerAuthenticationResult.Retry, result)
+            assertEquals(ACCOUNT_ID, tokenStore.accountId())
+            assertEquals("refresh-a", tokenStore.refreshToken())
+            assertEquals(listOf("write-a"), database.pendingWriteDao().pendingWrites(ACCOUNT_ID).map { it.clientWriteId })
+            assertEquals(1L, database.cacheMetadataDao().updatedAtMillis(ACCOUNT_ID, "cache-a"))
+            lockStore.activateAccount(ACCOUNT_ID)
+            assertTrue(lockStore.hasPattern())
+            testInvalidator(tokenStore, lockStore).invalidate(expectedSession, expectedGeneration)
+        }
+    }
+
+    @Test
+    fun capturedWorkerNeverInvalidatesNewlyCommittedDifferentAccount() = runTest {
+        val tokenStore = TokenStore(authPrefs)
+        val lockStore = LockStore(lockPrefs)
+        seedTrustedOwnerState(tokenStore, lockStore)
+        val expectedSession = requireNotNull(tokenStore.sessionIdentityFor(ACCOUNT_ID))
+        val expectedGeneration = requireNotNull(database.activeAccountGeneration(ACCOUNT_ID))
+
+        val result = authenticateWorkerAccount(
+            expectedSession = expectedSession,
+            expectedGeneration = expectedGeneration,
+            tokenStore = tokenStore,
+            invalidator = testInvalidator(tokenStore, lockStore),
+            refreshSession = {
+                assertTrue(tokenStore.commitVerifiedSession("account-b", "access-b", "refresh-b"))
+                throw authError(401)
+            },
+            verifyProfile = { error("must not verify") },
+        )
+
+        assertEquals(WorkerAuthenticationResult.StaleAccount, result)
+        assertEquals("account-b", tokenStore.accountId())
+        assertEquals("access-b", tokenStore.accessToken)
+        assertEquals("refresh-b", tokenStore.refreshToken())
+    }
+
+    @Test
+    fun staleWorker401CannotInvalidateReloggedSameAccountSession() = runTest {
+        val tokenStore = TokenStore(authPrefs)
+        val lockStore = LockStore(lockPrefs)
+        seedTrustedOwnerState(tokenStore, lockStore)
+        val expectedSession = requireNotNull(tokenStore.sessionIdentityFor(ACCOUNT_ID))
+        val expectedGeneration = requireNotNull(database.activeAccountGeneration(ACCOUNT_ID))
+
+        val result = authenticateWorkerAccount(
+            expectedSession = expectedSession,
+            expectedGeneration = expectedGeneration,
+            tokenStore = tokenStore,
+            invalidator = testInvalidator(tokenStore, lockStore),
+            refreshSession = {
+                replaceWithNewSameAccountSession(
+                    expectedSession,
+                    expectedGeneration,
+                    tokenStore,
+                    lockStore,
+                )
+                throw authError(401)
+            },
+            verifyProfile = { error("stale failure must not verify") },
+        )
+
+        assertEquals(WorkerAuthenticationResult.StaleAccount, result)
+        assertEquals("new-access", tokenStore.accessTokenFor(ACCOUNT_ID))
+        assertEquals("new-refresh", tokenStore.refreshTokenFor(ACCOUNT_ID))
+        assertEquals(2L, database.cacheMetadataDao().updatedAtMillis(ACCOUNT_ID, "new-cache"))
+        lockStore.activateAccount(ACCOUNT_ID)
+        assertTrue(lockStore.hasPattern())
+    }
+
+    @Test
+    fun staleWorkerRefreshSuccessCannotOverwriteReloggedSameAccountSession() = runTest {
+        val tokenStore = TokenStore(authPrefs)
+        val lockStore = LockStore(lockPrefs)
+        seedTrustedOwnerState(tokenStore, lockStore)
+        val expectedSession = requireNotNull(tokenStore.sessionIdentityFor(ACCOUNT_ID))
+        val expectedGeneration = requireNotNull(database.activeAccountGeneration(ACCOUNT_ID))
+        var verifyCalls = 0
+
+        val result = authenticateWorkerAccount(
+            expectedSession = expectedSession,
+            expectedGeneration = expectedGeneration,
+            tokenStore = tokenStore,
+            invalidator = testInvalidator(tokenStore, lockStore),
+            refreshSession = {
+                replaceWithNewSameAccountSession(
+                    expectedSession,
+                    expectedGeneration,
+                    tokenStore,
+                    lockStore,
+                )
+                AuthSessionDto(
+                    jwt(ACCOUNT_ID, "stale-candidate"),
+                    jwt(ACCOUNT_ID, "stale-rotated"),
+                )
+            },
+            verifyProfile = {
+                verifyCalls += 1
+                UserProfileDto(1, "same", "Same", emptyList(), emptyMap())
+            },
+        )
+
+        assertEquals(WorkerAuthenticationResult.StaleAccount, result)
+        assertEquals(0, verifyCalls)
+        assertEquals("new-access", tokenStore.accessTokenFor(ACCOUNT_ID))
+        assertEquals("new-refresh", tokenStore.refreshTokenFor(ACCOUNT_ID))
+        assertEquals(2L, database.cacheMetadataDao().updatedAtMillis(ACCOUNT_ID, "new-cache"))
+    }
+
+    private suspend fun replaceWithNewSameAccountSession(
+        expectedSession: com.naveenhospital.medtrack.core.data.auth.AccountSessionIdentity,
+        expectedGeneration: Long,
+        tokenStore: TokenStore,
+        lockStore: LockStore,
+    ) {
+        assertTrue(database.invalidateAndClearAccountData(ACCOUNT_ID, expectedGeneration))
+        assertTrue(tokenStore.clearForIdentity(expectedSession))
+        lockStore.clearAccount(ACCOUNT_ID)
+        assertTrue(tokenStore.commitVerifiedSession(ACCOUNT_ID, "new-access", "new-refresh"))
+        database.activateAccount(ACCOUNT_ID)
+        database.cacheMetadataDao().upsertMetadata(CacheMetadataEntity(ACCOUNT_ID, "new-cache", 2L))
+        lockStore.activateAccount(ACCOUNT_ID)
+        lockStore.savePattern(listOf(0, 1, 4, 8))
+    }
+
+    private suspend fun seedTrustedOwnerState(tokenStore: TokenStore, lockStore: LockStore) {
+        assertTrue(tokenStore.commitVerifiedSession(ACCOUNT_ID, "access-a", "refresh-a"))
+        lockStore.activateAccount(ACCOUNT_ID)
+        lockStore.savePattern(listOf(1, 2, 3, 6))
+        database.pendingWriteDao().upsertPendingWrite(
+            pendingWrite(
+                clientWriteId = "write-a",
+                writeType = PendingWriteTypes.TASK_COMPLETE,
+                payloadJson = PendingWriteJson.encodeTaskComplete(ClientWriteRequestDto("write-a")),
+            ),
+        )
+        database.cacheMetadataDao().upsertMetadata(CacheMetadataEntity(ACCOUNT_ID, "cache-a", 1L))
+        database.pushTokenDao().upsertToken(PushTokenEntity(ACCOUNT_ID, "push-a", "device", 0L))
+        database.notificationDao().upsertNotifications(
+            listOf(
+                NotificationEntity(
+                    ACCOUNT_ID,
+                    "notification-a",
+                    "assignment",
+                    "PHI",
+                    "body",
+                    "42",
+                    "7",
+                    "2026-08-29T12:00:00Z",
+                    false,
+                ),
+            ),
+        )
+    }
+
+    private fun testInvalidator(tokenStore: TokenStore, lockStore: LockStore): AccountSessionInvalidator =
+        AccountSessionInvalidator(database, tokenStore, lockStore, cancelAccountWork = {})
+
+    private suspend fun assertOwnerPurged(tokenStore: TokenStore, lockStore: LockStore) {
+        assertNull(tokenStore.accountId())
+        assertNull(tokenStore.refreshToken())
+        assertTrue(database.pendingWriteDao().pendingWrites(ACCOUNT_ID).isEmpty())
+        assertNull(database.cacheMetadataDao().updatedAtMillis(ACCOUNT_ID, "cache-a"))
+        assertNull(database.pushTokenDao().latestToken(ACCOUNT_ID))
+        assertTrue(database.notificationDao().observeNotifications(ACCOUNT_ID).first().isEmpty())
+        lockStore.activateAccount(ACCOUNT_ID)
+        assertFalse(lockStore.hasPattern())
+    }
+
+    private fun authError(status: Int): HttpException =
+        HttpException(
+            Response.error<Any>(
+                status,
+                "auth".toResponseBody("text/plain".toMediaType()),
+            ),
+        )
+
     private suspend fun assertServerVersionRefreshed() {
-        val case = database.caseDao().caseById("42")
+        val case = database.caseDao().caseById(ACCOUNT_ID, "42")
         assertEquals("Server Patient", case?.patientName)
-        val tasks = database.taskDao().observeTasksForCase("42").first()
+        val tasks = database.taskDao().observeTasksForCase(ACCOUNT_ID, "42").first()
         assertEquals("Server review", tasks.single().title)
-        val vitals = database.vitalDao().observeVitalsForCase("42").first()
+        val vitals = database.vitalDao().observeVitalsForCase(ACCOUNT_ID, "42").first()
         assertEquals("PR 76 | SpO2 98", vitals.single().summary)
     }
 
@@ -189,6 +610,7 @@ class MedtrackSyncWorkerTest {
         payloadJson: String,
     ): PendingWriteEntity =
         PendingWriteEntity(
+            ownerAccountId = ACCOUNT_ID,
             clientWriteId = clientWriteId,
             writeType = writeType,
             caseId = caseId,
@@ -200,6 +622,11 @@ class MedtrackSyncWorkerTest {
             updatedAtMillis = 1L,
         )
 
+    private companion object {
+        const val ACCOUNT_ID = "1"
+        const val MOBILE_DEVICE_ID = "11111111-1111-4111-8111-111111111111"
+    }
+
     private fun conflictError(message: String): HttpException =
         HttpException(
             Response.error<Any>(
@@ -209,12 +636,25 @@ class MedtrackSyncWorkerTest {
         )
 }
 
+private fun jwt(accountId: String, marker: String, mobileDeviceId: String? = null): String {
+    val mobileClaim = mobileDeviceId?.let { ",\"mobile_device_id\":\"$it\"" }.orEmpty()
+    val payload = """{"user_id":"$accountId","marker":"$marker"$mobileClaim}"""
+    val encoded = java.util.Base64.getUrlEncoder().withoutPadding()
+        .encodeToString(payload.toByteArray(Charsets.UTF_8))
+    return "header.$encoded.signature"
+}
+
 private class FakeSyncApi(
     private val completeTaskError: Throwable? = null,
     private val logCallError: Throwable? = null,
     private val addVitalsError: Throwable? = null,
+    private val caseDetailError: Throwable? = null,
 ) : MedtrackApi {
+    var completeTaskCalls: Int = 0
+        private set
+
     override suspend fun completeTask(taskId: String, request: ClientWriteRequestDto): TaskWriteResponseDto {
+        completeTaskCalls += 1
         completeTaskError?.let { throw it }
         return TaskWriteResponseDto("Task completed.", sampleTask(taskId.toLong()), sampleCase())
     }
@@ -240,14 +680,16 @@ private class FakeSyncApi(
         return VitalsWriteResponseDto("Vitals recorded.", 200, sampleVital(), sampleCase())
     }
 
-    override suspend fun caseDetail(caseId: String): CaseDetailDto =
-        CaseDetailDto(
+    override suspend fun caseDetail(caseId: String): CaseDetailDto {
+        caseDetailError?.let { throw it }
+        return CaseDetailDto(
             case = sampleCase(),
             tasks = listOf(sampleTask(700)),
             vitals = listOf(sampleVital()),
         )
+    }
 
-    override suspend fun login(request: LoginRequestDto): AuthSessionDto = unused()
+    override suspend fun login(request: LoginRequestDto): retrofit2.Response<com.naveenhospital.medtrack.core.network.model.LoginResponseDto> = unused()
     override suspend fun refresh(request: RefreshTokenRequestDto): AuthSessionDto = unused()
     override suspend fun logout(request: RefreshTokenRequestDto): ApiMessageDto = unused()
     override suspend fun me(): UserProfileDto = unused()

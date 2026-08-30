@@ -54,6 +54,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -185,8 +186,8 @@ fun HomeScreen(
     onOpenCase: (PatientCase) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var expandedCaseId by rememberSaveable { mutableStateOf<String?>(null) }
-    var riskCase by rememberSaveable { mutableStateOf<PatientCase?>(null) }
+    var expandedCaseId by remember { mutableStateOf<String?>(null) }
+    var riskCaseId by remember { mutableStateOf<String?>(null) }
     var showFilterSheet by rememberSaveable { mutableStateOf(false) }
     val listState = rememberLazyListState()
 
@@ -286,7 +287,7 @@ fun HomeScreen(
                         onCompleteTask = { onCompleteTask(patientCase) },
                         onOpenCase = { onOpenCase(patientCase) },
                         onCategoryFilter = { onCategoryFilterSelected(patientCase) },
-                        onRiskClick = { riskCase = patientCase },
+                        onRiskClick = { riskCaseId = patientCase.id },
                     )
                 }
                 if (isLoadingMore) {
@@ -309,10 +310,10 @@ fun HomeScreen(
         }
     }
 
-    riskCase?.let { patientCase ->
+    cases.itemSnapshotList.items.firstOrNull { it.id == riskCaseId }?.let { patientCase ->
         RiskReasonsSheet(
             patientCase = patientCase,
-            onDismiss = { riskCase = null },
+            onDismiss = { riskCaseId = null },
             onCallPatient = { onCallPatient(patientCase) },
         )
     }

@@ -8,6 +8,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertThrows
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -34,10 +35,11 @@ class TokenStoreTest {
     fun refreshTokenPersistsButAccessTokenStaysInMemoryOnly() {
         val tokenStore = TokenStore(prefs)
 
-        tokenStore.saveSession(access = "access-token", refresh = "refresh-token")
+        assertTrue(tokenStore.commitVerifiedSession(ACCOUNT_ID, access = "access-token", refresh = "refresh-token"))
 
         assertEquals("access-token", tokenStore.accessToken)
         assertEquals("refresh-token", tokenStore.refreshToken())
+        assertEquals(ACCOUNT_ID, tokenStore.accountId())
         assertTrue(tokenStore.hasRefreshToken())
 
         val restoredStore = TokenStore(prefs)
@@ -50,8 +52,9 @@ class TokenStoreTest {
     fun saveSessionWithoutRefreshKeepsExistingRefreshToken() {
         val tokenStore = TokenStore(prefs)
 
-        tokenStore.saveSession(access = "access-token-1", refresh = "refresh-token")
-        tokenStore.saveSession(access = "access-token-2", refresh = null)
+        assertTrue(tokenStore.commitVerifiedSession(ACCOUNT_ID, access = "access-token-1", refresh = "refresh-token"))
+        val identity = requireNotNull(tokenStore.sessionIdentityFor(ACCOUNT_ID))
+        assertTrue(tokenStore.updateSessionForIdentity(identity, access = "access-token-2", refresh = null))
 
         assertEquals("access-token-2", tokenStore.accessToken)
         assertEquals("refresh-token", tokenStore.refreshToken())
@@ -60,12 +63,63 @@ class TokenStoreTest {
     @Test
     fun clearRemovesRefreshAndAccessTokens() {
         val tokenStore = TokenStore(prefs)
-        tokenStore.saveSession(access = "access-token", refresh = "refresh-token")
+        assertTrue(tokenStore.commitVerifiedSession(ACCOUNT_ID, access = "access-token", refresh = "refresh-token"))
 
         tokenStore.clear()
 
         assertNull(tokenStore.accessToken)
         assertNull(TokenStore(prefs).refreshToken())
         assertFalse(tokenStore.hasRefreshToken())
+    }
+
+    @Test
+    fun accountBoundTokenAccessRejectsAnotherAccount() {
+        val tokenStore = TokenStore(prefs)
+        assertTrue(tokenStore.commitVerifiedSession(ACCOUNT_ID, "access-token", "refresh-token"))
+
+        assertNull(tokenStore.accessTokenFor("2"))
+        assertNull(tokenStore.refreshTokenFor("2"))
+        assertFalse(
+            tokenStore.updateSessionForIdentity(
+                AccountSessionIdentity("2", "attacker-incarnation"),
+                "attacker-access",
+                "attacker-refresh",
+            ),
+        )
+        assertEquals("access-token", tokenStore.accessTokenFor(ACCOUNT_ID))
+    }
+
+    @Test
+    fun sameAccountReloginRejectsStaleSessionMutationAndClear() {
+        val tokenStore = TokenStore(prefs)
+        assertTrue(tokenStore.commitVerifiedSession(ACCOUNT_ID, "old-access", "old-refresh"))
+        val staleIdentity = requireNotNull(tokenStore.sessionIdentityFor(ACCOUNT_ID))
+
+        assertTrue(tokenStore.commitVerifiedSession(ACCOUNT_ID, "new-access", "new-refresh"))
+        val currentIdentity = requireNotNull(tokenStore.sessionIdentityFor(ACCOUNT_ID))
+
+        assertFalse(tokenStore.updateSessionForIdentity(staleIdentity, "stale-access", "stale-refresh"))
+        assertFalse(tokenStore.clearForIdentity(staleIdentity))
+        assertEquals("new-access", tokenStore.accessTokenFor(currentIdentity))
+        assertEquals("new-refresh", tokenStore.refreshTokenFor(currentIdentity))
+    }
+
+    @Test
+    fun failedPreferenceCommitsNeverExposeCandidateTokensAndClearFailsClosed() {
+        val failingStore = TokenStore(failingCommitPreferences(prefs))
+
+        assertFalse(failingStore.commitVerifiedSession(ACCOUNT_ID, "candidate", "refresh"))
+        assertNull(failingStore.accessToken)
+        assertNull(failingStore.accountId())
+
+        val goodStore = TokenStore(prefs)
+        assertTrue(goodStore.commitVerifiedSession(ACCOUNT_ID, "access", "refresh"))
+        val failingClearStore = TokenStore(failingCommitPreferences(prefs))
+        assertThrows(IllegalStateException::class.java) { failingClearStore.clear() }
+        assertNull(failingClearStore.accessToken)
+    }
+
+    private companion object {
+        const val ACCOUNT_ID = "1"
     }
 }

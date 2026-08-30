@@ -6,6 +6,8 @@ import okhttp3.Authenticator
 import okhttp3.MediaType.Companion.toMediaType
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
+import com.naveenhospital.medtrack.core.network.model.UserProfileDto
+import com.naveenhospital.medtrack.core.network.model.requireSessionBinding
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -14,13 +16,24 @@ import okhttp3.Route
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
+import retrofit2.HttpException
+import com.squareup.moshi.JsonDataException
+import java.io.IOException
+
+class RetryableSessionRefreshException(cause: Throwable? = null) : IOException(
+    "Unable to refresh the verified MEDTRACK session.",
+    cause,
+)
 
 object MedtrackNetwork {
     fun create(
         baseUrl: String,
         accessTokenProvider: () -> String? = { null },
         refreshTokenProvider: () -> String? = { null },
-        sessionUpdater: (access: String, refresh: String?) -> Unit = { _, _ -> },
+        expectedAccountIdProvider: () -> String? = { null },
+        expectedMobileDeviceIdProvider: () -> String? = { null },
+        sessionIncarnationProvider: () -> String? = { null },
+        sessionUpdater: (access: String, refresh: String?) -> Boolean = { _, _ -> false },
     ): MedtrackApi {
         val normalizedBaseUrl = baseUrl.withTrailingSlash()
         val moshi = Moshi.Builder()
@@ -46,6 +59,11 @@ object MedtrackNetwork {
                     baseUrl = normalizedBaseUrl,
                     accessTokenProvider = accessTokenProvider,
                     refreshTokenProvider = refreshTokenProvider,
+                    expectedAccountIdProvider = expectedAccountIdProvider,
+                    expectedMobileDeviceId = expectedMobileDeviceIdProvider(),
+                    expectedSessionIncarnation = sessionIncarnationProvider()
+                        ?.takeIf { it.isNotBlank() },
+                    currentSessionIncarnationProvider = sessionIncarnationProvider,
                     sessionUpdater = sessionUpdater,
                     moshi = moshi,
                 ),
@@ -67,38 +85,100 @@ private class RefreshTokenAuthenticator(
     private val baseUrl: String,
     private val accessTokenProvider: () -> String?,
     private val refreshTokenProvider: () -> String?,
-    private val sessionUpdater: (access: String, refresh: String?) -> Unit,
-    moshi: Moshi,
+    private val expectedAccountIdProvider: () -> String?,
+    private val expectedMobileDeviceId: String?,
+    private val expectedSessionIncarnation: String?,
+    private val currentSessionIncarnationProvider: () -> String?,
+    private val sessionUpdater: (access: String, refresh: String?) -> Boolean,
+    private val moshi: Moshi,
 ) : Authenticator {
     private val refreshClient = OkHttpClient()
     private val refreshRequestAdapter = moshi.adapter(RefreshTokenRequestDto::class.java)
     private val sessionAdapter = moshi.adapter(AuthSessionDto::class.java)
-
     override fun authenticate(route: Route?, response: Response): Request? {
         if (response.request.url.encodedPath.endsWith("/api/auth/token/refresh/")) return null
         if (response.responseCount() >= MAX_AUTH_ATTEMPTS) return null
+        val expectedAccountId = expectedAccountIdProvider()?.takeIf { it.isNotBlank() } ?: return null
+        val sessionIncarnation = expectedSessionIncarnation ?: return null
+        if (currentSessionIncarnationProvider() != sessionIncarnation) return null
 
         val requestToken = response.request.bearerToken()
         val currentToken = accessTokenProvider()?.takeIf { it.isNotBlank() }
+        if (currentSessionIncarnationProvider() != sessionIncarnation) return null
         if (!currentToken.isNullOrBlank() && currentToken != requestToken) {
             return response.request.withBearer(currentToken)
         }
 
         val refreshToken = refreshTokenProvider()?.takeIf { it.isNotBlank() } ?: return null
         return synchronized(this) {
+            if (expectedAccountIdProvider() != expectedAccountId) return@synchronized null
+            if (currentSessionIncarnationProvider() != sessionIncarnation) return@synchronized null
             val updatedToken = accessTokenProvider()?.takeIf { it.isNotBlank() }
             if (!updatedToken.isNullOrBlank() && updatedToken != requestToken) {
                 return@synchronized response.request.withBearer(updatedToken)
             }
+            if (currentSessionIncarnationProvider() != sessionIncarnation) return@synchronized null
 
-            val session = refreshSession(refreshToken) ?: return@synchronized null
+            val session = when (val refresh = refreshSession(refreshToken)) {
+                is AutomaticRefreshAttempt.Success -> refresh.session
+                is AutomaticRefreshAttempt.RetryableFailure -> throw RetryableSessionRefreshException(refresh.cause)
+                AutomaticRefreshAttempt.DefinitiveFailure -> return@synchronized null
+            }
+            if (currentSessionIncarnationProvider() != sessionIncarnation) return@synchronized null
+            if (
+                runCatching {
+                    session.requireSessionBinding(expectedAccountId, expectedMobileDeviceId)
+                }.isFailure
+            ) {
+                return@synchronized null
+            }
             val access = session.access.takeIf { it.isNotBlank() } ?: return@synchronized null
-            sessionUpdater(access, session.refresh)
+            val profile = when (val verification = verifyAccessToken(access)) {
+                is AutomaticVerificationAttempt.Success -> verification.profile
+                is AutomaticVerificationAttempt.RetryableFailure -> {
+                    throw RetryableSessionRefreshException(verification.cause)
+                }
+                AutomaticVerificationAttempt.DefinitiveFailure -> return@synchronized null
+            }
+            if (currentSessionIncarnationProvider() != sessionIncarnation) return@synchronized null
+            if (profile.id.toString() != expectedAccountId) return@synchronized null
+            if (expectedAccountIdProvider() != expectedAccountId) return@synchronized null
+            if (currentSessionIncarnationProvider() != sessionIncarnation) return@synchronized null
+            if (!sessionUpdater(access, session.refresh)) return@synchronized null
+            if (expectedAccountIdProvider() != expectedAccountId) return@synchronized null
+            if (currentSessionIncarnationProvider() != sessionIncarnation) return@synchronized null
             response.request.withBearer(access)
         }
     }
 
-    private fun refreshSession(refreshToken: String): AuthSessionDto? {
+    private fun verifyAccessToken(accessToken: String): AutomaticVerificationAttempt = try {
+        val profile = kotlinx.coroutines.runBlocking {
+            val client = OkHttpClient.Builder()
+                .addInterceptor { chain -> chain.proceed(chain.request().withBearer(accessToken)) }
+                .build()
+            Retrofit.Builder()
+                .baseUrl(baseUrl)
+                .client(client)
+                .addConverterFactory(MoshiConverterFactory.create(moshi))
+                .build()
+                .create(MedtrackApi::class.java)
+                .me()
+        }
+        AutomaticVerificationAttempt.Success(profile)
+    } catch (failure: Throwable) {
+        when {
+            failure is JsonDataException -> AutomaticVerificationAttempt.DefinitiveFailure
+            failure is HttpException && failure.code() in setOf(400, 401, 403) -> {
+                AutomaticVerificationAttempt.DefinitiveFailure
+            }
+            failure is IOException || failure is HttpException -> {
+                AutomaticVerificationAttempt.RetryableFailure(failure)
+            }
+            else -> AutomaticVerificationAttempt.DefinitiveFailure
+        }
+    }
+
+    private fun refreshSession(refreshToken: String): AutomaticRefreshAttempt {
         val body = refreshRequestAdapter
             .toJson(RefreshTokenRequestDto(refresh = refreshToken))
             .toRequestBody(JSON)
@@ -106,19 +186,47 @@ private class RefreshTokenAuthenticator(
             .url("${baseUrl}api/auth/token/refresh/")
             .post(body)
             .build()
-        return runCatching {
+        return try {
             refreshClient.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return null
-                val payload = response.body?.string()?.takeIf { it.isNotBlank() } ?: return null
-                sessionAdapter.fromJson(payload)
+                if (!response.isSuccessful) {
+                    return if (response.code in setOf(400, 401, 403)) {
+                        AutomaticRefreshAttempt.DefinitiveFailure
+                    } else {
+                        AutomaticRefreshAttempt.RetryableFailure(
+                            IOException("Refresh endpoint returned HTTP ${response.code}."),
+                        )
+                    }
+                }
+                val payload = response.body?.string()?.takeIf { it.isNotBlank() }
+                    ?: return AutomaticRefreshAttempt.DefinitiveFailure
+                val session = try {
+                    sessionAdapter.fromJson(payload)
+                } catch (_: JsonDataException) {
+                    return AutomaticRefreshAttempt.DefinitiveFailure
+                } ?: return AutomaticRefreshAttempt.DefinitiveFailure
+                AutomaticRefreshAttempt.Success(session)
             }
-        }.getOrNull()
+        } catch (failure: IOException) {
+            AutomaticRefreshAttempt.RetryableFailure(failure)
+        }
     }
 
     private companion object {
         val JSON = "application/json; charset=utf-8".toMediaType()
         const val MAX_AUTH_ATTEMPTS = 2
     }
+}
+
+private sealed interface AutomaticRefreshAttempt {
+    data class Success(val session: AuthSessionDto) : AutomaticRefreshAttempt
+    data class RetryableFailure(val cause: Throwable) : AutomaticRefreshAttempt
+    data object DefinitiveFailure : AutomaticRefreshAttempt
+}
+
+private sealed interface AutomaticVerificationAttempt {
+    data class Success(val profile: UserProfileDto) : AutomaticVerificationAttempt
+    data class RetryableFailure(val cause: Throwable) : AutomaticVerificationAttempt
+    data object DefinitiveFailure : AutomaticVerificationAttempt
 }
 
 private fun Response.responseCount(): Int {

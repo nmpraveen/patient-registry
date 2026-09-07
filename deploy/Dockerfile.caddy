@@ -1,13 +1,14 @@
-ARG CADDY_BUILDER=caddy:2.11.4-builder-alpine@sha256:7bac9be4072f7c4db2ccc7350750e0705004bf02da2ac7d96b1469ca4f28bb7c
+ARG CADDY_BUILDER=caddy:2.11.4-builder-alpine@sha256:1a1689db91cfb390b2d856a1b3774e796852822cd723fa54c475b272f82bb4b7
 ARG CADDY_RUNTIME=alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
 ARG VCS_REF=unknown
 
 FROM ${CADDY_BUILDER} AS builder
 RUN xcaddy build \
     --with github.com/mholt/caddy-ratelimit@5625512f24f6f59d6f64fb3aafe5eecff0b286db \
+    --replace golang.org/x/crypto=golang.org/x/crypto@v0.55.0 \
     --replace golang.org/x/net=golang.org/x/net@v0.56.0 \
     --replace golang.org/x/text=golang.org/x/text@v0.39.0 \
-    --replace google.golang.org/grpc=google.golang.org/grpc@v1.82.1
+    --replace google.golang.org/grpc=google.golang.org/grpc@v1.83.1
 
 FROM ${CADDY_RUNTIME}
 ARG VCS_REF

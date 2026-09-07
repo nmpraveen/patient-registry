@@ -1,3 +1,20 @@
+## 2026.09.07.17.19
+
+- Patch Caddy Go dependencies to x/crypto v0.55.0 and gRPC v1.83.1 for current critical/high advisories.
+
+## 2026.09.07.17.11
+
+- Pin patched libuuid 2.42.3-r1 in the PostgreSQL image as well as the web image security fix.
+
+## 2026.09.07.17.06
+
+- Refresh the Caddy 2.11.4 builder digest after verifying its unchanged upstream source revision.
+
+## 2026.09.07.17.01
+
+- Upgrade Python runtime dependencies and regenerate both hash locks with the repository compiler.
+- Pin Alpine libuuid 2.41.6-r1 to remove fixed high-severity container findings.
+
 # Changelog
 
 ## 2026.08.30.16.43

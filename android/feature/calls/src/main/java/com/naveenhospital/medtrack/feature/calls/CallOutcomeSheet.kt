@@ -2,6 +2,8 @@ package com.naveenhospital.medtrack.feature.calls
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,6 +11,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -19,6 +23,8 @@ import androidx.compose.material.icons.outlined.Phone
 import androidx.compose.material.icons.outlined.PhoneInTalk
 import androidx.compose.material.icons.outlined.PhoneMissed
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -43,6 +49,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.naveenhospital.medtrack.core.designsystem.MedtrackColors
 
+import com.naveenhospital.medtrack.core.domain.model.CallTaskChoice
+import com.naveenhospital.medtrack.core.domain.model.CallOutcomeInput
+
 private data class OutcomeChoice(
     val value: String,
     val label: String,
@@ -61,22 +70,46 @@ private val outcomeChoices = listOf(
 @OptIn(ExperimentalMaterial3Api::class)
 fun CallOutcomeSheet(
     patientName: String,
-    onOutcome: (outcome: String, note: String?) -> Unit,
-    onAttempted: () -> Unit,
+    tasks: List<CallTaskChoice>,
+    initialTaskId: String?,
+    onDismiss: () -> Unit,
+    onSubmit: (CallOutcomeInput, (String?) -> Unit) -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var selectedOutcome by rememberSaveable { mutableStateOf(outcomeChoices.first().value) }
     var note by remember { mutableStateOf("") }
+    var reason by remember { mutableStateOf("") }
+    var taskId by remember { mutableStateOf(initialTaskId) }
+    var menuExpanded by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var submitting by remember { mutableStateOf(false) }
+    fun submit(outcome: String) {
+        val trimmedReason = reason.trim()
+        error = when {
+            taskId == null && trimmedReason.isBlank() -> "Enter a reason for the call."
+            trimmedReason.length > 500 -> "Reason must be 500 characters or fewer."
+            note.length > 1000 -> "Note must be 1000 characters or fewer."
+            else -> null
+        }
+        if (error != null || submitting) return
+        submitting = true
+        onSubmit(CallOutcomeInput(taskId, trimmedReason.takeIf { it.isNotEmpty() }, outcome, note.trim().ifEmpty { null })) {
+            submitting = false
+            error = it
+        }
+    }
 
     ModalBottomSheet(
         sheetState = sheetState,
-        onDismissRequest = onAttempted,
+        onDismissRequest = { if (!submitting) onDismiss() },
         containerColor = Color.White,
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 16.dp, end = 16.dp, bottom = 24.dp),
+                .padding(start = 16.dp, end = 16.dp, bottom = 24.dp)
+                .verticalScroll(rememberScrollState())
+                .imePadding().navigationBarsPadding(),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Row(
@@ -108,6 +141,23 @@ fun CallOutcomeSheet(
                 }
             }
 
+            Box {
+                TextButton(onClick = { menuExpanded = true }, enabled = !submitting) {
+                    Text(tasks.firstOrNull { it.id == taskId }?.title ?: "General patient call")
+                }
+                DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                    DropdownMenuItem(text = { Text("General patient call") }, onClick = { taskId = null; menuExpanded = false })
+                    tasks.forEach { task ->
+                        DropdownMenuItem(text = { Text(task.title) }, onClick = { taskId = task.id; menuExpanded = false })
+                    }
+                }
+            }
+            OutlinedTextField(
+                value = reason, onValueChange = { reason = it }, enabled = !submitting,
+                label = { Text(if (taskId == null) "Reason for call" else "Reason for call (optional)") },
+                modifier = Modifier.fillMaxWidth(), minLines = 2,
+            )
+
             // Two rows of two large, tappable outcome cards with colour-coded icons.
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 outcomeChoices.chunked(2).forEach { rowChoices ->
@@ -132,12 +182,10 @@ fun CallOutcomeSheet(
                 minLines = 2,
             )
 
+            error?.let { Text(it, color = MedtrackColors.Danger) }
             Button(
-                onClick = {
-                    val submittedNote = note.trim().ifEmpty { null }
-                    note = ""
-                    onOutcome(selectedOutcome, submittedNote)
-                },
+                onClick = { submit(selectedOutcome) },
+                enabled = !submitting,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(50.dp),
@@ -145,11 +193,13 @@ fun CallOutcomeSheet(
                 Text("Save outcome", fontWeight = FontWeight.Bold)
             }
 
+            TextButton(onClick = onDismiss, enabled = !submitting, modifier = Modifier.fillMaxWidth()) { Text("Cancel") }
             TextButton(
-                onClick = onAttempted,
+                onClick = { submit("attempted") },
+                enabled = !submitting,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text("No outcome")
+                Text("Save as attempted")
             }
         }
     }

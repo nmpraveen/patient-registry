@@ -178,6 +178,49 @@ class MedtrackSyncWorkerTest {
     }
 
     @Test
+    fun callRetryPreservesNewAndLegacyPayloadAndCachesOneReceipt() = runTest {
+        for (reason in listOf(null, "Appointment")) {
+            val request = LogCallRequestDto(outcome = "attempted", reason = reason, attemptedAt = "2026-01-01T00:00:00Z", clientWriteId = "call-${reason ?: "legacy"}")
+            val original = PendingWriteJson.encodeCallOutcome(request)
+            database.pendingWriteDao().upsertPendingWrite(pendingWrite(clientWriteId = request.clientWriteId,
+                writeType = PendingWriteTypes.CALL_OUTCOME, caseId = "42", payloadJson = original))
+            val api = FakeSyncApi(logCallError = IOException("Response lost"))
+            assertEquals(SyncRunOutcome.RETRY, drainPendingWritesForSync(api, database, ACCOUNT_ID, accountGeneration))
+            assertEquals(original, database.pendingWriteDao().pendingWrites(ACCOUNT_ID).single().payloadJson)
+            api.logCallError = null
+            assertEquals(SyncRunOutcome.COMPLETED, drainPendingWritesForSync(api, database, ACCOUNT_ID, accountGeneration))
+            assertEquals(listOf(request, request), api.callRequests)
+            assertEquals(1, database.callLogDao().observeForCase(ACCOUNT_ID, "42").first().size)
+            assertEquals(reason.orEmpty(), database.callLogDao().observeForCase(ACCOUNT_ID, "42").first().single().reason)
+        }
+    }
+
+    @Test
+    fun completionReplayRetainsCapturedPreconditionsAndWorkerMapperFields() = runTest {
+        val request = ClientWriteRequestDto("complete-new", mapOf("status" to "SCHEDULED", "due_date" to "2026-09-08"))
+        database.pendingWriteDao().upsertPendingWrite(pendingWrite(clientWriteId = request.clientWriteId,
+            writeType = PendingWriteTypes.TASK_COMPLETE, caseId = "42", taskId = "7", payloadJson = PendingWriteJson.encodeTaskComplete(request)))
+        val api = FakeSyncApi()
+        assertEquals(SyncRunOutcome.COMPLETED, drainPendingWritesForSync(api, database, ACCOUNT_ID, accountGeneration))
+        assertEquals(request, api.lastCompletion)
+        val task = database.taskDao().taskById(ACCOUNT_ID, "7")!!
+        assertEquals("Monthly", task.frequencyLabel)
+        assertEquals("Server notes", task.notes)
+        assertEquals(12L, task.assignedUserId)
+    }
+
+    @Test
+    fun revokedGenerationCannotCommitCallReceipt() = runTest {
+        val request = LogCallRequestDto(outcome = "reached", reason = "Appointment", clientWriteId = "call-revoked")
+        database.pendingWriteDao().upsertPendingWrite(pendingWrite(clientWriteId = request.clientWriteId,
+            writeType = PendingWriteTypes.CALL_OUTCOME, caseId = "42", payloadJson = PendingWriteJson.encodeCallOutcome(request)))
+        val api = FakeSyncApi(beforeLogCall = { database.invalidateAndClearAccountData(ACCOUNT_ID) })
+        runCatching { drainPendingWritesForSync(api, database, ACCOUNT_ID, accountGeneration) }
+        assertTrue(database.callLogDao().observeForCase(ACCOUNT_ID, "42").first().isEmpty())
+        assertTrue(database.pendingWriteDao().pendingWrites(ACCOUNT_ID).isEmpty())
+    }
+
+    @Test
     fun queuedCallOutcome409RecordsConflictAndRefreshesServerCase() = runTest {
         val api = FakeSyncApi(logCallError = conflictError("Call log belongs to the server version."))
         database.pendingWriteDao().upsertPendingWrite(
@@ -945,6 +988,11 @@ class MedtrackSyncWorkerTest {
         assertEquals("Server Patient", case?.patientName)
         val tasks = database.taskDao().observeTasksForCase(ACCOUNT_ID, "42").first()
         assertEquals("Server review", tasks.single().title)
+        assertEquals("Monthly", tasks.single().frequencyLabel)
+        assertEquals("Server notes", tasks.single().notes)
+        assertEquals("CUSTOM", tasks.single().taskType)
+        assertEquals(12L, tasks.single().assignedUserId)
+        assertEquals("2026-08-29T18:00:00Z", tasks.single().serverUpdatedAt)
         val vitals = database.vitalDao().observeVitalsForCase(ACCOUNT_ID, "42").first()
         assertEquals("PR 76 | SpO2 98", vitals.single().summary)
     }
@@ -1046,35 +1094,43 @@ private fun jwt(accountId: String, marker: String, mobileDeviceId: String? = nul
 }
 
 private class FakeSyncApi(
+    val beforeLogCall: (suspend () -> Unit)? = null,
     private val completeTaskError: Throwable? = null,
-    private val logCallError: Throwable? = null,
+    var logCallError: Throwable? = null,
     private val addVitalsError: Throwable? = null,
     private val caseDetailError: Throwable? = null,
     private val notificationPages: Map<String?, NotificationsResponseDto> = emptyMap(),
     private val notificationErrors: Map<String?, Throwable> = emptyMap(),
     private val notificationFirstPageSequence: List<NotificationsResponseDto> = emptyList(),
 ) : MedtrackApi {
+    val callRequests = mutableListOf<LogCallRequestDto>()
+    var lastCompletion: ClientWriteRequestDto? = null
     var completeTaskCalls: Int = 0
         private set
     val notificationCursorsRequested = mutableListOf<String?>()
     private var firstPageResponseIndex = 0
     override suspend fun completeTask(taskId: String, request: ClientWriteRequestDto): TaskWriteResponseDto {
+        lastCompletion = request
         completeTaskCalls += 1
         completeTaskError?.let { throw it }
         return TaskWriteResponseDto("Task completed.", sampleTask(taskId.toLong()), sampleCase())
     }
 
     override suspend fun logCall(caseId: String, request: LogCallRequestDto): CallWriteResponseDto {
+        callRequests += request
+        beforeLogCall?.invoke()
         logCallError?.let { throw it }
         return CallWriteResponseDto(
             message = "Call outcome logged.",
             callLog = CallLogDto(
                 id = 1,
+                reason = request.reason.orEmpty(),
+                clientEventAt = request.attemptedAt,
                 taskId = request.taskId,
                 outcome = request.outcome,
                 outcomeLabel = "No answer",
                 notes = request.note,
-                createdAt = request.attemptedAt.orEmpty(),
+                createdAt = "2026-09-07T00:00:00Z",
             ),
             case = sampleCase(),
         )
@@ -1165,6 +1221,8 @@ private class FakeSyncApi(
         TaskDto(
             id = id,
             title = "Server review",
+            taskType = "CUSTOM", taskTypeLabel = "Custom", assignedUserId = 12, assignedUser = "Demo staff",
+            notes = "Server notes", frequencyLabel = "Monthly",
             dueDate = "2026-05-19",
             status = "SCHEDULED",
             statusLabel = "Scheduled",

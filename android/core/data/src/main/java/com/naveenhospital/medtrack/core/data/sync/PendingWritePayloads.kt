@@ -23,6 +23,8 @@ data class NotificationReadPayload(
 )
 
 data class TaskRollbackSnapshot(
+    val frequencyLabel: String = "",
+    val serverUpdatedAt: String = "",
     val title: String,
     val dueDate: String?,
     val status: String,
@@ -193,6 +195,8 @@ internal fun TaskRollbackSnapshot.toEntity(
         assignedUserId = assignedUserId,
         assignedUser = assignedUser,
         notes = notes,
+        frequencyLabel = frequencyLabel,
+        serverUpdatedAt = serverUpdatedAt,
         updatedAtMillis = updatedAtMillis,
     )
 
@@ -208,5 +212,7 @@ private fun TaskEntity.toRollbackSnapshot(): TaskRollbackSnapshot =
         assignedUserId = assignedUserId,
         assignedUser = assignedUser,
         notes = notes,
+        frequencyLabel = frequencyLabel,
+        serverUpdatedAt = serverUpdatedAt,
         updatedAtMillis = updatedAtMillis,
     )

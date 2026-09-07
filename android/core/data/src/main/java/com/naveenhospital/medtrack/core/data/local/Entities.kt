@@ -53,6 +53,8 @@ data class CaseStatsEntity(
 
 @Entity(tableName = "tasks", primaryKeys = ["ownerAccountId", "id"])
 data class TaskEntity(
+    @ColumnInfo(defaultValue = "''") val frequencyLabel: String = "",
+    @ColumnInfo(defaultValue = "''") val serverUpdatedAt: String = "",
     val ownerAccountId: String,
     val id: String,
     val caseId: String,
@@ -155,4 +157,21 @@ data class CacheMetadataEntity(
     val ownerAccountId: String,
     val cacheKey: String,
     val updatedAtMillis: Long,
+)
+
+@Entity(tableName = "call_logs", primaryKeys = ["ownerAccountId", "id"])
+data class CallLogEntity(
+    val ownerAccountId: String,
+    val id: Long,
+    val caseId: String,
+    val taskId: Long?,
+    val taskTitle: String,
+    val reason: String,
+    val outcome: String,
+    val outcomeLabel: String,
+    val notes: String,
+    val staffUser: String,
+    val createdAt: String,
+    val createdAtEpochMicros: Long,
+    val clientEventAt: String?,
 )

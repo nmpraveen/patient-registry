@@ -85,6 +85,8 @@ object UpdateCaseRequestDtoJsonAdapterFactory : JsonAdapter.Factory {
             writer.patch("due_date", value.dueDate)
             writer.patch("status", value.status)
             writer.patch("task_type", value.taskType)
+            writer.patch("frequency_label", value.frequencyLabel)
+            writer.patch("notes", value.notes)
             writer.patch("assigned_user", value.assignedUser)
             writer.name("client_write_id").value(value.clientWriteId)
             writer.endObject()

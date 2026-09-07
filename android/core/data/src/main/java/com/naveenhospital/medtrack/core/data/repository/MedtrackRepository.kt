@@ -19,6 +19,9 @@ import com.naveenhospital.medtrack.core.data.notification.parseNotificationPaylo
 import com.naveenhospital.medtrack.core.data.local.PendingWriteEntity
 import com.naveenhospital.medtrack.core.data.local.PushTokenEntity
 import com.naveenhospital.medtrack.core.data.local.SyncConflictEntity
+import com.naveenhospital.medtrack.core.data.local.toEntity
+import com.naveenhospital.medtrack.core.data.local.toDomain
+import com.naveenhospital.medtrack.core.domain.model.PatientCallLog
 import com.naveenhospital.medtrack.core.data.local.TaskEntity
 import com.naveenhospital.medtrack.core.data.local.VitalEntity
 import com.naveenhospital.medtrack.core.data.local.VitalsThresholdEntity
@@ -160,7 +163,6 @@ class MedtrackRepository(
     )
     private var activeCaseListFilters: CaseListFilters? = null
     private val caseEditBaselines = ConcurrentHashMap<String, CaseEditCaseDto>()
-    private val taskEditBaselines = ConcurrentHashMap<String, TaskDto>()
     private val vitalEditBaselines = ConcurrentHashMap<String, VitalDto>()
     private val caseCreateErrorAdapter =
         Moshi.Builder().add(KotlinJsonAdapterFactory()).build().adapter(CaseCreateErrorDto::class.java)
@@ -202,7 +204,6 @@ class MedtrackRepository(
         activeCaseListKey = ""
         activeCaseListFilters = null
         caseEditBaselines.clear()
-        taskEditBaselines.clear()
         vitalEditBaselines.clear()
     }
 
@@ -310,6 +311,12 @@ class MedtrackRepository(
                 .map { entities -> entities.map { it.toDomain() } }
         }
 
+    fun observeCallLogs(caseId: String): Flow<List<PatientCallLog>> =
+        activeAccountId.flatMapLatest { ownerAccountId ->
+            if (ownerAccountId == null) flowOf(emptyList())
+            else database.callLogDao().observeForCase(ownerAccountId, caseId).map { rows -> rows.map { it.toDomain() } }
+        }
+
     fun observeVitals(caseId: String): Flow<List<PatientVital>> =
         activeAccountId.flatMapLatest { ownerAccountId ->
             if (ownerAccountId == null) flowOf(emptyList())
@@ -374,6 +381,7 @@ class MedtrackRepository(
         }
         requireStillActive(session)
         commitAccountMutation(session) {
+            database.callLogDao().clearForOwner(session.ownerAccountId)
             database.caseDao().clearCases(session.ownerAccountId)
             database.caseDao().upsertCases(page.results.map { it.toEntity(session.ownerAccountId) })
             database.caseStatsDao().upsertStats(page.stats.toEntity(session.ownerAccountId, activeCaseListKey))
@@ -447,7 +455,10 @@ class MedtrackRepository(
         }
         requireStillActive(session)
         commitAccountMutation(session) {
-            if (page.cursorReset) database.caseDao().clearCases(session.ownerAccountId)
+            if (page.cursorReset) {
+                database.callLogDao().clearForOwner(session.ownerAccountId)
+                database.caseDao().clearCases(session.ownerAccountId)
+            }
             database.caseDao().upsertCases(page.results.map { it.toEntity(session.ownerAccountId) })
             database.caseStatsDao().upsertStats(page.stats.toEntity(session.ownerAccountId, requestedKey))
         }
@@ -592,6 +603,7 @@ class MedtrackRepository(
     suspend fun createTask(caseId: String, input: NewTaskInput): TaskWriteOutcome {
         val session = activeSession()
         val request = CreateTaskRequestDto(
+            frequencyLabel = input.frequencyLabel,
             title = input.title,
             dueDate = input.dueDate,
             status = input.status,
@@ -615,10 +627,14 @@ class MedtrackRepository(
 
     suspend fun updateTask(taskId: String, caseId: String, input: TaskEditInput): TaskWriteOutcome {
         val session = activeSession()
-        val baseline = taskEditBaselines[taskId]
+        val baseline = input.baseline?.takeIf {
+            it.id == taskId && it.caseId == caseId && it.ownerAccountId == session.ownerAccountId && it.serverUpdatedAt.isNotBlank()
+        }
             ?: return TaskWriteOutcome.Failure(
                 "Task edit must be refreshed before saving. No changes were sent.",
             )
+        val frequencyLabel = changedOptional(input.frequencyLabel, baseline.frequencyLabel)
+        val notes = changedOptional(input.notes, baseline.notes.orEmpty())
         val title = changedOptional(input.title, baseline.title)
         val dueDate = changedOptional(input.dueDate, baseline.dueDate)
         val status = changedOptional(input.status, baseline.status)
@@ -631,8 +647,12 @@ class MedtrackRepository(
             else -> PatchField.Omitted
         }
         val request = UpdateTaskRequestDto(
-            baseUpdatedAt = baseline.updatedAt,
+            frequencyLabel = frequencyLabel,
+            notes = notes,
+            baseUpdatedAt = baseline.serverUpdatedAt,
             baseValues = buildMap {
+                putBaseline("frequency_label", frequencyLabel, baseline.frequencyLabel)
+                putBaseline("notes", notes, baseline.notes.orEmpty())
                 putBaseline("title", title, baseline.title)
                 putBaseline("due_date", dueDate, baseline.dueDate)
                 putBaseline("status", status, baseline.status)
@@ -651,7 +671,6 @@ class MedtrackRepository(
             commitAccountMutation(session) {
                 database.caseDao().upsertCase(response.case.toEntity(session.ownerAccountId))
                 database.taskDao().upsertTask(response.task.toEntity(session.ownerAccountId, caseId))
-                taskEditBaselines[taskId] = response.task
             }
             TaskWriteOutcome.Success(response.message)
         }.getOrElse { throwable ->
@@ -660,20 +679,8 @@ class MedtrackRepository(
         }
     }
 
-    suspend fun addTaskNote(taskId: String, caseId: String, note: String): TaskWriteOutcome {
-        val session = activeSession()
-        return runCatching {
-            val response = session.api.addTaskNote(taskId, TaskNoteRequestDto(note = note))
-            commitAccountMutation(session) {
-                database.caseDao().upsertCase(response.case.toEntity(session.ownerAccountId))
-                database.taskDao().upsertTask(response.task.toEntity(session.ownerAccountId, caseId))
-            }
-            TaskWriteOutcome.Success(response.message)
-        }.getOrElse { throwable ->
-            requireStillActive(session)
-            throwable.toTaskOutcome()
-        }
-    }
+    suspend fun addTaskNote(task: PatientTask, note: String): TaskWriteOutcome =
+        updateTask(task.id, task.caseId, TaskEditInput(baseline = task, notes = note))
 
     suspend fun updateVitals(
         vitalId: String,
@@ -742,6 +749,9 @@ class MedtrackRepository(
         parseFormErrors(this)?.let {
             return TaskWriteOutcome.ValidationError(errors = it.errors, message = it.message ?: "Please fix the highlighted fields.")
         }
+        if (this is HttpException && code() == 409) {
+            return TaskWriteOutcome.Failure("This task changed. Your draft is kept; reopen the editor to refresh.")
+        }
         if (this is HttpException && code() == 403) {
             return TaskWriteOutcome.Failure("You do not have permission for this action.")
         }
@@ -787,14 +797,22 @@ class MedtrackRepository(
     }
 
     private suspend fun refreshCaseDetailForSession(session: AccountSession, caseId: String) {
-        val response = session.api.caseDetail(caseId)
+        val response = try {
+            session.api.caseDetail(caseId)
+        } catch (error: HttpException) {
+            if (error.code() in setOf(403, 404)) commitAccountMutation(session) {
+                database.callLogDao().clearForCase(session.ownerAccountId, caseId)
+            }
+            throw error
+        }
         commitAccountMutation(session) {
             database.caseDao().upsertCase(response.case.toEntity(session.ownerAccountId))
             database.taskDao().clearTasksForCase(session.ownerAccountId, caseId)
             database.taskDao().upsertTasks(response.tasks.map { it.toEntity(session.ownerAccountId, caseId) })
+            database.callLogDao().clearForCase(session.ownerAccountId, caseId)
+            database.callLogDao().upsertAll(response.callLogs.take(20).map { it.toEntity(session.ownerAccountId, caseId) })
             database.vitalDao().clearVitalsForCase(session.ownerAccountId, caseId)
             database.vitalDao().upsertVitals(response.vitals.map { it.toEntity(session.ownerAccountId, caseId) })
-            response.tasks.forEach { task -> taskEditBaselines[task.id.toString()] = task }
             response.vitals.forEach { vital -> vitalEditBaselines[vital.id.toString()] = vital }
             markCacheFresh(session.ownerAccountId, caseDetailCacheKey(caseId))
         }
@@ -885,8 +903,18 @@ class MedtrackRepository(
     suspend fun completeTask(taskId: String, caseId: String): WriteResult {
         val session = activeSession()
         val clientWriteId = newClientWriteId("task")
-        val payload = ClientWriteRequestDto(clientWriteId = clientWriteId)
         val rollbackTask = database.taskDao().taskById(session.ownerAccountId, taskId)
+            ?: run {
+                refreshCaseDetailForSession(session, caseId)
+                database.taskDao().taskById(session.ownerAccountId, taskId)
+            }
+        require(rollbackTask != null && rollbackTask.caseId == caseId && rollbackTask.dueDate != null) {
+            "Refresh the task before completing it."
+        }
+        val payload = ClientWriteRequestDto(
+            clientWriteId = clientWriteId,
+            baseValues = mapOf("status" to rollbackTask.status, "due_date" to rollbackTask.dueDate),
+        )
         val pendingPayloadJson = PendingWriteJson.encodeTaskComplete(payload, rollbackTask)
         return runCatching {
             val response = session.api.completeTask(taskId = taskId, request = payload)
@@ -946,13 +974,19 @@ class MedtrackRepository(
         outcome: String,
         note: String?,
         attemptedAt: String? = null,
+        reason: String? = null,
     ): WriteResult {
         val session = activeSession()
+        val validatedTaskId = taskId?.let { requireNotNull(it.toLongOrNull()?.takeIf { id -> id > 0 }) { "Invalid task." } }
+        val validatedReason = reason?.trim()
+        require(validatedReason.orEmpty().length <= 500) { "Reason must be 500 characters or fewer." }
+        require(validatedTaskId != null || !validatedReason.isNullOrBlank()) { "Enter a reason for the general patient call." }
         val clientWriteId = newClientWriteId("call")
         val payload = LogCallRequestDto(
             outcome = outcome,
             note = note,
-            taskId = taskId?.toLongOrNull(),
+            taskId = validatedTaskId,
+            reason = validatedReason,
             attemptedAt = attemptedAt?.takeIf { it.isNotBlank() } ?: currentUtcTimestamp(),
             clientWriteId = clientWriteId,
         )
@@ -960,6 +994,8 @@ class MedtrackRepository(
             val response = session.api.logCall(caseId = caseId, request = payload)
             commitAccountMutation(session) {
                 database.caseDao().upsertCase(response.case.toEntity(session.ownerAccountId))
+                database.callLogDao().upsert(response.callLog.toEntity(session.ownerAccountId, caseId))
+                database.callLogDao().prune(session.ownerAccountId, caseId)
             }
             WriteResult(clientWriteId = clientWriteId, queued = false, message = response.message)
         }.getOrElse { throwable ->
@@ -1372,6 +1408,7 @@ private class CaseRemoteMediator(
                 isLocallyActive = isAccountActive,
             ) {
                 if (loadType == LoadType.REFRESH || page.cursorReset) {
+                    database.callLogDao().clearForOwner(ownerAccountId)
                     database.caseDao().clearCases(ownerAccountId)
                 }
                 database.caseDao().upsertCases(page.results.map { it.toEntity(ownerAccountId) })
@@ -1816,12 +1853,17 @@ private fun TaskDto.toEntity(ownerAccountId: String, caseId: String): TaskEntity
         taskTypeLabel = taskTypeLabel,
         assignedUserId = assignedUserId,
         assignedUser = assignedUser?.takeIf { it.isNotBlank() },
-        notes = notes?.takeIf { it.isNotBlank() },
+        notes = notes,
+        frequencyLabel = frequencyLabel,
+        serverUpdatedAt = updatedAt,
         updatedAtMillis = System.currentTimeMillis(),
     )
 
 private fun TaskEntity.toDomain(): PatientTask =
     PatientTask(
+        ownerAccountId = ownerAccountId,
+        serverUpdatedAt = serverUpdatedAt,
+        frequencyLabel = frequencyLabel,
         id = id,
         caseId = caseId,
         title = title,

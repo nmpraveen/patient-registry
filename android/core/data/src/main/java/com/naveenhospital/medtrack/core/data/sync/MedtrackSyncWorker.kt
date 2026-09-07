@@ -28,6 +28,7 @@ import com.naveenhospital.medtrack.core.data.local.CategoryOptionsEntity
 import com.naveenhospital.medtrack.core.data.local.MedtrackDatabase
 import com.naveenhospital.medtrack.core.data.local.NotificationEntity
 import com.naveenhospital.medtrack.core.data.local.SyncConflictEntity
+import com.naveenhospital.medtrack.core.data.local.toEntity
 import com.naveenhospital.medtrack.core.data.local.TaskEntity
 import com.naveenhospital.medtrack.core.data.local.VitalEntity
 import com.naveenhospital.medtrack.core.data.local.VitalsThresholdEntity
@@ -210,6 +211,7 @@ class MedtrackSyncWorker(
                 generation = accountGeneration,
                 isLocallyActive = { activeAccountId() == ownerAccountId },
             ) {
+                database.callLogDao().clearForOwner(ownerAccountId)
                 database.caseDao().clearCases(ownerAccountId)
                 database.caseDao().upsertCases(response.results.map { it.toEntityForSync(ownerAccountId) })
                 database.caseStatsDao().upsertStats(response.stats.toEntityForSync(ownerAccountId, defaultCaseListKey, now))
@@ -431,6 +433,8 @@ internal suspend fun drainPendingWritesForSync(
                         { activeAccountId() == ownerAccountId },
                     ) {
                         database.caseDao().upsertCase(response.case.toEntityForSync(ownerAccountId))
+                        database.callLogDao().upsert(response.callLog.toEntity(ownerAccountId, pendingWrite.caseId))
+                        database.callLogDao().prune(ownerAccountId, pendingWrite.caseId)
                         pendingWriteDao.deletePendingWrite(ownerAccountId, write.clientWriteId)
                     }
                 }
@@ -708,7 +712,12 @@ internal suspend fun refreshServerCase(
     caseId: String,
     cacheUpdatedAtMillis: Long? = null,
 ) {
-    val response = api.caseDetail(caseId)
+    val response = try { api.caseDetail(caseId) } catch (error: HttpException) {
+        if (error.code() in setOf(403, 404)) database.commitForAccount(ownerAccountId, accountGeneration, { activeAccountId() == ownerAccountId }) {
+            database.callLogDao().clearForCase(ownerAccountId, caseId)
+        }
+        throw error
+    }
     database.commitForAccount(
         ownerAccountId,
         accountGeneration,
@@ -717,6 +726,8 @@ internal suspend fun refreshServerCase(
         database.caseDao().upsertCase(response.case.toEntityForSync(ownerAccountId))
         database.taskDao().clearTasksForCase(ownerAccountId, caseId)
         database.taskDao().upsertTasks(response.tasks.map { it.toEntityForSync(ownerAccountId, caseId) })
+        database.callLogDao().clearForCase(ownerAccountId, caseId)
+        database.callLogDao().upsertAll(response.callLogs.take(20).map { it.toEntity(ownerAccountId, caseId) })
         database.vitalDao().clearVitalsForCase(ownerAccountId, caseId)
         database.vitalDao().upsertVitals(response.vitals.map { it.toEntityForSync(ownerAccountId, caseId) })
         cacheUpdatedAtMillis?.let { updatedAt ->
@@ -1019,6 +1030,13 @@ private fun TaskDto.toEntityForSync(ownerAccountId: String, caseId: String): Tas
         status = status,
         statusLabel = statusLabel?.takeIf { it.isNotBlank() } ?: status,
         canComplete = canComplete ?: status.uppercase() !in setOf("COMPLETED", "CANCELLED"),
+        taskType = taskType,
+        taskTypeLabel = taskTypeLabel,
+        assignedUserId = assignedUserId,
+        assignedUser = assignedUser,
+        notes = notes,
+        frequencyLabel = frequencyLabel,
+        serverUpdatedAt = updatedAt,
         updatedAtMillis = System.currentTimeMillis(),
     )
 

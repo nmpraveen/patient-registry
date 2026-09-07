@@ -273,3 +273,16 @@ After running the API, test-suite, emulator/offline, biometric, physical-device 
 ```
 
 The audit compares the latest passing smoke artifacts against the current APK hash, checks required local evidence, and writes `summary.json` plus `report.md` under `output/medtrack-v1-audit-*`. It keeps real Firebase delivery and low-end/field testing as external gates until those artifacts exist.
+
+## Task editing and recent calls (issue 113 Stage 2)
+
+Case tasks expose Edit in the existing sheet, including frequency and full notes.
+Drafts retain their original server baseline through refresh and conflict errors.
+Call outcomes offer a task or General patient call, with required reason for new
+general calls. Save as attempted follows the same rule; cancellation and dismissal
+do not record calls. Recent calls show up to twenty confirmed server receipts with
+reason, outcome, notes and staff, cached only for the verified account. Queued calls
+remain in sync status until confirmed and do not appear as saved history.
+
+Room 14 upgrades version 13 additively, preserving owned rows and queued JSON.
+See API_CONTRACT_COORDINATION.md for replay and completion preconditions.

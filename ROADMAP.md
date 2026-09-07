@@ -2,6 +2,8 @@
 
 ## Issue #113 staged program
 
+- Latest Stage 1 corrections: signed rendered web-edit baseline and normalized ANC link visibility. Complete focused correction verification and fresh exact-head CI; keep later provisional stages separate until actual Stage 1 merged main is available.
+
 - Final four ANC feedback corrections cover cache cancellation safety, loss/close consistency, seed round-trip validity and audited Case-only lock order. Finish targeted checks, then use fresh exact-head CI; no additional broad review is required.
 
 - The six existing automated Stage 1 comments require a focused feedback recheck and fresh exact-head CI after the sync, workflow and pagination fixes. Earlier d2ab783 GO is superseded until those gates pass.

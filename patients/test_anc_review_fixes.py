@@ -98,6 +98,7 @@ class AncReviewFixTests(TestCase):
                 case = self.case(prefix="MRS", age=25, gender="FEMALE")
                 data = {key: value if value is not None else "" for key, value in _case_edit_payload(case).items()}
                 data["notes"] = "Stale notes"
+                data["rendered_baseline"] = self.client.get(reverse("patients:case_edit", args=[case.pk])).context["form"]["rendered_baseline"].value()
                 original = CaseForm.save
                 def save(form, *args, **kwargs):
                     self.interleave_clinical_action(case, action)
@@ -126,6 +127,7 @@ class AncReviewFixTests(TestCase):
                     else:
                         data = {key: value if value is not None else "" for key, value in _case_edit_payload(case).items()}
                         data["notes"] = "Routine edit"
+                        data["rendered_baseline"] = self.client.get(reverse("patients:case_edit", args=[case.pk])).context["form"]["rendered_baseline"].value()
                         response = self.client.post(reverse("patients:case_edit", args=[case.pk]), data)
                         self.assertEqual(response.status_code, 302)
                     reminder.refresh_from_db(); unrelated.refresh_from_db()

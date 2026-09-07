@@ -65,6 +65,7 @@ class AncCommentFixTests(TestCase):
                     self.assertEqual(response.status_code, 200, response.data)
                 else:
                     data = {k: v if v is not None else "" for k, v in current.items()} | changes
+                    data["rendered_baseline"] = self.client.get(reverse("patients:case_edit", args=[case.pk])).context["form"]["rendered_baseline"].value()
                     response = self.client.post(reverse("patients:case_edit", args=[case.pk]), data)
                     self.assertEqual(response.status_code, 302, getattr(response, "context", None))
                 case.refresh_from_db()

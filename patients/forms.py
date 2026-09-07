@@ -2,6 +2,7 @@ import json
 from decimal import Decimal, InvalidOperation
 
 from django import forms
+from django.core import signing
 from django.utils import timezone
 from django.contrib.auth import get_user_model, password_validation
 from django.contrib.auth.models import Group
@@ -259,12 +260,18 @@ class CaseForm(StyledModelForm):
         label="ANC High-Risk Reasons",
     )
 
-    def __init__(self, *args, actor=None, **kwargs):
+    def __init__(self, *args, actor=None, require_rendered_baseline=False, **kwargs):
         ensure_default_departments()
         super().__init__(*args, **kwargs)
         self.actor = actor
         self._generated_temporary_uhid = ""
         self._loaded_updated_at = self.instance.updated_at if self.instance.pk else None
+        self._require_rendered_baseline = require_rendered_baseline and bool(self.instance.pk)
+        if self._require_rendered_baseline:
+            self._rendered_baseline_identity = [self.instance.pk, getattr(actor, "pk", None),
+                self._loaded_updated_at.isoformat()]
+            self.fields["rendered_baseline"] = forms.CharField(required=False, widget=forms.HiddenInput,
+                initial=signing.dumps(self._rendered_baseline_identity, salt="patients.case-edit-baseline"))
         selected_patient_queryset = case_intake_patient_queryset(actor=actor)
         if self.instance and self.instance.pk and self.instance.patient_id:
             selected_patient_queryset = Patient.objects.filter(pk=self.instance.patient_id)
@@ -406,6 +413,14 @@ class CaseForm(StyledModelForm):
 
     def clean(self):
         cleaned_data = super().clean()
+        if self._require_rendered_baseline:
+            try:
+                rendered = signing.loads(cleaned_data.get("rendered_baseline", ""), salt="patients.case-edit-baseline")
+            except (signing.BadSignature, TypeError, ValueError):
+                self.add_error(None, "This edit page is missing a valid baseline. Reload before saving.")
+            else:
+                if rendered != self._rendered_baseline_identity:
+                    self.add_error(None, "This case changed while you were editing. Reload before saving.")
         if self.instance.pk:
             previous = Case.objects.get(pk=self.instance.pk)
             for date_field in (("usg_edd", "edd") if is_anc_case(previous) or previous.effective_edd else ()):

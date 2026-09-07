@@ -2,6 +2,8 @@
 
 ## Issue #113 Stage 1 source implementation
 
+The latest two review corrections protect the actual rendered web-edit baseline through POST and use normalized ANC action visibility. Real GET-to-separate-clinical-write-to-original-POST regressions pass, alongside missing/tampered baseline, normal edit, API compatibility and mixed-case permission checks. Fresh exact-head CI and coordinator targeted verification remain required.
+
 Four subsequent automated ANC comments are addressed in the final feedback revision: acknowledged native cancellation safety, loss-to-follow-up/close consistency, valid seed bundle round-trips and precise audited ANC updates without Patient lock inversion. Targeted validation and fresh exact-head CI replace earlier revision gates.
 
 The six existing automated review comments are addressed in the pending revision: background Room mapping, Grey permission parity, initial ANC reclassification dates, SQL patient-group pagination and retained-task worklist visibility. This supersedes the earlier d2ab783 review/CI gate; a focused feedback recheck and fresh exact-head CI are required.

@@ -5450,6 +5450,11 @@ class CaseUpdateView(LoginRequiredMixin, CaseUpdateAccessMixin, CaseUpdateContex
     form_class = CaseForm
     template_name = CaseUpdateContextMixin.template_name
 
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs.update(actor=self.request.user, require_rendered_baseline=True)
+        return kwargs
+
     def get_queryset(self):
         queryset = Case.objects.select_related("category", "patient")
         if self.request.method == "POST":

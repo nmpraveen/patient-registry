@@ -7178,6 +7178,7 @@ class MedtrackViewTests(TestCase):
         response = self.client.post(
             reverse("patients:case_edit", kwargs={"pk": case.pk}),
             {
+                "rendered_baseline": self.client.get(reverse("patients:case_edit", args=[case.pk])).context["form"]["rendered_baseline"].value(),
                 "uhid": case.uhid,
                 "prefix": case.prefix,
                 "first_name": case.first_name,
@@ -7217,6 +7218,7 @@ class MedtrackViewTests(TestCase):
         response = self.client.post(
             reverse("patients:case_edit", kwargs={"pk": case.pk}),
             {
+                "rendered_baseline": self.client.get(reverse("patients:case_edit", args=[case.pk])).context["form"]["rendered_baseline"].value(),
                 "uhid": case.uhid,
                 "prefix": CasePrefix.MRS,
                 "first_name": "  FIRST   NAME ",
@@ -7259,6 +7261,7 @@ class MedtrackViewTests(TestCase):
         response = self.client.post(
             reverse("patients:case_edit", kwargs={"pk": case.pk}),
             {
+                "rendered_baseline": self.client.get(reverse("patients:case_edit", args=[case.pk])).context["form"]["rendered_baseline"].value(),
                 "uhid": case.uhid,
                 "prefix": case.prefix,
                 "first_name": case.first_name,
@@ -7297,6 +7300,7 @@ class MedtrackViewTests(TestCase):
         response = self.client.post(
             reverse("patients:case_edit", kwargs={"pk": case.pk}),
             {
+                "rendered_baseline": self.client.get(reverse("patients:case_edit", args=[case.pk])).context["form"]["rendered_baseline"].value(),
                 "uhid": case.uhid,
                 "prefix": "",
                 "first_name": case.first_name,

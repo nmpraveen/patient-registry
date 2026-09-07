@@ -16,7 +16,7 @@
       <strong>{{ attention.label }}</strong>
       {% if attention.edd_missing %}<span>EDD missing — review needed</span>{% endif %}
       {% if attention.outcome %}<span>{{ attention.outcome_label }} · {{ attention.outcome_date }} · {{ attention.reason }}{% if attention.referral_destination %} · {{ attention.referral_destination }}{% endif %}</span>{% endif %}
-      {% if case.category.name == 'ANC' and can_anc_edit %}<a href="{% url 'patients:anc_action' case.pk %}">ANC outcome / EDD correction</a>{% endif %}
+      {% if case.workflow_key == 'anc' and can_anc_edit %}<a href="{% url 'patients:anc_action' case.pk %}">ANC outcome / EDD correction</a>{% endif %}
     </section>
     {% endwith %}
 

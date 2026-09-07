@@ -1,3 +1,8 @@
+## 2026.09.07.22.30
+
+- Reject full web case edits whose signed rendered baseline is missing, invalid or stale after a clinical update.
+- Preserve the independent API patch contract and show the ANC action for normalized department names with existing permissions.
+
 ## 2026.09.07.21.49
 
 - Keep acknowledged ANC cancellations non-actionable while awaiting authoritative native detail refresh.

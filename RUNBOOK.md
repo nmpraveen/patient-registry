@@ -2,6 +2,8 @@
 
 ## Issue #113 follow-up and ANC actions
 
+Reload a full web case edit page if its signed rendered baseline is missing, invalid or stale. Edits opened before a clinical update cannot overwrite that update. The native/API patch baseline contract is unchanged; normalized ANC departments expose the same authorised web action.
+
 Loss-to-follow-up outcomes must close the case. Native waits for refreshed details before dismissing ANC success; if refresh fails after cancellation was acknowledged, selected tasks remain non-actionable and the same unchanged submission can be retried. ANC changes update only clinical fields through the mandatory audit boundary without mirroring Patient identity.
 
 Closing ANC with retained tasks leaves those tasks discoverable in scoped web/API/native worklists until explicitly completed/cancelled; closure does not reopen the case. EDD-only attention and dormant/missing buckets remain active-only. Initial ANC date capture during reclassification is permitted only when the prior non-ANC case has no stored effective EDD.

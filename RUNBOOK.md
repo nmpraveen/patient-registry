@@ -1,5 +1,9 @@
 # RUNBOOK.md
 
+## Android dependency upgrades
+
+Use JDK 21 (required by Robolectric API 36) and Android SDK Platform 37.0 for the AGP 9 build. Keep targetSdk and minSdk changes separate from compileSdk updates. AGP supplies Kotlin support; Compose modules apply the matching Kotlin Compose compiler plugin. Run `bash scripts/update-android-verification-metadata.sh` to regenerate both strict locks and checksum metadata, review the artifact sources and checksums, then rerun `testDebugUnitTest lintRelease :app:lintProdRelease assembleRelease` without write flags. Verify a replaced wrapper JAR against the Gradle distribution wrapper checksum and update its adjacent `.sha256` file.
+
 ## Reproducible Build And Exact-Head CI
 
 Production image inputs are immutable and the Docker context is closed by

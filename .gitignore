@@ -17,6 +17,7 @@ docker-compose.override.yml
 *.vps.bak
 android/app/google-services.json
 android/.build/
+android/.kotlin/
 android/release-artifacts/
 android/hs_err_pid*.log
 firebase-service-account*.json

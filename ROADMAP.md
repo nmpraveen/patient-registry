@@ -1,5 +1,11 @@
 # ROADMAP.md
 
+## September dependency maintenance
+
+- Complete exact-head backend, container, and Android CI for PRs #107, #109, and #114 before merging.
+- Preserve strict dependency verification and lock regeneration checks during upgrades.
+- Android device acceptance, external signing, and production deployment remain separate release gates.
+
 ## Phase Status
 
 | Phase | Status | Notes |

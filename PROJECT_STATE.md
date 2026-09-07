@@ -1,5 +1,9 @@
 # PROJECT_STATE.md
 
+## Dependency maintenance (2026-09-07)
+
+PR #109 migrates Android to AGP 9 built-in Kotlin and the Kotlin Compose compiler plugin, compiles against API 37 while preserving target API 36 and minimum API 24, and refreshes strict dependency locks and checksum metadata. The shared container repair pins Alpine libuuid 2.41.6-r1. These are source changes only; no production deployment or signing was performed. Exact-head CI remains the merge gate.
+
 ## Current Status
 
 MEDTRACK is a runnable Django + Postgres case-follow-up MVP with a native Android companion app in the same repo.

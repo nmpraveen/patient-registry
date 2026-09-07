@@ -1,5 +1,7 @@
 package com.naveenhospital.medtrack.core.push
 
+import com.naveenhospital.medtrack.core.data.auth.testTokenStore
+import com.naveenhospital.medtrack.core.data.auth.testLockStore
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -38,8 +40,8 @@ class MedtrackPushTest {
     @Before
     fun setUp() {
         context = ApplicationProvider.getApplicationContext()
-        runCatching { TokenStore(context).clear() }
-        runCatching { LockStore(context).clearAccount(ACCOUNT_ID) }
+        runCatching { testTokenStore(context).clear() }
+        runCatching { testLockStore(context).clearAccount(ACCOUNT_ID) }
         database = Room.inMemoryDatabaseBuilder(context, MedtrackDatabase::class.java)
             .allowMainThreadQueries()
             .build()
@@ -49,8 +51,8 @@ class MedtrackPushTest {
     @After
     fun tearDown() {
         database.close()
-        runCatching { TokenStore(context).clear() }
-        runCatching { LockStore(context).clearAccount(ACCOUNT_ID) }
+        runCatching { testTokenStore(context).clear() }
+        runCatching { testLockStore(context).clearAccount(ACCOUNT_ID) }
     }
 
     @Test
@@ -78,7 +80,7 @@ class MedtrackPushTest {
         listOf(401, 403).forEach { status ->
             database.activateAccount(ACCOUNT_ID)
             val lockStore = seedTrustedState()
-            val tokenStore = TokenStore(context)
+            val tokenStore = testTokenStore(context)
             val expectedSession = requireNotNull(tokenStore.sessionIdentityFor(ACCOUNT_ID))
             val accountGeneration = requireNotNull(database.activeAccountGeneration(ACCOUNT_ID))
             val invalidator = testInvalidator(tokenStore, lockStore)
@@ -104,7 +106,7 @@ class MedtrackPushTest {
     @Test
     fun pushIdentityMismatchPurgesTrustedOwnerState() = runTest {
         val lockStore = seedTrustedState()
-        val tokenStore = TokenStore(context)
+        val tokenStore = testTokenStore(context)
         val expectedSession = requireNotNull(tokenStore.sessionIdentityFor(ACCOUNT_ID))
         val accountGeneration = requireNotNull(database.activeAccountGeneration(ACCOUNT_ID))
         val invalidator = testInvalidator(tokenStore, lockStore)
@@ -134,7 +136,7 @@ class MedtrackPushTest {
     @Test
     fun targetedPushRefreshWithoutApprovedMobileClaimInvalidatesSession() = runTest {
         val lockStore = seedTrustedState()
-        val sessionWriter = TokenStore(context)
+        val sessionWriter = testTokenStore(context)
         assertTrue(
             sessionWriter.commitVerifiedSession(
                 ACCOUNT_ID,
@@ -143,7 +145,7 @@ class MedtrackPushTest {
                 MOBILE_DEVICE_ID,
             ),
         )
-        val tokenStore = TokenStore(context)
+        val tokenStore = testTokenStore(context)
         val expectedSession = requireNotNull(tokenStore.sessionIdentityFor(ACCOUNT_ID))
         val accountGeneration = requireNotNull(database.activeAccountGeneration(ACCOUNT_ID))
         var verifyCalls = 0
@@ -179,7 +181,7 @@ class MedtrackPushTest {
         listOf(401, 403).forEach { status ->
             database.activateAccount(ACCOUNT_ID)
             val lockStore = seedTrustedState()
-            val tokenStore = TokenStore(context)
+            val tokenStore = testTokenStore(context)
             assertTrue(tokenStore.commitVerifiedSession(ACCOUNT_ID, "active-access", "refresh-a"))
             val expectedSession = requireNotNull(tokenStore.sessionIdentityFor(ACCOUNT_ID))
             val accountGeneration = requireNotNull(database.activeAccountGeneration(ACCOUNT_ID))
@@ -208,7 +210,7 @@ class MedtrackPushTest {
         listOf(IOException("offline"), httpError(503)).forEach { failure ->
             database.activateAccount(ACCOUNT_ID)
             val lockStore = seedTrustedState()
-            val tokenStore = TokenStore(context)
+            val tokenStore = testTokenStore(context)
             val expectedSession = requireNotNull(tokenStore.sessionIdentityFor(ACCOUNT_ID))
             val accountGeneration = requireNotNull(database.activeAccountGeneration(ACCOUNT_ID))
             val invalidator = testInvalidator(tokenStore, lockStore)
@@ -240,7 +242,7 @@ class MedtrackPushTest {
     @Test
     fun stalePush401CannotInvalidateReloggedSameAccountSession() = runTest {
         val lockStore = seedTrustedState()
-        val tokenStore = TokenStore(context)
+        val tokenStore = testTokenStore(context)
         val expectedSession = requireNotNull(tokenStore.sessionIdentityFor(ACCOUNT_ID))
         val accountGeneration = requireNotNull(database.activeAccountGeneration(ACCOUNT_ID))
         val invalidator = testInvalidator(tokenStore, lockStore)
@@ -271,7 +273,7 @@ class MedtrackPushTest {
     @Test
     fun stalePushRefreshSuccessCannotOverwriteReloggedSameAccountSession() = runTest {
         val lockStore = seedTrustedState()
-        val tokenStore = TokenStore(context)
+        val tokenStore = testTokenStore(context)
         val expectedSession = requireNotNull(tokenStore.sessionIdentityFor(ACCOUNT_ID))
         val accountGeneration = requireNotNull(database.activeAccountGeneration(ACCOUNT_ID))
         val invalidator = testInvalidator(tokenStore, lockStore)
@@ -321,9 +323,9 @@ class MedtrackPushTest {
     }
 
     private suspend fun seedTrustedState(): LockStore {
-        val seedStore = TokenStore(context)
+        val seedStore = testTokenStore(context)
         assertTrue(seedStore.commitVerifiedSession(ACCOUNT_ID, "access-a", "refresh-a"))
-        val lockStore = LockStore(context)
+        val lockStore = testLockStore(context)
         lockStore.activateAccount(ACCOUNT_ID)
         lockStore.savePattern(listOf(1, 2, 3, 6))
         database.pendingWriteDao().upsertPendingWrite(

@@ -1,28 +1,27 @@
 [versions]
-agp = "8.9.1"
-kotlin = "1.9.25"
-ksp = "1.9.25-1.0.20"
+agp = "9.3.2"
+kotlin = "2.4.10"
+ksp = "2.3.11"
 activityCompose = "1.9.3"
-androidxCore = "1.13.1"
-androidxTestCore = "1.6.1"
+androidxCore = "1.19.0"
+androidxTestCore = "1.7.0"
 biometric = "1.1.0"
-composeBom = "2024.10.00"
-composeCompiler = "1.5.15"
-coroutines = "1.9.0"
-firebaseBom = "33.5.1"
-firebaseCrashlyticsPlugin = "3.0.2"
-googleServices = "4.4.2"
-hilt = "2.52"
+composeBom = "2026.08.00"
+coroutines = "1.11.0"
+firebaseBom = "34.18.0"
+firebaseCrashlyticsPlugin = "3.0.8"
+googleServices = "4.5.0"
+hilt = "2.60.1"
 lifecycle = "2.8.6"
-navigationCompose = "2.8.3"
-okhttp = "4.12.0"
-moshi = "1.15.1"
-paging = "3.3.2"
-retrofit = "2.11.0"
-room = "2.6.1"
-robolectric = "4.13"
-securityCrypto = "1.1.0-alpha06"
-sqlcipher = "4.6.1"
+navigationCompose = "2.10.0"
+okhttp = "5.5.0"
+moshi = "1.15.2"
+paging = "3.5.1"
+retrofit = "3.0.0"
+room = "2.8.4"
+robolectric = "4.16.1"
+securityCrypto = "1.1.0"
+sqlcipher = "4.18.0"
 work = "2.9.1"
 junit = "4.13.2"
 
@@ -71,7 +70,7 @@ robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectr
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 android-library = { id = "com.android.library", version.ref = "agp" }
-kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 google-services = { id = "com.google.gms.google-services", version.ref = "googleServices" }
 firebase-crashlytics = { id = "com.google.firebase.crashlytics", version.ref = "firebaseCrashlyticsPlugin" }

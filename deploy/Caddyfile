@@ -1,6 +1,5 @@
 (medtrack_upstream) {
 	reverse_proxy web:8000 {
-		header_up -X-Medtrack-Client-IP
 		header_up X-Medtrack-Client-IP {remote_host}
 	}
 }

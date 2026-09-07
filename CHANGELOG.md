@@ -1,3 +1,7 @@
+## 2026.09.07.17.06
+
+- Refresh the Caddy 2.11.4 builder digest after verifying its unchanged upstream source revision.
+
 ## 2026.09.07.17.01
 
 - Upgrade Python runtime dependencies and regenerate both hash locks with the repository compiler.

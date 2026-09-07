@@ -1,11 +1,12 @@
-## 2026.09.07.17.07
+## 2026.09.07.17.06
 
+- Update provenance and SBOM signing to the pinned actions/attest v4.2.2 commit.
 - Refresh the Caddy 2.11.4 builder digest after verifying its unchanged upstream source revision.
 
-## 2026.09.07.17.02
+## 2026.09.07.17.01
 
-- Update the pinned attestation action to v4.2.2.
-- Pin patched Alpine libuuid so fresh container scans can pass before attestation.
+- Upgrade Python runtime dependencies and regenerate both hash locks with the repository compiler.
+- Pin Alpine libuuid 2.41.6-r1 to remove fixed high-severity container findings.
 
 # Changelog
 

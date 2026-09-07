@@ -16,8 +16,8 @@
     </div>
     <div class="nav-stats-item nav-stats-item--overdue" data-dashboard-summary-item data-nav-stats-item>
       <span class="nav-stats-accent"></span>
-      <span class="nav-stats-label nav-stats-label--with-icon"><span class="nav-stats-icon nav-stats-icon--overdue" aria-hidden="true"></span><span>Overdue</span></span>
-      <span class="nav-stats-value">{{ overdue_tasks|length }}</span>
+      <span class="nav-stats-label nav-stats-label--with-icon"><span class="nav-stats-icon nav-stats-icon--overdue" aria-hidden="true"></span><span>Overdue cases</span></span>
+      <span class="nav-stats-value">{{ follow_up_counts.overdue }}</span>
     </div>
     <a class="nav-stats-item nav-stats-item--category" href="{% url 'patients:case_list' %}?status=ACTIVE&category_group=anc" aria-label="View active ANC cases" style="{% category_theme_style 'ANC' theme_category_colors %}" data-dashboard-summary-item data-nav-stats-item>
       <span class="nav-stats-accent"></span>
@@ -39,6 +39,11 @@
 {% endblock %}
 
 {% block content %}
+<nav class="d-flex gap-3 flex-wrap mb-3" aria-label="Case follow-up">
+  <a href="{% url 'patients:follow_up_list' %}?bucket=overdue">Overdue: {{ follow_up_counts.overdue }} cases</a>
+  <a href="{% url 'patients:follow_up_list' %}?bucket=dormant">Dormant patients: {{ follow_up_counts.dormant }} cases</a>
+  <a href="{% url 'patients:follow_up_list' %}?bucket=edd_missing">EDD review needed: {{ follow_up_counts.edd_missing }} cases</a>
+</nav>
 <style nonce="{{ request.csp_nonce }}">
   .dashboard-module {
     --dashboard-module-bg: var(--theme-dashboard-upcoming-bg);
@@ -2881,7 +2886,7 @@
     <section class="dashboard-module dashboard-module--overdue" data-dashboard-module="overdue" data-compact-module data-compact-limit="10">
       <div class="dashboard-module-header">
         <div class="dashboard-module-title-group">
-          <h2 class="h6">Overdue</h2>
+          <h2 class="h6">Overdue tasks</h2>
           <span class="dashboard-module-count">{{ overdue_cards|length }} patient{{ overdue_cards|length|pluralize }}</span>
         </div>
         {% if overdue_cards|length > 10 %}

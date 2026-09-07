@@ -29,7 +29,7 @@ class AccountGenerationRevokedException : IllegalStateException(
         SyncConflictEntity::class,
         CacheMetadataEntity::class,
     ],
-    version = 12,
+    version = 13,
     exportSchema = true,
 )
 abstract class MedtrackDatabase : RoomDatabase() {
@@ -149,6 +149,7 @@ abstract class MedtrackDatabase : RoomDatabase() {
                         MIGRATION_9_10,
                         MIGRATION_10_11,
                         MIGRATION_11_12,
+                        MIGRATION_12_13,
                     )
                     .build()
                     .also { INSTANCE = it }
@@ -531,6 +532,15 @@ abstract class MedtrackDatabase : RoomDatabase() {
             }
         }
 
+        internal val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE cases ADD COLUMN followUpLabel TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE cases ADD COLUMN ancOutcomeSummary TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE cases ADD COLUMN serverUpdatedAt TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE case_stats ADD COLUMN dormant INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         internal val ALL_MIGRATIONS: Array<Migration> = arrayOf(
             MIGRATION_1_2,
             MIGRATION_2_3,
@@ -543,6 +553,7 @@ abstract class MedtrackDatabase : RoomDatabase() {
             MIGRATION_9_10,
             MIGRATION_10_11,
             MIGRATION_11_12,
+            MIGRATION_12_13,
         )
     }
 }

@@ -1,5 +1,27 @@
 # PROJECT_STATE.md
 
+## Issue #113 Stage 1 source implementation
+
+The remaining Recent Cases lock-order issue is reproduced and corrected with precise mandatory-audited diagnosis/notes/timestamp updates, preserving fresh activity before-values and checking Patient linkage without taking a Patient lock. Eight targeted regressions pass; fresh exact-head CI and the correction-only recheck supersede the prior head.
+
+The native ANC callback now propagates coroutine cancellation from both action and list refresh instead of writing warnings or invoking report callbacks. Five standalone scenarios extracted from the actual callback and incremental app Kotlin compilation pass; this minimal correction requires fresh exact-head CI.
+
+The latest native ANC success correction refreshes the active list membership and counters after authoritative detail, preserving every active filter and clearing remembered filters on account reset. Focused repository tests and incremental app Kotlin compilation pass; fresh exact-head CI and bounded correction verification supersede the prior e49ab891 gate.
+
+The related full web-edit deadlock correction locks Patient before Case, refreshes scoped state/linkage before form binding, and includes Patient identity/version in the rendered baseline. Actual concurrent CaseUpdate/PatientUpdate requests complete with a clean stale-draft rejection and preserved identity/audit. Focused tests pass; fresh exact-head CI and correction verification replace the prior 2168b74 gate.
+
+The latest two review corrections protect the actual rendered web-edit baseline through POST and use normalized ANC action visibility. Real GET-to-separate-clinical-write-to-original-POST regressions pass, alongside missing/tampered baseline, normal edit, API compatibility and mixed-case permission checks. Fresh exact-head CI and coordinator targeted verification remain required.
+
+Four subsequent automated ANC comments are addressed in the final feedback revision: acknowledged native cancellation safety, loss-to-follow-up/close consistency, valid seed bundle round-trips and precise audited ANC updates without Patient lock inversion. Targeted validation and fresh exact-head CI replace earlier revision gates.
+
+The six existing automated review comments are addressed in the pending revision: background Room mapping, Grey permission parity, initial ANC reclassification dates, SQL patient-group pagination and retained-task worklist visibility. This supersedes the earlier d2ab783 review/CI gate; a focused feedback recheck and fresh exact-head CI are required.
+
+The four Stage 1 review findings are addressed: PostgreSQL-safe scoped row locks, concurrent web edit preservation, explicit reminder cancellation retention, and shared ANC outcome validation for imports. Review-fix verification passed 91 targeted tests; fresh exact-head CI and the coordinator's focused recheck remain the merge gates.
+
+Stage 1 adds scoped dormant/overdue/EDD-missing follow-up views, persistent task-independent ANC EDD attention, explicit audited outcome/EDD actions, and additive native/API/bundle contracts. Django migration 0040 and Room 12→13 preserve existing statuses/history. EDD correction retains every task date. Historical closed ANC reconciliation is read-only. See [Stage 1 contract and validation](docs/issue-113-stage-1.md).
+
+Local evidence: 509 Django tests passed (two existing skips) before dependency integration; the Stage 1 browser smoke passed five routes at four widths and real synthetic correction/referral submissions; native unit/debug builds passed. Dependencies are integrated from main `04e2f13bc32b9c2249aee7ab1e36081d806a273e`. The PR's exact-head CI is the final source gate. This feature has not been deployed; native Firebase/physical-device acceptance remains separate.
+
 ## Dependency maintenance (2026-09-07)
 
 PR #109 migrates Android to AGP 9 built-in Kotlin and the Kotlin Compose compiler plugin, compiles against API 37 while preserving target API 36 and minimum API 24, and refreshes strict dependency locks and checksum metadata. The shared container repair pins Alpine libuuid 2.41.6-r1. These are source changes only; no production deployment or signing was performed. Exact-head CI remains the merge gate.

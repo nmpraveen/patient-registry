@@ -12,6 +12,7 @@ from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.db.models import Prefetch
 from django.utils import timezone
+from .anc_validation import validate_anc_outcome
 
 from .models import (
     CallLog,
@@ -385,6 +386,11 @@ def _serialize_case(case, *, patient_uhid=None):
         "lmp": _serialize_date(case.lmp),
         "edd": _serialize_date(case.edd),
         "usg_edd": _serialize_date(case.usg_edd),
+        "anc_outcome": case.anc_outcome,
+        "anc_outcome_date": _serialize_date(case.anc_outcome_date),
+        "anc_outcome_reason": case.anc_outcome_reason,
+        "anc_referral_destination": case.anc_referral_destination,
+        "anc_continue_follow_up": case.anc_continue_follow_up,
         "surgical_pathway": case.surgical_pathway,
         "surgery_done": case.surgery_done,
         "review_frequency": case.review_frequency,
@@ -721,6 +727,11 @@ def _import_payload(payload, categories_by_name, users_by_username):
             lmp=_parse_date(case_data.get("lmp"), "lmp"),
             edd=_parse_date(case_data.get("edd"), "edd"),
             usg_edd=_parse_date(case_data.get("usg_edd"), "usg_edd"),
+            anc_outcome=case_data.get("anc_outcome", ""),
+            anc_outcome_date=_parse_date(case_data.get("anc_outcome_date"), "anc_outcome_date"),
+            anc_outcome_reason=case_data.get("anc_outcome_reason", ""),
+            anc_referral_destination=case_data.get("anc_referral_destination", ""),
+            anc_continue_follow_up=case_data.get("anc_continue_follow_up", True),
             surgical_pathway=case_data.get("surgical_pathway", ""),
             surgery_done=bool(case_data.get("surgery_done", False)),
             review_frequency=case_data.get("review_frequency", ""),
@@ -736,6 +747,9 @@ def _import_payload(payload, categories_by_name, users_by_username):
             notes=case_data.get("notes", ""),
             created_by=users_by_username.get(case_data.get("created_by_username")),
         )
+        validate_anc_outcome(outcome=case.anc_outcome, outcome_date=case.anc_outcome_date,
+            reason=case.anc_outcome_reason, destination=case.anc_referral_destination,
+            continue_follow_up=case_data.get("anc_continue_follow_up"))
         if is_quick_entry:
             case._skip_workflow_validation = True
         exclude_fields = _blank_model_fields(case, "created_by", "archived_by")

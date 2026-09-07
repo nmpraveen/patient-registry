@@ -244,12 +244,17 @@ fun CaseDetailScreen(
     canEditTask: Boolean = false,
     taskMetadata: TaskFormMetadata? = null,
     onEditCase: () -> Unit = {},
+    onAncAction: (Map<String, Any>, (String?) -> Unit) -> Unit = { _, report -> report("Unavailable") },
     onTaskAction: (TaskSheetAction, String?, (String?) -> Unit) -> Unit = { _, _, cb -> cb(null) },
     onEditVitals: (String, VitalsEntryInput) -> Unit = { _, _ -> },
 ) {
+    var showAncDialog by remember(caseId) { mutableStateOf(false) }
     var showVitalsDialog by rememberSaveable { mutableStateOf(false) }
     var editingVital by remember(caseId) { mutableStateOf<PatientVital?>(null) }
     var taskSheetTarget by remember(caseId) { mutableStateOf<TaskSheetTarget?>(null) }
+    if (showAncDialog && patientCase != null) {
+        AncActionDialog(patientCase, tasks, canEditTask, onAncAction, onDismiss = { showAncDialog = false })
+    }
     val listState = rememberLazyListState()
 
     Column(
@@ -316,6 +321,17 @@ fun CaseDetailScreen(
                         CaseHero(
                             patientCase = patientCase,
                         )
+                    }
+                    item {
+                        MedtrackCompactCard {
+                            Text(patientCase.followUpLabel, color = MedtrackColors.Ink)
+                            if (patientCase.ancOutcomeSummary.isNotBlank()) Text(patientCase.ancOutcomeSummary)
+                            if (canEditCase && patientCase.category == com.naveenhospital.medtrack.core.domain.model.CaseCategory.ANC) {
+                                TextButton(onClick = { showAncDialog = true }, enabled = patientCase.serverUpdatedAt.isNotBlank() && patientCase.followUpLabel.isNotBlank()) {
+                                    Text("ANC outcome / EDD correction")
+                                }
+                            }
+                        }
                     }
                     val latestVitalsSummary = vitals.firstOrNull()?.summary?.takeIf { it.isNotBlank() }
                         ?: patientCase.latestVitalSummary?.takeIf { it.isNotBlank() }

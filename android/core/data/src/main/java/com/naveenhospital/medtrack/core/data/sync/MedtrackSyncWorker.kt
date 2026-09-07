@@ -965,6 +965,11 @@ private fun Throwable.rethrowAccountBoundaryFailure() {
 
 private fun CaseSummaryDto.toEntityForSync(ownerAccountId: String): CaseEntity =
     CaseEntity(
+        followUpLabel = listOfNotNull(followUp?.label, followUp?.effectiveEdd?.let { "EDD $it" },
+            "EDD missing — review needed".takeIf { followUp?.eddMissing == true }).filter { it.isNotBlank() }.joinToString(" · "),
+        ancOutcomeSummary = listOfNotNull(followUp?.outcomeLabel, followUp?.outcomeDate,
+            followUp?.reason, followUp?.referralDestination).filter { it.isNotBlank() }.joinToString(" · "),
+        serverUpdatedAt = updatedAt,
         ownerAccountId = ownerAccountId,
         id = id.toString(),
         uhid = uhid,
@@ -987,7 +992,7 @@ private fun CaseSummaryDto.toEntityForSync(ownerAccountId: String): CaseEntity =
         updatedAtMillis = System.currentTimeMillis(),
     )
 
-private fun CaseStatsDto.toEntityForSync(
+internal fun CaseStatsDto.toEntityForSync(
     ownerAccountId: String,
     cacheKey: String,
     updatedAtMillis: Long,
@@ -995,6 +1000,7 @@ private fun CaseStatsDto.toEntityForSync(
     CaseStatsEntity(
         ownerAccountId = ownerAccountId,
         cacheKey = cacheKey,
+        dormant = dormant,
         today = today,
         upcoming = upcoming,
         overdue = overdue,

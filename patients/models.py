@@ -1181,6 +1181,14 @@ class Case(MandatoryAuditModelMixin, models.Model):
     lmp = models.DateField(blank=True, null=True)
     edd = models.DateField(blank=True, null=True)
     usg_edd = models.DateField(blank=True, null=True)
+    anc_outcome = models.CharField(max_length=24, blank=True, default="", choices=[
+        ("delivery", "Delivery"), ("loss_to_follow_up", "Loss to follow-up"),
+        ("referral", "Referral"), ("other", "Other resolution"),
+    ])
+    anc_outcome_date = models.DateField(blank=True, null=True)
+    anc_outcome_reason = models.TextField(blank=True)
+    anc_referral_destination = models.CharField(max_length=255, blank=True)
+    anc_continue_follow_up = models.BooleanField(default=True)
     surgical_pathway = models.CharField(max_length=32, choices=SurgicalPathway.choices, blank=True)
     surgery_done = models.BooleanField(default=False)
     review_frequency = models.CharField(max_length=20, choices=ReviewFrequency.choices, blank=True)
@@ -1348,6 +1356,10 @@ class Case(MandatoryAuditModelMixin, models.Model):
             if reason in valid_anc_reason_values and reason not in self.anc_high_risk_reasons:
                 self.anc_high_risk_reasons.append(reason)
 
+        from .anc_validation import validate_anc_outcome
+        validate_anc_outcome(outcome=self.anc_outcome, outcome_date=self.anc_outcome_date,
+            reason=self.anc_outcome_reason, destination=self.anc_referral_destination,
+            continue_follow_up=self.anc_continue_follow_up)
         category_name = normalize_category_name(self.category.name) if self.category_id else ""
         valid_subcategories = valid_case_subcategory_values_for_category_name(category_name)
         self.subcategory = " ".join((self.subcategory or "").split()).upper()
@@ -1499,6 +1511,11 @@ class Case(MandatoryAuditModelMixin, models.Model):
     @property
     def effective_edd(self):
         return self.usg_edd or self.edd
+
+    @property
+    def follow_up(self):
+        from .follow_up import follow_up_payload
+        return follow_up_payload(self)
 
     @property
     def anc_high_risk_reason_labels(self):
@@ -1920,6 +1937,10 @@ def open_rch_reminder_queryset(case: Case):
 
 def ensure_rch_reminder_task(case: Case, actor, due_date=None):
     if not is_anc_case(case):
+        return None
+    # Recorded outcomes retain explicit task decisions, even when follow-up
+    # continues. Resuming a cancelled reminder requires task create/reopen.
+    if case.status != CaseStatus.ACTIVE or case.is_archived or case.anc_outcome:
         return None
     if case.rch_number or not case.rch_bypass:
         return None

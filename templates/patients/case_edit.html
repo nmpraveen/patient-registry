@@ -70,6 +70,7 @@
     <div class="case-create-layout">
       <form method="post" id="case-edit-form" class="case-create-main" data-case-autocomplete-url="{% url 'patients:case_autocomplete' %}">
         {% csrf_token %}
+        {{ form.rendered_baseline }}
 
         <section class="case-create-card">
           <div class="case-create-card__header">

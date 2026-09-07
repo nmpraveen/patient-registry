@@ -89,6 +89,7 @@ class Command(BaseCommand):
     ]
 
     def add_arguments(self, parser):
+        parser.add_argument("--follow-up-scenarios", action="store_true", help="Include dormant, missing EDD, overdue EDD and resolved ANC examples (use --count 12).")
         parser.add_argument("--count", type=int)
         parser.add_argument(
             "--profile",
@@ -176,7 +177,7 @@ class Command(BaseCommand):
                 "uhid": generate_temporary_patient_uhid(today),
                 "prefix": profile["prefix"],
                 "first_name": profile["first_name"],
-                "last_name": "",
+                "last_name": profile["last_name"],
                 "gender": profile["gender"],
                 "blood_group": profile["blood_group"],
                 "date_of_birth": None,
@@ -389,7 +390,6 @@ class Command(BaseCommand):
                 "uhid": kwargs["patient"].uhid,
                 "category": surgery,
                 "status": CaseStatus.ACTIVE,
-                "last_name": "",
                 "place": "",
                 "phone_number": "",
                 "alternate_phone_number": "",
@@ -411,6 +411,7 @@ class Command(BaseCommand):
                     "lmp": today - timedelta(days=50 + index),
                     "edd": today + timedelta(days=180 - index),
                     "usg_edd": today + timedelta(days=175 - index),
+                    "anc_high_risk_reasons": [AncHighRiskReason.ANEMIA] if kwargs["high_risk"] else [],
                     "gravida": 2 + (index % 2),
                     "para": 1,
                     "abortions": index % 2,
@@ -810,6 +811,9 @@ class Command(BaseCommand):
         ]
         if include_rch_scenarios:
             named_builders.insert(1, ("anc_rch_missing", lambda anc, surgery, non_surgical, today, kwargs, _: self.build_anc_rch_missing_case(anc, today, kwargs)))
+        if options["follow_up_scenarios"]:
+            for follow_up_scenario in ("edd_overdue", "dormant", "edd_missing", "anc_resolved"):
+                named_builders.append((follow_up_scenario, lambda anc, surgery, non_surgical, today, kwargs, _: self.build_anc_high_risk_case(anc, today, kwargs)))
 
         for i in range(1, count + 1):
             mock_profile = self.mock_profiles[(i - 1) % len(self.mock_profiles)]
@@ -817,6 +821,10 @@ class Command(BaseCommand):
                 scenario_name, builder = named_builders[i - 1]
             else:
                 scenario_name, builder = "default_mixed", self.build_default_case
+
+            if scenario_name in ("edd_overdue", "dormant", "edd_missing", "anc_resolved"):
+                mock_profile = dict(mock_profile, prefix=CasePrefix.MRS, first_name="Synthetic",
+                    last_name=f"ANC {i}", gender=Gender.FEMALE)
 
             patient = self._patient_for_scenario(mock_profile, i, today, demo_user, scenario_name)
             kwargs = self._base_case_kwargs(mock_profile, i, today, demo_user, patient)
@@ -829,6 +837,28 @@ class Command(BaseCommand):
                 details_task = create_quick_entry_details_task(case, demo_user, due_date=case.review_date)
             tasks = build_default_tasks(case, demo_user)
             self.mutate_seeded_tasks(case, rng, today, staff_users, i)
+            if scenario_name in ("edd_overdue", "dormant", "edd_missing", "anc_resolved"):
+                for task in case.tasks.exclude(status__in=[TaskStatus.COMPLETED, TaskStatus.CANCELLED]):
+                    task.status = TaskStatus.CANCELLED
+                    task.save(update_fields=["status", "updated_at"])
+                case.usg_edd = None
+                case.edd = today - timedelta(days=1) if scenario_name == "edd_overdue" else today + timedelta(days=14)
+                case.lmp = case.edd - timedelta(days=280)
+                if scenario_name == "edd_missing":
+                    case.edd = None
+                    case.lmp = None
+                    case.metadata = dict(case.metadata, entry_mode="quick_entry", details_pending=True)
+                    case._skip_workflow_validation = True
+                case.full_clean()
+                case.save()
+                if scenario_name == "anc_resolved":
+                    from patients.anc import AncActionForm, apply_anc_action
+                    form = AncActionForm(case=case, data={"action": "outcome", "base_updated_at": case.updated_at,
+                        "reason": "Synthetic referral confirmed", "outcome": "referral", "outcome_date": today,
+                        "referral_destination": "Demo clinic", "continue_follow_up": "continue", "task_policy": "retain"})
+                    if not form.is_valid():
+                        raise ValueError(form.errors)
+                    apply_anc_action(case=case, user=staff_users["admin"], data=form.cleaned_data)
             CaseActivityLog.objects.create(
                 case=case,
                 user=demo_user,

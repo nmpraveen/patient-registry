@@ -767,6 +767,7 @@ private fun BucketChips(
                 BucketFilter("upcoming", "Upcoming", stats.upcoming, MedtrackColors.Primary),
                 BucketFilter("overdue", "Overdue", stats.overdue, MedtrackColors.Danger),
                 BucketFilter("awaiting", "Awaiting", stats.awaiting, MedtrackColors.Warning),
+                BucketFilter("dormant", "Dormant", stats.dormant, MedtrackColors.Muted),
                 BucketFilter("red", "Red", stats.red, MedtrackColors.Danger),
             ).forEach { filter ->
                 BucketFilterChip(
@@ -869,7 +870,8 @@ private fun PatientCard(
     val maxDrag = with(density) { 96.dp.toPx() }
     val railColor = patientCase.cardRailColor()
     val displayName = patientCase.patientName
-    val dueLabel = patientCase.worklistDueLabel(selectedBucket = selectedBucket, expanded = expanded)
+    val dueLabel = patientCase.followUpLabel.takeIf { it.startsWith("Dormant") || it.startsWith("Overdue — EDD") || it.contains("EDD missing") }
+        ?: patientCase.worklistDueLabel(selectedBucket = selectedBucket, expanded = expanded)
 
     Box(
         modifier = Modifier

@@ -1,3 +1,52 @@
+## 2026.09.07.23.28
+
+- Prevent Recent Cases diagnosis/notes edits from deadlocking with patient identity edits through precise mandatory-audited Case updates.
+- Preserve current activity before-values, clinical state and identity; reject changed Patient linkage and roll back on audit failure.
+
+## 2026.09.07.23.13
+
+- Propagate coroutine cancellation from native ANC action and inbox-refresh callbacks before user warnings or success/failure reports.
+- Preserve ordinary saved-action, action-failure and refresh-failure behavior.
+
+## 2026.09.07.23.05
+
+- Refresh native active-list membership and counters after authoritative ANC action details, preserving the current bucket, search, scope and category filters.
+- Keep inbox refresh failures separate from saved clinical actions and clear remembered filters when the account changes.
+
+## 2026.09.07.22.44
+
+- Serialize full web case edits with patient identity edits using Patient-before-Case locks and fresh scoped linkage validation.
+- Bind rendered baselines to Patient identity/version, preserve rejected drafts, and retain transactional identity mirrors and mandatory audit.
+
+## 2026.09.07.22.30
+
+- Reject full web case edits whose signed rendered baseline is missing, invalid or stale after a clinical update.
+- Preserve the independent API patch contract and show the ANC action for normalized department names with existing permissions.
+
+## 2026.09.07.21.49
+
+- Keep acknowledged ANC cancellations non-actionable while awaiting authoritative native detail refresh.
+- Reject continuing loss-to-follow-up outcomes across web, API, native and imports.
+- Make the synthetic follow-up dataset bundle-valid and prevent ANC/Patient identity lock inversion through precise audited updates.
+
+## 2026.09.07.21.38
+
+- Preserve ANC follow-up fields and dormant counts through background sync and pending-write responses.
+- Restore Grey permission parity and permit initial ANC dates when reclassifying cases without a stored EDD.
+- Page patient-group keys in SQL and keep closed cases with retained tasks visible in scoped worklists.
+
+## 2026.09.07.21.20
+
+- Fix scoped PostgreSQL ANC actions and preserve clinical updates during concurrent web edits.
+- Retain explicit reminder cancellation after outcomes and reject incomplete outcome imports.
+- Add regression coverage for all four Stage 1 review findings.
+
+## 2026.09.07.20.56
+
+- Add scoped dormant patient groups, persistent ANC EDD overdue and missing-EDD review.
+- Add audited ANC outcomes and USG EDD correction, explicit task retention/cancellation, native actions and additive API/bundle/Room contracts.
+- Integrate dependency updates and validate scoped counts, dates, replay, migrations and synthetic browser/native flows.
+
 ## 2026.09.07.20.31
 
 - Integrate the Android dependency/toolchain upgrade with the merged Python/container repairs and pinned actions/attest v4.2.2 update.

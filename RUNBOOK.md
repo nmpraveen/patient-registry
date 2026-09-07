@@ -1,5 +1,27 @@
 # RUNBOOK.md
 
+## Issue #113 follow-up and ANC actions
+
+Recent Cases edits write only diagnosis, notes and updated_at through mandatory auditing. They retain clinical/identity state during concurrent updates, reject Patient linkage changes detected at save time, and roll back if auditing fails.
+
+Cancelling the native ANC coroutine propagates cancellation without reporting saved-action success or failure from that cancelled callback. Ordinary action and inbox-refresh failures keep their separate messages.
+
+Native ANC success now refreshes the active inbox/list and counters with its current filters after authoritative details succeed. If that list refresh fails, the action stays saved and the UI asks for an inbox refresh; resubmitting the clinical mutation is unnecessary.
+
+Full web edits use Patient-then-Case locks, matching patient identity edits. Concurrent clinical/identity changes reject the stale submission while retaining its draft and original token; reload and review the current record before resubmitting. Identity mirrors and mandatory audit remain transactional.
+
+Reload a full web case edit page if its signed rendered baseline is missing, invalid or stale. Edits opened before a clinical update cannot overwrite that update. The native/API patch baseline contract is unchanged; normalized ANC departments expose the same authorised web action.
+
+Loss-to-follow-up outcomes must close the case. Native waits for refreshed details before dismissing ANC success; if refresh fails after cancellation was acknowledged, selected tasks remain non-actionable and the same unchanged submission can be retried. ANC changes update only clinical fields through the mandatory audit boundary without mirroring Patient identity.
+
+Closing ANC with retained tasks leaves those tasks discoverable in scoped web/API/native worklists until explicitly completed/cancelled; closure does not reopen the case. EDD-only attention and dormant/missing buckets remain active-only. Initial ANC date capture during reclassification is permitted only when the prior non-ANC case has no stored effective EDD.
+
+After an ANC outcome, routine edits do not regenerate RCH reminders. Resume follow-up through an explicitly authorised task creation/reopen. Full case edits reject an intervening case update; Recent Cases writes only diagnosis/notes. Outcome imports require a date, reason, referral destination where applicable, and an explicit boolean follow-up choice; legacy records without an outcome remain supported.
+
+The [Stage 1 runbook](docs/issue-113-stage-1.md) defines case-based counts, hospital-date predicates, explicit retention/cancellation, native online submissions, additive migrations and patient bundle compatibility. The new outcome date records delivery/referral dates where applicable; no outcome is inferred from tasks or EDD.
+
+For a read-only review of historical closed ANC cases, run `python manage.py report_anc_reconciliation` in an authorised environment and review each reported case before any explicit action. No bulk reopen is provided. Migration 0040 adds outcome columns without changing existing cases/tasks; export/backup those columns before any schema reversal. Production activation still requires the existing deployment and backup gates.
+
 ## Android dependency upgrades
 
 Use JDK 21 (required by Robolectric API 36) and Android SDK Platform 37.0 for the AGP 9 build. Keep targetSdk and minSdk changes separate from compileSdk updates. AGP supplies Kotlin support; Compose modules apply the matching Kotlin Compose compiler plugin. Run `bash scripts/update-android-verification-metadata.sh` to regenerate both strict locks and checksum metadata, review the artifact sources and checksums, then rerun `testDebugUnitTest lintRelease :app:lintProdRelease assembleRelease` without write flags. Verify a replaced wrapper JAR against the Gradle distribution wrapper checksum and update its adjacent `.sha256` file.

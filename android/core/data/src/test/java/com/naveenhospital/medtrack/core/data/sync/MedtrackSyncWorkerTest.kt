@@ -26,6 +26,7 @@ import com.naveenhospital.medtrack.core.network.model.CaseDetailDto
 import com.naveenhospital.medtrack.core.network.model.CaseListResponseDto
 import com.naveenhospital.medtrack.core.network.model.CaseStatsDto
 import com.naveenhospital.medtrack.core.network.model.CaseSummaryDto
+import com.naveenhospital.medtrack.core.network.model.FollowUpDto
 import com.naveenhospital.medtrack.core.network.model.CategoriesResponseDto
 import com.naveenhospital.medtrack.core.network.model.DataScopeDto
 import com.naveenhospital.medtrack.core.network.model.ClientWriteRequestDto
@@ -89,6 +90,28 @@ class MedtrackSyncWorkerTest {
         database.close()
         authPrefs.edit().clear().commit()
         lockPrefs.edit().clear().commit()
+    }
+
+    @Test
+    fun syncedDormantStatsSurviveRoomRestore() = runTest {
+        val response = CaseStatsDto(dormant = 7, today = 1, upcoming = 2, overdue = 3, awaiting = 4, red = 5)
+        database.caseStatsDao().upsertStats(response.toEntityForSync(ACCOUNT_ID, "default", 123L))
+        val restored = database.caseStatsDao().statsForKey(ACCOUNT_ID, "default")
+        assertEquals(7, restored?.dormant)
+        assertEquals(3, restored?.overdue)
+        assertNull(database.caseStatsDao().statsForKey("other-account", "default"))
+    }
+
+    @Test
+    fun acceptedPendingWritePreservesServerFollowUpFields() = runTest {
+        database.pendingWriteDao().upsertPendingWrite(pendingWrite(
+            clientWriteId = "follow-up-write", writeType = PendingWriteTypes.TASK_COMPLETE,
+            caseId = "42", taskId = "7",
+            payloadJson = PendingWriteJson.encodeTaskComplete(ClientWriteRequestDto("follow-up-write")),
+        ))
+        assertEquals(SyncRunOutcome.COMPLETED,
+            drainPendingWritesForSync(FakeSyncApi(), database, ACCOUNT_ID, accountGeneration))
+        assertFollowUpFieldsPreserved()
     }
 
     @Test
@@ -917,12 +940,20 @@ class MedtrackSyncWorkerTest {
     }
 
     private suspend fun assertServerVersionRefreshed() {
+        assertFollowUpFieldsPreserved()
         val case = database.caseDao().caseById(ACCOUNT_ID, "42")
         assertEquals("Server Patient", case?.patientName)
         val tasks = database.taskDao().observeTasksForCase(ACCOUNT_ID, "42").first()
         assertEquals("Server review", tasks.single().title)
         val vitals = database.vitalDao().observeVitalsForCase(ACCOUNT_ID, "42").first()
         assertEquals("PR 76 | SpO2 98", vitals.single().summary)
+    }
+
+    private suspend fun assertFollowUpFieldsPreserved() {
+        val case = database.caseDao().caseById(ACCOUNT_ID, "42")
+        assertEquals("Overdue · EDD 2026-09-01", case?.followUpLabel)
+        assertEquals("Referral · 2026-09-02 · Confirmed · Synthetic clinic", case?.ancOutcomeSummary)
+        assertEquals("2026-09-02T10:00:00Z", case?.serverUpdatedAt)
     }
 
     private fun pendingWrite(
@@ -1096,6 +1127,8 @@ private class FakeSyncApi(
     override suspend fun caseFormMetadata(): com.naveenhospital.medtrack.core.network.model.CaseFormMetadataDto = unused()
     override suspend fun taskFormMetadata(): com.naveenhospital.medtrack.core.network.model.TaskFormMetadataDto = unused()
     override suspend fun caseEditForm(caseId: String): com.naveenhospital.medtrack.core.network.model.CaseEditFormDto = unused()
+    override suspend fun ancAction(caseId: String, request: Map<String, Any>): com.naveenhospital.medtrack.core.network.model.CaseUpdateResponseDto = unused()
+
     override suspend fun updateCase(caseId: String, request: com.naveenhospital.medtrack.core.network.model.UpdateCaseRequestDto): com.naveenhospital.medtrack.core.network.model.CaseUpdateResponseDto = unused()
     override suspend fun createTask(caseId: String, request: com.naveenhospital.medtrack.core.network.model.CreateTaskRequestDto): TaskWriteResponseDto = unused()
     override suspend fun updateTask(taskId: String, request: com.naveenhospital.medtrack.core.network.model.UpdateTaskRequestDto): TaskWriteResponseDto = unused()
@@ -1107,6 +1140,10 @@ private class FakeSyncApi(
     private fun sampleCase(): CaseSummaryDto =
         CaseSummaryDto(
             id = 42,
+            followUp = FollowUpDto(label = "Overdue", effectiveEdd = "2026-09-01",
+                outcomeLabel = "Referral", outcomeDate = "2026-09-02", reason = "Confirmed",
+                referralDestination = "Synthetic clinic"),
+            updatedAt = "2026-09-02T10:00:00Z",
             uhid = "UH-SERVER-42",
             name = "Server Patient",
             age = 30,

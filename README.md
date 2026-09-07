@@ -4,6 +4,9 @@ A Django + PostgreSQL MVP for **case-based follow-up tracking**.
 
 ## What this build supports
 
+- Scoped **Dormant patients**, **Overdue cases**, and **EDD review needed** views; unresolved past-EDD ANC stays overdue even with no open tasks.
+- Explicit **ANC outcome / EDD correction** on web and native case detail. Corrections retain task dates; outcomes cancel only explicitly selected open tasks. See [Stage 1 workflow](docs/issue-113-stage-1.md).
+
 - Login-based access and role-aware actions (Admin, Doctor, Nurse, Reception, Caller)
 - Entry flow aligned to clinical pathways:
   - **ANC**: capture LMP/EDD, derive trimester, auto-create ANC checklist tasks

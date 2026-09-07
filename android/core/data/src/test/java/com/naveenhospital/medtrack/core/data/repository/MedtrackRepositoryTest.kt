@@ -57,6 +57,7 @@ import okhttp3.ResponseBody.Companion.toResponseBody
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -87,6 +88,43 @@ class MedtrackRepositoryTest {
     }
 
     @Test
+    fun ancCancellationWaitsForAuthoritativeDetailBeforeReturning() = runTest {
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val api = FakeMedtrackApi(beforeCaseDetail = { entered.complete(Unit); release.await() })
+        val repository = repository(api)
+        database.taskDao().upsertTask(TaskEntity(ownerAccountId = ACCOUNT_ID, id = "7", caseId = "42",
+            title = "Original", dueDate = "2026-09-01", status = "SCHEDULED", statusLabel = "Scheduled",
+            canComplete = true, updatedAtMillis = 1L))
+        val result = async { repository.recordAncAction("42", mapOf("task_policy" to "cancel_selected",
+            "cancel_task_ids" to listOf(7L))) }
+        entered.await()
+        assertFalse(result.isCompleted)
+        assertEquals(false, database.taskDao().taskById(ACCOUNT_ID, "7")?.canComplete)
+        release.complete(Unit)
+        assertEquals("ANC action recorded.", result.await())
+        assertEquals("CANCELLED", database.taskDao().taskById(ACCOUNT_ID, "7")?.status)
+        assertEquals("Authoritative cancellation", database.taskDao().taskById(ACCOUNT_ID, "7")?.title)
+    }
+
+    @Test
+    fun ancCancellationFailedRefreshCannotLeaveCancelledTasksActionable() = runTest {
+        val repository = repository(FakeMedtrackApi(beforeCaseDetail = { throw IOException("offline") }))
+        for (id in listOf("7", "8")) {
+            database.taskDao().upsertTask(TaskEntity(ownerAccountId = ACCOUNT_ID, id = id, caseId = "42",
+                title = "Original", dueDate = "2026-09-01", status = "SCHEDULED", statusLabel = "Scheduled",
+                canComplete = true, updatedAtMillis = 1L))
+        }
+        val failure = runCatching { repository.recordAncAction("42", mapOf("task_policy" to "cancel_selected",
+            "cancel_task_ids" to listOf(7L))) }.exceptionOrNull()
+        assertTrue(failure is IOException)
+        assertEquals("CANCELLED", database.taskDao().taskById(ACCOUNT_ID, "7")?.status)
+        assertEquals(false, database.taskDao().taskById(ACCOUNT_ID, "7")?.canComplete)
+        assertEquals("SCHEDULED", database.taskDao().taskById(ACCOUNT_ID, "8")?.status)
+        assertEquals(true, database.taskDao().taskById(ACCOUNT_ID, "8")?.canComplete)
+    }
+
+    @Test
     fun categoryOptionsAreCachedAndLoadedWithoutNetwork() = runTest {
         val api = FakeMedtrackApi(categoriesResponse = categoryResponse())
         val repository = repository(api)
@@ -109,6 +147,76 @@ class MedtrackRepositoryTest {
         assertEquals(CaseCategory.ANC, cached.single().category)
         assertEquals("anc_high_risk", cached.single().subcategories.single().value)
         assertEquals("High-risk ANC", cached.single().subcategories.single().label)
+    }
+
+    @Test
+    fun ancSuccessRefreshesActiveBucketMembershipCountersAndEveryFilter() = runTest {
+        for (query in listOf(null, "  SYNTH  ")) {
+            val detailEntered = CompletableDeferred<Unit>()
+            val releaseDetail = CompletableDeferred<Unit>()
+            val api = FakeMedtrackApi(
+                beforeCaseDetail = { detailEntered.complete(Unit); releaseDetail.await() },
+                caseListResponse = CaseListResponseDto(count = 0, next = null, previous = null,
+                    stats = CaseStatsDto(today = 0, upcoming = 0, overdue = 0, awaiting = 0, red = 0, dormant = 1),
+                    results = emptyList()),
+            )
+            val repository = repository(api)
+            repository.pagedCases(bucket = "overdue", query = query, assignedTo = "me", scopeContext = "calls",
+                categories = listOf("ANC"), subcategories = listOf("anc_high_risk"))
+            val result = async {
+                val message = repository.recordAncAction("42", mapOf("outcome" to "referral",
+                    "continue_follow_up" to "continue", "task_policy" to "retain"))
+                assertNotNull(repository.observeCase("42").first())
+                repository.refreshActiveCaseList()
+                message
+            }
+            detailEntered.await()
+            assertFalse(result.isCompleted)
+            assertEquals(0, api.listCasesCalls)
+            assertTrue(api.caseSearchRequests.isEmpty())
+            releaseDetail.complete(Unit)
+            assertEquals("ANC action recorded.", result.await())
+            assertTrue(repository.cases.first().isEmpty())
+            assertEquals(0, repository.stats.value.overdue)
+            assertEquals(1, repository.stats.value.dormant)
+            if (query == null) {
+                assertEquals(1, api.listCasesCalls)
+                assertEquals("overdue", api.lastListCasesBucket)
+                assertEquals("me", api.lastListCasesAssignedTo)
+                assertEquals("calls", api.lastListCasesScopeContext)
+                assertEquals(listOf("ANC"), api.lastListCasesCategories)
+                assertEquals(listOf("anc_high_risk"), api.lastListCasesSubcategories)
+            } else {
+                val request = api.caseSearchRequests.single()
+                assertEquals("SYNTH", request.query)
+                assertEquals("overdue", request.bucket)
+                assertEquals("me", request.assignedTo)
+                assertEquals("calls", request.scopeContext)
+                assertEquals(listOf("ANC"), request.category)
+                assertEquals(listOf("anc_high_risk"), request.subcategory)
+            }
+        }
+    }
+
+    @Test
+    fun ancClosureRefreshesUnpagedWorklistAndAccountResetDropsOldFilters() = runTest {
+        val api = FakeMedtrackApi(beforeCaseDetail = {})
+        val repository = repository(api)
+        repository.refreshCases(bucket = "all", assignedTo = "all")
+        repository.recordAncAction("42", mapOf("outcome" to "delivery", "continue_follow_up" to "close",
+            "task_policy" to "cancel_selected", "cancel_task_ids" to listOf(7L)))
+        assertNotNull(repository.observeCase("42").first())
+        repository.refreshActiveCaseList()
+        assertEquals(2, api.listCasesCalls)
+        assertEquals("all", api.lastListCasesBucket)
+        assertEquals("all", api.lastListCasesAssignedTo)
+        assertTrue(repository.cases.first().isEmpty())
+        assertEquals(0, repository.stats.value.overdue)
+        assertEquals(0, repository.stats.value.dormant)
+        repository.deactivateAccount()
+        repository.activateAccount("other-account")
+        repository.refreshActiveCaseList()
+        assertEquals(2, api.listCasesCalls)
     }
 
     @Test
@@ -788,6 +896,7 @@ class MedtrackRepositoryTest {
 }
 
 private class FakeMedtrackApi(
+    private val beforeCaseDetail: (suspend () -> Unit)? = null,
     private val categoriesResponse: CategoriesResponseDto = CategoriesResponseDto(emptyList()),
     private val caseListResponse: CaseListResponseDto = CaseListResponseDto(
         count = 0,
@@ -824,6 +933,14 @@ private class FakeMedtrackApi(
         private set
     var lastListCasesScopeContext: String? = null
         private set
+    var listCasesCalls = 0
+        private set
+    var lastListCasesBucket: String? = null
+        private set
+    var lastListCasesCategories: List<String>? = null
+        private set
+    var lastListCasesSubcategories: List<String>? = null
+        private set
 
     override suspend fun categories(): CategoriesResponseDto {
         categoryCalls += 1
@@ -843,8 +960,12 @@ private class FakeMedtrackApi(
         subcategories: List<String>?,
         page: Int?,
     ): CaseListResponseDto {
+        listCasesCalls += 1
+        lastListCasesBucket = bucket
         lastListCasesAssignedTo = assignedTo
         lastListCasesScopeContext = scopeContext
+        lastListCasesCategories = categories
+        lastListCasesSubcategories = subcategories
         return caseListResponse
     }
 
@@ -857,7 +978,12 @@ private class FakeMedtrackApi(
         )
     }
 
-    override suspend fun caseDetail(caseId: String): CaseDetailDto = unused()
+    override suspend fun caseDetail(caseId: String): CaseDetailDto {
+        val before = beforeCaseDetail ?: unused()
+        before()
+        return CaseDetailDto(case = sampleCaseSummary(), tasks = listOf(sampleTask(7).copy(
+            title = "Authoritative cancellation", status = "CANCELLED", statusLabel = "Cancelled", canComplete = false)))
+    }
     override suspend fun createCase(request: com.naveenhospital.medtrack.core.network.model.CreateCaseRequestDto): com.naveenhospital.medtrack.core.network.model.CaseCreateResponseDto = unused()
     override suspend fun searchPatients(request: PatientSearchRequestDto): PatientSearchResponseDto {
         patientSearchRequests += request
@@ -866,6 +992,12 @@ private class FakeMedtrackApi(
     override suspend fun caseFormMetadata(): com.naveenhospital.medtrack.core.network.model.CaseFormMetadataDto = unused()
     override suspend fun taskFormMetadata(): com.naveenhospital.medtrack.core.network.model.TaskFormMetadataDto = unused()
     override suspend fun caseEditForm(caseId: String): com.naveenhospital.medtrack.core.network.model.CaseEditFormDto = unused()
+    override suspend fun ancAction(caseId: String, request: Map<String, Any>) =
+        com.naveenhospital.medtrack.core.network.model.CaseUpdateResponseDto(
+            message = "ANC action recorded.", caseId = 42, case = sampleCaseSummary(),
+            editableCase = com.naveenhospital.medtrack.core.network.model.CaseEditCaseDto(
+                id = 42, baseUpdatedAt = "2026-09-01T00:00:00Z", surgeryDone = false))
+
     override suspend fun updateCase(caseId: String, request: com.naveenhospital.medtrack.core.network.model.UpdateCaseRequestDto): com.naveenhospital.medtrack.core.network.model.CaseUpdateResponseDto = unused()
     override suspend fun createTask(caseId: String, request: com.naveenhospital.medtrack.core.network.model.CreateTaskRequestDto): TaskWriteResponseDto = unused()
     override suspend fun updateTask(taskId: String, request: com.naveenhospital.medtrack.core.network.model.UpdateTaskRequestDto): TaskWriteResponseDto = unused()

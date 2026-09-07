@@ -49,7 +49,7 @@ class PatientSearchSerializer(serializers.Serializer):
 class CaseSearchSerializer(PatientSearchSerializer):
     page_size = serializers.IntegerField(required=False, default=20, min_value=1, max_value=20)
     bucket = serializers.ChoiceField(
-        choices=["all", "today", "upcoming", "overdue", "awaiting", "red"],
+        choices=["all", "today", "upcoming", "overdue", "awaiting", "red", "dormant", "edd_missing"],
         required=False,
         default="today",
     )

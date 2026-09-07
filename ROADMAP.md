@@ -1,5 +1,27 @@
 # ROADMAP.md
 
+## Issue #113 staged program
+
+- The remaining Recent Cases lock inversion is fixed with precise audited Case-only updates. Eight targeted tests pass, including actual concurrent endpoints, clinical preservation, permissions, linkage and rollback; complete correction-only recheck and fresh exact-head CI without reopening prior clearances.
+
+- The bounded native ANC callback cancellation correction adds explicit propagation in both error paths. The five-case extracted callback harness and incremental compile pass; preserve prior clearances and complete fresh exact-head CI plus the focused guard recheck.
+
+- The final native ANC list-refresh comment is corrected with preserved active filters and existing account guards. Focused tests and incremental Kotlin compilation pass; finish bounded correction verification and fresh exact-head CI before coordinator merge preflight.
+
+- The related full web-edit lock-order correction supersedes 2168b74: verify the bounded Patient-before-Case change and fresh exact-head CI. Concurrent requests, stale identity/draft retention and audit regressions pass; no additional broad review or native build is required for this server-only correction.
+
+- Latest Stage 1 corrections: signed rendered web-edit baseline and normalized ANC link visibility. Complete focused correction verification and fresh exact-head CI; keep later provisional stages separate until actual Stage 1 merged main is available.
+
+- Final four ANC feedback corrections cover cache cancellation safety, loss/close consistency, seed round-trip validity and audited Case-only lock order. Finish targeted checks, then use fresh exact-head CI; no additional broad review is required.
+
+- The six existing automated Stage 1 comments require a focused feedback recheck and fresh exact-head CI after the sync, workflow and pagination fixes. Earlier d2ab783 GO is superseded until those gates pass.
+
+- Stage 1 review fixes: all four consolidated findings are implemented with 91 targeted regression checks passing. Await fresh exact-head CI and a focused fix/regression recheck before coordinator merge.
+
+- Stage 1 source implementation: scoped dormant patient grouping, persistent ANC overdue/EDD-missing attention, explicit audited outcome and USG EDD correction, web/native/API and bundle compatibility. Await the Stage 1 PR's exact-head CI and coordinator review/merge. No production activation is implied.
+- Stages 2–5 remain separate gated PRs: task editing/general calls; permanent MTNO; main screens/timeline; administrative modules. Start each implementation from its predecessor's merged main.
+- Stage 1 behavior, reconciliation and rollback guidance: [docs/issue-113-stage-1.md](docs/issue-113-stage-1.md).
+
 ## September dependency maintenance
 
 - Complete exact-head backend, container, and Android CI for PRs #107, #109, and #114 before merging.

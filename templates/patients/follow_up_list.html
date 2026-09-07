@@ -1,0 +1,23 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>{{ heading }}</h1>
+<p>{{ case_count }} cases · {{ paginator.count }} patients</p>
+<nav class="d-flex gap-3 flex-wrap mb-3" aria-label="Follow-up filters">
+  <a href="?bucket=dormant">Dormant patients</a><a href="?bucket=overdue">Overdue</a><a href="?bucket=edd_missing">EDD review needed</a>
+</nav>
+{% for group in patient_groups %}
+<section class="card mb-3"><div class="card-body">
+  <h2 class="h5">{{ group.name }} · {{ group.uhid }}</h2>
+  {% for case in group.cases %}{% with attention=case.follow_up %}
+  <div class="d-flex gap-3 flex-wrap border-top py-2">
+    <a href="{% url 'patients:case_detail' case.pk %}">{{ case.category.name }} · Case {{ case.pk }}</a>
+    <span>{{ attention.label }}</span>
+    {% if attention.edd_missing %}<span>EDD missing — review needed</span>{% endif %}
+    {% if attention.edd_overdue %}<span>EDD {{ attention.effective_edd|date:'d M Y' }}</span>{% endif %}
+  </div>
+  {% endwith %}{% endfor %}
+</div></section>
+{% empty %}<p>No cases in this view.</p>{% endfor %}
+{% if page_obj.has_previous %}<a href="?bucket={{ bucket }}&page={{ page_obj.previous_page_number }}">Previous</a>{% endif %}
+{% if page_obj.has_next %}<a href="?bucket={{ bucket }}&page={{ page_obj.next_page_number }}">Next</a>{% endif %}
+{% endblock %}

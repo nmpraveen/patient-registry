@@ -1,0 +1,18 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block content %}
+<h1>ANC outcome / EDD correction</h1>
+<p>{{ case.full_name }} · {{ case.uhid }} · {{ case.category.name }} · Case {{ case.pk }}</p>
+<p>EDD corrections retain all task dates. Outcomes retain tasks unless you explicitly select open tasks to cancel. Completed history is preserved.</p>
+<form method="post" class="card card-body" style="max-width: 48rem">
+  {% csrf_token %}{{ form.non_field_errors }}{{ form.base_updated_at }}
+  {% for field in form.visible_fields %}
+    {% if field.name != 'cancel_task_ids' or field.field.choices %}
+    <div class="mb-3" data-anc-field="{{ field.name }}"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+    <div>{{ field }}</div>{{ field.errors }}</div>
+    {% endif %}
+  {% endfor %}
+  <button class="btn btn-primary" type="submit">Save ANC action</button>
+</form>
+{% endblock %}
+{% block extra_scripts %}<script src="{% static 'patients/anc_action.js' %}" defer></script>{% endblock %}

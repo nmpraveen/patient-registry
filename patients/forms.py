@@ -2,18 +2,22 @@ import json
 from decimal import Decimal, InvalidOperation
 
 from django import forms
+from django.core import signing
 from django.utils import timezone
 from django.contrib.auth import get_user_model, password_validation
 from django.contrib.auth.models import Group
 from django.core.exceptions import ValidationError
+from django.db import transaction
 from django.db.models import Q
 from django.forms import formset_factory, modelformset_factory
 
 from .models import (
     AncHighRiskReason,
+    AuditEvent,
     BloodGroup,
     CallLog,
     Case,
+    is_anc_case,
     case_subcategory_choices_for_category_name,
     case_subcategory_group_for_category_name,
     CaseActivityLog,
@@ -257,11 +261,19 @@ class CaseForm(StyledModelForm):
         label="ANC High-Risk Reasons",
     )
 
-    def __init__(self, *args, actor=None, **kwargs):
+    def __init__(self, *args, actor=None, require_rendered_baseline=False, **kwargs):
         ensure_default_departments()
         super().__init__(*args, **kwargs)
         self.actor = actor
         self._generated_temporary_uhid = ""
+        self._loaded_updated_at = self.instance.updated_at if self.instance.pk else None
+        self._require_rendered_baseline = require_rendered_baseline and bool(self.instance.pk)
+        if self._require_rendered_baseline:
+            self._rendered_baseline_identity = [self.instance.pk, getattr(actor, "pk", None),
+                self._loaded_updated_at.isoformat(), self.instance.patient_id,
+                self.instance.patient.updated_at.isoformat() if self.instance.patient_id else None]
+            self.fields["rendered_baseline"] = forms.CharField(required=False, widget=forms.HiddenInput,
+                initial=signing.dumps(self._rendered_baseline_identity, salt="patients.case-edit-baseline"))
         selected_patient_queryset = case_intake_patient_queryset(actor=actor)
         if self.instance and self.instance.pk and self.instance.patient_id:
             selected_patient_queryset = Patient.objects.filter(pk=self.instance.patient_id)
@@ -403,6 +415,19 @@ class CaseForm(StyledModelForm):
 
     def clean(self):
         cleaned_data = super().clean()
+        if self._require_rendered_baseline:
+            try:
+                rendered = signing.loads(cleaned_data.get("rendered_baseline", ""), salt="patients.case-edit-baseline")
+            except (signing.BadSignature, TypeError, ValueError):
+                self.add_error(None, "This edit page is missing a valid baseline. Reload before saving.")
+            else:
+                if rendered != self._rendered_baseline_identity:
+                    self.add_error(None, "This case changed while you were editing. Reload before saving.")
+        if self.instance.pk:
+            previous = Case.objects.get(pk=self.instance.pk)
+            for date_field in (("usg_edd", "edd") if is_anc_case(previous) or previous.effective_edd else ()):
+                if date_field in cleaned_data and cleaned_data[date_field] != getattr(previous, date_field):
+                    self.add_error(date_field, "Use ANC outcome / EDD correction on the case page to correct EDD with a reason. Existing tasks will be retained.")
         patient_mode = cleaned_data.get("patient_mode") or ("existing" if self.instance.pk else "new")
         cleaned_data["patient_mode"] = patient_mode
         selected_patient = cleaned_data.get("selected_patient")
@@ -518,8 +543,13 @@ class CaseForm(StyledModelForm):
     def clean_anc_high_risk_reasons(self):
         return self.cleaned_data.get("anc_high_risk_reasons", [])
 
+    @transaction.atomic
     def save(self, commit=True):
         instance = super().save(commit=False)
+        if commit and instance.pk:
+            current = Case.objects.select_for_update().get(pk=instance.pk)
+            if current.updated_at != self._loaded_updated_at:
+                raise ValidationError("This case changed while you were editing. Reload before saving.")
         patient = self.cleaned_data.get("patient_instance") or getattr(self.instance, "patient", None)
         if isinstance(patient, Patient):
             if not patient.pk and not patient.created_by_id and getattr(self, "actor", None) is not None:
@@ -896,6 +926,32 @@ class CallLogForm(StyledModelForm):
 
 
 class RecentCaseUpdateForm(StyledModelForm):
+    @transaction.atomic
+    def save(self, commit=True):
+        if not commit:
+            return super().save(commit=False)
+        # Bind only this editor's two fields onto the current locked row. A
+        # stale form must never write outcome/status/EDD back into the database.
+        current = Case.objects.select_for_update().get(pk=self.instance.pk)
+        if current.patient_id != self.instance.patient_id or (
+            current.patient_id and not Patient.objects.filter(pk=current.patient_id, merged_into__isnull=True).exists()
+        ):
+            raise ValidationError("This case's patient changed. Reload before saving.")
+        self.previous_diagnosis = current.diagnosis or ""
+        self.previous_notes = current.notes or ""
+        current.diagnosis = self.cleaned_data["diagnosis"]
+        current.notes = self.cleaned_data["notes"]
+        # Case.save locks Patient even for update_fields. These two fields need
+        # only the Case lock; retain mandatory auditing without touching identity.
+        from .audit import audited_bulk_update
+        current.updated_at = timezone.now()
+        fields = ("diagnosis", "notes", "updated_at")
+        audited_bulk_update(Case.objects.filter(pk=current.pk), category=AuditEvent.Category.CLINICAL,
+            action="patients.case.recent_updated", changed_fields=fields,
+            **{field: getattr(current, field) for field in fields})
+        self.instance = current
+        return current
+
     class Meta:
         model = Case
         fields = ["diagnosis", "notes"]

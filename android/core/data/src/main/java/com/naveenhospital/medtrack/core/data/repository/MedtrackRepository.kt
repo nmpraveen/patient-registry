@@ -154,6 +154,11 @@ class MedtrackRepository(
     private var nextCasePage: Int? = null
     private var nextCaseCursor: String? = null
     private var activeCaseListKey: String = ""
+    private data class CaseListFilters(
+        val bucket: String?, val query: String?, val assignedTo: String?, val scopeContext: String?,
+        val categories: List<String>, val subcategories: List<String>,
+    )
+    private var activeCaseListFilters: CaseListFilters? = null
     private val caseEditBaselines = ConcurrentHashMap<String, CaseEditCaseDto>()
     private val taskEditBaselines = ConcurrentHashMap<String, TaskDto>()
     private val vitalEditBaselines = ConcurrentHashMap<String, VitalDto>()
@@ -195,6 +200,7 @@ class MedtrackRepository(
         nextCasePage = null
         nextCaseCursor = null
         activeCaseListKey = ""
+        activeCaseListFilters = null
         caseEditBaselines.clear()
         taskEditBaselines.clear()
         vitalEditBaselines.clear()
@@ -239,6 +245,8 @@ class MedtrackRepository(
         val session = activeSession()
         val cacheKey = caseListCacheKey(bucket, query, assignedTo, scopeContext, categories, subcategories)
         activeCaseListKey = cacheKey
+        activeCaseListFilters = CaseListFilters(bucket, query, assignedTo, scopeContext,
+            categories.toList(), subcategories.toList())
         return Pager(
             config = PagingConfig(
                 pageSize = CASE_PAGE_SIZE,
@@ -309,6 +317,12 @@ class MedtrackRepository(
                 .map { entities -> entities.map { it.toDomain() } }
         }
 
+    suspend fun refreshActiveCaseList() {
+        val filters = activeCaseListFilters ?: return
+        refreshCases(bucket = filters.bucket, query = filters.query, assignedTo = filters.assignedTo,
+            scopeContext = filters.scopeContext, categories = filters.categories, subcategories = filters.subcategories)
+    }
+
     suspend fun refreshCases(
         bucket: String? = "today",
         query: String? = null,
@@ -319,6 +333,8 @@ class MedtrackRepository(
     ) {
         val session = activeSession()
         activeCaseListKey = caseListCacheKey(bucket, query, assignedTo, scopeContext, categories, subcategories)
+        activeCaseListFilters = CaseListFilters(bucket, query, assignedTo, scopeContext,
+            categories.toList(), subcategories.toList())
         database.caseStatsDao().statsForKey(session.ownerAccountId, activeCaseListKey)?.let { cachedStats ->
             _stats.value = cachedStats.toDomain()
         }
@@ -543,6 +559,27 @@ class MedtrackRepository(
                 CaseEditOutcome.ValidationError(errors = it.errors, message = it.message ?: "Please fix the highlighted fields.")
             } ?: CaseEditOutcome.Failure(throwable.message ?: "Could not save the case. Try again.")
         }
+    }
+
+    suspend fun recordAncAction(caseId: String, payload: Map<String, Any>): String {
+        val session = activeSession()
+        val response = session.api.ancAction(caseId, payload)
+        // An acknowledged cancellation must never remain actionable while the
+        // authoritative detail refresh is delayed or offline. Keep the old case
+        // baseline until refresh succeeds so a retry retains its write identity.
+        commitAccountMutation(session) {
+            if (payload["task_policy"] == "cancel_selected") {
+                (payload["cancel_task_ids"] as? List<*>)?.forEach { id ->
+                    val task = database.taskDao().taskById(session.ownerAccountId, id.toString())
+                    if (task?.caseId == caseId) {
+                        database.taskDao().upsertTask(task.copy(status = "CANCELLED",
+                            statusLabel = "Cancelled", canComplete = false, updatedAtMillis = System.currentTimeMillis()))
+                    }
+                }
+            }
+        }
+        refreshCaseDetailForSession(session, caseId)
+        return response.message
     }
 
     suspend fun loadTaskFormMetadata(): TaskFormMetadata {
@@ -1712,6 +1749,11 @@ fun pendingVitalId(clientWriteId: String): String = "pending-$clientWriteId"
 
 private fun CaseSummaryDto.toEntity(ownerAccountId: String): CaseEntity =
     CaseEntity(
+        followUpLabel = listOfNotNull(followUp?.label, followUp?.effectiveEdd?.let { "EDD $it" },
+            "EDD missing — review needed".takeIf { followUp?.eddMissing == true }).filter { it.isNotBlank() }.joinToString(" · "),
+        ancOutcomeSummary = listOfNotNull(followUp?.outcomeLabel, followUp?.outcomeDate,
+            followUp?.reason, followUp?.referralDestination).filter { it.isNotBlank() }.joinToString(" · "),
+        serverUpdatedAt = updatedAt,
         ownerAccountId = ownerAccountId,
         id = id.toString(),
         uhid = uhid,
@@ -1736,6 +1778,9 @@ private fun CaseSummaryDto.toEntity(ownerAccountId: String): CaseEntity =
 
 private fun CaseEntity.toDomain(): PatientCase =
     PatientCase(
+        followUpLabel = followUpLabel,
+        ancOutcomeSummary = ancOutcomeSummary,
+        serverUpdatedAt = serverUpdatedAt,
         id = id,
         uhid = uhid,
         patientName = patientName,
@@ -1828,6 +1873,7 @@ private fun CaseStatsDto.toDomain(): InboxStats =
         overdue = overdue,
         awaiting = awaiting,
         red = red,
+        dormant = dormant,
     )
 
 private fun CaseStatsDto.toEntity(ownerAccountId: String, cacheKey: String): CaseStatsEntity =
@@ -1839,6 +1885,7 @@ private fun CaseStatsDto.toEntity(ownerAccountId: String, cacheKey: String): Cas
         overdue = overdue,
         awaiting = awaiting,
         red = red,
+        dormant = dormant,
         updatedAtMillis = System.currentTimeMillis(),
     )
 
@@ -1849,6 +1896,7 @@ private fun CaseStatsEntity.toDomain(): InboxStats =
         overdue = overdue,
         awaiting = awaiting,
         red = red,
+        dormant = dormant,
     )
 
 private fun VitalDto.summary(): String {

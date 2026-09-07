@@ -1,3 +1,7 @@
+## 2026.09.07.17.50
+
+- Derive Android release provenance toolchain/API versions from the checked-in build configuration and refresh release documentation.
+
 ## 2026.09.07.17.44
 
 - Verify the compiler coroutines BOM metadata required by fresh Linux dependency resolution.

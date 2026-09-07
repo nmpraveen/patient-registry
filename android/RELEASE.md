@@ -80,9 +80,10 @@ review the lock diff, and prove the normal strict-mode `lint` command passes.
 
 ## Play compatibility
 
-The project compiles and targets Android API 36. It uses Android Gradle Plugin
-8.9.1 with Gradle 8.11.1, the documented minimum-compatible toolchain for API
-36. The production release format is Android App Bundle (AAB).
+The project compiles against Android API 37 and targets API 36, with minimum
+API 24. It uses Android Gradle Plugin 9.3.2, Gradle 9.7.1, and JDK 21.
+Release provenance reads toolchain and API versions from the checked-in build
+configuration. The production release format is Android App Bundle (AAB).
 
 This build readiness does not override the broader MEDTRACK release NO-GO:
 account-scoped encrypted local state, a verified PHI-free server FCM producer,

@@ -1,3 +1,7 @@
+## 2026.09.07.17.40
+
+- Regenerate Android SDK lock entries created at task execution after removing obsolete AGP configurations.
+
 ## 2026.09.07.17.36
 
 - Remove obsolete AGP 8 lock configurations and verify additional Maven metadata requested by Linux CI.

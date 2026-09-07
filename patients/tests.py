@@ -10114,11 +10114,14 @@ class SeedMockDataCommandTests(TestCase):
             self.assertTrue(vital_days.intersection(past_task_days))
 
     def test_seed_mock_data_vitals_are_deterministic_across_reset_runs(self):
-        call_command("seed_mock_data", "--profile", "full", "--count", "8", "--include-vitals", "--reset")
-        snapshot_first = self._seeded_vitals_snapshot()
+        # Equal clock inputs keep the no-future-vitals clamp deterministic.
+        fixed_now = timezone.now()
+        with patch("patients.management.commands.seed_mock_data.timezone.now", return_value=fixed_now):
+            call_command("seed_mock_data", "--profile", "full", "--count", "8", "--include-vitals", "--reset")
+            snapshot_first = self._seeded_vitals_snapshot()
 
-        call_command("seed_mock_data", "--profile", "full", "--count", "8", "--include-vitals", "--reset")
-        snapshot_second = self._seeded_vitals_snapshot()
+            call_command("seed_mock_data", "--profile", "full", "--count", "8", "--include-vitals", "--reset")
+            snapshot_second = self._seeded_vitals_snapshot()
 
         self.assertEqual(snapshot_first, snapshot_second)
 

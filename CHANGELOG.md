@@ -1,3 +1,7 @@
+## 2026.09.07.17.50
+
+- Update provenance and SBOM signing to the pinned actions/attest v4.2.2 commit.
+
 ## 2026.09.07.17.19
 
 - Patch Caddy Go dependencies to x/crypto v0.55.0 and gRPC v1.83.1 for current critical/high advisories.

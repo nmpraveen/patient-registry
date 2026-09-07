@@ -210,6 +210,7 @@ data class PatientCallLog(
     val notes: String,
     val staffUser: String,
     val createdAt: String,
+    val createdAtEpochMicros: Long,
     val clientEventAt: String?,
 )
 

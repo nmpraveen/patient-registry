@@ -400,7 +400,7 @@ fun CaseDetailScreen(
                                     if (call.reason.isNotBlank()) Text(call.reason)
                                     if (call.notes.isNotBlank()) Text(call.notes)
                                     Text(
-                                        listOf(call.createdAt.caseCallDateLabel(), call.staffUser).filter { it.isNotBlank() }.joinToString(" · "),
+                                        listOf(call.createdAtEpochMicros.caseCallDateLabel(), call.staffUser).filter { it.isNotBlank() }.joinToString(" · "),
                                         style = MaterialTheme.typography.labelSmall, color = MedtrackColors.Muted,
                                     )
                                 }
@@ -1928,7 +1928,5 @@ private fun VitalsNumberField(
     )
 }
 
-private fun String.caseCallDateLabel(): String = runCatching {
-    java.time.OffsetDateTime.parse(this).atZoneSameInstant(java.time.ZoneId.systemDefault())
-        .format(java.time.format.DateTimeFormatter.ofPattern("dd MMM yyyy, HH:mm"))
-}.getOrDefault(this)
+private fun Long.caseCallDateLabel(): String =
+    SimpleDateFormat("dd MMM yyyy, HH:mm", Locale.getDefault()).format(Date(Math.floorDiv(this, 1_000L)))

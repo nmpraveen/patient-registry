@@ -2,6 +2,8 @@
 
 ## Issue #113 staged program
 
+- Stage 1 review fixes: all four consolidated findings are implemented with 91 targeted regression checks passing. Await fresh exact-head CI and a focused fix/regression recheck before coordinator merge.
+
 - Stage 1 source implementation: scoped dormant patient grouping, persistent ANC overdue/EDD-missing attention, explicit audited outcome and USG EDD correction, web/native/API and bundle compatibility. Await the Stage 1 PR's exact-head CI and coordinator review/merge. No production activation is implied.
 - Stages 2–5 remain separate gated PRs: task editing/general calls; permanent MTNO; main screens/timeline; administrative modules. Start each implementation from its predecessor's merged main.
 - Stage 1 behavior, reconciliation and rollback guidance: [docs/issue-113-stage-1.md](docs/issue-113-stage-1.md).

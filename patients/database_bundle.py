@@ -12,6 +12,7 @@ from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.db.models import Prefetch
 from django.utils import timezone
+from .anc_validation import validate_anc_outcome
 
 from .models import (
     CallLog,
@@ -746,6 +747,9 @@ def _import_payload(payload, categories_by_name, users_by_username):
             notes=case_data.get("notes", ""),
             created_by=users_by_username.get(case_data.get("created_by_username")),
         )
+        validate_anc_outcome(outcome=case.anc_outcome, outcome_date=case.anc_outcome_date,
+            reason=case.anc_outcome_reason, destination=case.anc_referral_destination,
+            continue_follow_up=case_data.get("anc_continue_follow_up"))
         if is_quick_entry:
             case._skip_workflow_validation = True
         exclude_fields = _blank_model_fields(case, "created_by", "archived_by")

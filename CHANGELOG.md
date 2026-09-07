@@ -1,3 +1,9 @@
+## 2026.09.07.21.20
+
+- Fix scoped PostgreSQL ANC actions and preserve clinical updates during concurrent web edits.
+- Retain explicit reminder cancellation after outcomes and reject incomplete outcome imports.
+- Add regression coverage for all four Stage 1 review findings.
+
 ## 2026.09.07.20.56
 
 - Add scoped dormant patient groups, persistent ANC EDD overdue and missing-EDD review.

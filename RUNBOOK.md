@@ -2,6 +2,8 @@
 
 ## Issue #113 follow-up and ANC actions
 
+After an ANC outcome, routine edits do not regenerate RCH reminders. Resume follow-up through an explicitly authorised task creation/reopen. Full case edits reject an intervening case update; Recent Cases writes only diagnosis/notes. Outcome imports require a date, reason, referral destination where applicable, and an explicit boolean follow-up choice; legacy records without an outcome remain supported.
+
 The [Stage 1 runbook](docs/issue-113-stage-1.md) defines case-based counts, hospital-date predicates, explicit retention/cancellation, native online submissions, additive migrations and patient bundle compatibility. The new outcome date records delivery/referral dates where applicable; no outcome is inferred from tasks or EDD.
 
 For a read-only review of historical closed ANC cases, run `python manage.py report_anc_reconciliation` in an authorised environment and review each reported case before any explicit action. No bulk reopen is provided. Migration 0040 adds outcome columns without changing existing cases/tasks; export/backup those columns before any schema reversal. Production activation still requires the existing deployment and backup gates.

@@ -795,7 +795,9 @@ def _accessible_case_queryset(user, queryset=None, *, include_archived=False):
             tasks__status=TaskStatus.SCHEDULED,
             tasks__due_date__range=(timezone.localdate(), _call_queue_scope_end()),
         )
-    return queryset.filter(scope).distinct()
+    # Keep task joins in an eligibility subquery so scoped writers can lock a
+    # plain Case row on PostgreSQL (FOR UPDATE cannot be combined with DISTINCT).
+    return queryset.filter(pk__in=Case.objects.filter(scope).values("pk"))
 
 
 def _accessible_task_queryset(user, queryset=None):
@@ -3479,6 +3481,10 @@ class RecentCaseUpdateView(LoginRequiredMixin, CaseDataAccessMixin, View):
 
         if diagnosis_changed or notes_changed:
             form.save()
+            old_diagnosis = form.previous_diagnosis
+            old_notes = form.previous_notes
+            diagnosis_changed = old_diagnosis != new_diagnosis
+            notes_changed = old_notes != new_notes
             if diagnosis_changed:
                 previous_label = old_diagnosis or "blank"
                 current_label = new_diagnosis or "blank"
@@ -3722,8 +3728,11 @@ class AncActionView(LoginRequiredMixin, View):
         if not has_capability(request.user, "case_edit"):
             raise PermissionDenied("You do not have permission to edit cases.")
         with transaction.atomic():
-            case = get_object_or_404(_accessible_case_queryset(request.user,
-                Case.objects.select_for_update(of=("self",)).select_related("category")), pk=pk)
+            queryset = Case.objects.select_related("category")
+            if request.method == "POST":
+                queryset = queryset.select_for_update(of=("self",))
+            case = get_object_or_404(_accessible_case_queryset(request.user, queryset), pk=pk)
+            get_object_or_404(_accessible_case_queryset(request.user), pk=case.pk)
             if not is_anc_case(case):
                 raise PermissionDenied("This action requires an ANC case.")
             form = AncActionForm(request.POST if request.method == "POST" else None, case=case,
@@ -5430,9 +5439,12 @@ class CaseUpdateView(LoginRequiredMixin, CaseUpdateAccessMixin, CaseUpdateContex
     template_name = CaseUpdateContextMixin.template_name
 
     def get_queryset(self):
+        queryset = Case.objects.select_related("category", "patient")
+        if self.request.method == "POST":
+            queryset = queryset.select_for_update(of=("self",))
         return _accessible_case_queryset(
             self.request.user,
-            Case.objects.select_related("category", "patient"),
+            queryset,
         )
 
     def get_context_data(self, **kwargs):
@@ -5451,6 +5463,11 @@ class CaseUpdateView(LoginRequiredMixin, CaseUpdateAccessMixin, CaseUpdateContex
         if has_grey_tasks and new_status in [CaseStatus.LOSS_TO_FOLLOW_UP, CaseStatus.ACTIVE] and not can_transition_grey_tasks(self.request.user):
             form.add_error("status", "Your role does not allow this Grey List status transition.")
             return self.form_invalid(form)
+        try:
+            response = super().form_valid(form)
+        except ValidationError as error:
+            form.add_error(None, error)
+            return self.form_invalid(form)
         if old_status != new_status:
             create_case_activity(
                 case=case,
@@ -5458,7 +5475,6 @@ class CaseUpdateView(LoginRequiredMixin, CaseUpdateAccessMixin, CaseUpdateContex
                 event_type=ActivityEventType.SYSTEM,
                 note=f"Case status changed: {old_status} -> {new_status}",
             )
-        response = super().form_valid(form)
         if not is_anc_case(self.object):
             cancelled_count = cancel_open_rch_reminders(self.object)
             if cancelled_count:

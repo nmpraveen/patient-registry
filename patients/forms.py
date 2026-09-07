@@ -6,6 +6,7 @@ from django.utils import timezone
 from django.contrib.auth import get_user_model, password_validation
 from django.contrib.auth.models import Group
 from django.core.exceptions import ValidationError
+from django.db import transaction
 from django.db.models import Q
 from django.forms import formset_factory, modelformset_factory
 
@@ -262,6 +263,7 @@ class CaseForm(StyledModelForm):
         super().__init__(*args, **kwargs)
         self.actor = actor
         self._generated_temporary_uhid = ""
+        self._loaded_updated_at = self.instance.updated_at if self.instance.pk else None
         selected_patient_queryset = case_intake_patient_queryset(actor=actor)
         if self.instance and self.instance.pk and self.instance.patient_id:
             selected_patient_queryset = Patient.objects.filter(pk=self.instance.patient_id)
@@ -523,8 +525,13 @@ class CaseForm(StyledModelForm):
     def clean_anc_high_risk_reasons(self):
         return self.cleaned_data.get("anc_high_risk_reasons", [])
 
+    @transaction.atomic
     def save(self, commit=True):
         instance = super().save(commit=False)
+        if commit and instance.pk:
+            current = Case.objects.select_for_update().get(pk=instance.pk)
+            if current.updated_at != self._loaded_updated_at:
+                raise ValidationError("This case changed while you were editing. Reload before saving.")
         patient = self.cleaned_data.get("patient_instance") or getattr(self.instance, "patient", None)
         if isinstance(patient, Patient):
             if not patient.pk and not patient.created_by_id and getattr(self, "actor", None) is not None:
@@ -901,6 +908,21 @@ class CallLogForm(StyledModelForm):
 
 
 class RecentCaseUpdateForm(StyledModelForm):
+    @transaction.atomic
+    def save(self, commit=True):
+        if not commit:
+            return super().save(commit=False)
+        # Bind only this editor's two fields onto the current locked row. A
+        # stale form must never write outcome/status/EDD back into the database.
+        current = Case.objects.select_for_update().get(pk=self.instance.pk)
+        self.previous_diagnosis = current.diagnosis or ""
+        self.previous_notes = current.notes or ""
+        current.diagnosis = self.cleaned_data["diagnosis"]
+        current.notes = self.cleaned_data["notes"]
+        current.save(update_fields=["diagnosis", "notes", "updated_at"])
+        self.instance = current
+        return current
+
     class Meta:
         model = Case
         fields = ["diagnosis", "notes"]

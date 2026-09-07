@@ -6,6 +6,7 @@ from django.utils import timezone
 
 from .follow_up import OPEN_STATUSES
 from .models import CaseStatus, TaskStatus, is_anc_case
+from .anc_validation import validate_anc_outcome
 
 
 class AncActionForm(forms.Form):
@@ -37,10 +38,16 @@ class AncActionForm(forms.Form):
             for field in ("outcome", "outcome_date", "continue_follow_up"):
                 if not data.get(field):
                     self.add_error(field, "Required for an outcome.")
-            if data.get("outcome_date") and data["outcome_date"] > timezone.localdate():
-                self.add_error("outcome_date", "Outcome date cannot be in the future.")
-            if data.get("outcome") == "referral" and not data.get("referral_destination"):
-                self.add_error("referral_destination", "Enter the referral destination.")
+            try:
+                validate_anc_outcome(outcome=data.get("outcome"), outcome_date=data.get("outcome_date"),
+                    reason=data.get("reason"), destination=data.get("referral_destination"),
+                    continue_follow_up=(data["continue_follow_up"] == "continue") if data.get("continue_follow_up") else None)
+            except ValidationError as error:
+                fields = {"anc_outcome": "outcome", "anc_outcome_date": "outcome_date",
+                    "anc_outcome_reason": "reason", "anc_referral_destination": "referral_destination",
+                    "anc_continue_follow_up": "continue_follow_up"}
+                for field, errors in error.message_dict.items():
+                    self.add_error(fields[field], errors)
         elif data.get("action") == "correct_edd":
             if not data.get("usg_edd"):
                 self.add_error("usg_edd", "Enter the corrected USG EDD.")

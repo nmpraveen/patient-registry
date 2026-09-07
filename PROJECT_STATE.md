@@ -1,5 +1,11 @@
 # PROJECT_STATE.md
 
+## Issue #113 Stage 1 source implementation
+
+Stage 1 adds scoped dormant/overdue/EDD-missing follow-up views, persistent task-independent ANC EDD attention, explicit audited outcome/EDD actions, and additive native/API/bundle contracts. Django migration 0040 and Room 12→13 preserve existing statuses/history. EDD correction retains every task date. Historical closed ANC reconciliation is read-only. See [Stage 1 contract and validation](docs/issue-113-stage-1.md).
+
+Local evidence: 509 Django tests passed (two existing skips) before dependency integration; the Stage 1 browser smoke passed five routes at four widths and real synthetic correction/referral submissions; native unit/debug builds passed. Dependencies are integrated from main `04e2f13bc32b9c2249aee7ab1e36081d806a273e`. The PR's exact-head CI is the final source gate. This feature has not been deployed; native Firebase/physical-device acceptance remains separate.
+
 ## Dependency maintenance (2026-09-07)
 
 PR #109 migrates Android to AGP 9 built-in Kotlin and the Kotlin Compose compiler plugin, compiles against API 37 while preserving target API 36 and minimum API 24, and refreshes strict dependency locks and checksum metadata. The shared container repair pins Alpine libuuid 2.41.6-r1. These are source changes only; no production deployment or signing was performed. Exact-head CI remains the merge gate.

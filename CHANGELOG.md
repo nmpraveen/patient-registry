@@ -1,3 +1,7 @@
+## 2026.09.07.17.19
+
+- Patch Caddy Go dependencies to x/crypto v0.55.0 and gRPC v1.83.1 for current critical/high advisories.
+
 ## 2026.09.07.17.11
 
 - Pin patched libuuid 2.42.3-r1 in the PostgreSQL image as well as the web image security fix.

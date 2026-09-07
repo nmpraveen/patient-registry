@@ -7,6 +7,7 @@ RUN apk add --no-cache \
         libcrypto3=3.5.8-r0 \
         libssl3=3.5.8-r0 \
         su-exec=0.3-r0 \
+        libuuid=2.42.3-r1 \
     && rm /usr/local/bin/gosu \
     && sed -i 's/exec gosu postgres/exec su-exec postgres/' /usr/local/bin/docker-entrypoint.sh \
     && ! grep -q 'gosu' /usr/local/bin/docker-entrypoint.sh \

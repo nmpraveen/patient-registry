@@ -1,3 +1,7 @@
+## 2026.09.07.17.11
+
+- Pin patched libuuid 2.42.3-r1 in the PostgreSQL image as well as the web image security fix.
+
 ## 2026.09.07.17.06
 
 - Update provenance and SBOM signing to the pinned actions/attest v4.2.2 commit.

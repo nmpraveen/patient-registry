@@ -4,6 +4,7 @@
 
 ## 2026.09.07.17.50
 
+- Update provenance and SBOM signing to the pinned actions/attest v4.2.2 commit.
 - Derive Android release provenance toolchain/API versions from the checked-in build configuration and refresh release documentation.
 
 ## 2026.09.07.17.44

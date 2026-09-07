@@ -22,19 +22,19 @@ class MedtrackDatabaseMigrationTest {
 
     @Test
     fun everySupportedSchemaVersionMigratesToCurrentSchema() {
-        (1..11).forEach { startVersion ->
-            val databaseName = "migration_${startVersion}_to_12"
+        (1..12).forEach { startVersion ->
+            val databaseName = "migration_${startVersion}_to_13"
             helper.createDatabase(databaseName, startVersion).close()
 
             helper.runMigrationsAndValidate(
                 databaseName,
-                12,
+                13,
                 true,
                 *MedtrackDatabase.ALL_MIGRATIONS,
             ).use { database ->
                 database.query("PRAGMA user_version").use { cursor ->
                     assertTrue(cursor.moveToFirst())
-                    assertEquals(12, cursor.getInt(0))
+                    assertEquals(13, cursor.getInt(0))
                 }
             }
         }
@@ -56,7 +56,7 @@ class MedtrackDatabaseMigrationTest {
 
         helper.runMigrationsAndValidate(
             databaseName,
-            12,
+            13,
             true,
             *MedtrackDatabase.ALL_MIGRATIONS,
         ).use { database ->
@@ -91,7 +91,7 @@ class MedtrackDatabaseMigrationTest {
 
     @Test
     fun lifecycleUpgradePreservesV11OwnedRowsButRequiresFreshActivation() {
-        val databaseName = "migration_11_to_12_owned_rows"
+        val databaseName = "migration_11_to_13_owned_rows"
         helper.createDatabase(databaseName, 11).use { database ->
             database.execSQL(
                 """
@@ -105,7 +105,7 @@ class MedtrackDatabaseMigrationTest {
 
         helper.runMigrationsAndValidate(
             databaseName,
-            12,
+            13,
             true,
             *MedtrackDatabase.ALL_MIGRATIONS,
         ).use { database ->

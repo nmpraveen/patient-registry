@@ -27,6 +27,24 @@ class ApiContractDtoTest {
     private val moshi = MedtrackNetwork.contractMoshi()
 
     @Test
+    fun followUpFieldsAreAdditiveForOlderServersAndPreservedWhenPresent() {
+        val adapter = moshi.adapter(CaseSearchResponseDto::class.java)
+        val old = adapter.fromJson(CASE_SEARCH_PAGE)!!
+        assertEquals(0, old.stats.dormant)
+        assertNull(old.results.first().followUp)
+        val enriched = CASE_SEARCH_PAGE.replace("\"red\": 1", "\"red\": 1, \"dormant\": 2")
+            .replace("\"diagnosis\": \"Review\"", """"diagnosis": "Review", "updated_at": "2026-09-08T00:00:00Z",
+                "follow_up": {"label": "Overdue — EDD", "edd_missing": false, "effective_edd": "2026-09-07",
+                    "outcome_label": "Referral", "outcome_date": "2026-09-07", "reason": "Synthetic referral", "referral_destination": "Demo clinic"}""")
+        val current = adapter.fromJson(enriched)!!
+        assertEquals(2, current.stats.dormant)
+        assertEquals("Overdue — EDD", current.results.first().followUp?.label)
+        assertEquals("2026-09-07", current.results.first().followUp?.effectiveEdd)
+        assertEquals("Demo clinic", current.results.first().followUp?.referralDestination)
+        assertEquals("2026-09-08T00:00:00Z", current.results.first().updatedAt)
+    }
+
+    @Test
     fun caseEditContractRequiresCompleteEditableSnapshot() {
         val malformed = CURRENT_CASE_EDIT_RESPONSE.replace("\"surgery_done\": true,", "")
 

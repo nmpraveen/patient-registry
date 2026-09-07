@@ -2987,7 +2987,7 @@ class DashboardView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
 
         dashboard_tasks = list(
             self._task_queryset()
-            .exclude(status=TaskStatus.COMPLETED)
+            .filter(status__in=[TaskStatus.SCHEDULED, TaskStatus.AWAITING_REPORTS])
             .filter(
                 Q(due_date__lt=today)
                 | Q(status=TaskStatus.SCHEDULED, due_date=today)
@@ -3008,7 +3008,7 @@ class DashboardView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
                     upcoming_tasks.append(task)
 
         awaiting_tasks = list(self._task_queryset().filter(status=TaskStatus.AWAITING_REPORTS))
-        case_counts = _visible_case_queryset().aggregate(
+        case_counts = _accessible_case_queryset(self.request.user).aggregate(
             active_case_count=Count("id", filter=Q(status=CaseStatus.ACTIVE)),
             completed_case_count=Count("id", filter=Q(status=CaseStatus.COMPLETED)),
             anc_case_count=Count("id", filter=Q(status=CaseStatus.ACTIVE) & CASE_CATEGORY_GROUP_FILTERS["anc"]),
@@ -3023,6 +3023,10 @@ class DashboardView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
         )
 
         context["today_tasks"] = today_tasks
+        from .follow_up import attention_filter
+        scoped_cases = _accessible_case_queryset(self.request.user)
+        context["follow_up_counts"] = {bucket: attention_filter(scoped_cases, bucket).count()
+            for bucket in ("overdue", "dormant", "edd_missing")}
         context["upcoming_tasks"] = upcoming_tasks
         context["overdue_tasks"] = overdue_tasks
         context["awaiting_tasks"] = awaiting_tasks
@@ -3677,6 +3681,61 @@ class PatientMergeView(LoginRequiredMixin, CaseDataAccessMixin, View):
             return redirect("patients:patient_detail", pk=source_patient.pk)
         messages.success(request, f"Merged {source_patient.uhid} into {target_patient.uhid}.")
         return redirect("patients:patient_detail", pk=target_patient.pk)
+
+
+class FollowUpListView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
+    template_name = "patients/follow_up_list.html"
+    context_object_name = "patient_groups"
+    paginate_by = 25
+
+    def get_queryset(self):
+        from .follow_up import attention_filter
+        bucket = self.request.GET.get("bucket", "dormant")
+        if bucket not in ("dormant", "overdue", "edd_missing"):
+            bucket = "dormant"
+        self.bucket = bucket
+        cases = attention_filter(_accessible_case_queryset(self.request.user,
+            Case.objects.select_related("category", "patient")), bucket).order_by("patient_id", "pk")
+        groups = {}
+        for case in cases:
+            key = ("patient", case.patient_id) if case.patient_id else ("case", case.pk)
+            groups.setdefault(key, {"name": case.full_name or case.patient_name, "uhid": case.uhid, "cases": []})["cases"].append(case)
+        self.case_count = sum(len(g["cases"]) for g in groups.values())
+        return list(groups.values())
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context.update(bucket=self.bucket, case_count=self.case_count,
+            heading={"dormant": "Dormant patients", "overdue": "Overdue follow-up", "edd_missing": "EDD review needed"}[self.bucket])
+        return context
+
+
+class AncActionView(LoginRequiredMixin, View):
+    def get(self, request, pk):
+        return self._handle(request, pk)
+
+    def post(self, request, pk):
+        return self._handle(request, pk)
+
+    def _handle(self, request, pk):
+        from .anc import AncActionForm, apply_anc_action
+        if not has_capability(request.user, "case_edit"):
+            raise PermissionDenied("You do not have permission to edit cases.")
+        with transaction.atomic():
+            case = get_object_or_404(_accessible_case_queryset(request.user,
+                Case.objects.select_for_update(of=("self",)).select_related("category")), pk=pk)
+            if not is_anc_case(case):
+                raise PermissionDenied("This action requires an ANC case.")
+            form = AncActionForm(request.POST if request.method == "POST" else None, case=case,
+                initial={"base_updated_at": case.updated_at, "task_policy": "retain"})
+            if request.method == "POST" and form.is_valid():
+                try:
+                    apply_anc_action(case=case, user=request.user, data=form.cleaned_data)
+                except ValidationError as error:
+                    form.add_error(None, error)
+                else:
+                    return redirect("patients:case_detail", pk=case.pk)
+        return render(request, "patients/anc_action.html", {"case": case, "form": form})
 
 
 class CaseListView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
@@ -5246,6 +5305,7 @@ class CaseDetailView(LoginRequiredMixin, DetailView):
         latest_vitals_snapshot = _build_latest_vitals_snapshot(latest_vital, summary=latest_vitals_summary)
 
         context["today"] = today
+        context["can_anc_edit"] = has_capability(self.request.user, "case_edit")
         context["tasks"] = tasks
         context["prominent_tasks"] = task_sections["prominent_tasks"]
         context["remaining_open_groups"] = task_sections["remaining_open_groups"]

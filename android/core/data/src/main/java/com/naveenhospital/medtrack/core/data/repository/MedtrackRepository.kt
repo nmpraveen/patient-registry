@@ -545,6 +545,15 @@ class MedtrackRepository(
         }
     }
 
+    suspend fun recordAncAction(caseId: String, payload: Map<String, Any>): String {
+        val session = activeSession()
+        val response = session.api.ancAction(caseId, payload)
+        commitAccountMutation(session) {
+            database.caseDao().upsertCase(response.case.toEntity(session.ownerAccountId))
+        }
+        return response.message
+    }
+
     suspend fun loadTaskFormMetadata(): TaskFormMetadata {
         val session = activeSession()
         val response = session.api.taskFormMetadata()
@@ -1712,6 +1721,11 @@ fun pendingVitalId(clientWriteId: String): String = "pending-$clientWriteId"
 
 private fun CaseSummaryDto.toEntity(ownerAccountId: String): CaseEntity =
     CaseEntity(
+        followUpLabel = listOfNotNull(followUp?.label, followUp?.effectiveEdd?.let { "EDD $it" },
+            "EDD missing — review needed".takeIf { followUp?.eddMissing == true }).filter { it.isNotBlank() }.joinToString(" · "),
+        ancOutcomeSummary = listOfNotNull(followUp?.outcomeLabel, followUp?.outcomeDate,
+            followUp?.reason, followUp?.referralDestination).filter { it.isNotBlank() }.joinToString(" · "),
+        serverUpdatedAt = updatedAt,
         ownerAccountId = ownerAccountId,
         id = id.toString(),
         uhid = uhid,
@@ -1736,6 +1750,9 @@ private fun CaseSummaryDto.toEntity(ownerAccountId: String): CaseEntity =
 
 private fun CaseEntity.toDomain(): PatientCase =
     PatientCase(
+        followUpLabel = followUpLabel,
+        ancOutcomeSummary = ancOutcomeSummary,
+        serverUpdatedAt = serverUpdatedAt,
         id = id,
         uhid = uhid,
         patientName = patientName,
@@ -1828,6 +1845,7 @@ private fun CaseStatsDto.toDomain(): InboxStats =
         overdue = overdue,
         awaiting = awaiting,
         red = red,
+        dormant = dormant,
     )
 
 private fun CaseStatsDto.toEntity(ownerAccountId: String, cacheKey: String): CaseStatsEntity =
@@ -1839,6 +1857,7 @@ private fun CaseStatsDto.toEntity(ownerAccountId: String, cacheKey: String): Cas
         overdue = overdue,
         awaiting = awaiting,
         red = red,
+        dormant = dormant,
         updatedAtMillis = System.currentTimeMillis(),
     )
 
@@ -1849,6 +1868,7 @@ private fun CaseStatsEntity.toDomain(): InboxStats =
         overdue = overdue,
         awaiting = awaiting,
         red = red,
+        dormant = dormant,
     )
 
 private fun VitalDto.summary(): String {

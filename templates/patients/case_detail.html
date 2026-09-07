@@ -11,6 +11,14 @@
     <div class="case-detail-feedback" data-case-feedback aria-live="polite" hidden></div>
 
     {% include 'patients/partials/case_detail_hero.html' %}
+    {% with attention=case.follow_up %}
+    <section class="card card-body mb-3">
+      <strong>{{ attention.label }}</strong>
+      {% if attention.edd_missing %}<span>EDD missing — review needed</span>{% endif %}
+      {% if attention.outcome %}<span>{{ attention.outcome_label }} · {{ attention.outcome_date }} · {{ attention.reason }}{% if attention.referral_destination %} · {{ attention.referral_destination }}{% endif %}</span>{% endif %}
+      {% if case.category.name == 'ANC' and can_anc_edit %}<a href="{% url 'patients:anc_action' case.pk %}">ANC outcome / EDD correction</a>{% endif %}
+    </section>
+    {% endwith %}
 
     <div class="case-detail-module-row" data-testid="case-detail-module-row">
       <div class="case-detail-module-slot case-detail-module-slot--action">

@@ -70,6 +70,7 @@ data class CaseSearchResponseDto(
 )
 
 data class CaseStatsDto(
+    val dormant: Int = 0,
     val today: Int,
     val upcoming: Int,
     val overdue: Int,
@@ -77,7 +78,19 @@ data class CaseStatsDto(
     val red: Int,
 )
 
+data class FollowUpDto(
+    val label: String = "",
+    @Json(name = "edd_missing") val eddMissing: Boolean = false,
+    @Json(name = "effective_edd") val effectiveEdd: String? = null,
+    @Json(name = "outcome_label") val outcomeLabel: String = "",
+    @Json(name = "outcome_date") val outcomeDate: String? = null,
+    val reason: String = "",
+    @Json(name = "referral_destination") val referralDestination: String = "",
+)
+
 data class CaseSummaryDto(
+    @Json(name = "follow_up") val followUp: FollowUpDto? = null,
+    @Json(name = "updated_at") val updatedAt: String = "",
     val id: Long,
     val uhid: String,
     val name: String,

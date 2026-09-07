@@ -1181,6 +1181,14 @@ class Case(MandatoryAuditModelMixin, models.Model):
     lmp = models.DateField(blank=True, null=True)
     edd = models.DateField(blank=True, null=True)
     usg_edd = models.DateField(blank=True, null=True)
+    anc_outcome = models.CharField(max_length=24, blank=True, default="", choices=[
+        ("delivery", "Delivery"), ("loss_to_follow_up", "Loss to follow-up"),
+        ("referral", "Referral"), ("other", "Other resolution"),
+    ])
+    anc_outcome_date = models.DateField(blank=True, null=True)
+    anc_outcome_reason = models.TextField(blank=True)
+    anc_referral_destination = models.CharField(max_length=255, blank=True)
+    anc_continue_follow_up = models.BooleanField(default=True)
     surgical_pathway = models.CharField(max_length=32, choices=SurgicalPathway.choices, blank=True)
     surgery_done = models.BooleanField(default=False)
     review_frequency = models.CharField(max_length=20, choices=ReviewFrequency.choices, blank=True)
@@ -1499,6 +1507,11 @@ class Case(MandatoryAuditModelMixin, models.Model):
     @property
     def effective_edd(self):
         return self.usg_edd or self.edd
+
+    @property
+    def follow_up(self):
+        from .follow_up import follow_up_payload
+        return follow_up_payload(self)
 
     @property
     def anc_high_risk_reason_labels(self):

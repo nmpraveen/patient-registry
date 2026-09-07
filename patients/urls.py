@@ -1,6 +1,8 @@
 from django.urls import path
 
 from .views import (
+    AncActionView,
+    FollowUpListView,
     AddCallLogView,
     AddCaseNoteView,
     CategorySettingsView,
@@ -48,6 +50,8 @@ from .views import (
 app_name = "patients"
 
 urlpatterns = [
+    path("follow-up/", FollowUpListView.as_view(), name="follow_up_list"),
+    path("cases/<int:pk>/anc/", AncActionView.as_view(), name="anc_action"),
     path("", DashboardView.as_view(), name="dashboard"),
     path("calls/upcoming/", UpcomingCallsView.as_view(), name="calls_upcoming"),
     path("calls/upcoming/bulk-log/", UpcomingCallsBulkLogView.as_view(), name="calls_upcoming_bulk_log"),

@@ -13,6 +13,9 @@ data class AccountLifecycleEntity(
 
 @Entity(tableName = "cases", primaryKeys = ["ownerAccountId", "id"])
 data class CaseEntity(
+    @ColumnInfo(defaultValue = "''") val followUpLabel: String = "",
+    @ColumnInfo(defaultValue = "''") val ancOutcomeSummary: String = "",
+    @ColumnInfo(defaultValue = "''") val serverUpdatedAt: String = "",
     val ownerAccountId: String,
     val id: String,
     val uhid: String,
@@ -37,6 +40,7 @@ data class CaseEntity(
 
 @Entity(tableName = "case_stats", primaryKeys = ["ownerAccountId", "cacheKey"])
 data class CaseStatsEntity(
+    @ColumnInfo(defaultValue = "0") val dormant: Int = 0,
     val ownerAccountId: String,
     val cacheKey: String,
     val today: Int,

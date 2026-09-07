@@ -54,6 +54,7 @@ from patients.auth_security import current_auth_version
 from patients.theme import build_theme_category_colors, resolve_category_theme
 from patients.vitals_thresholds import vitals_thresholds_payload
 from patients.forms import CaseForm, TaskForm
+from patients.follow_up import attention_filter, attention_queryset
 from patients.intake_access import resolve_case_intake_patient
 from patients.policy import effective_role_policy
 from patients.views import (
@@ -249,12 +250,13 @@ def _calls_scope_query(request):
 
 
 def _apply_scope_filters(queryset, request, *, include_bucket=True):
+    queryset = attention_queryset(_accessible_case_queryset(request.user, queryset))
     today = timezone.localdate()
     assigned_to = _assigned_to_scope(request)
     if assigned_to == "all" and not _can_use_all_assigned_scope(request):
         assigned_to = "me"
     if assigned_to == "me":
-        queryset = queryset.filter(tasks__assigned_user=request.user)
+        queryset = attention_queryset(queryset).filter(Q(tasks__assigned_user=request.user) | Q(attention_open=False))
     elif assigned_to != "all":
         queryset = queryset.none()
 
@@ -287,9 +289,9 @@ def _apply_scope_filters(queryset, request, *, include_bucket=True):
         elif bucket == "upcoming":
             queryset = queryset.filter(tasks__status=TaskStatus.SCHEDULED, tasks__due_date__gt=today)
         elif bucket == "overdue":
-            queryset = queryset.filter(tasks__due_date__lt=today).exclude(
-                tasks__status__in=[TaskStatus.COMPLETED, TaskStatus.CANCELLED]
-            )
+            queryset = attention_filter(queryset, "overdue", today)
+        elif bucket in {"dormant", "edd_missing"}:
+            queryset = attention_filter(queryset, bucket, today)
         elif bucket == "awaiting":
             queryset = queryset.filter(tasks__status=TaskStatus.AWAITING_REPORTS)
         elif bucket == "red":
@@ -298,6 +300,7 @@ def _apply_scope_filters(queryset, request, *, include_bucket=True):
 
 
 def _apply_case_search_body_filters(queryset, user, values, *, include_bucket=True):
+    queryset = attention_queryset(_accessible_case_queryset(user, queryset))
     today = timezone.localdate()
     assigned_to = values.get("assigned_to") or _default_assigned_to_scope(user)
     scope_context = values.get("scope_context", "")
@@ -307,7 +310,7 @@ def _apply_case_search_body_filters(queryset, user, values, *, include_bucket=Tr
     if assigned_to == "all" and not can_use_all:
         assigned_to = "me"
     if assigned_to == "me":
-        queryset = queryset.filter(tasks__assigned_user=user)
+        queryset = attention_queryset(queryset).filter(Q(tasks__assigned_user=user) | Q(attention_open=False))
     elif assigned_to != "all":
         queryset = queryset.none()
 
@@ -341,9 +344,9 @@ def _apply_case_search_body_filters(queryset, user, values, *, include_bucket=Tr
         elif bucket == "upcoming":
             queryset = queryset.filter(tasks__status=TaskStatus.SCHEDULED, tasks__due_date__gt=today)
         elif bucket == "overdue":
-            queryset = queryset.filter(tasks__due_date__lt=today).exclude(
-                tasks__status__in=[TaskStatus.COMPLETED, TaskStatus.CANCELLED]
-            )
+            queryset = attention_filter(queryset, "overdue", today)
+        elif bucket in {"dormant", "edd_missing"}:
+            queryset = attention_filter(queryset, bucket, today)
         elif bucket == "awaiting":
             queryset = queryset.filter(tasks__status=TaskStatus.AWAITING_REPORTS)
         elif bucket == "red":
@@ -356,10 +359,9 @@ def _counter_payload(base_queryset):
     return {
         "today": base_queryset.filter(tasks__status=TaskStatus.SCHEDULED, tasks__due_date=today).distinct().count(),
         "upcoming": base_queryset.filter(tasks__status=TaskStatus.SCHEDULED, tasks__due_date__gt=today).distinct().count(),
-        "overdue": base_queryset.filter(tasks__due_date__lt=today)
-        .exclude(tasks__status__in=[TaskStatus.COMPLETED, TaskStatus.CANCELLED])
-        .distinct()
-        .count(),
+        "overdue": attention_filter(base_queryset, "overdue", today).distinct().count(),
+        "dormant": attention_filter(base_queryset, "dormant", today).distinct().count(),
+        "edd_missing": attention_filter(base_queryset, "edd_missing", today).distinct().count(),
         "awaiting": base_queryset.filter(tasks__status=TaskStatus.AWAITING_REPORTS).distinct().count(),
         "red": base_queryset.filter(_red_flag_query()).distinct().count(),
     }
@@ -459,6 +461,7 @@ def _serialize_case_row(case, *, user, today, theme_category_colors):
         "diagnosis": case.diagnosis,
         "surgery_done": case.surgery_done,
         "clinical_headline": case.clinical_headline_items,
+        "follow_up": case.follow_up,
         "task_counts": _task_counts(tasks, today),
         "next_task": _serialize_task(next_task, can_complete=can_complete) if next_task else None,
         "latest_vital": _serialize_vital(latest_vital) if latest_vital else None,
@@ -850,6 +853,43 @@ def _case_edit_payload(case):
     }
 
 
+class AncActionView(APIView):
+    permission_classes = [HasMobileCaseAccess]
+
+    @extend_schema(operation_id="mobile_anc_action", request=contract.AncActionRequestSerializer,
+        responses={200: contract.CasePatchResponseSerializer, 400: contract.ErrorResponseSerializer,
+                   403: contract.ErrorResponseSerializer, 404: contract.ErrorResponseSerializer,
+                   409: contract.ErrorResponseSerializer})
+    def post(self, request, pk):
+        from patients.anc import AncActionForm, apply_anc_action
+        if not has_capability(request.user, "case_edit"):
+            raise PermissionDenied("You do not have permission to edit cases.")
+        get_object_or_404(_accessible_case_queryset(request.user), pk=pk)
+        control = ClientWriteSerializer(data=request.data)
+        control.is_valid(raise_exception=True)
+        if not control.validated_data.get("client_write_id"):
+            return Response({"message": "client_write_id is required."}, status=400)
+        replay = _idempotent_replay_response(request, control, "anc_action", target_type="case", target_id=pk)
+        if replay is not None:
+            return replay
+
+        def apply_write():
+            case = get_object_or_404(_accessible_case_queryset(request.user,
+                Case.objects.select_for_update(of=("self",)).select_related("category")), pk=pk)
+            form = AncActionForm(data=request.data, case=case)
+            if not form.is_valid():
+                return {"message": "Please fix the highlighted fields.", "errors": _form_errors(form)}, 400
+            try:
+                apply_anc_action(case=case, user=request.user, data=form.cleaned_data)
+            except ValidationError as error:
+                return {"message": " ".join(error.messages)}, 409
+            return {"message": "ANC action recorded.", "case_id": case.pk,
+                    "case": _mobile_case_payload(case, user=request.user),
+                    "editable_case": _case_edit_payload(case)}, 200
+
+        return _idempotent_response(request, control, "anc_action", apply_write, target_type="case", target_id=pk)
+
+
 class CaseEditFormView(APIView):
     """Prefill + metadata for the mobile case-edit wizard."""
 
@@ -885,6 +925,7 @@ class CaseEditFormView(APIView):
 
 IDEMPOTENCY_RECEIPT_TTL = timedelta(days=7)
 IDEMPOTENT_OPERATION_CAPABILITIES = {
+    "anc_action": "case_edit",
     "case_create": "case_create",
     "task_create": "task_create",
     "task_complete": "task_edit",
@@ -1185,7 +1226,7 @@ def _receipt_result(operation, target_id, payload):
         return "", ""
     if operation == "case_create":
         return "case", payload.get("case_id")
-    if operation == "case_update":
+    if operation in {"case_update", "anc_action"}:
         return "case", target_id
     if operation in {"task_create", "task_complete", "task_update"}:
         return "task", (payload.get("task") or {}).get("id") or target_id
@@ -1207,7 +1248,7 @@ def _replay_receipt(receipt, user):
 
     message = receipt.response_metadata.get("message", "")
     result_id = receipt.result_id
-    if receipt.operation in {"case_create", "case_update"}:
+    if receipt.operation in {"case_create", "case_update", "anc_action"}:
         case = get_object_or_404(
             _accessible_case_queryset(user, Case.objects.select_related("category")),
             pk=result_id,
@@ -1217,7 +1258,7 @@ def _replay_receipt(receipt, user):
             "case_id": case.pk,
             "case": _mobile_case_payload(case, user=user),
         }
-        if receipt.operation == "case_update":
+        if receipt.operation in {"case_update", "anc_action"}:
             payload["editable_case"] = _case_edit_payload(case)
     elif receipt.operation in {"task_create", "task_complete", "task_update"}:
         task = get_object_or_404(

@@ -1006,6 +1006,13 @@ fun MedtrackApp(
                         onEditCase = {
                             navController.navigate(Routes.editCase(caseId)) { launchSingleTop = true }
                         },
+                        onAncAction = { payload, report ->
+                            scope.launch {
+                                runCatching { container.medtrackRepository.recordAncAction(caseId, payload) }
+                                    .onSuccess { caseActionMessage = it; report(null); refreshCaseDetail() }
+                                    .onFailure { report(it.message ?: "Could not record ANC action. Check connection or refresh the case.") }
+                            }
+                        },
                         onTaskAction = { action, taskId, report ->
                             scope.launch {
                                 val outcome = when (action) {

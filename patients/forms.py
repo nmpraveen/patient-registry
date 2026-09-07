@@ -403,6 +403,11 @@ class CaseForm(StyledModelForm):
 
     def clean(self):
         cleaned_data = super().clean()
+        if self.instance.pk:
+            previous = Case.objects.get(pk=self.instance.pk)
+            for date_field in ("usg_edd", "edd"):
+                if date_field in cleaned_data and cleaned_data[date_field] != getattr(previous, date_field):
+                    self.add_error(date_field, "Use ANC outcome / EDD correction on the case page to correct EDD with a reason. Existing tasks will be retained.")
         patient_mode = cleaned_data.get("patient_mode") or ("existing" if self.instance.pk else "new")
         cleaned_data["patient_mode"] = patient_mode
         selected_patient = cleaned_data.get("selected_patient")

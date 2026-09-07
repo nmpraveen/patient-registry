@@ -2,6 +2,7 @@ from django.urls import path
 from .token_views import AuthVersionTokenObtainPairView, AuthVersionTokenRefreshView
 
 from .views import (
+    AncActionView,
     CallOutcomeView,
     CaseDetailView,
     CaseEditFormView,
@@ -28,6 +29,7 @@ from .views import (
 app_name = "api"
 
 urlpatterns = [
+    path("cases/<int:pk>/anc/", AncActionView.as_view(), name="anc_action"),
     path("auth/token/", AuthVersionTokenObtainPairView.as_view(), name="token_obtain_pair"),
     path("auth/token/refresh/", AuthVersionTokenRefreshView.as_view(), name="token_refresh"),
     path("auth/logout/", LogoutView.as_view(), name="logout"),

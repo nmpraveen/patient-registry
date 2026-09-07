@@ -15,6 +15,9 @@ enum class CaseStatus(val label: String) {
 }
 
 data class PatientCase(
+    val followUpLabel: String = "",
+    val ancOutcomeSummary: String = "",
+    val serverUpdatedAt: String = "",
     val id: String,
     val uhid: String,
     val patientName: String,
@@ -51,6 +54,7 @@ data class SubcategoryFilterOption(
 )
 
 data class InboxStats(
+    val dormant: Int = 0,
     val today: Int = 0,
     val upcoming: Int = 0,
     val overdue: Int = 0,

@@ -85,6 +85,9 @@ interface MedtrackApi {
     @GET("api/cases/{caseId}/edit-form/")
     suspend fun caseEditForm(@Path("caseId") caseId: String): CaseEditFormDto
 
+    @POST("api/cases/{caseId}/anc/")
+    suspend fun ancAction(@Path("caseId") caseId: String, @Body request: Map<String, @JvmSuppressWildcards Any>): CaseUpdateResponseDto
+
     @PATCH("api/cases/{caseId}/")
     suspend fun updateCase(
         @Path("caseId") caseId: String,

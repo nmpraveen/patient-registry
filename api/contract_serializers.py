@@ -7,6 +7,20 @@ APIView operation explicit and keep generated clients aligned with the JSON cont
 from rest_framework import serializers
 
 
+class AncActionRequestSerializer(serializers.Serializer):
+    client_write_id = serializers.CharField()
+    base_updated_at = serializers.DateTimeField()
+    action = serializers.ChoiceField(choices=["outcome", "correct_edd"])
+    reason = serializers.CharField(max_length=2000)
+    outcome = serializers.ChoiceField(choices=["delivery", "loss_to_follow_up", "referral", "other"], required=False)
+    outcome_date = serializers.DateField(required=False)
+    referral_destination = serializers.CharField(required=False, allow_blank=True)
+    continue_follow_up = serializers.ChoiceField(choices=["continue", "close"], required=False)
+    usg_edd = serializers.DateField(required=False)
+    task_policy = serializers.ChoiceField(choices=["retain", "cancel_selected"])
+    cancel_task_ids = serializers.ListField(child=serializers.IntegerField(), required=False)
+
+
 class ChoiceContractSerializer(serializers.Serializer):
     value = serializers.CharField()
     label = serializers.CharField()
@@ -68,7 +82,22 @@ class VitalContractSerializer(serializers.Serializer):
     summary = serializers.JSONField()
 
 
+class FollowUpContractSerializer(serializers.Serializer):
+    label = serializers.CharField()
+    dormant = serializers.BooleanField()
+    edd_overdue = serializers.BooleanField()
+    edd_missing = serializers.BooleanField()
+    effective_edd = serializers.DateField(allow_null=True)
+    outcome = serializers.CharField(allow_blank=True)
+    outcome_label = serializers.CharField(allow_blank=True)
+    outcome_date = serializers.DateField(allow_null=True)
+    reason = serializers.CharField(allow_blank=True)
+    referral_destination = serializers.CharField(allow_blank=True)
+    continue_follow_up = serializers.BooleanField()
+
+
 class CaseContractSerializer(serializers.Serializer):
+    follow_up = FollowUpContractSerializer(required=False)
     id = serializers.IntegerField()
     uhid = serializers.CharField()
     name = serializers.CharField()
@@ -92,6 +121,8 @@ class CaseContractSerializer(serializers.Serializer):
 
 
 class CaseStatsContractSerializer(serializers.Serializer):
+    dormant = serializers.IntegerField(required=False)
+    edd_missing = serializers.IntegerField(required=False)
     today = serializers.IntegerField()
     upcoming = serializers.IntegerField()
     overdue = serializers.IntegerField()

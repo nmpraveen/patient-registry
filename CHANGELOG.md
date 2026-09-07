@@ -1,3 +1,7 @@
+## 2026.09.07.17.36
+
+- Remove obsolete AGP 8 lock configurations and verify additional Maven metadata requested by Linux CI.
+
 ## 2026.09.07.17.29
 
 - Refresh compile/runtime dependency locks for all Android variants, including unused test configurations.

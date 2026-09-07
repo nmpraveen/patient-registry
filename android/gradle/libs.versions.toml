@@ -7,7 +7,6 @@ androidxCore = "1.19.0"
 androidxTestCore = "1.7.0"
 biometric = "1.1.0"
 composeBom = "2026.08.00"
-composeCompiler = "1.5.15"
 coroutines = "1.11.0"
 firebaseBom = "34.18.0"
 firebaseCrashlyticsPlugin = "3.0.8"
@@ -71,7 +70,7 @@ robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectr
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 android-library = { id = "com.android.library", version.ref = "agp" }
-kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 google-services = { id = "com.google.gms.google-services", version.ref = "googleServices" }
 firebase-crashlytics = { id = "com.google.firebase.crashlytics", version.ref = "firebaseCrashlyticsPlugin" }

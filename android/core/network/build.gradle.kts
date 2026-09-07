@@ -1,18 +1,13 @@
 plugins {
     alias(libs.plugins.android.library)
-    alias(libs.plugins.kotlin.android)
 }
 
 android {
     namespace = "com.naveenhospital.medtrack.core.network"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         minSdk = 24
-    }
-
-    kotlinOptions {
-        jvmTarget = "17"
     }
 
     compileOptions {

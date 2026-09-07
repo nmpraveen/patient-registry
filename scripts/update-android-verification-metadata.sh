@@ -7,7 +7,7 @@ android_root="$repo_root/android"
 if (($#)); then
   tasks=("$@")
 else
-  tasks=(testDebugUnitTest lintRelease assembleRelease)
+  tasks=(testDebugUnitTest lintRelease :app:lintProdRelease assembleRelease)
 fi
 
 gradle_home="$(mktemp -d "${TMPDIR:-/tmp}/medtrack-gradle-verification.XXXXXX")"
@@ -23,6 +23,7 @@ GRADLE_USER_HOME="$gradle_home" bash ./gradlew \
   --no-daemon \
   --max-workers=1 \
   --write-verification-metadata sha256 \
+  --write-locks \
   "${tasks[@]}"
 
 echo "ANDROID_VERIFICATION_METADATA_UPDATED tasks=${tasks[*]}"

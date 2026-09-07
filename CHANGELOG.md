@@ -1,3 +1,7 @@
+## 2026.09.07.17.44
+
+- Verify the compiler coroutines BOM metadata required by fresh Linux dependency resolution.
+
 ## 2026.09.07.17.40
 
 - Regenerate Android SDK lock entries created at task execution after removing obsolete AGP configurations.

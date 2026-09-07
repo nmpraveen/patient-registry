@@ -174,6 +174,21 @@ if (-not $auditPassed) {
     throw 'Artifact audit found a forbidden credential or secret-like entry.'
 }
 
+function Get-SourceSetting([string]$Path, [string]$Pattern) {
+    $found = [regex]::Matches((Get-Content -LiteralPath $Path -Raw), $Pattern)
+    if ($found.Count -ne 1) {
+        throw "Expected one release toolchain setting in $Path."
+    }
+    return $found[0].Groups[1].Value
+}
+$wrapperProperties = Join-Path $androidRoot 'gradle\wrapper\gradle-wrapper.properties'
+$versionCatalog = Join-Path $androidRoot 'gradle\libs.versions.toml'
+$appBuild = Join-Path $androidRoot 'app\build.gradle.kts'
+$gradleVersion = Get-SourceSetting $wrapperProperties '(?m)^distributionUrl=.*?/gradle-([0-9.]+)-(?:bin|all)\.zip\s*$'
+$agpVersion = Get-SourceSetting $versionCatalog '(?m)^agp\s*=\s*"([^"]+)"\s*$'
+$compileApi = [int](Get-SourceSetting $appBuild '(?m)^\s*compileSdk\s*=\s*(\d+)\s*$')
+$targetApi = [int](Get-SourceSetting $appBuild '(?m)^\s*targetSdk\s*=\s*(\d+)\s*$')
+
 $wrapperHash = (Get-FileHash -LiteralPath (Join-Path $androidRoot 'gradle\wrapper\gradle-wrapper.jar') -Algorithm SHA256).Hash.ToLowerInvariant()
 $provenance = [ordered]@{
     schemaVersion = 1
@@ -187,10 +202,10 @@ $provenance = [ordered]@{
         variant = 'prodRelease'
         versionName = $versionName
         versionCode = $versionCode
-        compileSdk = 36
-        targetSdk = 36
-        gradle = '8.11.1'
-        androidGradlePlugin = '8.9.1'
+        compileSdk = $compileApi
+        targetSdk = $targetApi
+        gradle = $gradleVersion
+        androidGradlePlugin = $agpVersion
         wrapperSha256 = $wrapperHash
         requestedSigning = 'unsigned review artifacts'
         worktreeBuildRoot = $buildRoot

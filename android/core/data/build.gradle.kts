@@ -1,24 +1,23 @@
 plugins {
     alias(libs.plugins.android.library)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.ksp)
 }
 
 android {
     namespace = "com.naveenhospital.medtrack.core.data"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         minSdk = 24
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    testFixtures {
+        enable = true
     }
 
     testOptions {

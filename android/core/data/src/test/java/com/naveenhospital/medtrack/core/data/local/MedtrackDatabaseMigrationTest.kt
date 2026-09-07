@@ -20,10 +20,15 @@ class MedtrackDatabaseMigrationTest {
         FrameworkSQLiteOpenHelperFactory(),
     )
 
+    // Room 2.8 compares the configured name with the opened path. An absolute
+    // name works on both Android/Linux and Windows Robolectric sandboxes.
+    private fun databasePath(name: String): String =
+        InstrumentationRegistry.getInstrumentation().targetContext.getDatabasePath(name).absolutePath
+
     @Test
     fun everySupportedSchemaVersionMigratesToCurrentSchema() {
         (1..12).forEach { startVersion ->
-            val databaseName = "migration_${startVersion}_to_13"
+            val databaseName = databasePath("migration_${startVersion}_to_13")
             helper.createDatabase(databaseName, startVersion).close()
 
             helper.runMigrationsAndValidate(
@@ -42,7 +47,7 @@ class MedtrackDatabaseMigrationTest {
 
     @Test
     fun ownershipTransitionDropsUnownedOutboxAndAcceptsSameKeyForTwoAccounts() {
-        val databaseName = "migration_ownership_transition"
+        val databaseName = databasePath("migration_ownership_transition")
         helper.createDatabase(databaseName, 10).use { database ->
             database.execSQL(
                 """
@@ -91,7 +96,7 @@ class MedtrackDatabaseMigrationTest {
 
     @Test
     fun lifecycleUpgradePreservesV11OwnedRowsButRequiresFreshActivation() {
-        val databaseName = "migration_11_to_13_owned_rows"
+        val databaseName = databasePath("migration_11_to_13_owned_rows")
         helper.createDatabase(databaseName, 11).use { database ->
             database.execSQL(
                 """

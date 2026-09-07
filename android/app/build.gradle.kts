@@ -4,8 +4,8 @@ import java.security.MessageDigest
 import org.gradle.api.GradleException
 
 plugins {
+    alias(libs.plugins.compose.compiler)
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt.android)
 }
@@ -54,7 +54,7 @@ if (hasFirebaseConfig) {
 
 android {
     namespace = "com.naveenhospital.medtrack"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.naveenhospital.medtrack"
@@ -114,14 +114,6 @@ android {
     buildFeatures {
         buildConfig = true
         compose = true
-    }
-
-    composeOptions {
-        kotlinCompilerExtensionVersion = libs.versions.composeCompiler.get()
-    }
-
-    kotlinOptions {
-        jvmTarget = "17"
     }
 
     compileOptions {

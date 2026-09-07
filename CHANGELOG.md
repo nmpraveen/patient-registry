@@ -1,3 +1,34 @@
+## 2026.09.07.20.31
+
+- Integrate the Android dependency/toolchain upgrade with the merged Python/container repairs and pinned actions/attest v4.2.2 update.
+
+## 2026.09.07.17.50
+
+- Update provenance and SBOM signing to the pinned actions/attest v4.2.2 commit.
+- Derive Android release provenance toolchain/API versions from the checked-in build configuration and refresh release documentation.
+
+## 2026.09.07.17.44
+
+- Verify the compiler coroutines BOM metadata required by fresh Linux dependency resolution.
+
+## 2026.09.07.17.40
+
+- Regenerate Android SDK lock entries created at task execution after removing obsolete AGP configurations.
+
+## 2026.09.07.17.36
+
+- Remove obsolete AGP 8 lock configurations and verify additional Maven metadata requested by Linux CI.
+
+## 2026.09.07.17.29
+
+- Refresh compile/runtime dependency locks for all Android variants, including unused test configurations.
+
+## 2026.09.07.17.20
+
+- Migrate Android dependencies to AGP 9 built-in Kotlin and the matching Compose compiler, using JDK 21 for API 36 Robolectric tests.
+- Compile against API 37 while preserving target API 36 and minimum API 24; regenerate strict dependency locks and verified artifact checksums.
+- Repair portable migration/session tests and locale observation; add explicit production-app lint to CI.
+
 ## 2026.09.07.17.19
 
 - Patch Caddy Go dependencies to x/crypto v0.55.0 and gRPC v1.83.1 for current critical/high advisories.

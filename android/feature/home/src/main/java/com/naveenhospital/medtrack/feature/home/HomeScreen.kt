@@ -90,6 +90,7 @@ import com.naveenhospital.medtrack.core.domain.model.VitalsThresholdConfig
 import androidx.paging.compose.LazyPagingItems
 import java.text.SimpleDateFormat
 import java.util.Date
+import androidx.compose.ui.platform.LocalLocale
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -454,7 +455,7 @@ private fun ListHeader(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = "${bucketHeader(selectedBucket)} \u2022 $itemCount ${patientNoun(itemCount).uppercase(Locale.getDefault())}",
+            text = "${bucketHeader(selectedBucket)} \u2022 $itemCount ${patientNoun(itemCount).uppercase(LocalLocale.current.platformLocale)}",
             style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.Bold,
             color = MedtrackColors.Muted,
@@ -1267,7 +1268,7 @@ private fun VitalMetric(metric: VitalMetricDisplay, modifier: Modifier = Modifie
             verticalArrangement = Arrangement.spacedBy(1.dp),
         ) {
             Text(
-                text = metric.label.uppercase(Locale.getDefault()),
+                text = metric.label.uppercase(LocalLocale.current.platformLocale),
                 color = MedtrackColors.Muted,
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.Bold,

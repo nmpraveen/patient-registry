@@ -2,9 +2,13 @@
 
 ## Issue #113 Stage 2 implementation
 
-Task editor affordances, original-baseline web/API conflict handling, descriptive task history and general-call reasons are implemented in the Stage 2 lane. Legacy queued call/completion JSON remains compatible; reasons round-trip through bundles and bounded call history. The Android lane is ready with 127 core tests, 28 final targeted tests and a dev build passing; synthetic online/offline calls synced once without completing the task. Native code is integrated only from that lane's rebased commit. See docs/issue-113-stage-2.md and the coordination stage-2-report.md for exact validation and integration state. The Stage 1 squash-base rebase, combined PR review and exact-head CI remain required before merge; no production activation is implied.
+Stage 2 combines web/API and native task editing, original-baseline conflict handling, descriptive task history and general-call reasons on Stage 1 merge `4531f09c728f1c11141f7f636a4f14fc43eb740a` (PR #115). Legacy queued call/completion JSON remains compatible; reasons round-trip through bundles and bounded call history. Native integration preserves the final Stage 1 ANC refresh/cancellation guards, and server Case/Patient baselines and lock order remain unchanged.
+
+Local validation passed: 543 backend tests (two expected absent local-helper skips), 127 native core tests, final targeted tests and dev assembly, responsive web/keyboard checks and synthetic native online/offline call checks. Post-rebase validation passed 47 server integration tests, 30 native repository tests, app compilation, schema validation and migration drift checks. See docs/issue-113-stage-2.md and the coordination stage-2-report.md for exact commits, outputs and limits. The combined PR review and exact-head CI remain required before merge; no production activation is implied.
 
 ## Issue #113 Stage 1 source implementation
+
+Stage 1 is merged as PR #115. The following correction entries are its completed review history; their earlier pending-gate wording is superseded by the merge recorded above.
 
 The remaining Recent Cases lock-order issue is reproduced and corrected with precise mandatory-audited diagnosis/notes/timestamp updates, preserving fresh activity before-values and checking Patient linkage without taking a Patient lock. Eight targeted regressions pass; fresh exact-head CI and the correction-only recheck supersede the prior head.
 

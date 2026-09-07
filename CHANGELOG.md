@@ -1,3 +1,9 @@
+## 2026.09.07.23.47
+
+- Expose web and native task editing with original-field conflict safeguards, before/after activity, calendar dates, frequency and notes.
+- Record general patient calls with reasons and bounded history; preserve legacy offline payloads, retries and account isolation.
+- Add compatible call-reason and Room migrations, bundle/seed support and validated Stage 2 integration on merged Stage 1.
+
 ## 2026.09.07.23.28
 
 - Prevent Recent Cases diagnosis/notes edits from deadlocking with patient identity edits through precise mandatory-audited Case updates.

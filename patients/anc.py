@@ -68,7 +68,8 @@ def apply_anc_action(*, case, user, data):
         raise ValidationError("This action is only available for ANC cases.")
     if case.updated_at != data["base_updated_at"]:
         raise ValidationError("This case changed. Reload before recording the action.")
-    tasks = list(case.tasks.select_for_update().filter(status__in=OPEN_STATUSES))
+    noncompleted_tasks = list(case.tasks.select_for_update().exclude(status=TaskStatus.COMPLETED))
+    tasks = [task for task in noncompleted_tasks if task.status in OPEN_STATUSES]
     selected = set(map(int, data.get("cancel_task_ids", [])))
     if not selected.issubset({t.pk for t in tasks}):
         raise ValidationError("Selected tasks changed. Reload before recording the action.")
@@ -82,7 +83,7 @@ def apply_anc_action(*, case, user, data):
         new_status = CaseStatus.ACTIVE if continuing else (
             CaseStatus.LOSS_TO_FOLLOW_UP if data["outcome"] == "loss_to_follow_up" else CaseStatus.COMPLETED)
         if new_status in (CaseStatus.ACTIVE, CaseStatus.LOSS_TO_FOLLOW_UP) and any(
-            (timezone.localdate() - t.due_date).days > 30 for t in tasks
+            (timezone.localdate() - t.due_date).days > 30 for t in noncompleted_tasks
         ) and not can_transition_grey_tasks(user, fresh=True):
             raise PermissionDenied("Your role does not allow this Grey List status transition.")
         note = f"ANC outcome: {case.anc_outcome or 'unrecorded'} -> {data['outcome']} on {data['outcome_date']}. Destination: {data.get('referral_destination') or 'none'}. Follow-up: {data['continue_follow_up']}. Case status: {case.status} -> {new_status}. Task policy: {data['task_policy']}."

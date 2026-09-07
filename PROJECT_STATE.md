@@ -2,6 +2,8 @@
 
 ## Issue #113 Stage 1 source implementation
 
+The six existing automated review comments are addressed in the pending revision: background Room mapping, Grey permission parity, initial ANC reclassification dates, SQL patient-group pagination and retained-task worklist visibility. This supersedes the earlier d2ab783 review/CI gate; a focused feedback recheck and fresh exact-head CI are required.
+
 The four Stage 1 review findings are addressed: PostgreSQL-safe scoped row locks, concurrent web edit preservation, explicit reminder cancellation retention, and shared ANC outcome validation for imports. Review-fix verification passed 91 targeted tests; fresh exact-head CI and the coordinator's focused recheck remain the merge gates.
 
 Stage 1 adds scoped dormant/overdue/EDD-missing follow-up views, persistent task-independent ANC EDD attention, explicit audited outcome/EDD actions, and additive native/API/bundle contracts. Django migration 0040 and Room 12→13 preserve existing statuses/history. EDD correction retains every task date. Historical closed ANC reconciliation is read-only. See [Stage 1 contract and validation](docs/issue-113-stage-1.md).

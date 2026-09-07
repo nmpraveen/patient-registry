@@ -2,6 +2,8 @@
 
 ## Issue #113 follow-up and ANC actions
 
+Closing ANC with retained tasks leaves those tasks discoverable in scoped web/API/native worklists until explicitly completed/cancelled; closure does not reopen the case. EDD-only attention and dormant/missing buckets remain active-only. Initial ANC date capture during reclassification is permitted only when the prior non-ANC case has no stored effective EDD.
+
 After an ANC outcome, routine edits do not regenerate RCH reminders. Resume follow-up through an explicitly authorised task creation/reopen. Full case edits reject an intervening case update; Recent Cases writes only diagnosis/notes. Outcome imports require a date, reason, referral destination where applicable, and an explicit boolean follow-up choice; legacy records without an outcome remain supported.
 
 The [Stage 1 runbook](docs/issue-113-stage-1.md) defines case-based counts, hospital-date predicates, explicit retention/cancellation, native online submissions, additive migrations and patient bundle compatibility. The new outcome date records delivery/referral dates where applicable; no outcome is inferred from tasks or EDD.

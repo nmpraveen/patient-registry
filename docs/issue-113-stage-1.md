@@ -8,6 +8,8 @@ Access scope is applied before classification, counts, search or assignment filt
 
 Dashboard follow-up counters and API bucket counters count **cases**. The web follow-up list groups affected cases by Patient and paginates **patient groups**, keeping all affected cases together even when another case has open tasks. Legacy patientless cases each form a separate group. The existing dashboard task panels still count tasks and are labelled accordingly. API/native rows remain case-based, preserving existing pagination and old-client contracts.
 
+Patient-group keys are paginated in SQL before loading the affected cases for that page. API list/search and follow-up queues include unarchived closed cases with retained open tasks, keeping case status and outcome intact. Closed taskless cases remain outside worklists; EDD-only overdue, dormant and missing-EDD classification still require an active case. Retained task overdue remains visible after closure until the task is explicitly completed or cancelled.
+
 ## Explicit actions
 
 Case editors open **ANC outcome / EDD correction** from the case page or native detail. Delivery, loss to follow-up, referral and other resolution record an outcome date and reason. The outcome date is the delivery/referral date when that outcome is selected. Referral also requires a destination. Users explicitly choose continuing follow-up (active) or closing the case (completed, or loss to follow-up). Referral continuation is a recorded resolution of the pregnancy EDD attention; retained overdue tasks still require attention.
@@ -18,6 +20,8 @@ Automatic RCH reminder generation stops for closed/archived cases and any record
 
 EDD correction sets USG EDD and records before/after values, effective EDD before correction, actor, timestamp and reason in activity history. Every existing task date/status is retained, including generated, manually edited and completed tasks. There is no schedule regeneration or task-moving option. Initial intake EDD capture is unchanged. Existing case-edit endpoints reject changes to stored EDD fields with a message directing the user to this audited workflow; unchanged older client payloads remain valid.
 
+Reclassifying a non-ANC case without a stored effective EDD permits initial ANC date capture. Existing ANC cases and any stored effective EDD remain protected by the correction guard. Grey transition permission checks retain the existing non-completed task predicate, including cancelled historical tasks, while attention and selectable cancellations use only scheduled/awaiting tasks.
+
 `POST /api/cases/{id}/anc/` is additive and described in OpenAPI. Required controls: `client_write_id`, `base_updated_at`, `action`, `reason`, `task_policy`; outcome-specific fields are validated server-side. Native submissions use the existing authenticated account session and guarded encrypted cache commit. They are **online only** and do not enter the offline outbox. Retrying an unchanged submission reuses its write ID. Server replay rechecks current permissions/scope and stores only safe receipt metadata, using the existing idempotency framework. Old servers omit new DTO fields safely; the native action remains disabled without a server version timestamp.
 
 ## Migration, bundles and reconciliation
@@ -25,6 +29,8 @@ EDD correction sets USG EDD and records before/after values, effective EDD befor
 Django migration 0040 adds optional outcome/date/reason/destination and a follow-up choice without changing existing case statuses or task rows. Patient bundle v2 exports the new fields; current imports preserve them, and older bundles default to no recorded outcome. Shared form/model/import validation requires a nonfuture outcome date, nonblank reason, referral destination where applicable and an explicit boolean follow-up choice whenever an outcome is supplied. Malformed new outcome records reject the import transactionally without replacing existing patients. Full database backups naturally include the new fields. Do not use an older application to import a new bundle when preserving outcomes is required.
 
 Room 12→13 adds defaulted case attention/outcome display and server version fields plus dormant case counts. Account ownership, generation checks, encryption and pending writes are unchanged. A sync refresh supplies the new display fields after upgrade.
+
+Foreground and background sync both preserve follow-up/outcome display, server update timestamps and dormant counts, including detail refreshes and pending-write responses committed to Room.
 
 Historical closed cases are never mass-reopened. Run the **read-only** inventory in an authorised environment:
 

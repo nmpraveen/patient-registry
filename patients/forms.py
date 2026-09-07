@@ -15,6 +15,7 @@ from .models import (
     BloodGroup,
     CallLog,
     Case,
+    is_anc_case,
     case_subcategory_choices_for_category_name,
     case_subcategory_group_for_category_name,
     CaseActivityLog,
@@ -407,7 +408,7 @@ class CaseForm(StyledModelForm):
         cleaned_data = super().clean()
         if self.instance.pk:
             previous = Case.objects.get(pk=self.instance.pk)
-            for date_field in ("usg_edd", "edd"):
+            for date_field in (("usg_edd", "edd") if is_anc_case(previous) or previous.effective_edd else ()):
                 if date_field in cleaned_data and cleaned_data[date_field] != getattr(previous, date_field):
                     self.add_error(date_field, "Use ANC outcome / EDD correction on the case page to correct EDD with a reason. Existing tasks will be retained.")
         patient_mode = cleaned_data.get("patient_mode") or ("existing" if self.instance.pk else "new")

@@ -136,7 +136,8 @@ class FollowUpTests(TestCase):
         self.assertEqual(selected.status, TaskStatus.CANCELLED)
         self.assertEqual(retained.status, TaskStatus.SCHEDULED)
         self.assertEqual(completed.status, TaskStatus.COMPLETED)
-        self.assertNotIn(case.pk, self.ids("overdue"))
+        self.assertIn(case.pk, self.ids("overdue"))
+        self.assertFalse(case.follow_up["edd_overdue"])
 
     def test_referral_continuation_records_resolution_without_closing_case(self):
         case = self.case()

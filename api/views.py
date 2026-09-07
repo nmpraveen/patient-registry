@@ -54,7 +54,7 @@ from patients.auth_security import current_auth_version
 from patients.theme import build_theme_category_colors, resolve_category_theme
 from patients.vitals_thresholds import vitals_thresholds_payload
 from patients.forms import CaseForm, TaskForm
-from patients.follow_up import attention_filter, attention_queryset
+from patients.follow_up import attention_filter, attention_queryset, worklist_queryset
 from patients.intake_access import resolve_case_intake_patient
 from patients.policy import effective_role_policy
 from patients.views import (
@@ -518,7 +518,7 @@ class CaseListView(APIView):
         today = timezone.localdate()
         base_queryset = _apply_scope_filters(
             _visible_case_queryset(
-                Case.objects.select_related("category").filter(status=CaseStatus.ACTIVE)
+                worklist_queryset(Case.objects.select_related("category"))
             ),
             request,
             include_bucket=False,
@@ -2586,7 +2586,7 @@ class CaseSearchView(APIView):
 
         queryset = _accessible_case_queryset(
             request.user,
-            Case.objects.select_related("category").filter(status=CaseStatus.ACTIVE),
+            worklist_queryset(Case.objects.select_related("category")),
         )
         if not cursor_token:
             snapshot_max_id = queryset.aggregate(max_id=Max("id"))["max_id"] or 0

@@ -3700,14 +3700,26 @@ class FollowUpListView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
         if bucket not in ("dormant", "overdue", "edd_missing"):
             bucket = "dormant"
         self.bucket = bucket
-        cases = attention_filter(_accessible_case_queryset(self.request.user,
-            Case.objects.select_related("category", "patient")), bucket).order_by("patient_id", "pk")
+        self.follow_up_cases = attention_filter(_accessible_case_queryset(self.request.user,
+            Case.objects.all()), bucket)
+        self.case_count = self.follow_up_cases.count()
+        return self.follow_up_cases.annotate(legacy_case_id=QueryCase(
+            When(patient_id__isnull=True, then="pk"), default=Value(0), output_field=IntegerField(),
+        )).values("patient_id", "legacy_case_id").order_by("patient_id", "legacy_case_id").distinct()
+
+    def paginate_queryset(self, queryset, page_size):
+        paginator, page, keys, is_paginated = super().paginate_queryset(queryset, page_size)
+        keys = list(keys)
+        patient_ids = [key["patient_id"] for key in keys if key["patient_id"] is not None]
+        legacy_ids = [key["legacy_case_id"] for key in keys if key["patient_id"] is None]
+        cases = self.follow_up_cases.filter(Q(patient_id__in=patient_ids) | Q(pk__in=legacy_ids)).select_related(
+            "category", "patient").order_by("patient_id", "pk")
         groups = {}
         for case in cases:
             key = ("patient", case.patient_id) if case.patient_id else ("case", case.pk)
             groups.setdefault(key, {"name": case.full_name or case.patient_name, "uhid": case.uhid, "cases": []})["cases"].append(case)
-        self.case_count = sum(len(g["cases"]) for g in groups.values())
-        return list(groups.values())
+        page.object_list = list(groups.values())
+        return paginator, page, page.object_list, is_paginated
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)

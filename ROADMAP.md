@@ -2,6 +2,8 @@
 
 ## Issue #113 staged program
 
+- The six existing automated Stage 1 comments require a focused feedback recheck and fresh exact-head CI after the sync, workflow and pagination fixes. Earlier d2ab783 GO is superseded until those gates pass.
+
 - Stage 1 review fixes: all four consolidated findings are implemented with 91 targeted regression checks passing. Await fresh exact-head CI and a focused fix/regression recheck before coordinator merge.
 
 - Stage 1 source implementation: scoped dormant patient grouping, persistent ANC overdue/EDD-missing attention, explicit audited outcome and USG EDD correction, web/native/API and bundle compatibility. Await the Stage 1 PR's exact-head CI and coordinator review/merge. No production activation is implied.

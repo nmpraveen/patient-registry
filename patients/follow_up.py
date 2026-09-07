@@ -19,18 +19,23 @@ def attention_queryset(queryset, today=None):
 
 
 def edd_overdue_query(today=None):
-    return Q(category__name__iexact="ANC", anc_outcome="", attention_edd__isnull=False,
+    return Q(status=CaseStatus.ACTIVE, category__name__iexact="ANC", anc_outcome="", attention_edd__isnull=False,
              attention_edd__lt=today or timezone.localdate())
 
 
+def worklist_queryset(queryset, today=None):
+    return attention_queryset(queryset, today).filter(is_archived=False).filter(
+        Q(status=CaseStatus.ACTIVE) | Q(attention_open=True))
+
+
 def attention_filter(queryset, bucket, today=None):
-    queryset = attention_queryset(queryset, today).filter(status=CaseStatus.ACTIVE, is_archived=False)
+    queryset = worklist_queryset(queryset, today)
     if bucket == "overdue":
         return queryset.filter(edd_overdue_query(today) | Q(attention_task_overdue=True))
     if bucket == "dormant":
-        return queryset.filter(attention_open=False).exclude(edd_overdue_query(today))
+        return queryset.filter(status=CaseStatus.ACTIVE, attention_open=False).exclude(edd_overdue_query(today))
     if bucket == "edd_missing":
-        return queryset.filter(category__name__iexact="ANC", anc_outcome="", attention_edd__isnull=True)
+        return queryset.filter(status=CaseStatus.ACTIVE, category__name__iexact="ANC", anc_outcome="", attention_edd__isnull=True)
     return queryset
 
 
@@ -43,7 +48,7 @@ def follow_up_payload(case):
     missing = bool(active and unresolved_anc and not case.attention_edd)
     dormant = bool(active and not case.attention_open and not edd_overdue)
     label = "Overdue — EDD" if edd_overdue else (
-        "Overdue" if active and case.attention_task_overdue else "Dormant" if dormant else case.get_status_display()
+        "Overdue" if not case.is_archived and case.attention_task_overdue else "Dormant" if dormant else case.get_status_display()
     )
     return {"label": label, "dormant": dormant, "edd_overdue": edd_overdue,
             "edd_missing": missing, "effective_edd": case.effective_edd,

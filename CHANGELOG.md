@@ -1,3 +1,9 @@
+## 2026.09.07.21.38
+
+- Preserve ANC follow-up fields and dormant counts through background sync and pending-write responses.
+- Restore Grey permission parity and permit initial ANC dates when reclassifying cases without a stored EDD.
+- Page patient-group keys in SQL and keep closed cases with retained tasks visible in scoped worklists.
+
 ## 2026.09.07.21.20
 
 - Fix scoped PostgreSQL ANC actions and preserve clinical updates during concurrent web edits.

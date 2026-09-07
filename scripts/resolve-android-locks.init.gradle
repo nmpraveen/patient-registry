@@ -1,0 +1,24 @@
+gradle.projectsEvaluated {
+    rootProject.tasks.register('resolveAllDependencyLocks') {
+        description = 'Resolve compile/runtime variants when intentionally regenerating Android dependency locks.'
+        notCompatibleWithConfigurationCache('Dependency maintenance resolves project configurations at execution time.')
+        doFirst {
+            if (!gradle.startParameter.writeDependencyLocks) {
+                throw new GradleException('Use --write-locks with resolveAllDependencyLocks.')
+            }
+        }
+        doLast {
+            rootProject.allprojects.each { targetProject ->
+                targetProject.configurations.findAll {
+                    it.canBeResolved && (it.name.endsWith('CompileClasspath') || it.name.endsWith('RuntimeClasspath'))
+                }.each { configuration ->
+                    // Android project components expose several artifact types; build tasks
+                    // select those. Resolve all external artifacts and the full lock graph here.
+                    configuration.incoming.artifactView {
+                        componentFilter { id -> id instanceof org.gradle.api.artifacts.component.ModuleComponentIdentifier }
+                    }.files.files
+                }
+            }
+        }
+    }
+}

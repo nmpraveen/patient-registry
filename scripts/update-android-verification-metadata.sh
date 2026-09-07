@@ -24,6 +24,8 @@ GRADLE_USER_HOME="$gradle_home" bash ./gradlew \
   --max-workers=1 \
   --write-verification-metadata sha256 \
   --write-locks \
+  --init-script "$repo_root/scripts/resolve-android-locks.init.gradle" \
+  resolveAllDependencyLocks \
   "${tasks[@]}"
 
 echo "ANDROID_VERIFICATION_METADATA_UPDATED tasks=${tasks[*]}"

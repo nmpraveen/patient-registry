@@ -1,3 +1,7 @@
+## 2026.09.07.17.29
+
+- Refresh compile/runtime dependency locks for all Android variants, including unused test configurations.
+
 ## 2026.09.07.17.20
 
 - Migrate Android dependencies to AGP 9 built-in Kotlin and the matching Compose compiler, using JDK 21 for API 36 Robolectric tests.

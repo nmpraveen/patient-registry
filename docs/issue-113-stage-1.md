@@ -26,6 +26,10 @@ Reclassifying a non-ANC case without a stored effective EDD permits initial ANC 
 
 ## Migration, bundles and reconciliation
 
+Loss-to-follow-up outcomes require closing the case across web/API/model/import validation; native does not offer continuing that outcome. ANC writes use the existing audited bulk-update boundary for only their clinical fields, avoiding Patient identity locks while preserving mandatory audit rollback.
+
+Native ANC success waits for authoritative detail refresh. Selected cancellations become non-actionable as soon as the server acknowledges them, including when detail refresh subsequently fails; the old case baseline remains available for an idempotent retry until refreshed.
+
 Django migration 0040 adds optional outcome/date/reason/destination and a follow-up choice without changing existing case statuses or task rows. Patient bundle v2 exports the new fields; current imports preserve them, and older bundles default to no recorded outcome. Shared form/model/import validation requires a nonfuture outcome date, nonblank reason, referral destination where applicable and an explicit boolean follow-up choice whenever an outcome is supplied. Malformed new outcome records reject the import transactionally without replacing existing patients. Full database backups naturally include the new fields. Do not use an older application to import a new bundle when preserving outcomes is required.
 
 Room 12→13 adds defaulted case attention/outcome display and server version fields plus dormant case counts. Account ownership, generation checks, encryption and pending writes are unchanged. A sync refresh supplies the new display fields after upgrade.
@@ -43,6 +47,8 @@ The CSV lists closed ANC case/patient IDs, status, archive flag and effective ED
 Deployment remains a separate operational gate. Migration is additive; before rolling back schema, export/backup outcomes because reversing 0040 removes those columns. Prefer rolling back application code while retaining the additive columns and the validated database backup. No production operations are part of this PR.
 
 ## Synthetic validation
+
+Follow-up seed examples retain model-valid LMP/EDD pairs; the intentionally missing-EDD example uses supported quick-entry metadata. Synthetic quick-entry patients retain their profile surname so the complete seeded dataset round-trips through the standard bundle importer.
 
 `patients.test_follow_up` covers date boundaries, missing EDD, mixed tasks, patient grouping, corrected EDD, cancellation/history, referral continuation/closure, forbidden IDs, scoped counts, stale updates, role distinctions, idempotent replay, web form submission, API search parity and bundle round trip. Existing full Django/API tests remain required.
 

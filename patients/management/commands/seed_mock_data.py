@@ -177,7 +177,7 @@ class Command(BaseCommand):
                 "uhid": generate_temporary_patient_uhid(today),
                 "prefix": profile["prefix"],
                 "first_name": profile["first_name"],
-                "last_name": "",
+                "last_name": profile["last_name"],
                 "gender": profile["gender"],
                 "blood_group": profile["blood_group"],
                 "date_of_birth": None,
@@ -390,7 +390,6 @@ class Command(BaseCommand):
                 "uhid": kwargs["patient"].uhid,
                 "category": surgery,
                 "status": CaseStatus.ACTIVE,
-                "last_name": "",
                 "place": "",
                 "phone_number": "",
                 "alternate_phone_number": "",
@@ -412,6 +411,7 @@ class Command(BaseCommand):
                     "lmp": today - timedelta(days=50 + index),
                     "edd": today + timedelta(days=180 - index),
                     "usg_edd": today + timedelta(days=175 - index),
+                    "anc_high_risk_reasons": [AncHighRiskReason.ANEMIA] if kwargs["high_risk"] else [],
                     "gravida": 2 + (index % 2),
                     "para": 1,
                     "abortions": index % 2,
@@ -841,11 +841,15 @@ class Command(BaseCommand):
                 for task in case.tasks.exclude(status__in=[TaskStatus.COMPLETED, TaskStatus.CANCELLED]):
                     task.status = TaskStatus.CANCELLED
                     task.save(update_fields=["status", "updated_at"])
-                case.lmp = None
                 case.usg_edd = None
                 case.edd = today - timedelta(days=1) if scenario_name == "edd_overdue" else today + timedelta(days=14)
+                case.lmp = case.edd - timedelta(days=280)
                 if scenario_name == "edd_missing":
                     case.edd = None
+                    case.lmp = None
+                    case.metadata = dict(case.metadata, entry_mode="quick_entry", details_pending=True)
+                    case._skip_workflow_validation = True
+                case.full_clean()
                 case.save()
                 if scenario_name == "anc_resolved":
                     from patients.anc import AncActionForm, apply_anc_action

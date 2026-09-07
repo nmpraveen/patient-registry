@@ -2,6 +2,8 @@
 
 ## Issue #113 follow-up and ANC actions
 
+Loss-to-follow-up outcomes must close the case. Native waits for refreshed details before dismissing ANC success; if refresh fails after cancellation was acknowledged, selected tasks remain non-actionable and the same unchanged submission can be retried. ANC changes update only clinical fields through the mandatory audit boundary without mirroring Patient identity.
+
 Closing ANC with retained tasks leaves those tasks discoverable in scoped web/API/native worklists until explicitly completed/cancelled; closure does not reopen the case. EDD-only attention and dormant/missing buckets remain active-only. Initial ANC date capture during reclassification is permitted only when the prior non-ANC case has no stored effective EDD.
 
 After an ANC outcome, routine edits do not regenerate RCH reminders. Resume follow-up through an explicitly authorised task creation/reopen. Full case edits reject an intervening case update; Recent Cases writes only diagnosis/notes. Outcome imports require a date, reason, referral destination where applicable, and an explicit boolean follow-up choice; legacy records without an outcome remain supported.

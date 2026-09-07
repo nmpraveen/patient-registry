@@ -548,9 +548,21 @@ class MedtrackRepository(
     suspend fun recordAncAction(caseId: String, payload: Map<String, Any>): String {
         val session = activeSession()
         val response = session.api.ancAction(caseId, payload)
+        // An acknowledged cancellation must never remain actionable while the
+        // authoritative detail refresh is delayed or offline. Keep the old case
+        // baseline until refresh succeeds so a retry retains its write identity.
         commitAccountMutation(session) {
-            database.caseDao().upsertCase(response.case.toEntity(session.ownerAccountId))
+            if (payload["task_policy"] == "cancel_selected") {
+                (payload["cancel_task_ids"] as? List<*>)?.forEach { id ->
+                    val task = database.taskDao().taskById(session.ownerAccountId, id.toString())
+                    if (task?.caseId == caseId) {
+                        database.taskDao().upsertTask(task.copy(status = "CANCELLED",
+                            statusLabel = "Cancelled", canComplete = false, updatedAtMillis = System.currentTimeMillis()))
+                    }
+                }
+            }
         }
+        refreshCaseDetailForSession(session, caseId)
         return response.message
     }
 

@@ -5,7 +5,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from .follow_up import OPEN_STATUSES
-from .models import CaseStatus, TaskStatus, is_anc_case
+from .models import AuditEvent, Case, CaseStatus, TaskStatus, is_anc_case
 from .anc_validation import validate_anc_outcome
 
 
@@ -76,9 +76,12 @@ def apply_anc_action(*, case, user, data):
     if selected and not has_capability(user, "task_edit", fresh=True):
         raise PermissionDenied("Task edit permission is required to cancel tasks.")
     if data["action"] == "correct_edd":
+        update_fields = {"usg_edd", "updated_at"}
         note = f"USG EDD corrected: {case.usg_edd or 'missing'} -> {data['usg_edd']}. Effective EDD before: {case.effective_edd or 'missing'}. Existing tasks retained."
         case.usg_edd = data["usg_edd"]
     else:
+        update_fields = {"anc_outcome", "anc_outcome_date", "anc_outcome_reason",
+            "anc_referral_destination", "anc_continue_follow_up", "status", "updated_at"}
         continuing = data["continue_follow_up"] == "continue"
         new_status = CaseStatus.ACTIVE if continuing else (
             CaseStatus.LOSS_TO_FOLLOW_UP if data["outcome"] == "loss_to_follow_up" else CaseStatus.COMPLETED)
@@ -93,7 +96,13 @@ def apply_anc_action(*, case, user, data):
         case.anc_referral_destination = data.get("referral_destination", "")
         case.anc_continue_follow_up = continuing
         case.status = new_status
-    case.save()
+    # Case.save also locks/mirrors Patient even with update_fields. Preserve the
+    # Case-only lock order and mandatory audit without touching identity fields.
+    from .audit import audited_bulk_update
+    case.updated_at = timezone.now()
+    audited_bulk_update(Case.objects.filter(pk=case.pk), category=AuditEvent.Category.CLINICAL,
+        action="patients.case.anc_action", actor=user, changed_fields=update_fields,
+        **{field: getattr(case, field) for field in update_fields})
     for task in tasks:
         if task.pk in selected:
             task.status = TaskStatus.CANCELLED

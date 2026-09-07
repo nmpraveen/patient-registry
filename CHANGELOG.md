@@ -1,3 +1,9 @@
+## 2026.09.07.21.49
+
+- Keep acknowledged ANC cancellations non-actionable while awaiting authoritative native detail refresh.
+- Reject continuing loss-to-follow-up outcomes across web, API, native and imports.
+- Make the synthetic follow-up dataset bundle-valid and prevent ANC/Patient identity lock inversion through precise audited updates.
+
 ## 2026.09.07.21.38
 
 - Preserve ANC follow-up fields and dormant counts through background sync and pending-write responses.

@@ -21,5 +21,7 @@ def validate_anc_outcome(*, outcome, outcome_date, reason, destination, continue
         errors["anc_referral_destination"] = "Enter the referral destination."
     if type(continue_follow_up) is not bool:
         errors["anc_continue_follow_up"] = "Choose explicitly whether follow-up continues."
+    elif outcome == "loss_to_follow_up" and continue_follow_up:
+        errors["anc_continue_follow_up"] = "Loss to follow-up must close the case."
     if errors:
         raise ValidationError(errors)

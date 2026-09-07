@@ -70,12 +70,16 @@ internal fun AncActionDialog(
                     Text("All task dates and statuses will be retained.")
                 } else {
                     listOf("delivery" to "Delivery", "loss_to_follow_up" to "Loss to follow-up", "referral" to "Referral", "other" to "Other resolution").forEach { (value, label) ->
-                        Row { RadioButton(outcome == value, { outcome = value }, enabled = !saving); Text(label) }
+                        Row { RadioButton(outcome == value, {
+                            outcome = value
+                            if (value == "loss_to_follow_up" && followUp == "continue") followUp = ""
+                        }, enabled = !saving); Text(label) }
                     }
                     OutlinedTextField(date, { date = it }, label = { Text("Outcome date (YYYY-MM-DD)") }, enabled = !saving, modifier = Modifier.fillMaxWidth())
                     if (outcome == "referral") OutlinedTextField(destination, { destination = it }, label = { Text("Referral destination") }, enabled = !saving, modifier = Modifier.fillMaxWidth())
                     listOf("continue" to "Continue follow-up", "close" to "Close this case").forEach { (value, label) ->
-                        Row { RadioButton(followUp == value, { followUp = value }, enabled = !saving); Text(label) }
+                        Row { RadioButton(followUp == value, { followUp = value },
+                            enabled = !saving && !(outcome == "loss_to_follow_up" && value == "continue")); Text(label) }
                     }
                     Text("Open tasks: retain all unless selected for cancellation.")
                     tasks.filter { it.status in setOf("SCHEDULED", "AWAITING_REPORTS") }.forEach { task ->

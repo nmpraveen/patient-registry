@@ -2,6 +2,8 @@
 
 ## Issue #113 staged program
 
+- The remaining Recent Cases lock inversion is fixed with precise audited Case-only updates. Eight targeted tests pass, including actual concurrent endpoints, clinical preservation, permissions, linkage and rollback; complete correction-only recheck and fresh exact-head CI without reopening prior clearances.
+
 - The bounded native ANC callback cancellation correction adds explicit propagation in both error paths. The five-case extracted callback harness and incremental compile pass; preserve prior clearances and complete fresh exact-head CI plus the focused guard recheck.
 
 - The final native ANC list-refresh comment is corrected with preserved active filters and existing account guards. Focused tests and incremental Kotlin compilation pass; finish bounded correction verification and fresh exact-head CI before coordinator merge preflight.

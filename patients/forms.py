@@ -13,6 +13,7 @@ from django.forms import formset_factory, modelformset_factory
 
 from .models import (
     AncHighRiskReason,
+    AuditEvent,
     BloodGroup,
     CallLog,
     Case,
@@ -932,11 +933,22 @@ class RecentCaseUpdateForm(StyledModelForm):
         # Bind only this editor's two fields onto the current locked row. A
         # stale form must never write outcome/status/EDD back into the database.
         current = Case.objects.select_for_update().get(pk=self.instance.pk)
+        if current.patient_id != self.instance.patient_id or (
+            current.patient_id and not Patient.objects.filter(pk=current.patient_id, merged_into__isnull=True).exists()
+        ):
+            raise ValidationError("This case's patient changed. Reload before saving.")
         self.previous_diagnosis = current.diagnosis or ""
         self.previous_notes = current.notes or ""
         current.diagnosis = self.cleaned_data["diagnosis"]
         current.notes = self.cleaned_data["notes"]
-        current.save(update_fields=["diagnosis", "notes", "updated_at"])
+        # Case.save locks Patient even for update_fields. These two fields need
+        # only the Case lock; retain mandatory auditing without touching identity.
+        from .audit import audited_bulk_update
+        current.updated_at = timezone.now()
+        fields = ("diagnosis", "notes", "updated_at")
+        audited_bulk_update(Case.objects.filter(pk=current.pk), category=AuditEvent.Category.CLINICAL,
+            action="patients.case.recent_updated", changed_fields=fields,
+            **{field: getattr(current, field) for field in fields})
         self.instance = current
         return current
 

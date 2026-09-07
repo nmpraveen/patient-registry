@@ -1,3 +1,8 @@
+## 2026.09.07.23.28
+
+- Prevent Recent Cases diagnosis/notes edits from deadlocking with patient identity edits through precise mandatory-audited Case updates.
+- Preserve current activity before-values, clinical state and identity; reject changed Patient linkage and roll back on audit failure.
+
 ## 2026.09.07.23.13
 
 - Propagate coroutine cancellation from native ANC action and inbox-refresh callbacks before user warnings or success/failure reports.

@@ -3480,7 +3480,10 @@ class RecentCaseUpdateView(LoginRequiredMixin, CaseDataAccessMixin, View):
         notes_changed = old_notes != new_notes
 
         if diagnosis_changed or notes_changed:
-            form.save()
+            try:
+                form.save()
+            except ValidationError as error:
+                return JsonResponse({"message": error.messages[0]}, status=400)
             old_diagnosis = form.previous_diagnosis
             old_notes = form.previous_notes
             diagnosis_changed = old_diagnosis != new_diagnosis

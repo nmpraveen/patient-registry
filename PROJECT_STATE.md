@@ -2,6 +2,8 @@
 
 ## Issue #113 Stage 1 source implementation
 
+The remaining Recent Cases lock-order issue is reproduced and corrected with precise mandatory-audited diagnosis/notes/timestamp updates, preserving fresh activity before-values and checking Patient linkage without taking a Patient lock. Eight targeted regressions pass; fresh exact-head CI and the correction-only recheck supersede the prior head.
+
 The native ANC callback now propagates coroutine cancellation from both action and list refresh instead of writing warnings or invoking report callbacks. Five standalone scenarios extracted from the actual callback and incremental app Kotlin compilation pass; this minimal correction requires fresh exact-head CI.
 
 The latest native ANC success correction refreshes the active list membership and counters after authoritative detail, preserving every active filter and clearing remembered filters on account reset. Focused repository tests and incremental app Kotlin compilation pass; fresh exact-head CI and bounded correction verification supersede the prior e49ab891 gate.

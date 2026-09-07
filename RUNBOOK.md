@@ -2,6 +2,8 @@
 
 ## Issue #113 follow-up and ANC actions
 
+Recent Cases edits write only diagnosis, notes and updated_at through mandatory auditing. They retain clinical/identity state during concurrent updates, reject Patient linkage changes detected at save time, and roll back if auditing fails.
+
 Cancelling the native ANC coroutine propagates cancellation without reporting saved-action success or failure from that cancelled callback. Ordinary action and inbox-refresh failures keep their separate messages.
 
 Native ANC success now refreshes the active inbox/list and counters with its current filters after authoritative details succeed. If that list refresh fails, the action stays saved and the UI asks for an inbox refresh; resubmitting the clinical mutation is unnecessary.

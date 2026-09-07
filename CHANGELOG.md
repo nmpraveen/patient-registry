@@ -1,3 +1,9 @@
+## 2026.09.07.17.20
+
+- Migrate Android dependencies to AGP 9 built-in Kotlin and the matching Compose compiler, using JDK 21 for API 36 Robolectric tests.
+- Compile against API 37 while preserving target API 36 and minimum API 24; regenerate strict dependency locks and verified artifact checksums.
+- Repair portable migration/session tests and locale observation; add explicit production-app lint to CI.
+
 ## 2026.09.07.17.19
 
 - Patch Caddy Go dependencies to x/crypto v0.55.0 and gRPC v1.83.1 for current critical/high advisories.

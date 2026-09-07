@@ -10,7 +10,7 @@ from unittest.mock import patch
 from django.core.exceptions import ValidationError
 from django.core.management import call_command
 from django.db import close_old_connections, connections, transaction
-from django.test import TestCase, TransactionTestCase
+from django.test import TestCase, TransactionTestCase, override_settings
 from django.urls import reverse
 
 from . import test_follow_up, test_anc_review_fixes
@@ -56,6 +56,7 @@ class AncFinalFeedbackTests(TestCase):
         case.refresh_from_db()
         self.assertEqual(case.status, CaseStatus.LOSS_TO_FOLLOW_UP)
 
+    @override_settings(ALLOW_MOCK_DATA_SEEDING=True)
     def test_follow_up_seed_exports_and_imports_as_valid_cases(self):
         call_command("seed_mock_data", count=12, follow_up_scenarios=True, stdout=io.StringIO())
         follow_up_cases = Case.objects.filter(metadata__seed_case_key__regex=r"^(edd_overdue|dormant|edd_missing|anc_resolved):")

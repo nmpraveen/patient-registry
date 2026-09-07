@@ -1,3 +1,7 @@
+## 2026.09.07.17.11
+
+- Pin patched libuuid 2.42.3-r1 in the PostgreSQL image as well as the web image security fix.
+
 ## 2026.09.07.17.06
 
 - Refresh the Caddy 2.11.4 builder digest after verifying its unchanged upstream source revision.

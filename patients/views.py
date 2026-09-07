@@ -5457,12 +5457,28 @@ class CaseUpdateView(LoginRequiredMixin, CaseUpdateAccessMixin, CaseUpdateContex
 
     def get_queryset(self):
         queryset = Case.objects.select_related("category", "patient")
-        if self.request.method == "POST":
-            queryset = queryset.select_for_update(of=("self",))
         return _accessible_case_queryset(
             self.request.user,
             queryset,
         )
+
+    @transaction.atomic
+    def post(self, request, *args, **kwargs):
+        initial = self.get_object()
+        # Patient edits lock Patient before its Cases. Match that order before
+        # binding the full form, which can update and mirror patient identity.
+        if initial.patient_id:
+            Patient.objects.select_for_update().filter(pk=initial.patient_id).first()
+        self.object = get_object_or_404(
+            self.get_queryset().select_for_update(of=("self",)), pk=initial.pk,
+        )
+        form = self.get_form()
+        if self.object.patient_id != initial.patient_id:
+            form.add_error(None, "This case changed while you were editing. Reload before saving.")
+            return self.form_invalid(form)
+        if form.is_valid():
+            return self.form_valid(form)
+        return self.form_invalid(form)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)

@@ -2,6 +2,8 @@
 
 ## Issue #113 staged program
 
+- The related full web-edit lock-order correction supersedes 2168b74: verify the bounded Patient-before-Case change and fresh exact-head CI. Concurrent requests, stale identity/draft retention and audit regressions pass; no additional broad review or native build is required for this server-only correction.
+
 - Latest Stage 1 corrections: signed rendered web-edit baseline and normalized ANC link visibility. Complete focused correction verification and fresh exact-head CI; keep later provisional stages separate until actual Stage 1 merged main is available.
 
 - Final four ANC feedback corrections cover cache cancellation safety, loss/close consistency, seed round-trip validity and audited Case-only lock order. Finish targeted checks, then use fresh exact-head CI; no additional broad review is required.

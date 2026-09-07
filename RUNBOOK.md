@@ -2,6 +2,8 @@
 
 ## Issue #113 follow-up and ANC actions
 
+Full web edits use Patient-then-Case locks, matching patient identity edits. Concurrent clinical/identity changes reject the stale submission while retaining its draft and original token; reload and review the current record before resubmitting. Identity mirrors and mandatory audit remain transactional.
+
 Reload a full web case edit page if its signed rendered baseline is missing, invalid or stale. Edits opened before a clinical update cannot overwrite that update. The native/API patch baseline contract is unchanged; normalized ANC departments expose the same authorised web action.
 
 Loss-to-follow-up outcomes must close the case. Native waits for refreshed details before dismissing ANC success; if refresh fails after cancellation was acknowledged, selected tasks remain non-actionable and the same unchanged submission can be retried. ANC changes update only clinical fields through the mandatory audit boundary without mirroring Patient identity.

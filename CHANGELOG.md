@@ -1,3 +1,8 @@
+## 2026.09.07.22.44
+
+- Serialize full web case edits with patient identity edits using Patient-before-Case locks and fresh scoped linkage validation.
+- Bind rendered baselines to Patient identity/version, preserve rejected drafts, and retain transactional identity mirrors and mandatory audit.
+
 ## 2026.09.07.22.30
 
 - Reject full web case edits whose signed rendered baseline is missing, invalid or stale after a clinical update.

@@ -269,7 +269,8 @@ class CaseForm(StyledModelForm):
         self._require_rendered_baseline = require_rendered_baseline and bool(self.instance.pk)
         if self._require_rendered_baseline:
             self._rendered_baseline_identity = [self.instance.pk, getattr(actor, "pk", None),
-                self._loaded_updated_at.isoformat()]
+                self._loaded_updated_at.isoformat(), self.instance.patient_id,
+                self.instance.patient.updated_at.isoformat() if self.instance.patient_id else None]
             self.fields["rendered_baseline"] = forms.CharField(required=False, widget=forms.HiddenInput,
                 initial=signing.dumps(self._rendered_baseline_identity, salt="patients.case-edit-baseline"))
         selected_patient_queryset = case_intake_patient_queryset(actor=actor)

@@ -1,3 +1,8 @@
+## 2026.09.07.17.01
+
+- Upgrade Python runtime dependencies and regenerate both hash locks with the repository compiler.
+- Pin Alpine libuuid 2.41.6-r1 to remove fixed high-severity container findings.
+
 # Changelog
 
 ## 2026.08.30.16.43

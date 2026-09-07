@@ -1,3 +1,8 @@
+## 2026.09.07.17.02
+
+- Update the pinned attestation action to v4.2.2.
+- Pin patched Alpine libuuid so fresh container scans can pass before attestation.
+
 # Changelog
 
 ## 2026.08.30.02.37

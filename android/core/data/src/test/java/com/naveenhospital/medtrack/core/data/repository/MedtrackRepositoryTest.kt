@@ -150,6 +150,76 @@ class MedtrackRepositoryTest {
     }
 
     @Test
+    fun ancSuccessRefreshesActiveBucketMembershipCountersAndEveryFilter() = runTest {
+        for (query in listOf(null, "  SYNTH  ")) {
+            val detailEntered = CompletableDeferred<Unit>()
+            val releaseDetail = CompletableDeferred<Unit>()
+            val api = FakeMedtrackApi(
+                beforeCaseDetail = { detailEntered.complete(Unit); releaseDetail.await() },
+                caseListResponse = CaseListResponseDto(count = 0, next = null, previous = null,
+                    stats = CaseStatsDto(today = 0, upcoming = 0, overdue = 0, awaiting = 0, red = 0, dormant = 1),
+                    results = emptyList()),
+            )
+            val repository = repository(api)
+            repository.pagedCases(bucket = "overdue", query = query, assignedTo = "me", scopeContext = "calls",
+                categories = listOf("ANC"), subcategories = listOf("anc_high_risk"))
+            val result = async {
+                val message = repository.recordAncAction("42", mapOf("outcome" to "referral",
+                    "continue_follow_up" to "continue", "task_policy" to "retain"))
+                assertNotNull(repository.observeCase("42").first())
+                repository.refreshActiveCaseList()
+                message
+            }
+            detailEntered.await()
+            assertFalse(result.isCompleted)
+            assertEquals(0, api.listCasesCalls)
+            assertTrue(api.caseSearchRequests.isEmpty())
+            releaseDetail.complete(Unit)
+            assertEquals("ANC action recorded.", result.await())
+            assertTrue(repository.cases.first().isEmpty())
+            assertEquals(0, repository.stats.value.overdue)
+            assertEquals(1, repository.stats.value.dormant)
+            if (query == null) {
+                assertEquals(1, api.listCasesCalls)
+                assertEquals("overdue", api.lastListCasesBucket)
+                assertEquals("me", api.lastListCasesAssignedTo)
+                assertEquals("calls", api.lastListCasesScopeContext)
+                assertEquals(listOf("ANC"), api.lastListCasesCategories)
+                assertEquals(listOf("anc_high_risk"), api.lastListCasesSubcategories)
+            } else {
+                val request = api.caseSearchRequests.single()
+                assertEquals("SYNTH", request.query)
+                assertEquals("overdue", request.bucket)
+                assertEquals("me", request.assignedTo)
+                assertEquals("calls", request.scopeContext)
+                assertEquals(listOf("ANC"), request.category)
+                assertEquals(listOf("anc_high_risk"), request.subcategory)
+            }
+        }
+    }
+
+    @Test
+    fun ancClosureRefreshesUnpagedWorklistAndAccountResetDropsOldFilters() = runTest {
+        val api = FakeMedtrackApi(beforeCaseDetail = {})
+        val repository = repository(api)
+        repository.refreshCases(bucket = "all", assignedTo = "all")
+        repository.recordAncAction("42", mapOf("outcome" to "delivery", "continue_follow_up" to "close",
+            "task_policy" to "cancel_selected", "cancel_task_ids" to listOf(7L)))
+        assertNotNull(repository.observeCase("42").first())
+        repository.refreshActiveCaseList()
+        assertEquals(2, api.listCasesCalls)
+        assertEquals("all", api.lastListCasesBucket)
+        assertEquals("all", api.lastListCasesAssignedTo)
+        assertTrue(repository.cases.first().isEmpty())
+        assertEquals(0, repository.stats.value.overdue)
+        assertEquals(0, repository.stats.value.dormant)
+        repository.deactivateAccount()
+        repository.activateAccount("other-account")
+        repository.refreshActiveCaseList()
+        assertEquals(2, api.listCasesCalls)
+    }
+
+    @Test
     fun refreshCasesUsesServerDefaultAssignmentScopeWhenOmitted() = runTest {
         val api = FakeMedtrackApi()
         val repository = repository(api)
@@ -863,6 +933,14 @@ private class FakeMedtrackApi(
         private set
     var lastListCasesScopeContext: String? = null
         private set
+    var listCasesCalls = 0
+        private set
+    var lastListCasesBucket: String? = null
+        private set
+    var lastListCasesCategories: List<String>? = null
+        private set
+    var lastListCasesSubcategories: List<String>? = null
+        private set
 
     override suspend fun categories(): CategoriesResponseDto {
         categoryCalls += 1
@@ -882,8 +960,12 @@ private class FakeMedtrackApi(
         subcategories: List<String>?,
         page: Int?,
     ): CaseListResponseDto {
+        listCasesCalls += 1
+        lastListCasesBucket = bucket
         lastListCasesAssignedTo = assignedTo
         lastListCasesScopeContext = scopeContext
+        lastListCasesCategories = categories
+        lastListCasesSubcategories = subcategories
         return caseListResponse
     }
 

@@ -2,6 +2,8 @@
 
 ## Issue #113 staged program
 
+- The final native ANC list-refresh comment is corrected with preserved active filters and existing account guards. Focused tests and incremental Kotlin compilation pass; finish bounded correction verification and fresh exact-head CI before coordinator merge preflight.
+
 - The related full web-edit lock-order correction supersedes 2168b74: verify the bounded Patient-before-Case change and fresh exact-head CI. Concurrent requests, stale identity/draft retention and audit regressions pass; no additional broad review or native build is required for this server-only correction.
 
 - Latest Stage 1 corrections: signed rendered web-edit baseline and normalized ANC link visibility. Complete focused correction verification and fresh exact-head CI; keep later provisional stages separate until actual Stage 1 merged main is available.

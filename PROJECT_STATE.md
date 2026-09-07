@@ -2,6 +2,8 @@
 
 ## Issue #113 Stage 1 source implementation
 
+The latest native ANC success correction refreshes the active list membership and counters after authoritative detail, preserving every active filter and clearing remembered filters on account reset. Focused repository tests and incremental app Kotlin compilation pass; fresh exact-head CI and bounded correction verification supersede the prior e49ab891 gate.
+
 The related full web-edit deadlock correction locks Patient before Case, refreshes scoped state/linkage before form binding, and includes Patient identity/version in the rendered baseline. Actual concurrent CaseUpdate/PatientUpdate requests complete with a clean stale-draft rejection and preserved identity/audit. Focused tests pass; fresh exact-head CI and correction verification replace the prior 2168b74 gate.
 
 The latest two review corrections protect the actual rendered web-edit baseline through POST and use normalized ANC action visibility. Real GET-to-separate-clinical-write-to-original-POST regressions pass, alongside missing/tampered baseline, normal edit, API compatibility and mixed-case permission checks. Fresh exact-head CI and coordinator targeted verification remain required.

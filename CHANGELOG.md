@@ -1,3 +1,8 @@
+## 2026.09.07.23.05
+
+- Refresh native active-list membership and counters after authoritative ANC action details, preserving the current bucket, search, scope and category filters.
+- Keep inbox refresh failures separate from saved clinical actions and clear remembered filters when the account changes.
+
 ## 2026.09.07.22.44
 
 - Serialize full web case edits with patient identity edits using Patient-before-Case locks and fresh scoped linkage validation.

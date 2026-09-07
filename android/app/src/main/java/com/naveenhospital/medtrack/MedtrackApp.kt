@@ -1009,7 +1009,12 @@ fun MedtrackApp(
                         onAncAction = { payload, report ->
                             scope.launch {
                                 runCatching { container.medtrackRepository.recordAncAction(caseId, payload) }
-                                    .onSuccess { caseActionMessage = it; report(null) }
+                                    .onSuccess { message ->
+                                        caseActionMessage = message
+                                        runCatching { container.medtrackRepository.refreshActiveCaseList() }
+                                            .onFailure { caseError = "ANC action saved. Refresh the inbox to update its list and counters." }
+                                        report(null)
+                                    }
                                     .onFailure { report(it.message ?: "Could not record ANC action. Check connection or refresh the case.") }
                             }
                         },

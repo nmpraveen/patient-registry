@@ -2,6 +2,8 @@
 
 ## Issue #113 follow-up and ANC actions
 
+Native ANC success now refreshes the active inbox/list and counters with its current filters after authoritative details succeed. If that list refresh fails, the action stays saved and the UI asks for an inbox refresh; resubmitting the clinical mutation is unnecessary.
+
 Full web edits use Patient-then-Case locks, matching patient identity edits. Concurrent clinical/identity changes reject the stale submission while retaining its draft and original token; reload and review the current record before resubmitting. Identity mirrors and mandatory audit remain transactional.
 
 Reload a full web case edit page if its signed rendered baseline is missing, invalid or stale. Edits opened before a clinical update cannot overwrite that update. The native/API patch baseline contract is unchanged; normalized ANC departments expose the same authorised web action.

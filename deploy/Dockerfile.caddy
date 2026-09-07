@@ -5,9 +5,10 @@ ARG VCS_REF=unknown
 FROM ${CADDY_BUILDER} AS builder
 RUN xcaddy build \
     --with github.com/mholt/caddy-ratelimit@5625512f24f6f59d6f64fb3aafe5eecff0b286db \
+    --replace golang.org/x/crypto=golang.org/x/crypto@v0.55.0 \
     --replace golang.org/x/net=golang.org/x/net@v0.56.0 \
     --replace golang.org/x/text=golang.org/x/text@v0.39.0 \
-    --replace google.golang.org/grpc=google.golang.org/grpc@v1.82.1
+    --replace google.golang.org/grpc=google.golang.org/grpc@v1.83.1
 
 FROM ${CADDY_RUNTIME}
 ARG VCS_REF

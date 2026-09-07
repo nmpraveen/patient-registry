@@ -1,3 +1,9 @@
+## 2026.09.07.20.56
+
+- Add scoped dormant patient groups, persistent ANC EDD overdue and missing-EDD review.
+- Add audited ANC outcomes and USG EDD correction, explicit task retention/cancellation, native actions and additive API/bundle/Room contracts.
+- Integrate dependency updates and validate scoped counts, dates, replay, migrations and synthetic browser/native flows.
+
 ## 2026.09.07.20.31
 
 - Integrate the Android dependency/toolchain upgrade with the merged Python/container repairs and pinned actions/attest v4.2.2 update.

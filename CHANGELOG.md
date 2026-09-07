@@ -1,3 +1,8 @@
+## 2026.09.07.23.13
+
+- Propagate coroutine cancellation from native ANC action and inbox-refresh callbacks before user warnings or success/failure reports.
+- Preserve ordinary saved-action, action-failure and refresh-failure behavior.
+
 ## 2026.09.07.23.05
 
 - Refresh native active-list membership and counters after authoritative ANC action details, preserving the current bucket, search, scope and category filters.

@@ -137,6 +137,7 @@ import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 private const val IDLE_RELOCK_MILLIS = 15 * 60 * 1000L
@@ -1012,10 +1013,16 @@ fun MedtrackApp(
                                     .onSuccess { message ->
                                         caseActionMessage = message
                                         runCatching { container.medtrackRepository.refreshActiveCaseList() }
-                                            .onFailure { caseError = "ANC action saved. Refresh the inbox to update its list and counters." }
+                                            .onFailure {
+                                                if (it is CancellationException) throw it
+                                                caseError = "ANC action saved. Refresh the inbox to update its list and counters."
+                                            }
                                         report(null)
                                     }
-                                    .onFailure { report(it.message ?: "Could not record ANC action. Check connection or refresh the case.") }
+                                    .onFailure {
+                                        if (it is CancellationException) throw it
+                                        report(it.message ?: "Could not record ANC action. Check connection or refresh the case.")
+                                    }
                             }
                         },
                         onTaskAction = { action, taskId, report ->

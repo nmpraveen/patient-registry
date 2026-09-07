@@ -2,6 +2,8 @@
 
 ## Issue #113 Stage 1 source implementation
 
+The native ANC callback now propagates coroutine cancellation from both action and list refresh instead of writing warnings or invoking report callbacks. Five standalone scenarios extracted from the actual callback and incremental app Kotlin compilation pass; this minimal correction requires fresh exact-head CI.
+
 The latest native ANC success correction refreshes the active list membership and counters after authoritative detail, preserving every active filter and clearing remembered filters on account reset. Focused repository tests and incremental app Kotlin compilation pass; fresh exact-head CI and bounded correction verification supersede the prior e49ab891 gate.
 
 The related full web-edit deadlock correction locks Patient before Case, refreshes scoped state/linkage before form binding, and includes Patient identity/version in the rendered baseline. Actual concurrent CaseUpdate/PatientUpdate requests complete with a clean stale-draft rejection and preserved identity/audit. Focused tests pass; fresh exact-head CI and correction verification replace the prior 2168b74 gate.

@@ -2,6 +2,8 @@
 
 ## Issue #113 follow-up and ANC actions
 
+Cancelling the native ANC coroutine propagates cancellation without reporting saved-action success or failure from that cancelled callback. Ordinary action and inbox-refresh failures keep their separate messages.
+
 Native ANC success now refreshes the active inbox/list and counters with its current filters after authoritative details succeed. If that list refresh fails, the action stays saved and the UI asks for an inbox refresh; resubmitting the clinical mutation is unnecessary.
 
 Full web edits use Patient-then-Case locks, matching patient identity edits. Concurrent clinical/identity changes reject the stale submission while retaining its draft and original token; reload and review the current record before resubmitting. Identity mirrors and mandatory audit remain transactional.

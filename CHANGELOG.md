@@ -1,3 +1,7 @@
+## 2026.09.07.17.07
+
+- Refresh the Caddy 2.11.4 builder digest after verifying its unchanged upstream source revision.
+
 ## 2026.09.07.17.02
 
 - Update the pinned attestation action to v4.2.2.

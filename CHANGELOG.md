@@ -1,3 +1,7 @@
+## 2026.09.07.20.31
+
+- Integrate the Android dependency/toolchain upgrade with the merged Python/container repairs and pinned actions/attest v4.2.2 update.
+
 ## 2026.09.07.17.50
 
 - Derive Android release provenance toolchain/API versions from the checked-in build configuration and refresh release documentation.

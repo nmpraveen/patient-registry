@@ -460,6 +460,7 @@ def _serialize_activity_log(entry):
 def _serialize_call_log(entry):
     return {
         "outcome": entry.outcome,
+        "reason": entry.reason,
         "notes": entry.notes,
         "staff_user_username": _username(entry.staff_user),
         "task_bundle_id": str(entry.task_id) if entry.task_id else None,
@@ -831,6 +832,7 @@ def _import_payload(payload, categories_by_name, users_by_username):
                 case=case,
                 task=task_map.get(call_data.get("task_bundle_id")),
                 outcome=call_data.get("outcome", ""),
+                reason=call_data.get("reason", ""),
                 notes=call_data.get("notes", ""),
                 staff_user=users_by_username.get(call_data.get("staff_user_username")),
                 client_event_at=_parse_datetime(

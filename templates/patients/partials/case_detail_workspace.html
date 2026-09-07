@@ -111,6 +111,10 @@
                       {{ call_log_form.task }}
                     </div>
                     <div class="case-composer__field">
+                      <label class="form-label small" for="{{ call_log_form.reason.id_for_label }}">Reason for call</label>
+                      {{ call_log_form.reason }}
+                    </div>
+                    <div class="case-composer__field">
                       <label class="form-label small" for="{{ call_log_form.outcome.id_for_label }}">{{ call_log_form.outcome.label }}</label>
                       {{ call_log_form.outcome }}
                     </div>

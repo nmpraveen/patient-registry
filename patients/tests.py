@@ -559,6 +559,16 @@ class MedtrackViewTests(TestCase):
         self.medicine, _ = DepartmentConfig.objects.get_or_create(name="Medicine")
         self.case_sequence = 0
 
+    def post_task_form(self, url, data=None, **kwargs):
+        # Existing workflow fixtures submit the signed baseline actually rendered by GET.
+        from django.urls import resolve
+        task_id = resolve(url).kwargs["pk"]
+        editor = self.client.get(reverse("patients:task_edit", kwargs={"pk": task_id}))
+        payload = dict(data or {})
+        if editor.status_code == 200:
+            payload["edit_baseline"] = editor.context["edit_baseline"]
+        return self.client.post(url, payload, **kwargs)
+
     def assert_max_queries(self, max_queries, url, params=None):
         with CaptureQueriesContext(connection) as captured:
             response = self.client.get(url, params or {})
@@ -2337,7 +2347,7 @@ class MedtrackViewTests(TestCase):
             due_date=timezone.localdate() + timedelta(days=7),
             created_by=self.user,
         )
-        response = self.client.post(
+        response = self.post_task_form(
             reverse("patients:task_edit", kwargs={"pk": task.pk}),
             {
                 "title": task.title,
@@ -2367,7 +2377,7 @@ class MedtrackViewTests(TestCase):
             created_by=self.user,
         )
 
-        response = self.client.post(
+        response = self.post_task_form(
             reverse("patients:task_create", kwargs={"pk": case.pk}),
             {
                 "title": "Future ANC Create",
@@ -2410,7 +2420,7 @@ class MedtrackViewTests(TestCase):
                 "notes": "Created via XHR",
             },
         )
-        redirect_response = self.client.post(
+        redirect_response = self.post_task_form(
             reverse("patients:task_create", kwargs={"pk": case.pk}),
             {
                 "title": "Redirect created task",
@@ -3163,7 +3173,7 @@ class MedtrackViewTests(TestCase):
             created_by=self.user,
         )
 
-        response = self.client.post(reverse("patients:task_quick_complete", kwargs={"pk": task.pk}))
+        response = self.post_task_form(reverse("patients:task_quick_complete", kwargs={"pk": task.pk}))
 
         self.assertEqual(response.status_code, 302)
         task.refresh_from_db()
@@ -3201,7 +3211,7 @@ class MedtrackViewTests(TestCase):
             completed_at=timezone.make_aware(datetime(2026, 1, 15, 10, 30)),
         )
 
-        response = self.client.post(reverse("patients:task_quick_reopen", kwargs={"pk": task.pk}))
+        response = self.post_task_form(reverse("patients:task_quick_reopen", kwargs={"pk": task.pk}))
 
         self.assertEqual(response.status_code, 302)
         task.refresh_from_db()
@@ -3242,7 +3252,7 @@ class MedtrackViewTests(TestCase):
         )
 
         self.client.force_login(nurse_user)
-        response = self.client.post(reverse("patients:task_quick_reopen", kwargs={"pk": task.pk}))
+        response = self.post_task_form(reverse("patients:task_quick_reopen", kwargs={"pk": task.pk}))
 
         self.assertEqual(response.status_code, 403)
         task.refresh_from_db()
@@ -3279,7 +3289,7 @@ class MedtrackViewTests(TestCase):
             created_by=self.user,
         )
 
-        response = self.client.post(reverse("patients:task_quick_reopen", kwargs={"pk": reopened_task.pk}))
+        response = self.post_task_form(reverse("patients:task_quick_reopen", kwargs={"pk": reopened_task.pk}))
 
         self.assertEqual(response.status_code, 302)
         reopened_task.refresh_from_db()
@@ -3310,7 +3320,7 @@ class MedtrackViewTests(TestCase):
             created_by=self.user,
         )
 
-        response = self.client.post(reverse("patients:task_quick_reopen", kwargs={"pk": task.pk}))
+        response = self.post_task_form(reverse("patients:task_quick_reopen", kwargs={"pk": task.pk}))
 
         self.assertEqual(response.status_code, 302)
         task.refresh_from_db()
@@ -3338,7 +3348,7 @@ class MedtrackViewTests(TestCase):
             created_by=self.user,
         )
 
-        response = self.client.post(
+        response = self.post_task_form(
             reverse("patients:task_quick_reschedule", kwargs={"pk": task.pk}),
             {"due_date": (timezone.localdate() + timedelta(days=4)).isoformat()},
         )
@@ -3369,7 +3379,7 @@ class MedtrackViewTests(TestCase):
         )
 
         new_due_date = timezone.localdate() + timedelta(days=4)
-        response = self.client.post(
+        response = self.post_task_form(
             reverse("patients:task_quick_reschedule", kwargs={"pk": task.pk}),
             {"due_date": new_due_date.strftime("%d/%m/%Y")},
         )
@@ -3398,7 +3408,7 @@ class MedtrackViewTests(TestCase):
             created_by=self.user,
         )
 
-        response = self.client.post(
+        response = self.post_task_form(
             reverse("patients:task_quick_note", kwargs={"pk": task.pk}),
             {"note": "Inline note update"},
         )
@@ -3449,21 +3459,21 @@ class MedtrackViewTests(TestCase):
         )
 
         new_due_date = today + timedelta(days=5)
-        reschedule_response = self.client.post(
+        reschedule_response = self.post_task_form(
             reverse("patients:task_quick_reschedule", kwargs={"pk": reschedule_task.pk}),
             {"due_date": new_due_date.isoformat()},
             HTTP_X_REQUESTED_WITH="XMLHttpRequest",
         )
-        note_response = self.client.post(
+        note_response = self.post_task_form(
             reverse("patients:task_quick_note", kwargs={"pk": note_task.pk}),
             {"note": "Updated from modal"},
             HTTP_X_REQUESTED_WITH="XMLHttpRequest",
         )
-        complete_response = self.client.post(
+        complete_response = self.post_task_form(
             reverse("patients:task_quick_complete", kwargs={"pk": complete_task.pk}),
             HTTP_X_REQUESTED_WITH="XMLHttpRequest",
         )
-        redirect_response = self.client.post(
+        redirect_response = self.post_task_form(
             reverse("patients:task_quick_note", kwargs={"pk": redirect_task.pk}),
             {"note": "Classic redirect"},
         )
@@ -3606,7 +3616,7 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(response.status_code, 400)
         payload = response.json()
         self.assertEqual(payload["message"], "Could not log call outcome.")
-        self.assertIn("task", payload["errors"])
+        self.assertIn("reason", payload["errors"])
 
     def test_add_call_log_ajax_returns_quick_log_payload_for_confirmed_outcome(self):
         self.client.force_login(self.user)
@@ -3713,7 +3723,7 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(task.status, TaskStatus.SCHEDULED)
         self.assertTrue(CallLog.objects.filter(case=case, task=task, outcome=CallOutcome.CALL_BACK_LATER).exists())
 
-    def test_case_detail_marks_task_date_inputs_for_crayons_datepicker(self):
+    def test_case_detail_uses_calendar_date_inputs_for_tasks(self):
         self.client.force_login(self.user)
         case = Case.objects.create(
             uhid="UH-ACTION-05A",
@@ -3736,9 +3746,8 @@ class MedtrackViewTests(TestCase):
 
         response = self.client.get(reverse("patients:case_detail", kwargs={"pk": case.pk}))
 
-        self.assertContains(response, 'data-crayons-datepicker="true"', count=2)
-        self.assertContains(response, 'data-crayons-datepicker-format="dd/MM/yyyy"', count=2)
-        self.assertContains(response, 'data-crayons-datepicker-show-footer="false"', count=2)
+        self.assertContains(response, 'type="date"', count=2)
+        self.assertNotRegex(response.content.decode(), r'<input[^>]*data-crayons-datepicker="true"')
         self.assertContains(response, 'id="task-shared-reschedule-date"')
 
     def test_recent_case_update_persists_changes_and_logs_activity(self):
@@ -3821,7 +3830,7 @@ class MedtrackViewTests(TestCase):
             {"diagnosis": "Blocked", "notes": "Blocked"},
             HTTP_X_REQUESTED_WITH="XMLHttpRequest",
         )
-        task_update_response = self.client.post(
+        task_update_response = self.post_task_form(
             reverse("patients:task_quick_note", kwargs={"pk": task.pk}),
             {"note": "Blocked task change"},
             HTTP_X_REQUESTED_WITH="XMLHttpRequest",
@@ -3832,7 +3841,7 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(case_update_response.status_code, 403)
         self.assertEqual(task_update_response.status_code, 403)
 
-    def test_add_call_log_requires_associated_task(self):
+    def test_add_general_call_requires_reason(self):
         self.client.force_login(self.user)
         case = Case.objects.create(
             uhid="UH-ACTION-06",
@@ -7684,7 +7693,7 @@ class MedtrackViewTests(TestCase):
             created_by=self.user,
         )
 
-        response = self.client.post(
+        response = self.post_task_form(
             reverse("patients:task_edit", kwargs={"pk": task.pk}),
             {
                 "title": task.title,
@@ -7734,7 +7743,7 @@ class MedtrackViewTests(TestCase):
         )
 
         self.client.force_login(nurse_user)
-        response = self.client.post(
+        response = self.post_task_form(
             reverse("patients:task_edit", kwargs={"pk": task.pk}),
             {
                 "title": task.title,
@@ -7773,7 +7782,7 @@ class MedtrackViewTests(TestCase):
             created_by=self.user,
         )
 
-        response = self.client.post(
+        response = self.post_task_form(
             reverse("patients:task_edit", kwargs={"pk": task.pk}),
             {
                 "title": task.title,
@@ -7822,7 +7831,7 @@ class MedtrackViewTests(TestCase):
             created_by=self.user,
         )
 
-        response = self.client.post(
+        response = self.post_task_form(
             reverse("patients:task_edit", kwargs={"pk": task.pk}),
             {
                 "title": task.title,

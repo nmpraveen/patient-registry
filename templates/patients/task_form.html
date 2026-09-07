@@ -7,9 +7,10 @@
     <div class="alert alert-danger py-2">{{ form.non_field_errors }}</div>
   {% endif %}
   <form method="post" class="row g-3">{% csrf_token %}
+    <input type="hidden" name="edit_baseline" value="{{ edit_baseline }}">
     {% for field in form %}
       <div class="col-12 col-md-6">
-        <label class="form-label">{{ field.label }}</label>
+        <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
         {{ field }}
         {% if field.errors %}<div class="text-danger small mt-1">{{ field.errors|striptags }}</div>{% endif %}
       </div>

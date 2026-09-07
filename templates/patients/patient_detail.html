@@ -146,4 +146,20 @@
       {% endif %}
     </div>
   </section>
+<section class="card mt-3" aria-labelledby="patient-call-history">
+  <div class="card-body">
+    <h2 class="h5" id="patient-call-history">Recent calls</h2>
+    <ul class="list-unstyled mb-0">
+      {% for call in recent_calls %}
+        <li class="border-bottom py-2">
+          <a href="{% url 'patients:case_detail' call.case_id %}?show_logs=1#clinical-timeline">{{ call.case.category.name }} · Case #{{ call.case_id }}</a>
+          <small class="text-muted">{{ call.created_at|date:'d-m-y H:i' }} · {{ call.staff_user|default:'system' }}</small>
+          <div>{{ call.get_outcome_display }} · {{ call.task.title|default:'General patient call' }}</div>
+          {% if call.reason %}<div>Reason: {{ call.reason }}</div>{% endif %}
+          {% if call.notes %}<div class="small text-muted">{{ call.notes }}</div>{% endif %}
+        </li>
+      {% empty %}<li class="text-muted">No calls recorded.</li>{% endfor %}
+    </ul>
+  </div>
+</section>
 {% endblock %}

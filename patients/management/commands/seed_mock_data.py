@@ -743,6 +743,7 @@ class Command(BaseCommand):
                 task=task,
                 outcome=outcome,
                 notes=f"Seeded {scenario} call attempt #{attempt}",
+                reason="Follow-up appointment clarification",
                 staff_user=call_staff,
             )
             CaseActivityLog.objects.create(

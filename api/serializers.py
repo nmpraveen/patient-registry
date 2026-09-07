@@ -6,6 +6,7 @@ from rest_framework import serializers
 
 from patients.models import (
     CallOutcome,
+    TaskStatus,
     VitalEntry,
     VITAL_BP_DIASTOLIC_MAX,
     VITAL_BP_DIASTOLIC_MIN,
@@ -82,7 +83,14 @@ class PatchControlSerializer(ClientWriteSerializer):
 
 
 class TaskCompleteSerializer(ClientWriteSerializer):
-    pass
+    base_values = serializers.DictField(required=False)
+
+    def validate_base_values(self, value):
+        if set(value) != {"status", "due_date"}:
+            raise serializers.ValidationError("Supply the observed status and due_date only.")
+        serializers.ChoiceField(choices=TaskStatus.choices).run_validation(value["status"])
+        parsed = serializers.DateField().run_validation(value["due_date"])
+        return {"status": value["status"], "due_date": parsed.isoformat()}
 
 
 class CallOutcomeSerializer(ClientWriteSerializer):
@@ -98,11 +106,17 @@ class CallOutcomeSerializer(ClientWriteSerializer):
         ]
     )
     note = serializers.CharField(required=False, allow_blank=True, max_length=1000)
-    task_id = serializers.IntegerField(required=False, allow_null=True)
+    task_id = serializers.IntegerField(required=False, allow_null=True, min_value=1)
+    reason = serializers.CharField(required=False, allow_blank=True, max_length=500)
     attempted_at = serializers.DateTimeField(required=False, allow_null=True)
 
     def validate_attempted_at(self, value):
         return validate_client_event_timestamp(value)
+
+    def validate(self, attrs):
+        if not attrs.get("task_id") and "reason" in attrs and not attrs["reason"]:
+            raise serializers.ValidationError({"reason": "Enter a reason for a general patient call."})
+        return attrs
 
 
 class VitalEntryCreateSerializer(ClientWriteSerializer):

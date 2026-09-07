@@ -399,7 +399,7 @@ class MobileApiTests(APITestCase):
 
     def test_case_list_defaults_to_all_scope_for_doctor(self):
         doctor = get_user_model().objects.create_user(username="doctor-mobile", password="pass")
-        RoleSetting.objects.update_or_create(role_name="Doctor", defaults={"can_task_edit": True})
+        RoleSetting.objects.update_or_create(role_name="Doctor", defaults={"case_data_scope": CaseDataScope.ALL, "can_task_edit": True})
         doctor_group, _ = Group.objects.get_or_create(name="Doctor")
         doctor.groups.add(doctor_group)
         unassigned_case = Case.objects.create(

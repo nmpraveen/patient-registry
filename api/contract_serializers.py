@@ -217,6 +217,9 @@ class CasePatchResponseSerializer(CaseWriteResponseSerializer):
 class CallLogContractSerializer(serializers.Serializer):
     id = serializers.IntegerField()
     task_id = serializers.IntegerField(allow_null=True)
+    task_title = serializers.CharField(allow_blank=True)
+    staff_user = serializers.CharField(allow_blank=True)
+    reason = serializers.CharField(allow_blank=True, max_length=500)
     mobile_outcome = serializers.CharField(required=False, allow_blank=True)
     outcome = serializers.CharField()
     outcome_label = serializers.CharField()

@@ -1,5 +1,9 @@
 # PROJECT_STATE.md
 
+## Issue #113 Stage 2 implementation
+
+Task editor affordances, original-baseline web/API conflict handling, descriptive task history and general-call reasons are implemented in the Stage 2 lane. Legacy queued call/completion JSON remains compatible; reasons round-trip through bundles and bounded call history. The Android lane is ready with 127 core tests, 28 final targeted tests and a dev build passing; synthetic online/offline calls synced once without completing the task. Native code is integrated only from that lane's rebased commit. See docs/issue-113-stage-2.md and the coordination stage-2-report.md for exact validation and integration state. The Stage 1 squash-base rebase, combined PR review and exact-head CI remain required before merge; no production activation is implied.
+
 ## Issue #113 Stage 1 source implementation
 
 The remaining Recent Cases lock-order issue is reproduced and corrected with precise mandatory-audited diagnosis/notes/timestamp updates, preserving fresh activity before-values and checking Patient linkage without taking a Patient lock. Eight targeted regressions pass; fresh exact-head CI and the correction-only recheck supersede the prior head.

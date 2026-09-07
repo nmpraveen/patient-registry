@@ -955,6 +955,7 @@
                 </button>
 
                 <div class="calls-sheet-row-actions">
+                  {% if can_task_edit and row.primary_task_id %}<a class="btn btn-sm btn-outline-primary" href="{% url 'patients:task_edit' row.primary_task_id %}" data-compact-action>Edit</a>{% endif %}
                   {% if row.phone_number %}
                     <span class="calls-sheet-summary-pill calls-sheet-summary-pill--phone">{{ row.phone_number }}</span>
                     <a class="dashboard-compact-call-link" href="tel:{{ row.phone_number }}" data-compact-action>Call</a>

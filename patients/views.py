@@ -42,6 +42,7 @@ from django.views import View
 from django.views.generic import CreateView, DetailView, ListView, UpdateView
 
 from . import database_bundle
+from .task_editing import changed_field_conflicts, lock_edit_actor, read_task_edit_token, task_change_note, task_edit_token, task_values
 from .audit import record_audit_event
 from .auth_security import bind_authenticated_session, clear_auth_attempts, consume_auth_attempt
 from .intake_access import case_intake_patient_queryset, resolve_case_intake_patient
@@ -1249,6 +1250,7 @@ def _serialize_recent_task(task, *, category_name, can_edit_tasks, today):
         "latest_call_summary": latest_call_payload,
         **action_flags,
         "edit_url": reverse("patients:task_edit", kwargs={"pk": task.pk}),
+        "can_edit": can_edit_tasks,
     }
 
 
@@ -1447,6 +1449,10 @@ def _task_action_success_response(request, *, task, message):
 
 def _complete_task_inline(task, *, user):
     case = task.case
+    if task.status == TaskStatus.CANCELLED:
+        return False, "Cancelled tasks cannot be completed."
+    if task.status == TaskStatus.COMPLETED:
+        return True, "Task already completed."
     if case.category.name.upper() == "ANC" and task.due_date > timezone.localdate():
         return False, "This ANC task is locked until its due date."
 
@@ -1532,6 +1538,7 @@ def _save_task_note_inline(task, *, note_text, user):
     if not note_text:
         return False, "Task note cannot be empty."
 
+    previous_note = task.notes
     task.notes = note_text
     task.save(update_fields=["notes", "updated_at"])
     create_case_activity(
@@ -1539,7 +1546,7 @@ def _save_task_note_inline(task, *, note_text, user):
         task=task,
         user=user,
         event_type=ActivityEventType.TASK,
-        note=f"{note_text} [Task: {task.title}]",
+        note=f"{previous_note or '—'} → {note_text} [Task: {task.title}]",
     )
     return True, "Task note saved."
 
@@ -1587,6 +1594,7 @@ def _serialize_case_detail_task(task, *, user):
         "completed_at_display": completed_at.strftime("%d %b %Y %H:%M") if completed_at else "",
         "history_date_display": getattr(task, "history_date_display", ""),
         "edit_url": reverse("patients:task_edit", kwargs={"pk": task.pk}),
+        "can_edit": can_edit_tasks,
     }
     payload.update(action_flags)
     if latest_call_summary:
@@ -1633,6 +1641,7 @@ def _serialize_case_detail_call_log(call_log):
         "task_title": call_log.task.title if call_log.task_id else "",
         "outcome": call_log.outcome,
         "outcome_label": call_log.get_outcome_display(),
+        "reason": call_log.reason,
         "notes": call_log.notes or "",
         "staff_user": _display_user_name(call_log.staff_user) or "system",
         "created_at": call_log.created_at.isoformat(),
@@ -2657,6 +2666,7 @@ def _serialize_call_timeline_entry(call):
         "actor": str(call.staff_user) if call.staff_user else "system",
         "task_title": call.task.title if call.task_id else "",
         "headline": call.get_outcome_display(),
+        "reason": call.reason,
         "details": call.notes,
     }
 
@@ -3389,6 +3399,7 @@ class UpcomingCallsView(LoginRequiredMixin, UpcomingCallsAccessMixin, View):
             "outcome_choices": CallOutcome.choices,
             "quick_log_actions": UPCOMING_CALL_QUICK_LOG_ACTIONS,
             "can_apply_outcomes": has_capability(request.user, "note_add"),
+            "can_task_edit": has_capability(request.user, "task_edit"),
             "applied_case_ids": [],
         }
         return render(request, self.template_name, context)
@@ -3591,6 +3602,9 @@ class PatientDetailView(LoginRequiredMixin, CaseDataAccessMixin, DetailView):
         context["can_merge_patient"] = _can_manage_patient_identity(
             self.request.user, patient, capability="patient_merge"
         )
+        calls = CallLog.objects.filter(case__in=visible_cases).select_related(
+            "case__category", "task", "staff_user").order_by("-created_at", "-id")[:20]
+        context["recent_calls"] = calls
         context["merge_form"] = PatientMergeForm(source_patient=patient)
         return context
 
@@ -5337,6 +5351,7 @@ class CaseDetailView(LoginRequiredMixin, DetailView):
         task_call_summary = _build_task_call_summary(call_logs)
         for task in tasks:
             task.latest_call_summary = task_call_summary.get(task.id)
+            task.edit_baseline = task_edit_token(task, self.request.user)
         context["task_call_summary"] = task_call_summary
         context["has_vitals"] = latest_vital is not None
         context["latest_vitals_recorded_at"] = timezone.localtime(latest_vital.recorded_at) if latest_vital else None
@@ -5633,15 +5648,38 @@ class TaskCreateView(LoginRequiredMixin, View):
         return redirect("patients:case_detail", pk=pk)
 
 
+def _locked_task_for_edit(user, pk):
+    # Match ANC case mutation ordering: case, then its task rows.
+    task = get_object_or_404(_accessible_task_queryset(user), pk=pk)
+    Case.objects.select_for_update().get(pk=task.case_id)
+    list(Task.objects.select_for_update().filter(case_id=task.case_id).order_by("pk"))
+    return get_object_or_404(
+        _accessible_task_queryset(user, Task.objects.select_related("case", "case__category", "assigned_user")), pk=pk)
+
+
+def _quick_task_conflict(request, task, fields):
+    try:
+        base = read_task_edit_token(request.POST.get("edit_baseline", ""), task, request.user)
+    except ValidationError as exc:
+        return _task_action_error_response(request, case_id=task.case_id, message=exc.messages[0], status=409)
+    conflicts = changed_field_conflicts(task_values(task), base, fields)
+    if conflicts:
+        return _task_action_error_response(request, case_id=task.case_id,
+            message="Task changed: " + ", ".join(conflicts) + ". Refresh before retrying.", status=409)
+    return None
+
+
 class TaskQuickCompleteView(LoginRequiredMixin, View):
+    @transaction.atomic
     def post(self, request, pk):
+        request.user = lock_edit_actor(request.user)
         if not has_capability(request.user, "task_edit"):
             return _forbidden_response(request, "You do not have permission to edit tasks.")
 
-        task = get_object_or_404(
-            _accessible_task_queryset(request.user, Task.objects.select_related("case", "case__category")),
-            pk=pk,
-        )
+        task = _locked_task_for_edit(request.user, pk)
+        conflict = _quick_task_conflict(request, task, ("status", "due_date"))
+        if conflict is not None:
+            return conflict
         success, message = _complete_task_inline(task, user=request.user)
         if not success:
             return _task_action_error_response(request, case_id=task.case_id, message=message)
@@ -5649,14 +5687,16 @@ class TaskQuickCompleteView(LoginRequiredMixin, View):
 
 
 class TaskQuickReopenView(LoginRequiredMixin, View):
+    @transaction.atomic
     def post(self, request, pk):
+        request.user = lock_edit_actor(request.user)
         if not _can_reopen_tasks(request.user):
             return _forbidden_response(request, "You do not have permission to reopen completed tasks.")
 
-        task = get_object_or_404(
-            _accessible_task_queryset(request.user, Task.objects.select_related("case", "case__category")),
-            pk=pk,
-        )
+        task = _locked_task_for_edit(request.user, pk)
+        conflict = _quick_task_conflict(request, task, ("status", "due_date"))
+        if conflict is not None:
+            return conflict
         success, message = _reopen_task_inline(task, user=request.user)
         if not success:
             return _task_action_error_response(request, case_id=task.case_id, message=message)
@@ -5664,14 +5704,16 @@ class TaskQuickReopenView(LoginRequiredMixin, View):
 
 
 class TaskQuickRescheduleView(LoginRequiredMixin, View):
+    @transaction.atomic
     def post(self, request, pk):
+        request.user = lock_edit_actor(request.user)
         if not has_capability(request.user, "task_edit"):
             return _forbidden_response(request, "You do not have permission to edit tasks.")
 
-        task = get_object_or_404(
-            _accessible_task_queryset(request.user, Task.objects.select_related("case", "case__category")),
-            pk=pk,
-        )
+        task = _locked_task_for_edit(request.user, pk)
+        conflict = _quick_task_conflict(request, task, ("status", "due_date"))
+        if conflict is not None:
+            return conflict
         success, message = _reschedule_task_inline(
             task,
             due_date_raw=(request.POST.get("due_date") or "").strip(),
@@ -5683,14 +5725,16 @@ class TaskQuickRescheduleView(LoginRequiredMixin, View):
 
 
 class TaskQuickNoteView(LoginRequiredMixin, View):
+    @transaction.atomic
     def post(self, request, pk):
+        request.user = lock_edit_actor(request.user)
         if not has_capability(request.user, "task_edit"):
             return _forbidden_response(request, "You do not have permission to edit tasks.")
 
-        task = get_object_or_404(
-            _accessible_task_queryset(request.user, Task.objects.select_related("case", "case__category")),
-            pk=pk,
-        )
+        task = _locked_task_for_edit(request.user, pk)
+        conflict = _quick_task_conflict(request, task, ("notes",))
+        if conflict is not None:
+            return conflict
         success, message = _save_task_note_inline(
             task,
             note_text=(request.POST.get("note") or "").strip(),
@@ -5723,22 +5767,56 @@ class TaskUpdateView(LoginRequiredMixin, UpdateView):
         kwargs["allow_reopen"] = not (task.status == TaskStatus.COMPLETED and not _can_reopen_tasks(self.request.user))
         return kwargs
 
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["edit_baseline"] = (self.request.POST.get("edit_baseline", "") if self.request.method == "POST"
+                                    else task_edit_token(self.object, self.request.user))
+        return context
+
+    @transaction.atomic
     def post(self, request, *args, **kwargs):
-        self.object = self.get_object()
-        requested_status = request.POST.get("status")
-        if (
-            self.object.status == TaskStatus.COMPLETED
-            and requested_status
-            and requested_status != TaskStatus.COMPLETED
-            and not _can_reopen_tasks(request.user)
-        ):
+        request.user = lock_edit_actor(request.user)
+        if not has_capability(request.user, "task_edit"):
+            return _forbidden_response(request, "You do not have permission to edit tasks.")
+        self.object = _locked_task_for_edit(request.user, kwargs["pk"])
+        current = task_values(self.object)
+        if (self.object.status == TaskStatus.COMPLETED and request.POST.get("status") != TaskStatus.COMPLETED
+                and not _can_reopen_tasks(request.user)):
             return _forbidden_response(request, "You do not have permission to reopen completed tasks.")
-        return super().post(request, *args, **kwargs)
+        try:
+            base = read_task_edit_token(request.POST.get("edit_baseline", ""), self.object, request.user)
+        except ValidationError as exc:
+            form = self.get_form()
+            form.is_valid()
+            form.add_error(None, exc)
+            return self.render_to_response(self.get_context_data(form=form), status=409)
+        form = self.get_form()
+        if not form.is_valid():
+            return self.form_invalid(form)
+        submitted = task_values(form.instance)
+        touched = [field for field in current if submitted[field] != base[field]]
+        conflicts = changed_field_conflicts(current, base, touched)
+        if conflicts:
+            form.add_error(None, "Task changed: " + ", ".join(conflicts) + ". Your draft is retained; refresh before retrying.")
+            return self.render_to_response(self.get_context_data(form=form), status=409)
+        # Preserve fields the user did not edit, even if another editor changed them.
+        for field in current:
+            if field not in touched:
+                value = current[field]
+                if field == "due_date":
+                    value = date.fromisoformat(value)
+                setattr(form.instance, "assigned_user_id" if field == "assigned_user" else field, value)
+        try:
+            form.instance.full_clean(exclude=form._get_validation_exclusions())
+        except ValidationError as exc:
+            form.add_error(None, "; ".join(exc.messages))
+            return self.form_invalid(form)
+        return self.form_valid(form)
 
     def form_valid(self, form):
         previous_task = self.get_object()
         previous_status = previous_task.status
-        next_status = form.cleaned_data.get("status")
+        next_status = form.instance.status
         is_reopening = previous_status == TaskStatus.COMPLETED and next_status != TaskStatus.COMPLETED
         if is_reopening and next_status != TaskStatus.SCHEDULED:
             form.add_error("status", "Completed tasks can only be reopened to Scheduled.")
@@ -5751,7 +5829,7 @@ class TaskUpdateView(LoginRequiredMixin, UpdateView):
                 reminder_label = "follow-up reminder" if cancelled_count == 1 else "follow-up reminders"
                 note = f"{note} ({cancelled_count} {reminder_label} cancelled)"
         else:
-            note = f"Task updated: {self.object.title} ({self.object.status})"
+            note = task_change_note(self.object, task_values(previous_task))
         create_case_activity(
             case=self.object.case,
             task=self.object,
@@ -5816,7 +5894,9 @@ class AddCaseNoteView(LoginRequiredMixin, View):
 
 
 class AddCallLogView(LoginRequiredMixin, View):
+    @transaction.atomic
     def post(self, request, pk):
+        request.user = lock_edit_actor(request.user)
         if not has_capability(request.user, "note_add"):
             return _forbidden_response(request, "You do not have permission to add call logs.")
         case = get_object_or_404(

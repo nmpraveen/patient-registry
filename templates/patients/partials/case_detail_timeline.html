@@ -24,6 +24,7 @@
                 <small class="text-muted">{{ entry.timestamp_local|date:'d-m-y H:i' }} | {{ entry.actor }}</small>
               </div>
               <div class="mt-1">{{ entry.headline }}</div>
+              {% if entry.reason %}<div class="small">Reason: {{ entry.reason }}</div>{% endif %}
               {% if entry.details %}<div class="small text-muted">{{ entry.details }}</div>{% endif %}
             </li>
           {% endfor %}

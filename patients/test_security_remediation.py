@@ -285,7 +285,7 @@ class AffectedSetAuthorizationTests(SecurityFixtureMixin, TestCase):
             reverse("patients:patient_merge", kwargs={"pk": source.pk}),
             {
                 "target_patient": target.pk,
-                "confirm_target_uhid": target.uhid,
+                "confirm_target_uhid": target.mtno,
                 "confirm_merge": "on",
             },
         )

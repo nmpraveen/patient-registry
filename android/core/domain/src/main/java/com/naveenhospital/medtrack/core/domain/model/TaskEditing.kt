@@ -42,6 +42,7 @@ data class TaskEditInput(
 
 /** Raw editable case fields used to seed the case-edit wizard. */
 data class CaseEditPrefill(
+    val mtno: String = "",
     val canEdit: Boolean,
     val metadata: CaseFormMetadata,
     val patientMode: String,

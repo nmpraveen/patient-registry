@@ -71,7 +71,7 @@
       <div class="vitals-form-page__hero-copy">
         <p class="vitals-form-page__hero-kicker">Vitals</p>
         <h1 class="vitals-form-page__hero-title">{% if is_edit %}Edit Latest Reading{% else %}Add New Reading{% endif %}</h1>
-        <p class="vitals-form-page__hero-meta">{{ case.full_name }} ({{ case.uhid }})</p>
+        <p class="vitals-form-page__hero-meta">{{ case.full_name }} ({{ case.mtno }}{% if case.uhid %} · {{ case.uhid }}{% endif %})</p>
       </div>
       <a class="btn btn-outline-secondary" href="{% url 'patients:case_detail' case.id %}">Back to Case</a>
     </div>

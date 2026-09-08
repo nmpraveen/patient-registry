@@ -339,7 +339,7 @@ private fun String.shortAlertTimeLabel(): String {
 }
 
 private fun PatientCase.identityLine(): String =
-    listOfNotNull(uhid, age?.let { "${it}y" }, sexLabel, place)
+    listOfNotNull(mtno, uhid, age?.let { "${it}y" }, sexLabel, place)
         .filter { it.isNotBlank() }
         .joinToString(" - ")
 

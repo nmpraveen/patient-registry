@@ -1753,7 +1753,8 @@ class MedtrackViewTests(TestCase):
 
         self.assertEqual(response.status_code, 302)
         case = Case.objects.get(metadata__entry_mode="quick_entry", first_name="Lalitha")
-        self.assertRegex(case.uhid, r"^TMP-\d{8}-\d{3}$")
+        self.assertEqual(case.uhid, "")
+        self.assertRegex(case.mtno, r"^MT-\d{6,}$")
         self.assertEqual(case.prefix, CasePrefix.MRS)
         self.assertEqual(case.patient_name, "Mrs. Lalitha")
         self.assertEqual(case.last_name, "")
@@ -1766,7 +1767,7 @@ class MedtrackViewTests(TestCase):
         self.assertTrue(case.metadata["details_pending"])
         self.assertIsNotNone(case.patient_id)
         self.assertEqual(case.patient.uhid, case.uhid)
-        self.assertTrue(case.patient.is_temporary_id)
+        self.assertFalse(case.patient.is_temporary_id)
         self.assertEqual(case.patient.first_name, "Lalitha")
         self.assertEqual(case.patient.last_name, "")
         self.assertEqual(case.patient.phone_number, "")
@@ -2208,7 +2209,7 @@ class MedtrackViewTests(TestCase):
             reverse("patients:patient_merge", kwargs={"pk": source_case.patient_id}),
             {
                 "target_patient": target_case.patient_id,
-                "confirm_target_uhid": target_case.patient.uhid,
+                "confirm_target_uhid": target_case.patient.mtno,
                 "confirm_merge": "on",
             },
         )
@@ -4832,7 +4833,7 @@ class MedtrackViewTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Patient with this Uhid already exists.")
+        self.assertContains(response, "Patient with this UHID already exists. Select the existing patient.")
 
     def test_case_create_invalid_phone_numbers_return_inline_error(self):
         self.client.force_login(self.user)
@@ -9838,7 +9839,7 @@ class SeedMockDataCommandTests(TestCase):
         self.assertEqual(seeded_cases.count(), 30)
         seeded_patients = Patient.objects.filter(cases__metadata__source="seed_mock_data").distinct()
         self.assertTrue(seeded_patients.exists())
-        self.assertTrue(seeded_patients.filter(is_temporary_id=True).exists())
+        self.assertTrue(seeded_patients.filter(uhid="", is_temporary_id=False).exists())
         self.assertTrue(seeded_cases.filter(prefix=CasePrefix.MASTER).exists())
         patient_case_counts = {}
 
@@ -9855,8 +9856,9 @@ class SeedMockDataCommandTests(TestCase):
             self.assertTrue(case.metadata.get("seed_scenario"))
             self.assertTrue(case.metadata.get("seed_case_key"))
             if case.metadata.get("entry_mode") == "quick_entry":
-                self.assertRegex(case.uhid, r"^TMP-\d{8}-\d{3}$")
-                self.assertTrue(case.patient.is_temporary_id)
+                self.assertEqual(case.uhid, "")
+                self.assertRegex(case.mtno, r"^MT-\d{6,}$")
+                self.assertFalse(case.patient.is_temporary_id)
                 self.assertEqual(case.phone_number, "")
                 self.assertEqual(case.alternate_phone_number, "")
                 self.assertEqual(case.place, "")
@@ -9904,7 +9906,7 @@ class SeedMockDataCommandTests(TestCase):
         self.assertTrue(quick_entry_case.metadata.get("details_pending"))
         self.assertEqual(quick_entry_case.subcategory, "")
         self.assertTrue(quick_entry_case.tasks.filter(title=QUICK_ENTRY_DETAILS_TASK_TITLE).exists())
-        self.assertTrue(quick_entry_case.patient.is_temporary_id)
+        self.assertFalse(quick_entry_case.patient.is_temporary_id)
 
         master_case = seeded_cases.filter(prefix=CasePrefix.MASTER).first()
         self.assertIsNotNone(master_case)

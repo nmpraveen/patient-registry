@@ -1,3 +1,20 @@
+## 2026.09.08.01.53
+
+- Serialize patient imports with API writes and receipt replays before actor/target locks; preserve Patient-before-Case editing and fresh linkage checks.
+- Reserve the MTNO namespace against hospital-ID collisions in writes, database constraints and bundle preflight; stop incompatible legacy migration without rewriting identifiers.
+- Keep calls-queue identity queries constant and display MTNO on blank-UHID vitals and ANC pages.
+
+## 2026.09.08.00.57
+
+- Reject conflicting identity evidence across an entire legacy UHID group before backfill linkage or issuance, including blank-first and partially blank existing-patient cases.
+- Refuse identity-enforcement migration reversal before removing guards or constraints; preserve ledger and allocator protection after failed downgrade attempts.
+
+## 2026.09.08.00.39
+
+- Assign permanent MTNO identities with a retained issuance ledger, immutable database guards and additive backfill; allow missing hospital UHID while preserving existing identifiers.
+- Carry read-only MTNO through scoped web/API/native search and editing, safe merge aliases, Room 15 and legacy offline payloads.
+- Export identity bundle version 4 with versions 1/2/3 compatibility, protected merge evidence and trusted outgoing checkpoints for older restores.
+
 ## 2026.09.08.00.11
 
 - Keep cancelled tasks cancelled in full editors and preserve audited, idempotent RCH completion follow-ups across web and mobile.

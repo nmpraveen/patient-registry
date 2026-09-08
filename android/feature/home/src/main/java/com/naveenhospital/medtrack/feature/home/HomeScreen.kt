@@ -418,7 +418,7 @@ private fun SearchFilterBar(
                 decorationBox = { innerTextField ->
                     if (value.isBlank()) {
                         Text(
-                            text = "Search patient, UHID, phone",
+                            text = "Search name, MTNO, UHID, phone",
                             color = MedtrackColors.Muted.copy(alpha = 0.72f),
                             style = MaterialTheme.typography.bodySmall.copy(fontSize = HomeUiScale.SearchText),
                             maxLines = 1,
@@ -1560,7 +1560,8 @@ private fun CategoryIcon(color: Color, iconResId: Int, modifier: Modifier = Modi
 
 private fun PatientCase.demographicsLine(): String =
     listOfNotNull(
-        uhid,
+        mtno.takeIf { it.isNotBlank() },
+        uhid.takeIf { it.isNotBlank() },
         age?.let { "${it}y" },
         sexLabel,
         place,
@@ -1577,6 +1578,7 @@ private fun PatientCase.ageSexLine(): String? =
 
 private fun PatientCase.caseMetaLine(): String? =
     listOfNotNull(
+        mtno.takeIf { it.isNotBlank() },
         uhid.takeIf { it.isNotBlank() },
         place?.takeIf { it.isNotBlank() },
     ).joinToString(" \u2022 ").takeIf { it.isNotBlank() }

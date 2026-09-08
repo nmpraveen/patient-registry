@@ -630,6 +630,7 @@
 
   function patientResultMeta(patient) {
     const parts = [
+      patient?.mtno || "",
       patient?.uhid || "",
       patient?.phone_number || "",
       patient?.place || "",
@@ -686,7 +687,7 @@
           <div>
             <div class="case-create-selected-patient__eyebrow">Selected patient</div>
             <div class="case-create-selected-patient__title">${escapeHtml(patient.name || patient.uhid || "Patient")}</div>
-            <div class="case-create-selected-patient__meta">${escapeHtml(patient.uhid || "")}</div>
+            <div class="case-create-selected-patient__meta">${escapeHtml([patient.mtno, patient.uhid].filter(Boolean).join(" · "))}</div>
           </div>
           <div class="case-create-selected-patient__actions">
             <button class="btn btn-sm btn-outline-secondary" type="button" data-clear-selected-patient>Change patient</button>

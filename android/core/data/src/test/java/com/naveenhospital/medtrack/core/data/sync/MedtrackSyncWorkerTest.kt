@@ -1038,6 +1038,7 @@ class MedtrackSyncWorkerTest {
 
     private suspend fun assertFollowUpFieldsPreserved() {
         val case = database.caseDao().caseById(ACCOUNT_ID, "42")
+        assertEquals("MT-000042", case?.mtno)
         assertEquals("Overdue · EDD 2026-09-01", case?.followUpLabel)
         assertEquals("Referral · 2026-09-02 · Confirmed · Synthetic clinic", case?.ancOutcomeSummary)
         assertEquals("2026-09-02T10:00:00Z", case?.serverUpdatedAt)
@@ -1247,6 +1248,7 @@ private class FakeSyncApi(
                 outcomeLabel = "Referral", outcomeDate = "2026-09-02", reason = "Confirmed",
                 referralDestination = "Synthetic clinic"),
             updatedAt = "2026-09-02T10:00:00Z",
+            mtno = "MT-000042",
             uhid = "UH-SERVER-42",
             name = "Server Patient",
             age = 30,

@@ -118,6 +118,34 @@ class MedtrackRepositoryTest {
     }
 
     @Test
+    fun editPrefillMapsReadOnlyMtnoWithOptionalHospitalId() = runTest {
+        val api = FakeMedtrackApi()
+        api.editFormResponse = com.naveenhospital.medtrack.core.network.model.CaseEditFormDto(
+            canEdit = true,
+            case = CaseEditCaseDto(mtno = "MT-000042", id = 42, baseUpdatedAt = "v1", uhid = "", surgeryDone = false),
+        )
+        val prefill = repository(api).loadCaseEditForm("42")
+        assertEquals("MT-000042", prefill.mtno)
+        assertEquals("", prefill.uhid)
+    }
+
+    @Test
+    fun identityRefreshFollowsMergeAndUndoWithoutChangingCaseKey() = runTest {
+        val api = FakeMedtrackApi(beforeCaseDetail = {})
+        val initial = api.caseDetail("42")
+        val repository = repository(api)
+        for (mtno in listOf("MT-000042", "MT-000099", "MT-000042")) {
+            api.detailResponse = initial.copy(case = initial.case.copy(mtno = mtno, uhid = ""))
+            repository.refreshCaseDetail("42")
+            val cached = database.caseDao().caseById(ACCOUNT_ID, "42")!!
+            assertEquals(mtno, cached.mtno)
+            assertEquals("", cached.uhid)
+            assertEquals(mtno, repository.observeCase("42").first()!!.mtno)
+            assertNull(database.caseDao().caseById("other", "42"))
+        }
+    }
+
+    @Test
     fun invalidCursorResetStillPurgesOwnerHistory() = runTest {
         val detail = FakeMedtrackApi(beforeCaseDetail = {}).caseDetail("42")
         val api = FakeMedtrackApi(
@@ -137,6 +165,16 @@ class MedtrackRepositoryTest {
         repository.loadNextCases(query = "Test")
         assertTrue(repository.observeCallLogs("42").first().isEmpty())
         assertEquals(listOf(null, "expired", null), api.caseSearchRequests.map { it.cursor })
+    }
+
+    @Test
+    fun addingUhidUsesOnlyOriginalUhidBaselineAndNeverMtno() {
+        val baseline = CaseEditCaseDto(mtno = "MT-000042", id = 42, baseUpdatedAt = "v1", patientMode = "new", category = 2, uhid = "", surgeryDone = false)
+        val input = NewCaseInput(patientMode = "new", categoryId = 2, categoryName = "Medicine", uhid = "UH-NEW", surgeryDone = false)
+        val request = input.toUpdateRequestDto("identity-edit", baseline)
+        assertEquals(PatchField.Value("UH-NEW"), request.uhid)
+        assertEquals(mapOf("uhid" to ""), request.baseValues)
+        assertEquals(PatchField.Omitted, request.useTemporaryUhid)
     }
 
     @Test
@@ -433,7 +471,7 @@ class MedtrackRepositoryTest {
                     nextCursor = null,
                     results = listOf(
                         PatientLookupDto(id = 1, uhid = "UH-001", name = "First"),
-                        PatientLookupDto(id = 2, uhid = "UH-002", name = "Second"),
+                        PatientLookupDto(id = 2, mtno = "MT-000002", uhid = "", name = "Second"),
                     ),
                 ),
             ),
@@ -443,6 +481,8 @@ class MedtrackRepositoryTest {
         val results = repository.searchPatients("  UH-0  ")
 
         assertEquals(listOf(1L, 2L), results.map { it.id })
+        assertEquals("MT-000002", results.last().mtno)
+        assertEquals("", results.last().uhid)
         assertEquals(listOf(null, "opaque-page-two"), api.patientSearchRequests.map { it.cursor })
         assertTrue(api.patientSearchRequests.all { it.query == "UH-0" && it.pageSize == 20 })
     }
@@ -1042,6 +1082,7 @@ class MedtrackRepositoryTest {
 private class FakeMedtrackApi(
     var beforeListCases: (suspend () -> Unit)? = null,
     var beforeSearchCases: (suspend (CaseSearchRequestDto) -> Unit)? = null,
+    var editFormResponse: com.naveenhospital.medtrack.core.network.model.CaseEditFormDto? = null,
     var detailResponse: CaseDetailDto? = null,
     var patchError: Throwable? = null,
     var beforeLogCall: (suspend () -> Unit)? = null,
@@ -1145,7 +1186,7 @@ private class FakeMedtrackApi(
     }
     override suspend fun caseFormMetadata(): com.naveenhospital.medtrack.core.network.model.CaseFormMetadataDto = unused()
     override suspend fun taskFormMetadata(): com.naveenhospital.medtrack.core.network.model.TaskFormMetadataDto = unused()
-    override suspend fun caseEditForm(caseId: String): com.naveenhospital.medtrack.core.network.model.CaseEditFormDto = unused()
+    override suspend fun caseEditForm(caseId: String): com.naveenhospital.medtrack.core.network.model.CaseEditFormDto = editFormResponse ?: unused()
     override suspend fun ancAction(caseId: String, request: Map<String, Any>) =
         com.naveenhospital.medtrack.core.network.model.CaseUpdateResponseDto(
             message = "ANC action recorded.", caseId = 42, case = sampleCaseSummary(),

@@ -1019,7 +1019,7 @@ private fun CasesSearchBar(
                     Box {
                         if (value.isBlank()) {
                             Text(
-                                text = "Search patient, UHID, phone",
+                                text = "Search name, MTNO, UHID, phone",
                                 color = MedtrackColors.Faint,
                                 style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp),
                                 fontWeight = FontWeight.Medium,
@@ -1533,11 +1533,12 @@ private fun LatestVitalMetric?.vitalTone(): VitalTone {
 private fun String.firstNumber(): Float? =
     Regex("""\d+(\.\d+)?""").find(this)?.value?.toFloatOrNull()
 
-private fun PatientCase.matchesCaseSearch(query: String): Boolean {
+internal fun PatientCase.matchesCaseSearch(query: String): Boolean {
     val needle = query.trim()
     if (needle.isBlank()) return true
     return listOfNotNull(
         patientName,
+        mtno,
         uhid,
         phoneNumber,
         place,
@@ -1559,13 +1560,15 @@ private fun PatientCase.matchesCaseFilter(filter: String): Boolean =
 private fun PatientCase.riskReasonCount(): Int =
     highRiskReasons.count { it.isNotBlank() }.coerceAtLeast(1)
 
-private fun PatientCase.dedupeKey(): String =
-    uhid.takeIf { it.isNotBlank() }
-        ?: listOfNotNull(patientName.lowercase(), age?.toString(), sexLabel?.lowercase()).joinToString("|")
+internal fun PatientCase.dedupeKey(): String =
+    mtno.takeIf { it.isNotBlank() }?.let { "mtno:$it" }
+        ?: uhid.takeIf { it.isNotBlank() }?.let { "uhid:$it" }
+        ?: "case:$id"
 
 private fun PatientCase.identityLine(): String =
     listOfNotNull(
-        uhid,
+        mtno.takeIf { it.isNotBlank() },
+        uhid.takeIf { it.isNotBlank() },
         age?.let { "${it}y" },
         sexLabel,
         place,
@@ -1573,6 +1576,7 @@ private fun PatientCase.identityLine(): String =
 
 private fun PatientCase.caseListIdentityLine(): String =
     listOfNotNull(
+        mtno.takeIf { it.isNotBlank() },
         uhid.takeIf { it.isNotBlank() },
         sexLabel
             ?.trim()

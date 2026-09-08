@@ -1461,6 +1461,7 @@ private fun CaseFormMetadataDto.toDomain(): CaseFormMetadata = CaseFormMetadata(
 )
 
 private fun PatientLookupDto.toDomain(): PatientLookup = PatientLookup(
+    mtno = mtno,
     id = id,
     uhid = uhid,
     name = name,
@@ -1654,6 +1655,7 @@ private fun CaseEditFormDto.toDomain(): CaseEditPrefill {
         reviewFrequencies = reviewFrequencies.toChoices(),
     )
     return CaseEditPrefill(
+        mtno = case.mtno,
         canEdit = canEdit,
         metadata = metadata,
         patientMode = case.patientMode ?: "existing",
@@ -1786,6 +1788,7 @@ fun pendingVitalId(clientWriteId: String): String = "pending-$clientWriteId"
 
 private fun CaseSummaryDto.toEntity(ownerAccountId: String): CaseEntity =
     CaseEntity(
+        mtno = mtno,
         followUpLabel = listOfNotNull(followUp?.label, followUp?.effectiveEdd?.let { "EDD $it" },
             "EDD missing — review needed".takeIf { followUp?.eddMissing == true }).filter { it.isNotBlank() }.joinToString(" · "),
         ancOutcomeSummary = listOfNotNull(followUp?.outcomeLabel, followUp?.outcomeDate,
@@ -1815,6 +1818,7 @@ private fun CaseSummaryDto.toEntity(ownerAccountId: String): CaseEntity =
 
 private fun CaseEntity.toDomain(): PatientCase =
     PatientCase(
+        mtno = mtno,
         followUpLabel = followUpLabel,
         ancOutcomeSummary = ancOutcomeSummary,
         serverUpdatedAt = serverUpdatedAt,

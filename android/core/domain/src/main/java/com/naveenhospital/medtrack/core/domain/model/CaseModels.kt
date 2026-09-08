@@ -15,6 +15,7 @@ enum class CaseStatus(val label: String) {
 }
 
 data class PatientCase(
+    val mtno: String = "",
     val followUpLabel: String = "",
     val ancOutcomeSummary: String = "",
     val serverUpdatedAt: String = "",

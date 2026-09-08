@@ -60,7 +60,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
 python_command="${PYTHON_COMMAND:-python3}"
-for command_name in comm docker git mktemp "$python_command" realpath sha256sum sort tar; do
+for command_name in comm docker git mktemp "$python_command" realpath sha256sum sort sync tar; do
   if ! command -v "$command_name" >/dev/null 2>&1; then
     echo "Missing required command: $command_name" >&2
     exit 1
@@ -91,6 +91,54 @@ stage_dir=""
 scratch_db=""
 rollback_verify_db=""
 production_switched=0
+identity_fenced_database=""
+
+identity_schema_present() {
+  local target_db="$1" present
+  present="$("${compose[@]}" exec -T db psql -v ON_ERROR_STOP=1 --tuples-only --no-align \
+    --username="$database_user" --dbname="$target_db" \
+    --command="SELECT CASE WHEN to_regclass('public.patients_patientidentityallocator') IS NOT NULL THEN 1 ELSE 0 END" | tr -d '[:space:]')"
+  [[ "$present" == 0 || "$present" == 1 ]] || { echo "Cannot establish identity schema state" >&2; return 1; }
+  printf '%s' "$present"
+}
+
+release_identity_fence() {
+  [[ -n "$identity_fenced_database" ]] || return 0
+  "${compose[@]}" exec -T db psql -v ON_ERROR_STOP=1 --username="$database_user" --dbname=postgres \
+    --command="ALTER DATABASE \"$identity_fenced_database\" RESET default_transaction_read_only;" >/dev/null
+  identity_fenced_database=""
+}
+
+carry_forward_identity() {
+  local source_db="$1" target_db="$2" checkpoint_file="$3" source_identity target_identity digest
+  source_identity="$(identity_schema_present "$source_db")" || return 1
+  target_identity="$(identity_schema_present "$target_db")" || return 1
+  if [[ "$source_identity" == 0 && "$target_identity" == 0 ]]; then return 0; fi
+  if [[ "$source_identity" != 1 || "$target_identity" != 1 ]]; then
+    echo "Identity activation requires compatible outgoing and target ledgers; an older snapshot alone cannot prove later issuance" >&2
+    return 1
+  fi
+  # Web is stopped by the caller. Fence new ordinary writers and terminate
+  # existing connections before the final capture. Only this controlled
+  # checkpoint process overrides read-only to acquire the allocator lock.
+  identity_fenced_database="$source_db"
+  "${compose[@]}" exec -T db psql -v ON_ERROR_STOP=1 --username="$database_user" --dbname=postgres \
+    --command="ALTER DATABASE \"$source_db\" SET default_transaction_read_only = on;" \
+    --command="SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$source_db' AND pid <> pg_backend_pid();" >/dev/null || return 1
+  [[ ! -e "$checkpoint_file" ]] || { echo "Refusing to replace an outgoing identity checkpoint" >&2; return 1; }
+  "${compose[@]}" run --rm --no-deps -T -e DATABASE_URL= -e POSTGRES_DB="$source_db" \
+    -e 'PGOPTIONS=-c default_transaction_read_only=off' web python manage.py patient_identity_checkpoint export --output - \
+    > "$checkpoint_file" || return 1
+  [[ -s "$checkpoint_file" ]] || { echo "Outgoing identity checkpoint is unavailable; write activation denied" >&2; return 1; }
+  chmod 0600 "$checkpoint_file"
+  sync -f "$checkpoint_file" || return 1
+  digest="$(sha256sum "$checkpoint_file" | awk '{print $1}')"
+  "${compose[@]}" run --rm --no-deps -T -e DATABASE_URL= -e POSTGRES_DB="$target_db" \
+    -e 'PGOPTIONS=-c default_transaction_read_only=off' web python manage.py patient_identity_checkpoint apply --input - \
+    --expected-sha256 "$digest" < "$checkpoint_file" || return 1
+  "${compose[@]}" run --rm --no-deps -T -e DATABASE_URL= -e POSTGRES_DB="$target_db" web \
+    python manage.py verify_patient_identity || return 1
+}
 
 db_exists() {
   local target_db="$1"
@@ -254,10 +302,20 @@ perform_database_rollback() {
   echo "Restore activation failed; reverting to the verified rollback database" >&2
   "${compose[@]}" stop caddy web >/dev/null 2>&1 || true
   existing_database="$(db_exists "$database_name")" || recovery_status=1
+  (( recovery_status == 0 )) || return 1
   if [[ "$existing_database" == "1" ]]; then
+    carry_forward_identity "$database_name" "$rollback_database" \
+      "$receipt_dir/outgoing-rollback-identity-$(date -u +%Y%m%d%H%M%S)-$$.json" || return 1
     rename_database "$database_name" "$failed_database" || recovery_status=1
+    if [[ -n "$identity_fenced_database" ]]; then identity_fenced_database="$failed_database"; fi
+  elif [[ "$(identity_schema_present "$rollback_database")" != 0 ]]; then
+    echo "Outgoing identity checkpoint is unavailable; rollback write activation denied" >&2
+    return 1
   fi
+  (( recovery_status == 0 )) || return 1
   rename_database "$rollback_database" "$database_name" || recovery_status=1
+  (( recovery_status == 0 )) || return 1
+  release_identity_fence || return 1
   "${compose[@]}" up -d --no-build db web caddy || recovery_status=1
   wait_for_service_health db || recovery_status=1
   wait_for_service_health web || recovery_status=1
@@ -273,8 +331,14 @@ recover_restore_switch_failure() {
     echo "Restore switch failed after retaining production; restoring its original database name" >&2
     rename_database "$rollback_database" "$database_name"
     recovery_exit=$?
+    if [[ -n "$identity_fenced_database" ]]; then identity_fenced_database="$database_name"; fi
   else
     echo "Restore switch failed while quiescing; restarting the prior release" >&2
+  fi
+  release_identity_fence || recovery_exit=1
+  if (( recovery_exit != 0 )); then
+    echo "CRITICAL: identity write fence recovery failed; services remain stopped" >&2
+    exit "$original_exit"
   fi
   "${compose[@]}" up -d --no-build db web caddy || recovery_exit=1
   wait_for_service_health db || recovery_exit=1
@@ -525,6 +589,7 @@ create_empty_database() {
 verify_dump_in_scratch() {
   local dump_file="$1"
   local target_db="$2"
+  local restored_identity_schema
   create_empty_database "$target_db"
   "${compose[@]}" exec -T db pg_restore --exit-on-error --no-owner --no-privileges \
     --username="$database_user" --dbname="$target_db" < "$dump_file"
@@ -564,6 +629,10 @@ verify_dump_in_scratch() {
     restored_audit_max_id=0
   fi
   "${compose[@]}" run --rm --no-deps -e DATABASE_URL= -e POSTGRES_DB="$target_db" web python manage.py migrate --check
+  restored_identity_schema="$(identity_schema_present "$target_db")" || return 1
+  if [[ "$restored_identity_schema" == 1 ]]; then
+    "${compose[@]}" run --rm --no-deps -T -e DATABASE_URL= -e POSTGRES_DB="$target_db" web python manage.py verify_patient_identity
+  fi
   "${compose[@]}" run --rm --no-deps -e DATABASE_URL= -e POSTGRES_DB="$target_db" web python manage.py check --deploy --fail-level ERROR
   "${compose[@]}" run --rm --no-deps -e DATABASE_URL= -e POSTGRES_DB="$target_db" web python -c \
     "import os; assert os.environ.get('MEDTRACK_IMAGE_REVISION') == '$expected_commit'"
@@ -659,12 +728,15 @@ verify_application_images
 restore_switch_state=0
 trap 'recover_restore_switch_failure $?' ERR
 "${compose[@]}" stop caddy web
+carry_forward_identity "$database_name" "$scratch_db" "$rollback_dir/outgoing-identity-checkpoint.json"
 rename_database "$database_name" "$rollback_database"
+if [[ -n "$identity_fenced_database" ]]; then identity_fenced_database="$rollback_database"; fi
 restore_switch_state=1
 rename_database "$scratch_db" "$database_name"
 production_switched=1
 scratch_db=""
 trap - ERR
+release_identity_fence
 
 activation_ok=1
 "${compose[@]}" up -d db web caddy || activation_ok=0

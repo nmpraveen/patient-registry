@@ -71,6 +71,8 @@ elif [[ "$joined" == *"FROM pg_tables"* ]]; then
   echo "5"
 elif [[ "$joined" == *"COPY (SELECT app"* ]]; then
   printf 'contenttypes.0001_initial\npatients.0001_initial\npatients.0037_backend_auth_clinical_security\n'
+elif [[ "$joined" == *"to_regclass('public.patients_patientidentityallocator')"* ]]; then
+  echo 0
 elif [[ "$joined" == *"to_regclass"* ]]; then
   echo 1
 elif [[ "$joined" == *"pg_trigger"* ]]; then

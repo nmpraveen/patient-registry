@@ -27,6 +27,39 @@ class ApiContractDtoTest {
     private val moshi = MedtrackNetwork.contractMoshi()
 
     @Test
+    fun mtnoIsAdditiveAcrossSearchDetailAndEditWithBlankUhid() {
+        val cases = moshi.adapter(CaseSearchResponseDto::class.java)
+        val patients = moshi.adapter(PatientSearchResponseDto::class.java)
+        val edit = moshi.adapter(CaseEditFormDto::class.java)
+        assertEquals("", cases.fromJson(CASE_SEARCH_PAGE)!!.results.single().mtno)
+        assertEquals("", patients.fromJson(PATIENT_SEARCH_PAGE)!!.results.single().mtno)
+        assertEquals("", edit.fromJson(CURRENT_CASE_EDIT_RESPONSE)!!.case.mtno)
+        fun identified(json: String) = json.replace("\"uhid\": \"TEST-0001\"", "\"uhid\": \"\", \"mtno\": \"MT-000042\"")
+        val summary = cases.fromJson(identified(CASE_SEARCH_PAGE))!!.results.single()
+        assertEquals("MT-000042", summary.mtno)
+        assertEquals("", summary.uhid)
+        assertEquals("MT-000042", patients.fromJson(identified(PATIENT_SEARCH_PAGE))!!.results.single().mtno)
+        assertEquals("MT-000042", edit.fromJson(identified(CURRENT_CASE_EDIT_RESPONSE))!!.case.mtno)
+        val detail = moshi.adapter(com.naveenhospital.medtrack.core.network.model.CaseDetailDto::class.java)
+            .fromJson("{\"case\":" + moshi.adapter(com.naveenhospital.medtrack.core.network.model.CaseSummaryDto::class.java).toJson(summary) + ",\"tasks\":[]}")!!
+        assertEquals("MT-000042", detail.case.mtno)
+    }
+
+    @Test
+    fun blankUhidAndLegacyTemporaryRequestsNeverSendMtno() {
+        val adapter = moshi.adapter(com.naveenhospital.medtrack.core.network.model.CreateCaseRequestDto::class.java)
+        val current = com.naveenhospital.medtrack.core.network.model.CreateCaseRequestDto(patientMode = "new", category = 2, uhid = "", clientWriteId = "blank-uhid")
+        val currentJson = adapter.toJson(current)
+        assertFalse(currentJson.contains("mtno"))
+        assertFalse(adapter.fromJson(currentJson)!!.useTemporaryUhid)
+        val legacy = adapter.fromJson("""{"patient_mode":"new","category":2,"use_temporary_uhid":true,"uhid":"TMP-LEGACY","client_write_id":"old-write"}""")!!
+        assertTrue(legacy.useTemporaryUhid)
+        assertEquals("TMP-LEGACY", legacy.uhid)
+        assertEquals("old-write", legacy.clientWriteId)
+        assertFalse(adapter.toJson(legacy).contains("mtno"))
+    }
+
+    @Test
     fun followUpFieldsAreAdditiveForOlderServersAndPreservedWhenPresent() {
         val adapter = moshi.adapter(CaseSearchResponseDto::class.java)
         val old = adapter.fromJson(CASE_SEARCH_PAGE)!!
@@ -63,6 +96,7 @@ class ApiContractDtoTest {
             clientWriteId = PatchField.Value("contract-test-write"),
         )
         val json = moshi.adapter(UpdateCaseRequestDto::class.java).toJson(request)
+        assertFalse(json.contains("mtno"))
 
         assertTrue(json.contains("\"surgery_done\":true"))
         assertTrue(json.contains("\"diagnosis\":\"Post-operative review\""))
@@ -160,7 +194,7 @@ class ApiContractDtoTest {
         val responseObject = requireNotNull(moshi.adapter(Map::class.java).fromJson(encodedResponse))
         val resultObject = (responseObject["results"] as List<*>).single() as Map<*, *>
         assertEquals(setOf("next_cursor", "results"), responseObject.keys)
-        assertEquals(setOf("id", "uhid", "name"), resultObject.keys)
+        assertEquals(setOf("id", "mtno", "uhid", "name"), resultObject.keys)
         assertFalse(
             MedtrackApi::class.java.declaredMethods.any { method ->
                 method.getAnnotation(GET::class.java)?.value == "api/patients/"

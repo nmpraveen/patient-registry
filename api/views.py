@@ -1,3 +1,4 @@
+from patients.identity import patient_identifier_query, case_identifier_query
 import hashlib
 import json
 import re
@@ -34,6 +35,7 @@ from patients.models import (
     DepartmentConfig,
     Gender,
     NonCommunicableDisease,
+    Patient,
     ReviewFrequency,
     RoleSetting,
     SurgicalPathway,
@@ -439,6 +441,7 @@ def _serialize_case_row(case, *, user, today, theme_category_colors):
     can_complete = has_capability(user, "task_edit")
     return {
         "id": case.id,
+        "mtno": case.mtno,
         "uhid": case.uhid,
         "name": case.full_name or case.patient_name,
         "age": case.age,
@@ -520,7 +523,7 @@ class CaseListView(APIView):
         today = timezone.localdate()
         base_queryset = _apply_scope_filters(
             _visible_case_queryset(
-                worklist_queryset(Case.objects.select_related("category"))
+                worklist_queryset(Case.objects.select_related("category", "patient"))
             ),
             request,
             include_bucket=False,
@@ -573,6 +576,8 @@ class CaseListView(APIView):
                 {"message": "You do not have permission to create cases."},
                 status=status.HTTP_403_FORBIDDEN,
             )
+        if "mtno" in request.data or "identity_uuid" in request.data:
+            return Response({"message": "MTNO is allocated by the server and cannot be edited."}, status=400)
         write_serializer = ClientWriteSerializer(data=request.data)
         write_serializer.is_valid(raise_exception=True)
         replay_response = _idempotent_replay_response(
@@ -668,7 +673,7 @@ class CaseDetailView(APIView):
     )
     def get(self, request, pk):
         case = get_object_or_404(
-            _accessible_case_queryset(request.user, Case.objects.select_related("category")),
+            _accessible_case_queryset(request.user, Case.objects.select_related("category", "patient")),
             pk=pk,
         )
         payload = _build_case_detail_json_payload(case, user=request.user)
@@ -703,6 +708,8 @@ class CaseDetailView(APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
         get_object_or_404(_accessible_case_queryset(request.user), pk=pk)
+        if "mtno" in request.data or "identity_uuid" in request.data:
+            return Response({"message": "MTNO is allocated by the server and cannot be edited."}, status=400)
         control = PatchControlSerializer(data=request.data)
         control.is_valid(raise_exception=True)
         replay = _idempotent_replay_response(
@@ -808,6 +815,7 @@ def _case_edit_payload(case):
         "patient_mode": "existing",
         "selected_patient": case.patient_id,
         "use_temporary_uhid": bool(getattr(patient, "is_temporary_id", False)),
+        "mtno": case.mtno,
         "uhid": case.uhid,
         "prefix": case.prefix,
         "first_name": case.first_name,
@@ -960,6 +968,7 @@ def _idempotent_response(
     client_write_id = serializer.validated_data.get("client_write_id", "").strip()
     if not client_write_id:
         with transaction.atomic():
+            MobileDatasetState.objects.select_for_update().get_or_create(pk=1)
             locked_user = _lock_mobile_authorization_context(request.user)
             request.user = locked_user
             _authorize_idempotent_target(locked_user, operation, target_type, target_id, lock=True)
@@ -969,11 +978,11 @@ def _idempotent_response(
     binding = _idempotency_binding(request, operation, target_type, target_id)
     receipt_key = _idempotency_key_digest(client_write_id)
     with transaction.atomic():
+        dataset_state, _ = MobileDatasetState.objects.select_for_update().get_or_create(pk=1)
         purge_expired_mobile_receipts()
         locked_user = _lock_mobile_authorization_context(request.user)
         request.user = locked_user
         _authorize_idempotent_target(locked_user, operation, target_type, target_id, lock=True)
-        dataset_state, _ = MobileDatasetState.objects.select_for_update().get_or_create(pk=1)
         binding["authorization_hash"] = _authorization_hash(locked_user)
         binding["dataset_epoch"] = dataset_state.epoch
 
@@ -1048,11 +1057,11 @@ def _idempotent_replay_response(
     binding = _idempotency_binding(request, operation, target_type, target_id)
     receipt_key = _idempotency_key_digest(client_write_id)
     with transaction.atomic():
+        dataset_state, _ = MobileDatasetState.objects.select_for_update().get_or_create(pk=1)
         purge_expired_mobile_receipts()
         locked_user = _lock_mobile_authorization_context(request.user)
         request.user = locked_user
         _authorize_idempotent_target(locked_user, operation, target_type, target_id, lock=True)
-        dataset_state, _ = MobileDatasetState.objects.select_for_update().get_or_create(pk=1)
         receipt = MobileWriteReceipt.objects.select_for_update().filter(
             user=locked_user,
             client_write_id=receipt_key,
@@ -1141,8 +1150,15 @@ def _authorize_idempotent_target(user, operation, target_type, target_id, *, loc
     if not user.is_active or not has_capability(user, capability):
         raise PermissionDenied("Current authorization does not permit this operation.")
     if target_type == "case":
+        initial = None
+        if lock and operation == "case_update":
+            initial = get_object_or_404(_accessible_case_queryset(user), pk=target_id)
+            if initial.patient_id:
+                Patient.objects.select_for_update().filter(pk=initial.patient_id).first()
         base = Case.objects.select_for_update() if lock else Case.objects.all()
         target = get_object_or_404(_accessible_case_queryset(user, base), pk=target_id)
+        if initial is not None and target.patient_id != initial.patient_id:
+            raise PermissionDenied("Case identity changed; refresh before editing.")
         if lock:
             list(Task.objects.select_for_update().filter(case_id=target.pk).order_by("pk"))
         return target
@@ -1217,7 +1233,7 @@ def _replay_receipt(receipt, user):
     result_id = receipt.result_id
     if receipt.operation in {"case_create", "case_update", "anc_action"}:
         case = get_object_or_404(
-            _accessible_case_queryset(user, Case.objects.select_related("category")),
+            _accessible_case_queryset(user, Case.objects.select_related("category", "patient")),
             pk=result_id,
         )
         payload = {
@@ -1385,7 +1401,7 @@ class TaskCreateView(APIView):
         write_serializer = ClientWriteSerializer(data=request.data)
         write_serializer.is_valid(raise_exception=True)
         case = get_object_or_404(
-            _accessible_case_queryset(request.user, Case.objects.select_related("category")),
+            _accessible_case_queryset(request.user, Case.objects.select_related("category", "patient")),
             pk=pk,
         )
         form = TaskForm(request.data)
@@ -1739,7 +1755,7 @@ class CallOutcomeView(APIView):
 
         def apply_write():
             case = get_object_or_404(
-                _accessible_case_queryset(request.user, Case.objects.select_related("category")),
+                _accessible_case_queryset(request.user, Case.objects.select_related("category", "patient")),
                 pk=pk,
             )
             task = None
@@ -1820,7 +1836,7 @@ class CaseVitalsView(APIView):
 
         def apply_write():
             case = get_object_or_404(
-                _accessible_case_queryset(request.user, Case.objects.select_related("category")),
+                _accessible_case_queryset(request.user, Case.objects.select_related("category", "patient")),
                 pk=pk,
             )
             vital, warning = serializer.create_vital(case=case, user=request.user)
@@ -2203,6 +2219,7 @@ class CaseFormMetadataView(APIView):
 def _serialize_patient_row(patient):
     return {
         "id": patient.id,
+        "mtno": patient.mtno,
         "uhid": patient.uhid,
         "name": patient.patient_name or patient.full_name,
     }
@@ -2220,6 +2237,8 @@ def _normalize_patient_search_query(query):
 def _patient_search_class(normalized_query, normalized_phone):
     if normalized_phone:
         return "phone_exact"
+    if normalized_query.upper().startswith("MT-"):
+        return "mtno_prefix"
     if normalized_query.upper().startswith(("UH-", "TMP-", "TN-")):
         return "uhid_prefix"
     return "name_or_uhid_prefix"
@@ -2328,7 +2347,7 @@ class PatientSearchView(APIView):
             "phone": normalized_phone,
             "search_class": _patient_search_class(normalized_query, normalized_phone),
             "page_size": page_size,
-            "order": ["uhid", "id"],
+            "order": ["id"],
         }
         dataset_state, _ = MobileDatasetState.objects.get_or_create(pk=1)
         cursor_context = {
@@ -2350,13 +2369,11 @@ class PatientSearchView(APIView):
                     context=cursor_context,
                 )
                 position = cursor_payload["position"]
-                position_uhid = str(position.get("uhid") or "")
                 position_id = int(position.get("id"))
                 snapshot_max_id = int(cursor_payload.get("snapshot", {}).get("max_id"))
-                if not position_uhid or position_id < 1 or snapshot_max_id < 1:
+                if position_id < 1 or snapshot_max_id < 1:
                     raise CursorValidationError("Invalid patient search cursor position.")
             else:
-                position_uhid = ""
                 position_id = 0
                 snapshot_max_id = 0
         except (CursorValidationError, KeyError, TypeError, ValueError) as exc:
@@ -2383,19 +2400,17 @@ class PatientSearchView(APIView):
             )
         else:
             prefix_filters = (
-                Q(uhid__istartswith=normalized_query)
+                patient_identifier_query(normalized_query, lookup="istartswith")
                 | Q(first_name__istartswith=normalized_query)
                 | Q(last_name__istartswith=normalized_query)
                 | Q(patient_name__istartswith=normalized_query)
             )
-        queryset = queryset.filter(prefix_filters).order_by("uhid", "id")
+        queryset = queryset.filter(prefix_filters).order_by("id")
         if not cursor_token:
             snapshot_max_id = queryset.aggregate(max_id=Max("id"))["max_id"] or 0
         queryset = queryset.filter(id__lte=snapshot_max_id)
-        if position_uhid:
-            queryset = queryset.filter(
-                Q(uhid__gt=position_uhid) | Q(uhid=position_uhid, id__gt=position_id)
-            )
+        if position_id:
+            queryset = queryset.filter(id__gt=position_id)
 
         rows = list(queryset[: page_size + 1])
         page = rows[:page_size]
@@ -2406,7 +2421,7 @@ class PatientSearchView(APIView):
                 kind="patient_search",
                 binding=binding,
                 context=cursor_context,
-                position={"uhid": page[-1].uhid, "id": page[-1].id},
+                position={"id": page[-1].id},
                 snapshot={"max_id": snapshot_max_id},
             )
         _record_patient_search_audit(
@@ -2564,7 +2579,7 @@ class CaseSearchView(APIView):
 
         queryset = _accessible_case_queryset(
             request.user,
-            worklist_queryset(Case.objects.select_related("category")),
+            worklist_queryset(Case.objects.select_related("category", "patient")),
         )
         if not cursor_token:
             snapshot_max_id = queryset.aggregate(max_id=Max("id"))["max_id"] or 0
@@ -2572,7 +2587,7 @@ class CaseSearchView(APIView):
             match = Q(phone_number=normalized_phone) | Q(alternate_phone_number=normalized_phone)
         else:
             match = (
-                Q(uhid__istartswith=normalized_query)
+                case_identifier_query(normalized_query, lookup="istartswith")
                 | Q(first_name__istartswith=normalized_query)
                 | Q(last_name__istartswith=normalized_query)
                 | Q(patient_name__istartswith=normalized_query)

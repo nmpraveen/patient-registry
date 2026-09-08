@@ -96,6 +96,20 @@ class TemporaryPatientIDSequence(models.Model):
         ordering = ["allocation_date"]
 
 
+class PatientIdentityAllocator(models.Model):
+    high_water = models.PositiveBigIntegerField(default=0)
+
+    class Meta:
+        constraints = [models.CheckConstraint(condition=models.Q(pk=1), name="patient_identity_singleton")]
+
+
+class PatientIdentityIssuance(models.Model):
+    """Permanent, demographic-free reservation; deliberately has no Patient FK."""
+
+    mtno = models.CharField(max_length=32, primary_key=True)
+    identity_uuid = models.UUIDField(unique=True)
+
+
 def normalize_backup_schedule_time(value):
     if value in (None, ""):
         raise ValueError("Backup times must use HH:MM 24-hour format.")
@@ -403,7 +417,9 @@ class ThemeSettings(models.Model):
 
 
 class Patient(MandatoryAuditModelMixin, models.Model):
-    uhid = models.CharField(max_length=64, unique=True)
+    mtno = models.CharField(max_length=32, unique=True, editable=False, blank=True)
+    identity_uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    uhid = models.CharField(max_length=64, blank=True, default="")
     is_temporary_id = models.BooleanField(default=False)
     merged_into = models.ForeignKey(
         "self",
@@ -435,6 +451,11 @@ class Patient(MandatoryAuditModelMixin, models.Model):
 
     class Meta:
         ordering = ["patient_name", "uhid"]
+        constraints = [
+            models.UniqueConstraint(fields=["uhid"], condition=~models.Q(uhid=""), name="patient_nonblank_uhid_unique", violation_error_message="Patient with this UHID already exists. Select the existing patient."),
+            models.CheckConstraint(condition=~models.Q(mtno=""), name="patient_mtno_present"),
+            models.CheckConstraint(condition=~models.Q(uhid__iregex=r"^\s*MT-[0-9]+\s*$"), name="patient_uhid_not_mtno"),
+        ]
         indexes = [
             models.Index(fields=["first_name", "last_name"]),
             models.Index(fields=["patient_name"]),
@@ -461,6 +482,8 @@ class Patient(MandatoryAuditModelMixin, models.Model):
 
     def clean(self):
         self.uhid = " ".join((self.uhid or "").split()).upper()
+        from .identity import validate_hospital_uhid
+        validate_hospital_uhid(self.uhid)
         phone_errors = {}
         if self.phone_number and (not self.phone_number.isdigit() or len(self.phone_number) != 10):
             phone_errors["phone_number"] = "Phone number must be exactly 10 digits."
@@ -514,8 +537,25 @@ class Patient(MandatoryAuditModelMixin, models.Model):
             updated_at=timezone.now(),
         )
 
+    def validate_constraints(self, exclude=None):
+        exclude = set(exclude or ())
+        if self._state.adding and not self.mtno:
+            exclude.add("mtno")  # Allocation is a save-time effect, never form validation.
+        return super().validate_constraints(exclude=exclude)
+
     @mandatory_audit_atomic
     def save(self, *args, **kwargs):
+        from .identity import reserve_patient_identity, validate_hospital_uhid
+
+        using = kwargs.get("using") or self._state.db or "default"
+        validate_hospital_uhid(self.uhid)
+        previous = None
+        if self._state.adding:
+            reserve_patient_identity(self, using=using)
+        else:
+            previous = type(self).objects.using(using).filter(pk=self.pk).values("mtno", "identity_uuid", "uhid", "merged_into_id").get()
+            if previous["mtno"] != self.mtno or previous["identity_uuid"] != self.identity_uuid:
+                raise ValidationError("Patient MTNO and identity binding are immutable.")
         self.uhid = " ".join((self.uhid or "").split()).upper()
         self.is_temporary_id = is_temporary_patient_uhid(self.uhid)
         if self.date_of_birth:
@@ -526,9 +566,13 @@ class Patient(MandatoryAuditModelMixin, models.Model):
         self._normalize_identity_fields()
         super().save(*args, **kwargs)
         self.sync_case_mirrors()
+        if previous and (previous["uhid"] != self.uhid or previous["merged_into_id"] != self.merged_into_id):
+            # Restart identity search snapshots only; never revoke write receipts/outbox for a merge.
+            from api.models import MobileOpaqueCursor
+            MobileOpaqueCursor.objects.using(using).filter(kind__in=["patient_search", "case_search"]).delete()
 
     def __str__(self) -> str:
-        return f"{self.uhid} - {self.full_name or self.patient_name}"
+        return f"{self.mtno} - {self.full_name or self.patient_name}"
 
 
 def patient_merge_recovery_expires_at():
@@ -1210,11 +1254,16 @@ class Case(MandatoryAuditModelMixin, models.Model):
 
     class Meta:
         ordering = ["-updated_at"]
+        constraints = [models.CheckConstraint(condition=~models.Q(uhid__iregex=r"^\s*MT-[0-9]+\s*$"), name="case_uhid_not_mtno")]
         indexes = [
             models.Index(fields=["patient"]),
             models.Index(fields=["first_name", "last_name"]),
             models.Index(fields=["patient_name"]),
         ]
+
+    @property
+    def mtno(self):
+        return self.patient.mtno if self.patient_id else ""
 
     @property
     def identity_name(self):
@@ -1252,9 +1301,8 @@ class Case(MandatoryAuditModelMixin, models.Model):
             return patient
 
         normalized_uhid = " ".join((self.uhid or "").split()).upper()
-        if not normalized_uhid:
-            normalized_uhid = generate_temporary_patient_uhid()
-            self.uhid = normalized_uhid
+        if self.pk:
+            raise ValidationError({"patient": "Legacy case identity requires reconciliation before editing."})
 
         patient_defaults = {
             "prefix": self.prefix or "",
@@ -1270,10 +1318,16 @@ class Case(MandatoryAuditModelMixin, models.Model):
             "created_by": self.created_by,
             "is_temporary_id": is_temporary_patient_uhid(normalized_uhid),
         }
-        patient, created = Patient.objects.select_for_update().get_or_create(
-            uhid=normalized_uhid,
-            defaults=patient_defaults,
-        )
+        if normalized_uhid:
+            # Allocate before taking Patient locks; new-patient writes share this order with imports.
+            from .identity import identity_allocation_lock
+            with identity_allocation_lock():
+                patient, created = Patient.objects.select_for_update().get_or_create(
+                    uhid=normalized_uhid, defaults=patient_defaults,
+                )
+        else:
+            patient = Patient.objects.create(uhid="", **patient_defaults)
+            created = True
         if not created:
             if patient.merged_into_id is not None:
                 raise ValidationError({"patient": "Merged patients cannot receive new cases."})

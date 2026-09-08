@@ -3,16 +3,20 @@ import io
 import json
 import subprocess
 import zipfile
+from copy import deepcopy
+from contextlib import contextmanager
 from datetime import date, datetime, timezone as dt_timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import Prefetch
 from django.utils import timezone
 from .anc_validation import validate_anc_outcome
+from .identity import validate_hospital_uhid
 
 from .models import (
     CallLog,
@@ -20,6 +24,7 @@ from .models import (
     CaseActivityLog,
     DepartmentConfig,
     Patient,
+    PatientMergeRecovery,
     PatientDataBackupSchedule,
     PatientDataBackupTrigger,
     Task,
@@ -30,8 +35,8 @@ from .models import (
 )
 
 
-BUNDLE_SCHEMA_VERSION = 3
-SUPPORTED_BUNDLE_SCHEMA_VERSIONS = {1, 2, 3}
+BUNDLE_SCHEMA_VERSION = 4
+SUPPORTED_BUNDLE_SCHEMA_VERSIONS = {1, 2, 3, 4}
 PATIENT_DATA_FILENAME = "patient_data.json"
 MANIFEST_FILENAME = "manifest.json"
 BACKUP_FILENAME_PREFIX = "patient-data-bundle"
@@ -145,14 +150,29 @@ def prune_backup_bundles(output_dir, *, keep, backup_kind=None):
     return to_remove
 
 
+@contextmanager
+def _replacement_lock():
+    from api.models import MobileDatasetState
+    from .identity import identity_allocation_lock
+
+    # API receipt, replay and unkeyed writes take this same gate before actor
+    # and target locks. Exports only need the allocator/Patient/Case order.
+    with transaction.atomic():
+        MobileDatasetState.objects.select_for_update().get_or_create(pk=1)
+        with identity_allocation_lock():
+            yield
+
+
 def import_bundle_bytes(bundle_bytes, *, keep=DEFAULT_BACKUP_KEEP):
     _, payload = load_bundle_archive(bundle_bytes)
-    safety_backup_path, _, _ = write_backup_bundle(
-        keep=keep,
-        trigger=PatientDataBackupTrigger.IMPORT_SAFETY,
-        backup_kind=BACKUP_KIND_IMPORT_SAFETY,
-    )
-    counts = _replace_patient_data(payload)
+    with _replacement_lock():
+        payload = _preflight_replacement(payload)
+        safety_backup_path, _, _ = write_backup_bundle(
+            keep=keep,
+            trigger=PatientDataBackupTrigger.IMPORT_SAFETY,
+            backup_kind=BACKUP_KIND_IMPORT_SAFETY,
+        )
+        counts = _replace_patient_data(payload)
     return {"counts": counts, "safety_backup_path": safety_backup_path}
 
 
@@ -235,6 +255,15 @@ def load_bundle_archive(bundle_bytes):
         raise BundleValidationError("Patient data file is not valid JSON.") from exc
 
     _validate_manifest_and_payload(manifest, payload, patient_data_bytes)
+    if manifest["schema_version"] < 4:
+        # A legacy manifest never establishes MTNO provenance, even if it has
+        # unrecognised identity fields from a newer exporter.
+        payload.pop("identity", None)
+        for patient in payload.get("patients", []):
+            for field in ("mtno", "identity_uuid", "merged_into_mtno"):
+                patient.pop(field, None)
+        for case in payload["cases"]:
+            case.pop("patient_mtno", None)
     return manifest, payload
 
 
@@ -253,7 +282,17 @@ def read_uploaded_bundle(uploaded_file):
 
 
 def build_patient_data_payload():
-    patients = Patient.objects.select_related("created_by", "merged_into").order_by("uhid")
+    from .identity import identity_allocation_lock
+
+    with identity_allocation_lock():
+        list(Patient.objects.select_for_update().order_by("pk").values_list("pk", flat=True))
+        list(Case.objects.select_for_update().order_by("pk").values_list("pk", flat=True))
+        return _build_patient_data_payload()
+
+
+def _build_patient_data_payload():
+    from .identity import identity_checkpoint
+    patients = Patient.objects.select_related("created_by", "merged_into").order_by("mtno")
     cases = (
         Case.objects.select_related("patient", "category", "created_by", "archived_by")
         .prefetch_related(
@@ -278,23 +317,20 @@ def build_patient_data_payload():
     )
 
     categories_by_name = {}
-    patient_payloads_by_uhid = {}
+    patient_payloads_by_mtno = {}
     serialized_cases = []
     for patient in patients:
-        patient_payloads_by_uhid[patient.uhid] = _serialize_patient(patient)
+        patient_payloads_by_mtno[patient.mtno] = _serialize_patient(patient)
     for case in cases:
         categories_by_name.setdefault(case.category.name, _serialize_category(case.category))
-        patient_uhid = case.patient.uhid if case.patient_id else (case.uhid or "")
-        if patient_uhid and patient_uhid not in patient_payloads_by_uhid:
-            patient_payloads_by_uhid[patient_uhid] = _serialize_patient(
-                case,
-                is_temporary_id=bool((case.uhid or "").startswith("TMP-")),
-            )
-        serialized_cases.append(_serialize_case(case, patient_uhid=patient_uhid))
+        if not case.patient_id:
+            raise BundleValidationError("Patient bundle export requires reconciliation of unlinked cases; use a full database backup.")
+        serialized_cases.append(_serialize_case(case))
 
     return {
+        "identity": {"scheme": "medtrack-mtno-v1", **identity_checkpoint()},
         "categories": [categories_by_name[name] for name in sorted(categories_by_name)],
-        "patients": [patient_payloads_by_uhid[uhid] for uhid in sorted(patient_payloads_by_uhid)],
+        "patients": [patient_payloads_by_mtno[mtno] for mtno in sorted(patient_payloads_by_mtno)],
         "cases": serialized_cases,
     }
 
@@ -329,15 +365,14 @@ def _serialize_category(category):
     }
 
 
-def _serialize_patient(patient_like, *, merged_into_uhid=None, is_temporary_id=None):
-    if merged_into_uhid is None:
-        merged_into_uhid = getattr(getattr(patient_like, "merged_into", None), "uhid", None)
-    if is_temporary_id is None:
-        is_temporary_id = getattr(patient_like, "is_temporary_id", False)
+def _serialize_patient(patient_like):
     return {
         "uhid": patient_like.uhid,
-        "is_temporary_id": bool(is_temporary_id),
-        "merged_into_uhid": merged_into_uhid,
+        "mtno": patient_like.mtno,
+        "identity_uuid": str(patient_like.identity_uuid),
+        "is_temporary_id": bool(patient_like.is_temporary_id),
+        "merged_into_mtno": getattr(patient_like.merged_into, "mtno", None),
+        "merged_into_uhid": getattr(patient_like.merged_into, "uhid", None),
         "prefix": getattr(patient_like, "prefix", ""),
         "first_name": getattr(patient_like, "first_name", ""),
         "last_name": getattr(patient_like, "last_name", ""),
@@ -355,11 +390,12 @@ def _serialize_patient(patient_like, *, merged_into_uhid=None, is_temporary_id=N
     }
 
 
-def _serialize_case(case, *, patient_uhid=None):
+def _serialize_case(case):
     return {
         "bundle_id": str(case.pk),
         "uhid": case.uhid,
-        "patient_uhid": patient_uhid or case.uhid,
+        "patient_mtno": case.patient.mtno,
+        "patient_uhid": case.patient.uhid,
         "prefix": case.prefix,
         "first_name": case.first_name,
         "last_name": case.last_name,
@@ -474,7 +510,7 @@ def _validate_manifest_and_payload(manifest, payload, patient_data_bytes):
     if not isinstance(manifest, dict):
         raise BundleValidationError("Backup manifest must be a JSON object.")
     schema_version = manifest.get("schema_version")
-    if schema_version not in SUPPORTED_BUNDLE_SCHEMA_VERSIONS:
+    if type(schema_version) is not int or schema_version not in SUPPORTED_BUNDLE_SCHEMA_VERSIONS:
         raise BundleValidationError(
             f"Backup schema version {schema_version} is not supported."
         )
@@ -499,7 +535,10 @@ def _validate_manifest_and_payload(manifest, payload, patient_data_bytes):
     expected_counts = manifest.get("counts")
     if not isinstance(expected_counts, dict):
         raise BundleValidationError("Backup manifest is missing record counts.")
-    actual_counts = compute_payload_counts(payload)
+    try:
+        actual_counts = compute_payload_counts(payload)
+    except (AttributeError, TypeError) as exc:
+        raise BundleValidationError("Patient data contains malformed record lists.") from exc
     if schema_version == 1 and patients is None:
         actual_counts = dict(actual_counts)
         actual_counts.pop("patients", None)
@@ -510,8 +549,10 @@ def _validate_manifest_and_payload(manifest, payload, patient_data_bytes):
 
     category_names = set()
     for category in categories:
+        if not isinstance(category, dict):
+            raise BundleValidationError("Every exported category must be a JSON object.")
         name = (category or {}).get("name")
-        if not name:
+        if not isinstance(name, str) or not name:
             raise BundleValidationError("Every exported category must include a name.")
         if name in category_names:
             raise BundleValidationError(f"Backup contains duplicate category definitions for {name}.")
@@ -527,20 +568,31 @@ def _validate_manifest_and_payload(manifest, payload, patient_data_bytes):
         if not isinstance(patient_data, dict):
             raise BundleValidationError("Every exported patient must be a JSON object.")
         uhid = patient_data.get("uhid")
-        if not uhid:
+        if not isinstance(uhid, str) or (not uhid and schema_version < 4):
             raise BundleValidationError("Every exported patient must include a UHID.")
-        if uhid in patient_uhids:
+        canonical_uhid = " ".join(uhid.split()).upper()
+        if uhid != canonical_uhid:
+            raise BundleValidationError("Patient UHID must be canonical; ambiguous normalization is not supported.")
+        _validate_hospital_identifier(uhid)
+        if uhid and uhid in patient_uhids:
             raise BundleValidationError(f"Backup contains duplicate patient definitions for {uhid}.")
         patient_uhids.add(uhid)
+
+    if schema_version == 4:
+        _validate_identity_graph(payload)
+    else:
+        _validate_legacy_graph(_normalize_payload_for_import(payload))
 
     seen_case_ids = set()
     for case_data in cases:
         if not isinstance(case_data, dict):
             raise BundleValidationError("Every exported case must be a JSON object.")
         uhid = case_data.get("uhid")
-        if not uhid:
+        if not isinstance(uhid, str) or (not uhid and schema_version < 4):
             raise BundleValidationError("Every exported case must include a UHID.")
         bundle_id = case_data.get("bundle_id")
+        if bundle_id is not None and (type(bundle_id) not in (str, int)):
+            raise BundleValidationError("Case bundle identifiers must be strings or integers.")
         if bundle_id:
             if bundle_id in seen_case_ids:
                 raise BundleValidationError(f"Backup contains duplicate case identifiers: {bundle_id}.")
@@ -555,7 +607,7 @@ def _validate_manifest_and_payload(manifest, payload, patient_data_bytes):
             )
 
         patient_uhid = case_data.get("patient_uhid") or uhid
-        if schema_version >= 2:
+        if schema_version in {2, 3}:
             if not patient_uhid:
                 raise BundleValidationError(f"Case {uhid} is missing a patient reference.")
             if patient_uhid not in patient_uhids:
@@ -575,11 +627,13 @@ def _validate_manifest_and_payload(manifest, payload, patient_data_bytes):
         ):
             if not isinstance(records, list):
                 raise BundleValidationError(f"Case {uhid} has an invalid {section_name} list.")
+            if any(not isinstance(record, dict) for record in records):
+                raise BundleValidationError(f"Case {uhid} has an invalid {section_name} record.")
 
         task_ids = set()
         for task_data in tasks:
             bundle_id = (task_data or {}).get("bundle_id")
-            if not bundle_id:
+            if not bundle_id or type(bundle_id) not in (str, int):
                 raise BundleValidationError(f"Case {uhid} contains a task without a bundle identifier.")
             if bundle_id in task_ids:
                 raise BundleValidationError(f"Case {uhid} contains duplicate task identifiers.")
@@ -587,17 +641,139 @@ def _validate_manifest_and_payload(manifest, payload, patient_data_bytes):
 
         for log_data in activity_logs:
             task_bundle_id = (log_data or {}).get("task_bundle_id")
-            if task_bundle_id and task_bundle_id not in task_ids:
+            if task_bundle_id and (type(task_bundle_id) not in (str, int) or task_bundle_id not in task_ids):
                 raise BundleValidationError(
                     f"Case {uhid} contains an activity log referencing an unknown task identifier."
                 )
 
         for call_data in call_logs:
             task_bundle_id = (call_data or {}).get("task_bundle_id")
-            if task_bundle_id and task_bundle_id not in task_ids:
+            if task_bundle_id and (type(task_bundle_id) not in (str, int) or task_bundle_id not in task_ids):
                 raise BundleValidationError(
                     f"Case {uhid} contains a call log referencing an unknown task identifier."
                 )
+
+
+def _validate_aliases(patients_by_key, alias_field):
+    for key, patient in patients_by_key.items():
+        target_key = patient.get(alias_field)
+        if target_key is None or target_key == "":
+            continue
+        if not isinstance(target_key, str):
+            raise BundleValidationError("Invalid merged patient reference.")
+        target = patients_by_key.get(target_key)
+        if target is None or target_key == key or target.get(alias_field):
+            raise BundleValidationError("Merged aliases must reference one bundled unmerged survivor; self-links, cycles and chains are invalid.")
+
+
+def _validate_hospital_identifier(uhid):
+    try:
+        validate_hospital_uhid(uhid)
+    except ValidationError as exc:
+        raise BundleValidationError("Hospital UHID uses the reserved MTNO namespace; reviewed reconciliation is required.") from exc
+
+
+def _validate_identity_graph(payload):
+    from .identity_recovery import validate_identity_checkpoint
+
+    identity = payload.get("identity")
+    if not isinstance(identity, dict) or identity.get("scheme") != "medtrack-mtno-v1":
+        raise BundleValidationError("v4 bundle requires supported identity issuer metadata.")
+    try:
+        bindings = validate_identity_checkpoint(identity)
+    except ValidationError as exc:
+        raise BundleValidationError("Invalid identity checkpoint: " + "; ".join(exc.messages)) from exc
+    patients = payload.get("patients")
+    if not isinstance(patients, list):
+        raise BundleValidationError("v4 bundle requires an explicit patients list.")
+    by_mtno, uuids, uhids = {}, set(), set()
+    for patient in patients:
+        if not isinstance(patient, dict):
+            raise BundleValidationError("Invalid patient object.")
+        mtno, identity_uuid = patient.get("mtno"), patient.get("identity_uuid")
+        if not isinstance(mtno, str) or not isinstance(identity_uuid, str):
+            raise BundleValidationError("Every patient requires MTNO and UUID.")
+        if mtno in by_mtno or identity_uuid in uuids:
+            raise BundleValidationError("Duplicate patient MTNO or UUID.")
+        if bindings.get(mtno) != identity_uuid:
+            raise BundleValidationError("Patient identity does not match bundled issuance binding.")
+        uhid = patient.get("uhid")
+        if not isinstance(uhid, str) or uhid != " ".join(uhid.split()).upper() or (uhid and uhid in uhids):
+            raise BundleValidationError("Patient UHIDs must be canonical and unique when present.")
+        _validate_hospital_identifier(uhid)
+        uhids.add(uhid)
+        by_mtno[mtno] = patient
+        uuids.add(identity_uuid)
+    _validate_aliases(by_mtno, "merged_into_mtno")
+    for case in payload.get("cases", []):
+        if not isinstance(case, dict) or not isinstance(case.get("patient_mtno"), str):
+            raise BundleValidationError("Case requires a bundled patient MTNO.")
+        patient = by_mtno.get(case["patient_mtno"])
+        if patient is None or patient.get("merged_into_mtno"):
+            raise BundleValidationError("Case must reference a bundled unmerged patient.")
+        if case.get("uhid") != patient["uhid"]:
+            raise BundleValidationError("Case UHID does not match its patient.")
+
+
+def _validate_legacy_graph(payload):
+    by_uhid = {}
+    for patient in payload.get("patients", []):
+        uhid = patient.get("uhid") if isinstance(patient, dict) else None
+        if not isinstance(uhid, str) or not uhid or uhid != " ".join(uhid.split()).upper() or uhid in by_uhid:
+            raise BundleValidationError("Legacy patients require unique canonical nonblank UHIDs.")
+        _validate_hospital_identifier(uhid)
+        by_uhid[uhid] = patient
+    _validate_aliases(by_uhid, "merged_into_uhid")
+    for case in payload.get("cases", []):
+        key = case.get("patient_uhid") or case.get("uhid")
+        patient = by_uhid.get(key) if isinstance(key, str) else None
+        if patient is None or patient.get("merged_into_uhid") or case.get("uhid") != key:
+            raise BundleValidationError("Legacy case must reference its bundled unmerged patient UHID.")
+
+
+def _preflight_replacement(payload):
+    """Caller holds allocator lock; lock patients before cases and any deletion."""
+    from .identity import identity_checkpoint, reconcile_identity_allocator, reserve_patient_identity
+
+    payload = _normalize_payload_for_import(payload)
+    if PatientMergeRecovery.objects.exists():
+        raise BundleValidationError("Patient replacement would invalidate protected merge recovery evidence. Use verified full database recovery.")
+    # Serializes merge and existing identity edits with replacement. Recheck
+    # evidence after waiting for a merge that acquired its patient locks first.
+    list(Patient.objects.select_for_update().order_by("pk").values_list("pk", flat=True))
+    if PatientMergeRecovery.objects.exists():
+        raise BundleValidationError("Patient replacement would invalidate protected merge recovery evidence. Use verified full database recovery.")
+    try:
+        if "identity" in payload:
+            _validate_identity_graph(payload)
+            reconcile_identity_allocator(
+                minimum_high_water=payload["identity"]["high_water"],
+                bindings=payload["identity"]["bindings"],
+            )
+        else:
+            _validate_legacy_graph(payload)
+            by_uhid = {}
+            for patient_data in payload["patients"]:
+                matches = list(Patient.objects.filter(uhid=patient_data["uhid"]))
+                if len(matches) > 1:
+                    raise BundleValidationError("Legacy UHID continuity is ambiguous.")
+                patient = matches[0] if matches else Patient()
+                if not matches:
+                    reserve_patient_identity(patient)
+                patient_data["mtno"] = patient.mtno
+                patient_data["identity_uuid"] = str(patient.identity_uuid)
+                by_uhid[patient_data["uhid"]] = patient_data
+            for patient_data in payload["patients"]:
+                target = by_uhid.get(patient_data.get("merged_into_uhid"))
+                patient_data["merged_into_mtno"] = target["mtno"] if target else None
+            for case in payload["cases"]:
+                case["patient_mtno"] = by_uhid[case.get("patient_uhid") or case["uhid"]]["mtno"]
+            payload["identity"] = {"scheme": "medtrack-mtno-v1", **identity_checkpoint()}
+            _validate_identity_graph(payload)
+    except ValidationError as exc:
+        raise BundleValidationError("Identity import rejected: " + "; ".join(exc.messages)) from exc
+    list(Case.objects.select_for_update().order_by("pk").values_list("pk", flat=True))
+    return payload
 
 
 def _replace_patient_data(payload):
@@ -615,7 +791,8 @@ def _replace_patient_data(payload):
         category["name"]: category for category in payload.get("categories", []) if isinstance(category, dict)
     }
 
-    with transaction.atomic(), suspend_mobile_notifications():
+    with _replacement_lock(), suspend_mobile_notifications():
+        payload = _preflight_replacement(payload)
         for category_name, category_data in category_payload_by_name.items():
             if category_name in categories_by_name:
                 continue
@@ -641,9 +818,11 @@ def _replace_patient_data(payload):
 
 
 def _import_payload(payload, categories_by_name, users_by_username):
-    patients_by_uhid = {}
+    patients_by_mtno = {}
     for patient_data in payload.get("patients", []):
         patient = Patient(
+            mtno=patient_data["mtno"],
+            identity_uuid=patient_data["identity_uuid"],
             uhid=patient_data["uhid"],
             is_temporary_id=bool(patient_data.get("is_temporary_id", False)),
             prefix=patient_data.get("prefix", ""),
@@ -666,17 +845,17 @@ def _import_payload(payload, categories_by_name, users_by_username):
             created_at=_parse_datetime(patient_data.get("created_at"), "patient created_at"),
             updated_at=_parse_datetime(patient_data.get("updated_at"), "patient updated_at"),
         )
-        patients_by_uhid[patient.uhid] = patient
+        patients_by_mtno[patient.mtno] = patient
 
     for patient_data in payload.get("patients", []):
-        merged_into_uhid = patient_data.get("merged_into_uhid")
-        if not merged_into_uhid:
+        merged_into_mtno = patient_data.get("merged_into_mtno")
+        if not merged_into_mtno:
             continue
-        patient = patients_by_uhid[patient_data["uhid"]]
-        merged_into = patients_by_uhid.get(merged_into_uhid)
+        patient = patients_by_mtno[patient_data["mtno"]]
+        merged_into = patients_by_mtno.get(merged_into_mtno)
         if merged_into is None:
             raise BundleValidationError(
-                f"Patient {patient.uhid} references merged patient {merged_into_uhid}, which is not bundled."
+                "Patient references a merged patient which is not bundled."
             )
         Patient.objects.filter(pk=patient.pk).update(merged_into=merged_into)
         patient.merged_into = merged_into
@@ -693,11 +872,10 @@ def _import_payload(payload, categories_by_name, users_by_username):
         subcategory = case_data.get("subcategory", "")
         if not subcategory and not is_quick_entry:
             subcategory = default_case_subcategory_for_category_name(category.name)
-        patient_uhid = case_data.get("patient_uhid") or case_data.get("uhid")
-        patient = patients_by_uhid.get(patient_uhid)
+        patient = patients_by_mtno.get(case_data.get("patient_mtno"))
         if patient is None:
             raise BundleValidationError(
-                f"Case {case_data.get('uhid')} references patient {patient_uhid}, which was not imported."
+                "Case references a patient which was not imported."
             )
         case = Case(
             patient=patient,
@@ -894,7 +1072,7 @@ def _collect_usernames(payload):
 
 
 def _normalize_payload_for_import(payload):
-    payload = dict(payload)
+    payload = deepcopy(payload)
     cases = list(payload.get("cases", []))
     if isinstance(payload.get("patients"), list):
         payload["cases"] = cases
@@ -902,10 +1080,19 @@ def _normalize_payload_for_import(payload):
 
     derived_patients = []
     seen_uhids = set()
+    legacy_identity_by_uhid = {}
     for case_data in cases:
         if not isinstance(case_data, dict):
             continue
         patient_uhid = case_data.get("patient_uhid") or case_data.get("uhid")
+        if not isinstance(patient_uhid, str) or not patient_uhid:
+            raise BundleValidationError("Legacy cases require nonblank UHID references.")
+        identity = tuple(case_data.get(field) or "" for field in (
+            "first_name", "last_name", "gender", "date_of_birth", "phone_number", "alternate_phone_number",
+        ))
+        if patient_uhid in legacy_identity_by_uhid and legacy_identity_by_uhid[patient_uhid] != identity:
+            raise BundleValidationError("Legacy cases with one UHID contain conflicting identity; reviewed reconciliation is required.")
+        legacy_identity_by_uhid[patient_uhid] = identity
         if not patient_uhid or patient_uhid in seen_uhids:
             continue
         seen_uhids.add(patient_uhid)

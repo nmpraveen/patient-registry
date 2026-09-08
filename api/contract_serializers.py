@@ -99,7 +99,8 @@ class FollowUpContractSerializer(serializers.Serializer):
 class CaseContractSerializer(serializers.Serializer):
     follow_up = FollowUpContractSerializer(required=False)
     id = serializers.IntegerField()
-    uhid = serializers.CharField()
+    mtno = serializers.CharField(read_only=True, allow_blank=True)
+    uhid = serializers.CharField(allow_blank=True)
     name = serializers.CharField()
     age = serializers.IntegerField(allow_null=True)
     sex = serializers.CharField(allow_blank=True, allow_null=True)
@@ -192,6 +193,7 @@ class CasePatchRequestSerializer(CaseWriteRequestSerializer):
 
 class EditableCaseContractSerializer(CaseWriteRequestSerializer):
     id = serializers.IntegerField()
+    mtno = serializers.CharField(read_only=True, allow_blank=True)
     base_updated_at = serializers.DateTimeField()
 
     def __init__(self, *args, **kwargs):
@@ -392,7 +394,8 @@ class TaskFormMetadataResponseSerializer(serializers.Serializer):
 
 class PatientSearchResultSerializer(serializers.Serializer):
     id = serializers.IntegerField()
-    uhid = serializers.CharField()
+    mtno = serializers.CharField(read_only=True, allow_blank=True)
+    uhid = serializers.CharField(allow_blank=True)
     name = serializers.CharField()
 
 

@@ -1729,7 +1729,7 @@ private fun QuickAddSearchBar(
                 )
                 if (value.isBlank()) {
                     Text(
-                        text = "Search patient, UHID, phone",
+                        text = "Search name, MTNO, UHID, phone",
                         color = MedtrackColors.Muted,
                         style = MaterialTheme.typography.bodyMedium,
                         maxLines = 1,

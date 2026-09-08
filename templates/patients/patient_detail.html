@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block title %}Patient {{ patient.uhid }} | MEDTRACK{% endblock %}
+{% block title %}Patient {{ patient.mtno }}{% if patient.uhid %} · {{ patient.uhid }}{% endif %} | MEDTRACK{% endblock %}
 {% block content %}
   <section class="card border-0 shadow-sm mb-3">
     <div class="card-body">
@@ -8,7 +8,7 @@
           <p class="text-muted mb-1">Patient</p>
           <h1 class="h4 mb-2">{{ patient.full_name|default:patient.patient_name }}</h1>
           <div class="small text-muted d-flex flex-wrap gap-3">
-            <span>UHID {{ patient.uhid }}</span>
+            <span>{{ patient.mtno }}{% if patient.uhid %} · {{ patient.uhid }}{% endif %}</span>
             {% if patient.phone_number %}<span>{{ patient.phone_number }}</span>{% endif %}
             {% if patient.place %}<span>{{ patient.place }}</span>{% endif %}
             {% if patient_age_display != "-" %}<span>Age {{ patient_age_display }}</span>{% endif %}
@@ -48,10 +48,10 @@
           <div class="border rounded p-3 mt-3" aria-labelledby="merge-review-title">
             <h3 id="merge-review-title" class="h6 mb-3">Review Patient Merge</h3>
             <dl class="row small mb-3">
-              <dt class="col-5 col-md-3">Source UHID</dt>
-              <dd class="col-7 col-md-9"><strong>{{ merge_review.source_patient.uhid }}</strong></dd>
-              <dt class="col-5 col-md-3">Target UHID</dt>
-              <dd class="col-7 col-md-9"><strong>{{ merge_review.target_patient.uhid }}</strong></dd>
+              <dt class="col-5 col-md-3">Source MTNO</dt>
+              <dd class="col-7 col-md-9"><strong>{{ merge_review.source_patient.mtno }}</strong>{% if merge_review.source_patient.uhid %} · {{ merge_review.source_patient.uhid }}{% endif %}</dd>
+              <dt class="col-5 col-md-3">Target MTNO</dt>
+              <dd class="col-7 col-md-9"><strong>{{ merge_review.target_patient.mtno }}</strong>{% if merge_review.target_patient.uhid %} · {{ merge_review.target_patient.uhid }}{% endif %}</dd>
               <dt class="col-5 col-md-3">Source cases</dt>
               <dd class="col-7 col-md-9">{{ merge_review.source_case_count }} will move</dd>
               <dt class="col-5 col-md-3">Target cases</dt>
@@ -63,7 +63,7 @@
             {% if merge_review.affected_case_rows %}
               <div class="table-responsive mb-3">
                 <table class="table table-sm align-middle mb-0">
-                  <caption class="visually-hidden">Complete source and target case set reviewed before merging {{ merge_review.source_patient.uhid }} into {{ merge_review.target_patient.uhid }}</caption>
+                  <caption class="visually-hidden">Complete source and target case set reviewed before merging {{ merge_review.source_patient.mtno }} into {{ merge_review.target_patient.mtno }}</caption>
                   <thead><tr><th>Record</th><th>Case</th><th>Category</th><th>Diagnosis</th><th>Status</th></tr></thead>
                   <tbody>
                     {% for affected_row in merge_review.affected_case_rows %}

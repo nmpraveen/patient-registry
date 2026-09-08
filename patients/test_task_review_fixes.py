@@ -116,10 +116,10 @@ class TaskReviewFixTests(TaskCallFixture, TestCase):
         self.assertEqual(reason, "")
         self.assertEqual(CallLog.objects.get(pk=call_id).reason, "")
 
-    def test_reason_bundles_export_version_three_and_keep_reason(self):
+    def test_identity_bundles_export_version_four_and_keep_reason(self):
         CallLog.objects.create(case=self.case, outcome=CallOutcome.NO_ANSWER, reason="Retain this reason")
         archive, manifest, _ = database_bundle.create_bundle_archive()
-        self.assertEqual(manifest["schema_version"], 3)
+        self.assertEqual(manifest["schema_version"], 4)
         _, payload = database_bundle.load_bundle_archive(archive)
         self.assertEqual(payload["cases"][0]["call_logs"][0]["reason"], "Retain this reason")
         database_bundle._replace_patient_data(payload)
@@ -148,8 +148,8 @@ class TaskReviewFixTests(TaskCallFixture, TestCase):
         data = database_bundle._json_bytes(broken)
         manifest.update(schema_version=2, counts=database_bundle.compute_payload_counts(broken),
                         patient_data_sha256=hashlib.sha256(data).hexdigest())
-        with self.assertRaisesMessage(database_bundle.BundleValidationError, "references patient"):
+        with self.assertRaisesMessage(database_bundle.BundleValidationError, "reference its bundled unmerged patient UHID"):
             database_bundle._validate_manifest_and_payload(manifest, broken, data)
-        manifest["schema_version"] = 4
+        manifest["schema_version"] = 5
         with self.assertRaisesMessage(database_bundle.BundleValidationError, "not supported"):
             database_bundle._validate_manifest_and_payload(manifest, broken, data)

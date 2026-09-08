@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 {% load static %}
-{% block title %}Vitals {{ case.uhid }} | MEDTRACK{% endblock %}
+{% block title %}Vitals {{ case.mtno }}{% if case.uhid %} · {{ case.uhid }}{% endif %} | MEDTRACK{% endblock %}
 {% block extra_head %}
   <link rel="stylesheet" href="{% static 'patients/case_detail.css' %}?v={{ app_version }}" />
   <style nonce="{{ request.csp_nonce }}">
@@ -184,7 +184,7 @@
       <div class="vitals-page__hero-copy">
         <p class="vitals-page__hero-kicker">Vitals</p>
         <h1 class="vitals-page__hero-title">Trends & History</h1>
-        <p class="vitals-page__hero-meta">{{ case.full_name }} ({{ case.uhid }})</p>
+        <p class="vitals-page__hero-meta">{{ case.full_name }} ({{ case.mtno }}{% if case.uhid %} · {{ case.uhid }}{% endif %})</p>
       </div>
       <div class="vitals-page__hero-actions">
         {% if can_vitals_edit %}

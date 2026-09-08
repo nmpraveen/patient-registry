@@ -7,7 +7,7 @@
 </nav>
 {% for group in patient_groups %}
 <section class="card mb-3"><div class="card-body">
-  <h2 class="h5">{{ group.name }} · {{ group.uhid }}</h2>
+  <h2 class="h5">{{ group.name }} · {{ group.mtno }}{% if group.uhid %} · {{ group.uhid }}{% endif %}</h2>
   {% for case in group.cases %}{% with attention=case.follow_up %}
   <div class="d-flex gap-3 flex-wrap border-top py-2">
     <a href="{% url 'patients:case_detail' case.pk %}">{{ case.category.name }} · Case {{ case.pk }}</a>

@@ -113,7 +113,7 @@ class PatientForm(StyledModelForm):
     use_temporary_patient_id = forms.BooleanField(
         required=False,
         label="Use temporary ID for now",
-        help_text="Create a temporary local patient ID and merge it later when the real UHID is known.",
+        widget=forms.HiddenInput(),
     )
 
     def __init__(self, *args, **kwargs):
@@ -144,11 +144,12 @@ class PatientForm(StyledModelForm):
         uhid = (cleaned_data.get("uhid") or "").strip()
         if use_temporary_patient_id:
             if self.instance.pk and self.instance.is_temporary_id and self.instance.uhid:
-                cleaned_data["uhid"] = self.instance.uhid
+                if uhid and uhid.upper() != self.instance.uhid:
+                    cleaned_data["use_temporary_patient_id"] = False
+                else:
+                    cleaned_data["uhid"] = self.instance.uhid
             else:
                 cleaned_data["uhid"] = generate_temporary_patient_uhid()
-        elif not uhid:
-            self.add_error("uhid", "Enter UHID or use a temporary ID.")
         return cleaned_data
 
     def save(self, commit=True):
@@ -247,7 +248,7 @@ class CaseForm(StyledModelForm):
         required=False,
         widget=forms.HiddenInput(),
     )
-    use_temporary_uhid = forms.BooleanField(required=False, label="Use temporary patient ID")
+    use_temporary_uhid = forms.BooleanField(required=False, label="Use temporary patient ID", widget=forms.HiddenInput())
     ncd_flags = forms.MultipleChoiceField(
         required=False,
         choices=NonCommunicableDisease.choices,
@@ -438,11 +439,14 @@ class CaseForm(StyledModelForm):
             self._copy_selected_patient_identity(cleaned_data, selected_patient)
         else:
             if cleaned_data.get("use_temporary_uhid"):
-                if not self._generated_temporary_uhid:
+                if self.instance.pk and self.instance.patient_id and self.instance.patient.is_temporary_id:
+                    entered = (cleaned_data.get("uhid") or "").strip().upper()
+                    self._generated_temporary_uhid = entered or self.instance.patient.uhid
+                    if entered and entered != self.instance.patient.uhid:
+                        cleaned_data["use_temporary_uhid"] = False
+                elif not self._generated_temporary_uhid:
                     self._generated_temporary_uhid = generate_temporary_patient_uhid()
                 cleaned_data["uhid"] = self._generated_temporary_uhid
-            elif not (cleaned_data.get("uhid") or "").strip():
-                self.add_error("uhid", "Enter UHID or enable a temporary patient ID.")
 
             missing_patient_fields = []
             if not cleaned_data.get("prefix"):
@@ -547,8 +551,10 @@ class CaseForm(StyledModelForm):
     def save(self, commit=True):
         instance = super().save(commit=False)
         if commit and instance.pk:
+            if instance.patient_id:
+                Patient.objects.select_for_update().filter(pk=instance.patient_id).first()
             current = Case.objects.select_for_update().get(pk=instance.pk)
-            if current.updated_at != self._loaded_updated_at:
+            if current.updated_at != self._loaded_updated_at or current.patient_id != instance.patient_id:
                 raise ValidationError("This case changed while you were editing. Reload before saving.")
         patient = self.cleaned_data.get("patient_instance") or getattr(self.instance, "patient", None)
         if isinstance(patient, Patient):
@@ -690,7 +696,7 @@ class QuickEntryCaseForm(StyledModelForm):
             "details_pending": True,
         }
         patient = getattr(instance, "patient", None) or Patient()
-        patient.uhid = (instance.uhid or generate_quick_entry_uhid()).strip().upper()
+        patient.uhid = (instance.uhid or "").strip().upper()
         patient.prefix = instance.prefix or ""
         patient.first_name = instance.first_name or ""
         patient.last_name = ""
@@ -744,7 +750,7 @@ class PatientMergeForm(forms.Form):
 
 class PatientMergeConfirmationForm(PatientMergeForm):
     confirm_target_uhid = forms.CharField(
-        label="Type target UHID to confirm",
+        label="Type target MTNO to confirm",
         max_length=64,
         widget=forms.TextInput(
             attrs={
@@ -770,8 +776,8 @@ class PatientMergeConfirmationForm(PatientMergeForm):
     def clean_confirm_target_uhid(self):
         entered_uhid = self.cleaned_data["confirm_target_uhid"].strip()
         target_patient = self.cleaned_data.get("target_patient") or self.target_patient
-        if target_patient is not None and entered_uhid.casefold() != target_patient.uhid.casefold():
-            raise forms.ValidationError("Enter the target patient's UHID exactly.")
+        if target_patient is not None and entered_uhid.casefold() != target_patient.mtno.casefold():
+            raise forms.ValidationError("Enter the target patient's MTNO exactly.")
         return entered_uhid
 
 

@@ -2,6 +2,8 @@
 
 A Django + PostgreSQL MVP for **case-based follow-up tracking**.
 
+Permanent patient MTNO is assigned on save; hospital UHID is optional. Existing identifiers, merge aliases and recovery checkpoints remain traceable. See [Stage 3 identity and recovery](docs/issue-113-stage-3.md).
+
 ## What this build supports
 
 - Visible full task editing with stale-edit conflict handling, and reasoned General patient calls on web/native. See [Stage 2 behavior and compatibility](docs/issue-113-stage-2.md).

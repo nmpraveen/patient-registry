@@ -17,8 +17,8 @@
   <fieldset class="row g-2 border-0 p-0 m-0 w-100">
   <legend class="visually-hidden">Case search and filters</legend>
   <div class="col-12 col-lg-4">
-    <label class="visually-hidden" for="case-list-search">Search cases by UHID, phone, name, diagnosis, place, case notes, or call notes</label>
-    <input id="case-list-search" class="form-control" name="q" value="{{ filters.q }}" placeholder="UHID / Phone / Name / Diagnosis / Place / Case Notes / Call Notes">
+    <label class="visually-hidden" for="case-list-search">Search cases by MTNO, UHID, phone, name, diagnosis, place, case notes, or call notes</label>
+    <input id="case-list-search" class="form-control" name="q" value="{{ filters.q }}" placeholder="MTNO / UHID / Phone / Name / Diagnosis / Place / Case Notes / Call Notes">
   </div>
   <div class="col-12">
     <fieldset class="d-flex flex-wrap align-items-center gap-2 border-0 p-0 m-0">
@@ -69,16 +69,16 @@
   <table class="table table-striped table-sm align-middle">
     <thead>
       {% if search_mode %}
-        <tr><th>UHID</th><th>Name</th><th>Diagnosis</th><th>Place</th><th>Phone</th><th>Category</th><th>Status</th><th>Tasks</th><th>Matching Note</th></tr>
+        <tr><th>MTNO / UHID</th><th>Name</th><th>Diagnosis</th><th>Place</th><th>Phone</th><th>Category</th><th>Status</th><th>Tasks</th><th>Matching Note</th></tr>
       {% else %}
-        <tr><th>UHID</th><th>Name</th><th>Gender</th><th>Age</th><th>Place</th><th>Phone</th><th>Category</th><th>Status</th><th>Tasks</th></tr>
+        <tr><th>MTNO / UHID</th><th>Name</th><th>Gender</th><th>Age</th><th>Place</th><th>Phone</th><th>Category</th><th>Status</th><th>Tasks</th></tr>
       {% endif %}
     </thead>
     <tbody>
       {% for case in cases %}
         <tr>
           {% if search_mode %}
-            <td><a href="{% url 'patients:case_detail' case.id %}">{{ case.uhid }}</a></td>
+            <td><a href="{% url 'patients:case_detail' case.id %}">{{ case.mtno }}{% if case.uhid %} · {{ case.uhid }}{% endif %}</a></td>
             <td>
               <div class="fw-semibold">{{ case.full_name }}</div>
               <div class="small text-muted">
@@ -107,7 +107,7 @@
             <td>{{ case.task_count }}</td>
             <td class="small text-muted">{{ case.search_note_snippet|default:"-" }}</td>
           {% else %}
-            <td><a href="{% url 'patients:case_detail' case.id %}">{{ case.uhid }}</a></td>
+            <td><a href="{% url 'patients:case_detail' case.id %}">{{ case.mtno }}{% if case.uhid %} · {{ case.uhid }}{% endif %}</a></td>
             <td>{{ case.full_name }}</td>
             <td>
               {% if case.gender == 'FEMALE' %}
@@ -145,7 +145,7 @@
     <div class="card mb-2">
       <div class="card-body py-2">
         <div class="fw-semibold"><a href="{% url 'patients:case_detail' case.id %}">{{ case.full_name }}</a></div>
-        <div class="small text-muted">{{ case.uhid }} -
+        <div class="small text-muted">{{ case.mtno }}{% if case.uhid %} · {{ case.uhid }}{% endif %} -
           {% if case.gender == 'FEMALE' %}
             <span class="app-pill gender-female">{{ case.get_gender_display }}</span>
           {% elif case.gender == 'MALE' %}

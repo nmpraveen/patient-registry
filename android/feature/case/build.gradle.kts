@@ -24,4 +24,5 @@ android {
 dependencies {
     implementation(project(":core:designsystem"))
     implementation(project(":core:domain"))
+    testImplementation(libs.junit)
 }

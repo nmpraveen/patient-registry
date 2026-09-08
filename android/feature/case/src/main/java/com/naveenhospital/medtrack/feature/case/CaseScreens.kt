@@ -103,6 +103,7 @@ import com.naveenhospital.medtrack.core.designsystem.medtrackCategoryVisual
 import com.naveenhospital.medtrack.core.designsystem.medtrackShortDateLabel
 import com.naveenhospital.medtrack.core.domain.model.CaseCategory
 import com.naveenhospital.medtrack.core.domain.model.PatientCase
+import com.naveenhospital.medtrack.core.domain.model.PatientCallLog
 import com.naveenhospital.medtrack.core.domain.model.PatientTask
 import com.naveenhospital.medtrack.core.domain.model.PatientVital
 import com.naveenhospital.medtrack.core.domain.model.TaskFormMetadata
@@ -243,6 +244,7 @@ fun CaseDetailScreen(
     canCreateTask: Boolean = false,
     canEditTask: Boolean = false,
     taskMetadata: TaskFormMetadata? = null,
+    callLogs: List<PatientCallLog> = emptyList(),
     onEditCase: () -> Unit = {},
     onAncAction: (Map<String, Any>, (String?) -> Unit) -> Unit = { _, report -> report("Unavailable") },
     onTaskAction: (TaskSheetAction, String?, (String?) -> Unit) -> Unit = { _, _, cb -> cb(null) },
@@ -388,6 +390,24 @@ fun CaseDetailScreen(
                         }
                     }
                     item {
+                        MedtrackCompactCard {
+                            MedtrackSectionEyebrow(title = "Recent calls", trailing = "Latest 20")
+                            if (callLogs.isEmpty()) Text("No recent calls", color = MedtrackColors.Muted)
+                            callLogs.forEach { call ->
+                                Column(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                                    Text(call.outcomeLabel, fontWeight = FontWeight.Bold)
+                                    Text(call.taskTitle.ifBlank { "General patient call" }, color = MedtrackColors.Muted)
+                                    if (call.reason.isNotBlank()) Text(call.reason)
+                                    if (call.notes.isNotBlank()) Text(call.notes)
+                                    Text(
+                                        listOf(call.createdAtEpochMicros.caseCallDateLabel(), call.staffUser).filter { it.isNotBlank() }.joinToString(" · "),
+                                        style = MaterialTheme.typography.labelSmall, color = MedtrackColors.Muted,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    item {
                         VitalsHistoryCard(
                             vitals = vitals,
                             fallback = patientCase.latestVitalSummary,
@@ -443,7 +463,7 @@ fun CaseDetailScreen(
             onSubmit = { action, report ->
                 onTaskAction(action, editingTask?.id) { error ->
                     report(error)
-                    if (error == null && action !is TaskSheetAction.Note) {
+                    if (error == null) {
                         taskSheetTarget = null
                     }
                 }
@@ -794,6 +814,9 @@ private fun TaskRow(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+            }
+            if (onEditTask != null) {
+                TextButton(onClick = { onEditTask(task) }) { Text("Edit") }
             }
             if (actionable) {
                 MedtrackMiniPill(text = task.statusLabel, color = task.statusColor())
@@ -1904,3 +1927,6 @@ private fun VitalsNumberField(
         ),
     )
 }
+
+private fun Long.caseCallDateLabel(): String =
+    SimpleDateFormat("dd MMM yyyy, HH:mm", Locale.getDefault()).format(Date(Math.floorDiv(this, 1_000L)))

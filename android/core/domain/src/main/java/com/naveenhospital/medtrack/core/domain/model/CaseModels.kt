@@ -70,6 +70,9 @@ data class TaskSummary(
 )
 
 data class PatientTask(
+    val ownerAccountId: String = "",
+    val serverUpdatedAt: String = "",
+    val frequencyLabel: String = "",
     val id: String,
     val caseId: String,
     val title: String,
@@ -196,3 +199,26 @@ private fun Any?.asDouble(): Double? =
         is String -> toDoubleOrNull()
         else -> null
     }
+
+/** Confirmed server call history, bounded to the latest twenty records per case. */
+data class PatientCallLog(
+    val id: Long,
+    val taskId: Long?,
+    val taskTitle: String,
+    val reason: String,
+    val outcomeLabel: String,
+    val notes: String,
+    val staffUser: String,
+    val createdAt: String,
+    val createdAtEpochMicros: Long,
+    val clientEventAt: String?,
+)
+
+data class CallTaskChoice(val id: String, val title: String)
+
+data class CallOutcomeInput(
+    val taskId: String?,
+    val reason: String?,
+    val outcome: String,
+    val note: String?,
+)

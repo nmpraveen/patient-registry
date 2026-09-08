@@ -1,5 +1,11 @@
 # RUNBOOK.md
 
+## Issue #113 Stage 2 validation and rollback
+
+Use the [Stage 2 contract](docs/issue-113-stage-2.md) for task edit baselines, general-call reasons and old outbox replay rules. Run `python manage.py test patients.test_task_calls patients.test_task_review_fixes` against isolated PostgreSQL with DEBUG=false and ALLOW_MOCK_DATA_SEEDING=false, followed by required regressions/schema/migration checks. Do not reuse production or another lane's database. Migration0041 adds CallLog.reason with a persistent empty database default, allowing old ORM inserts when the schema is retained on code rollback. Preserve recorded reasons and suspend new general-call authoring if reverting to code that cannot store the field. Bundle exports use version3; imports accept1/2/3. Earlier readers reject version3, so use compatible code for restoration. Production activation remains a separate backed-up release gate.
+
+Stage 2 local evidence is retained under each lane's `output/`: backend logs/schema in `stage-2`, browser screenshots in `playwright/stage-2`, and native build/test/XML receipt evidence in the native lane. Recreate the owned test database for the full suite when a prior transaction-test run has flushed migration-seeded category rows; do not treat `--keepdb` missing-fixture errors as a production migration failure. The native smoke APK targets isolated port 8013 and is not a release build. Native screenshot protection remains enabled; final text-only changes have build/test evidence, not a repeated installed smoke.
+
 ## Issue #113 follow-up and ANC actions
 
 Recent Cases edits write only diagnosis, notes and updated_at through mandatory auditing. They retain clinical/identity state during concurrent updates, reject Patient linkage changes detected at save time, and roll back if auditing fails.

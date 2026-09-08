@@ -1,6 +1,16 @@
 # PROJECT_STATE.md
 
+## Issue #113 Stage 2 implementation
+
+The combined review corrections enforce cancelled-task status in full editors, share RCH completion follow-up policy, retain the reason database default for old-code inserts and advance reason-bearing bundles to version 3 while accepting versions 1/2. Ordinary native list refreshes preserve call history; cursor-reset, revoked-session and access-denial purges remain enforced. The API 24 timestamp correction passes 63 targeted tests, affected-module lint and app compilation; history correction passes 62 repository/worker tests and affected compilation. Server corrections pass 55 targeted tests plus schema/migration checks; the actual Stage 1 reader rejects new bundles before import. The focused reviewer recheck and fresh exact-head CI supersede the initial NO-GO and 9/10 result.
+
+Stage 2 combines web/API and native task editing, original-baseline conflict handling, descriptive task history and general-call reasons on Stage 1 merge `4531f09c728f1c11141f7f636a4f14fc43eb740a` (PR #115). Legacy queued call/completion JSON remains compatible; reasons round-trip through bundles and bounded call history. Native integration preserves the final Stage 1 ANC refresh/cancellation guards, and server Case/Patient baselines and lock order remain unchanged.
+
+Local validation passed: 543 backend tests (two expected absent local-helper skips), 127 native core tests, final targeted tests and dev assembly, responsive web/keyboard checks and synthetic native online/offline call checks. Post-rebase validation passed 47 server integration tests, 30 native repository tests, app compilation, schema validation and migration drift checks. See docs/issue-113-stage-2.md and the coordination stage-2-report.md for exact commits, outputs and limits. The combined PR review and exact-head CI remain required before merge; no production activation is implied.
+
 ## Issue #113 Stage 1 source implementation
+
+Stage 1 is merged as PR #115. The following correction entries are its completed review history; their earlier pending-gate wording is superseded by the merge recorded above.
 
 The remaining Recent Cases lock-order issue is reproduced and corrected with precise mandatory-audited diagnosis/notes/timestamp updates, preserving fresh activity before-values and checking Patient linkage without taking a Patient lock. Eight targeted regressions pass; fresh exact-head CI and the correction-only recheck supersede the prior head.
 

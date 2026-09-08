@@ -55,7 +55,6 @@ private const val UNASSIGNED_VALUE = ""
 sealed interface TaskSheetAction {
     data class Create(val input: NewTaskInput) : TaskSheetAction
     data class Edit(val input: TaskEditInput) : TaskSheetAction
-    data class Note(val text: String) : TaskSheetAction
 }
 
 /**
@@ -91,8 +90,8 @@ fun TaskEditorSheet(
         mutableStateOf(existingTask?.taskType ?: typeOptions.firstOrNull()?.value ?: "CUSTOM")
     }
     var assignee by remember { mutableStateOf(existingTask?.assignedUserId?.toString() ?: UNASSIGNED_VALUE) }
-    var note by remember { mutableStateOf("") }
-    var showNote by remember { mutableStateOf(false) }
+    var note by remember { mutableStateOf(existingTask?.notes.orEmpty()) }
+    var frequency by remember { mutableStateOf(existingTask?.frequencyLabel.orEmpty()) }
     var banner by remember { mutableStateOf<String?>(null) }
     var submitting by remember { mutableStateOf(false) }
 
@@ -125,7 +124,7 @@ fun TaskEditorSheet(
                     onReopen = {
                         banner = null
                         submitting = true
-                        onSubmit(TaskSheetAction.Edit(TaskEditInput(status = "SCHEDULED"))) { error ->
+                        onSubmit(TaskSheetAction.Edit(TaskEditInput(baseline = existingTask, status = "SCHEDULED"))) { error ->
                             submitting = false
                             if (error != null) banner = error
                         }
@@ -141,24 +140,8 @@ fun TaskEditorSheet(
             }
             DropdownField("Assigned to", assignee, assigneeOptions, { assignee = it }, optional = true)
 
-            if (isEdit) {
-                NoteToggle(expanded = showNote, onToggle = { showNote = !showNote })
-                if (showNote) {
-                    MultilineField("Note for the timeline", note, optional = true) { note = it }
-                    SecondaryButton(
-                        label = "Save note",
-                        enabled = note.isNotBlank() && !submitting,
-                        onClick = {
-                            banner = null
-                            submitting = true
-                            onSubmit(TaskSheetAction.Note(note.trim())) { error ->
-                                submitting = false
-                                if (error != null) banner = error else note = ""
-                            }
-                        },
-                    )
-                }
-            }
+            TextField("Frequency", frequency) { frequency = it }
+            MultilineField("Notes", note, optional = true) { note = it }
 
             banner?.let { BannerError(it) }
 
@@ -175,6 +158,7 @@ fun TaskEditorSheet(
                     onClick = {
                         banner = null
                         when {
+                            frequency.trim().length > 40 -> banner = "Frequency must be 40 characters or fewer."
                             title.isBlank() -> banner = "Enter a task title."
                             dueDate.isBlank() -> banner = "Choose a due date."
                             else -> {
@@ -182,6 +166,9 @@ fun TaskEditorSheet(
                                 val action = if (isEdit) {
                                     TaskSheetAction.Edit(
                                         TaskEditInput(
+                                            baseline = existingTask,
+                                            frequencyLabel = frequency.trim(),
+                                            notes = note,
                                             title = title.trim(),
                                             dueDate = dueDate,
                                             status = status,
@@ -193,6 +180,8 @@ fun TaskEditorSheet(
                                 } else {
                                     TaskSheetAction.Create(
                                         NewTaskInput(
+                                            frequencyLabel = frequency.trim(),
+                                            notes = note,
                                             title = title.trim(),
                                             dueDate = dueDate,
                                             status = status,

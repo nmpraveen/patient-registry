@@ -11,6 +11,32 @@ import org.junit.Test
 
 class PendingWritePayloadsTest {
     @Test
+    fun legacyReplayDoesNotAcquireAuthoringFields() {
+        val oldCall = """{"outcome":"attempted","client_write_id":"old-call","attempted_at":"2026-01-01T00:00:00Z"}"""
+        val decoded = PendingWriteJson.decodeCallOutcome(oldCall)
+        val encoded = PendingWriteJson.encodeCallOutcome(decoded)
+        org.junit.Assert.assertFalse(encoded.contains("reason"))
+        assertEquals("old-call", decoded.clientWriteId)
+        assertEquals("2026-01-01T00:00:00Z", decoded.attemptedAt)
+        val oldComplete = PendingWriteJson.decodeTaskComplete("""{"client_write_id":"old-complete"}""")
+        org.junit.Assert.assertNull(oldComplete.baseValues)
+        org.junit.Assert.assertFalse(PendingWriteJson.encodeTaskComplete(oldComplete).contains("base_values"))
+    }
+
+    @Test
+    fun newPayloadAndRollbackRetainStage2Values() {
+        val task = TaskEntity(ownerAccountId = "1", id = "7", caseId = "42", title = "Review",
+            dueDate = "2026-09-08", status = "SCHEDULED", statusLabel = "Scheduled", canComplete = true,
+            notes = "Keep notes", frequencyLabel = "Monthly", serverUpdatedAt = "2026-09-07T00:00:00Z", updatedAtMillis = 1)
+        val request = ClientWriteRequestDto("completion", mapOf("status" to task.status, "due_date" to task.dueDate))
+        val decoded = PendingWriteJson.decodeTaskCompletePending(PendingWriteJson.encodeTaskComplete(request, task))
+        assertEquals(request, decoded.request)
+        assertEquals(task, decoded.rollback!!.toEntity("1", "42", "7"))
+        val call = LogCallRequestDto(outcome = "reached", reason = "Appointment", clientWriteId = "call")
+        assertEquals(call, PendingWriteJson.decodeCallOutcome(PendingWriteJson.encodeCallOutcome(call)))
+    }
+
+    @Test
     fun decodeForSyncReturnsTaskCompleteWithRequiredIds() {
         val payload = ClientWriteRequestDto(clientWriteId = "write-1")
         val write = pendingWrite(

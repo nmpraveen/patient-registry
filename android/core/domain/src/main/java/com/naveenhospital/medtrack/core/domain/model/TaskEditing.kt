@@ -18,6 +18,7 @@ data class TaskAssignee(
 
 /** Payload for creating a task (mirrors the web TaskForm field set). */
 data class NewTaskInput(
+    val frequencyLabel: String = "",
     val title: String,
     val dueDate: String,
     val status: String,
@@ -28,6 +29,9 @@ data class NewTaskInput(
 
 /** Partial edit payload — only non-null fields are sent. */
 data class TaskEditInput(
+    val baseline: PatientTask? = null,
+    val frequencyLabel: String? = null,
+    val notes: String? = null,
     val title: String? = null,
     val dueDate: String? = null,
     val status: String? = null,

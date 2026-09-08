@@ -3683,6 +3683,7 @@
                   (task) => `
                     <article class="dashboard-compact-task">
                       <div class="dashboard-compact-task-title">${escapeHtml(task.title)}</div>
+                      ${task.can_edit ? `<a class="btn btn-sm btn-outline-primary" href="${escapeHtml(task.edit_url)}">Edit</a>` : ""}
                       <div class="dashboard-compact-task-meta">
                         <span>Due ${escapeHtml(task.due_date_display)}</span>
                         <span>${escapeHtml(task.status_label)}</span>

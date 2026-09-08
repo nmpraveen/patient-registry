@@ -57,11 +57,13 @@
                 <td class="case-task-cell case-task-cell--actions">
                   <div class="case-task-action-cluster">
                     {% if can_task_edit %}
+                      <a class="btn btn-sm btn-outline-primary case-task-action" href="{% url 'patients:task_edit' task.id %}">Edit</a>
                       {% if case.category.name|upper == 'ANC' and task.due_date > today %}
                         <span class="case-task-lock-copy">Locked until due date</span>
                       {% else %}
                         <form method="post" action="{% url 'patients:task_quick_complete' task.id %}" class="d-inline" data-case-ajax-form="true">
                           {% csrf_token %}
+                          <input type="hidden" name="edit_baseline" value="{{ task.edit_baseline }}">
                           <button class="btn btn-sm btn-success case-task-action case-task-action--complete" type="submit">Complete</button>
                         </form>
                       {% endif %}
@@ -71,6 +73,7 @@
                         data-task-editor-trigger="reschedule"
                         data-task-editor-target="task-editor-slot-desktop-{{ task.id }}"
                         data-task-id="{{ task.id }}"
+                        data-task-baseline="{{ task.edit_baseline }}"
                         data-task-title="{{ task.title|escape }}"
                         data-task-due-date="{{ task.due_date|date:'Y-m-d' }}"
                         data-task-reschedule-url="{% url 'patients:task_quick_reschedule' task.id %}"
@@ -85,6 +88,7 @@
                         data-task-editor-trigger="note"
                         data-task-editor-target="task-editor-slot-desktop-{{ task.id }}"
                         data-task-id="{{ task.id }}"
+                        data-task-baseline="{{ task.edit_baseline }}"
                         data-task-title="{{ task.title|escape }}"
                         data-task-note-url="{% url 'patients:task_quick_note' task.id %}"
                         data-task-note-source="task-note-value-{{ task.id }}"
@@ -136,11 +140,13 @@
           <textarea class="visually-hidden" id="task-note-value-mobile-{{ task.id }}" aria-hidden="true" tabindex="-1">{{ task.notes }}</textarea>
           <div class="case-task-card__actions">
             {% if can_task_edit %}
+                      <a class="btn btn-sm btn-outline-primary case-task-action" href="{% url 'patients:task_edit' task.id %}">Edit</a>
               {% if case.category.name|upper == 'ANC' and task.due_date > today %}
                 <div class="case-task-lock-copy case-task-lock-copy--mobile">Locked until due date</div>
               {% else %}
                 <form method="post" action="{% url 'patients:task_quick_complete' task.id %}" data-case-ajax-form="true">
                   {% csrf_token %}
+                          <input type="hidden" name="edit_baseline" value="{{ task.edit_baseline }}">
                   <button class="btn btn-sm btn-success case-task-action case-task-action--complete w-100" type="submit">Complete</button>
                 </form>
               {% endif %}
@@ -150,6 +156,7 @@
                 data-task-editor-trigger="reschedule"
                 data-task-editor-target="task-editor-slot-mobile-{{ task.id }}"
                 data-task-id="{{ task.id }}"
+                        data-task-baseline="{{ task.edit_baseline }}"
                 data-task-title="{{ task.title|escape }}"
                 data-task-due-date="{{ task.due_date|date:'Y-m-d' }}"
                 data-task-reschedule-url="{% url 'patients:task_quick_reschedule' task.id %}"
@@ -164,6 +171,7 @@
                 data-task-editor-trigger="note"
                 data-task-editor-target="task-editor-slot-mobile-{{ task.id }}"
                 data-task-id="{{ task.id }}"
+                        data-task-baseline="{{ task.edit_baseline }}"
                 data-task-title="{{ task.title|escape }}"
                 data-task-note-url="{% url 'patients:task_quick_note' task.id %}"
                 data-task-note-source="task-note-value-mobile-{{ task.id }}"
@@ -196,6 +204,7 @@
 
         <form method="post" action="" class="case-task-editor__form" data-task-editor-form="reschedule" data-case-ajax-form="true" hidden>
           {% csrf_token %}
+                          <input type="hidden" name="edit_baseline" value="{{ task.edit_baseline }}">
           <div class="case-task-editor__fields">
             <div class="case-task-editor__field">
               <label class="form-label small" for="task-shared-reschedule-date">New due date</label>
@@ -205,11 +214,6 @@
                 type="date"
                 name="due_date"
                 required
-                data-crayons-datepicker="true"
-                data-crayons-datepicker-format="dd/MM/yyyy"
-                data-crayons-datepicker-locale="en-IN"
-                data-crayons-datepicker-placeholder="dd/mm/yyyy"
-                data-crayons-datepicker-show-footer="false"
               />
             </div>
           </div>
@@ -221,6 +225,7 @@
 
         <form method="post" action="" class="case-task-editor__form" data-task-editor-form="note" data-case-ajax-form="true" hidden>
           {% csrf_token %}
+                          <input type="hidden" name="edit_baseline" value="{{ task.edit_baseline }}">
           <div class="case-task-editor__fields">
             <div class="case-task-editor__field case-task-editor__field--wide">
               <label class="form-label small" for="task-shared-note">Task note</label>
@@ -314,9 +319,11 @@
                   </td>
                   <td>{{ task.notes|default:"-" }}</td>
                   <td>
-                    {% if task.status == 'COMPLETED' and can_task_reopen %}
+                    {% if can_task_edit %}<a class="btn btn-sm btn-outline-primary" href="{% url 'patients:task_edit' task.id %}">Edit</a>{% endif %}
+            {% if task.status == 'COMPLETED' and can_task_reopen %}
                       <form method="post" action="{% url 'patients:task_quick_reopen' task.id %}" data-case-ajax-form="true">
                         {% csrf_token %}
+                          <input type="hidden" name="edit_baseline" value="{{ task.edit_baseline }}">
                         <button class="btn btn-sm btn-outline-secondary case-task-action" type="submit">Undo completion</button>
                       </form>
                     {% else %}
@@ -367,9 +374,11 @@
               <span class="case-task-history-card__label">Notes</span>
               <span>{{ task.notes|default:"-" }}</span>
             </div>
+            {% if can_task_edit %}<a class="btn btn-sm btn-outline-primary" href="{% url 'patients:task_edit' task.id %}">Edit</a>{% endif %}
             {% if task.status == 'COMPLETED' and can_task_reopen %}
               <form method="post" action="{% url 'patients:task_quick_reopen' task.id %}" data-case-ajax-form="true" class="mt-3">
                 {% csrf_token %}
+                          <input type="hidden" name="edit_baseline" value="{{ task.edit_baseline }}">
                 <button class="btn btn-sm btn-outline-secondary case-task-action w-100" type="submit">Undo completion</button>
               </form>
             {% endif %}

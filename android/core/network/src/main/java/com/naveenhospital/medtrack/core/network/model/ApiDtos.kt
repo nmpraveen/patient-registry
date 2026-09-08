@@ -117,6 +117,7 @@ data class CaseDetailDto(
 )
 
 data class TaskDto(
+    @Json(name = "frequency_label") val frequencyLabel: String = "",
     val id: Long,
     val title: String,
     @Json(name = "due_date") val dueDate: String?,
@@ -158,6 +159,10 @@ data class VitalDto(
 )
 
 data class CallLogDto(
+    val reason: String = "",
+    @Json(name = "task_title") val taskTitle: String = "",
+    @Json(name = "staff_user") val staffUser: String = "",
+    @Json(name = "client_event_at") val clientEventAt: String? = null,
     val id: Long,
     @Json(name = "task_id") val taskId: Long?,
     val outcome: String,
@@ -174,9 +179,11 @@ data class TaskWriteResponseDto(
 
 data class ClientWriteRequestDto(
     @Json(name = "client_write_id") val clientWriteId: String,
+    @Json(name = "base_values") val baseValues: Map<String, String?>? = null,
 )
 
 data class LogCallRequestDto(
+    val reason: String? = null,
     val outcome: String,
     val note: String? = null,
     @Json(name = "task_id") val taskId: Long? = null,
@@ -468,6 +475,7 @@ data class TaskAssigneeDto(
 )
 
 data class CreateTaskRequestDto(
+    @Json(name = "frequency_label") val frequencyLabel: String = "",
     val title: String,
     @Json(name = "due_date") val dueDate: String,
     val status: String,
@@ -478,6 +486,8 @@ data class CreateTaskRequestDto(
 )
 
 data class UpdateTaskRequestDto(
+    val frequencyLabel: PatchField<String> = PatchField.Omitted,
+    val notes: PatchField<String> = PatchField.Omitted,
     val baseUpdatedAt: String,
     val baseValues: Map<String, Any?>,
     val title: PatchField<String> = PatchField.Omitted,

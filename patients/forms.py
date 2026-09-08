@@ -783,6 +783,11 @@ class TaskForm(StyledModelForm):
         instance = getattr(self, "instance", None)
         if not instance or not instance.pk:
             return
+        if instance.status == TaskStatus.CANCELLED:
+            self.fields["status"].choices = [
+                choice for choice in self.fields["status"].choices if choice[0] == TaskStatus.CANCELLED
+            ]
+            return
         if instance.status == TaskStatus.COMPLETED:
             allowed_statuses = {TaskStatus.COMPLETED}
             if self.allow_reopen:
@@ -801,7 +806,7 @@ class TaskForm(StyledModelForm):
         model = Task
         fields = ["title", "due_date", "status", "assigned_user", "task_type", "frequency_label", "notes"]
         widgets = {
-            "due_date": forms.DateInput(attrs=dict(CRAYONS_DATEPICKER_ATTRS)),
+            "due_date": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
             "notes": forms.Textarea(attrs={"rows": 2}),
         }
 
@@ -911,13 +916,19 @@ class ActivityLogForm(StyledModelForm):
 class CallLogForm(StyledModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["task"].required = True
-        self.fields["task"].empty_label = "Select task"
-        self.fields["task"].error_messages["required"] = "Please select the associated task."
+        self.fields["task"].required = False
+        self.fields["task"].empty_label = "General patient call"
+        self.fields["reason"].label = "Reason for call"
+
+    def clean(self):
+        data = super().clean()
+        if not data.get("task") and not data.get("reason"):
+            self.add_error("reason", "Enter a reason for a general patient call.")
+        return data
 
     class Meta:
         model = CallLog
-        fields = ["task", "outcome", "notes"]
+        fields = ["task", "reason", "outcome", "notes"]
         widgets = {
             "task": forms.Select(),
             "notes": forms.Textarea(attrs={"rows": 2, "placeholder": "Optional call note"}),

@@ -244,3 +244,24 @@ interface CacheMetadataDao {
     @Query("DELETE FROM cache_metadata WHERE ownerAccountId = :ownerAccountId AND cacheKey LIKE :prefix || '%'")
     suspend fun deleteKeysStartingWith(ownerAccountId: String, prefix: String)
 }
+
+@Dao
+interface CallLogDao {
+    @Query("SELECT * FROM call_logs WHERE ownerAccountId = :ownerAccountId AND caseId = :caseId ORDER BY createdAtEpochMicros DESC, id DESC LIMIT 20")
+    fun observeForCase(ownerAccountId: String, caseId: String): Flow<List<CallLogEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(call: CallLogEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(calls: List<CallLogEntity>)
+
+    @Query("DELETE FROM call_logs WHERE ownerAccountId = :ownerAccountId AND caseId = :caseId")
+    suspend fun clearForCase(ownerAccountId: String, caseId: String)
+
+    @Query("DELETE FROM call_logs WHERE ownerAccountId = :ownerAccountId")
+    suspend fun clearForOwner(ownerAccountId: String)
+
+    @Query("DELETE FROM call_logs WHERE ownerAccountId = :ownerAccountId AND caseId = :caseId AND id NOT IN (SELECT id FROM call_logs WHERE ownerAccountId = :ownerAccountId AND caseId = :caseId ORDER BY createdAtEpochMicros DESC, id DESC LIMIT 20)")
+    suspend fun prune(ownerAccountId: String, caseId: String)
+}

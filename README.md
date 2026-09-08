@@ -4,6 +4,8 @@ A Django + PostgreSQL MVP for **case-based follow-up tracking**.
 
 ## What this build supports
 
+- Visible full task editing with stale-edit conflict handling, and reasoned General patient calls on web/native. See [Stage 2 behavior and compatibility](docs/issue-113-stage-2.md).
+
 - Scoped **Dormant patients**, **Overdue cases**, and **EDD review needed** views; unresolved past-EDD ANC stays overdue even with no open tasks.
 - Explicit **ANC outcome / EDD correction** on web and native case detail. Corrections retain task dates; outcomes cancel only explicitly selected open tasks. See [Stage 1 workflow](docs/issue-113-stage-1.md).
 

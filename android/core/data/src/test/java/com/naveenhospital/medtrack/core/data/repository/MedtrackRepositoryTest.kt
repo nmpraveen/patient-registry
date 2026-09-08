@@ -88,6 +88,149 @@ class MedtrackRepositoryTest {
     }
 
     @Test
+    fun lateListRefreshPreservesLatestDetailHistoryEvenOutsideFilteredPage() = runTest {
+        for (retainedInPage in listOf(true, false)) {
+            val entered = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            val detail = FakeMedtrackApi(beforeCaseDetail = {}).caseDetail("42")
+            val api = FakeMedtrackApi(
+                beforeListCases = { entered.complete(Unit); release.await() },
+                caseListResponse = CaseListResponseDto(
+                    count = if (retainedInPage) 1 else 0, next = null, previous = null,
+                    stats = CaseStatsDto(today = 1, upcoming = 0, overdue = 0, awaiting = 0, red = 0),
+                    results = if (retainedInPage) listOf(detail.case) else emptyList(),
+                ),
+            )
+            val repository = repository(api)
+            val listRefresh = async { repository.refreshCases(bucket = "today") }
+            entered.await()
+            api.detailResponse = detail.copy(callLogs = listOf(CallLogDto(
+                id = 91L, taskId = null, reason = "Latest authoritative receipt", outcome = "REACHED",
+                outcomeLabel = "Reached", notes = "", createdAt = "2026-09-07T00:00:00Z",
+            )))
+            repository.refreshCaseDetail("42")
+            assertEquals(listOf(91L), repository.observeCallLogs("42").first().map { it.id })
+            release.complete(Unit)
+            listRefresh.await()
+            assertEquals(listOf(91L), repository.observeCallLogs("42").first().map { it.id })
+            assertEquals(retainedInPage, repository.observeCase("42").first() != null)
+        }
+    }
+
+    @Test
+    fun invalidCursorResetStillPurgesOwnerHistory() = runTest {
+        val detail = FakeMedtrackApi(beforeCaseDetail = {}).caseDetail("42")
+        val api = FakeMedtrackApi(
+            beforeSearchCases = { request ->
+                if (request.cursor != null) throw HttpException(Response.error<Any>(400,
+                    "{\"code\":\"invalid_cursor\"}".toResponseBody()))
+            },
+            caseSearchResponses = mapOf(null to CaseSearchResponseDto(
+                nextCursor = "expired", results = listOf(detail.case),
+                stats = CaseStatsDto(today = 1, upcoming = 0, overdue = 0, awaiting = 0, red = 0),
+            )),
+        )
+        val repository = repository(api)
+        repository.refreshCases(query = "Test")
+        repository.logCallOutcome("42", null, "reached", null, reason = "Appointment")
+        assertEquals(1, repository.observeCallLogs("42").first().size)
+        repository.loadNextCases(query = "Test")
+        assertTrue(repository.observeCallLogs("42").first().isEmpty())
+        assertEquals(listOf(null, "expired", null), api.caseSearchRequests.map { it.cursor })
+    }
+
+    @Test
+    fun taskPatchUsesEditorSnapshotAfterRefreshAndRetainsConflictDraft() = runTest {
+        val api = FakeMedtrackApi(beforeCaseDetail = {})
+        val initial = api.caseDetail("42")
+        api.detailResponse = initial.copy(tasks = initial.tasks.map { it.copy(notes = "Original", frequencyLabel = "Monthly") })
+        val repository = repository(api)
+        repository.refreshCaseDetail("42")
+        val snapshot = repository.observeTasks("42").first().single()
+        api.detailResponse = initial.copy(tasks = initial.tasks.map { it.copy(notes = "Other editor", frequencyLabel = "Weekly", updatedAt = "2026-09-08T00:00:00Z") })
+        repository.refreshCaseDetail("42")
+        api.patchError = conflictError("Overlapping edit")
+        val draft = com.naveenhospital.medtrack.core.domain.model.TaskEditInput(baseline = snapshot, notes = "", frequencyLabel = "Daily")
+        val result = repository.updateTask(snapshot.id, "42", draft)
+        assertTrue(result is com.naveenhospital.medtrack.core.domain.model.TaskWriteOutcome.Failure)
+        assertEquals(snapshot.serverUpdatedAt, api.lastTaskPatch!!.baseUpdatedAt)
+        assertEquals(mapOf("notes" to "Original", "frequency_label" to "Monthly"), api.lastTaskPatch!!.baseValues)
+        assertEquals(PatchField.Value(""), api.lastTaskPatch!!.notes)
+        assertEquals(PatchField.Omitted, api.lastTaskPatch!!.dueDate)
+        assertEquals("Other editor", database.taskDao().taskById(ACCOUNT_ID, "7")!!.notes)
+        assertEquals("", draft.notes)
+        val foreign = snapshot.copy(ownerAccountId = "other")
+        api.lastTaskPatch = null
+        repository.updateTask(snapshot.id, "42", draft.copy(baseline = foreign))
+        assertNull(api.lastTaskPatch)
+    }
+
+    @Test
+    fun invalidGeneralCallsNeverSendOrQueueAndValidReasonSurvivesOffline() = runTest {
+        val api = FakeMedtrackApi(logCallError = IOException("offline"))
+        val repository = repository(api)
+        for (reason in listOf(null, "", "  ", "x".repeat(501))) {
+            assertTrue(runCatching { repository.logCallOutcome("42", null, "attempted", null, reason = reason) }.exceptionOrNull() is IllegalArgumentException)
+        }
+        assertTrue(runCatching { repository.logCallOutcome("42", "invalid", "reached", null, reason = "Test") }.exceptionOrNull() is IllegalArgumentException)
+        assertTrue(database.pendingWriteDao().pendingWrites(ACCOUNT_ID).isEmpty())
+        val result = repository.logCallOutcome("42", null, "attempted", "Note", "2026-09-07T00:00:00Z", "  Appointment  ")
+        assertTrue(result.queued)
+        val pending = database.pendingWriteDao().pendingWrites(ACCOUNT_ID).single()
+        val payload = PendingWriteJson.decodeCallOutcome(pending.payloadJson)
+        assertEquals("Appointment", payload.reason)
+        assertNull(payload.taskId)
+        assertEquals(result.clientWriteId, payload.clientWriteId)
+        assertTrue(repository.observeCallLogs("42").first().isEmpty())
+    }
+
+    @Test
+    fun boundedCallHistoryReplacesAndAccountInvalidationPurges() = runTest {
+        val api = FakeMedtrackApi(beforeCaseDetail = {})
+        val base = api.caseDetail("42")
+        val calls = (30L downTo 1L).map { id -> CallLogDto(id = id, taskId = null, reason = "Reason $id", outcome = "REACHED", outcomeLabel = "Reached", notes = "", createdAt = "2026-09-07T00:00:00Z") }
+        api.detailResponse = base.copy(callLogs = calls)
+        val repository = repository(api)
+        repository.refreshCaseDetail("42")
+        assertEquals((30L downTo 11L).toList(), repository.observeCallLogs("42").first().map { it.id })
+        api.detailResponse = base.copy(callLogs = calls.take(2))
+        repository.refreshCaseDetail("42")
+        assertEquals(2, repository.observeCallLogs("42").first().size)
+        repository.logCallOutcome("42", null, "reached", null, reason = "Appointment")
+        repository.logCallOutcome("42", null, "reached", null, reason = "Appointment")
+        assertEquals(3, repository.observeCallLogs("42").first().size)
+        assertTrue(database.callLogDao().observeForCase("other", "42").first().isEmpty())
+        database.invalidateAndClearAccountData(ACCOUNT_ID)
+        assertTrue(database.callLogDao().observeForCase(ACCOUNT_ID, "42").first().isEmpty())
+    }
+
+    @Test
+    fun caseScopeLossClearsPreviouslyCachedCalls() = runTest {
+        var revoked = false
+        val api = FakeMedtrackApi(beforeCaseDetail = { if (revoked) throw HttpException(Response.error<Any>(403, "{}".toResponseBody())) })
+        val repository = repository(api)
+        repository.logCallOutcome("42", null, "reached", null, reason = "Appointment")
+        assertEquals(1, repository.observeCallLogs("42").first().size)
+        revoked = true
+        assertTrue(runCatching { repository.refreshCaseDetail("42") }.isFailure)
+        assertTrue(repository.observeCallLogs("42").first().isEmpty())
+    }
+
+    @Test
+    fun revokedAccountRejectsLateCallCacheCommit() = runTest {
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val api = FakeMedtrackApi(beforeLogCall = { entered.complete(Unit); release.await() })
+        val repository = repository(api)
+        val pending = async { runCatching { repository.logCallOutcome("42", null, "reached", null, reason = "Appointment") } }
+        entered.await()
+        database.invalidateAndClearAccountData(ACCOUNT_ID)
+        release.complete(Unit)
+        assertTrue(pending.await().isFailure)
+        assertTrue(database.callLogDao().observeForCase(ACCOUNT_ID, "42").first().isEmpty())
+    }
+
+    @Test
     fun ancCancellationWaitsForAuthoritativeDetailBeforeReturning() = runTest {
         val entered = CompletableDeferred<Unit>()
         val release = CompletableDeferred<Unit>()
@@ -465,6 +608,7 @@ class MedtrackRepositoryTest {
         assertEquals("42", pending.caseId)
         assertEquals("7", pending.taskId)
         assertEquals(pending.clientWriteId, PendingWriteJson.decodeTaskComplete(pending.payloadJson).clientWriteId)
+        assertEquals(mapOf("status" to "PENDING", "due_date" to "2026-05-18"), PendingWriteJson.decodeTaskComplete(pending.payloadJson).baseValues)
         val localTask = database.taskDao().observeTasksForCase(ACCOUNT_ID, "42").first().single()
         assertEquals("COMPLETED", localTask.status)
         assertEquals(false, localTask.canComplete)
@@ -472,7 +616,7 @@ class MedtrackRepositoryTest {
 
     @Test
     fun completeTaskRecordsConflictWhenServerReturns409() = runTest {
-        val api = FakeMedtrackApi(completeTaskError = conflictError("Task was already changed on the server."))
+        val api = FakeMedtrackApi(beforeCaseDetail = {}, completeTaskError = conflictError("Task was already changed on the server."))
         var queuedCallbacks = 0
         val repository = repository(
             api = api,
@@ -896,6 +1040,11 @@ class MedtrackRepositoryTest {
 }
 
 private class FakeMedtrackApi(
+    var beforeListCases: (suspend () -> Unit)? = null,
+    var beforeSearchCases: (suspend (CaseSearchRequestDto) -> Unit)? = null,
+    var detailResponse: CaseDetailDto? = null,
+    var patchError: Throwable? = null,
+    var beforeLogCall: (suspend () -> Unit)? = null,
     private val beforeCaseDetail: (suspend () -> Unit)? = null,
     private val categoriesResponse: CategoriesResponseDto = CategoriesResponseDto(emptyList()),
     private val caseListResponse: CaseListResponseDto = CaseListResponseDto(
@@ -919,6 +1068,8 @@ private class FakeMedtrackApi(
     private val logCallError: Throwable? = null,
     private val addVitalsError: Throwable? = null,
 ) : MedtrackApi {
+    var lastTaskPatch: com.naveenhospital.medtrack.core.network.model.UpdateTaskRequestDto? = null
+    var lastCompletion: ClientWriteRequestDto? = null
     val patientSearchRequests = mutableListOf<PatientSearchRequestDto>()
     val caseSearchRequests = mutableListOf<CaseSearchRequestDto>()
     var categoryCalls = 0
@@ -960,6 +1111,7 @@ private class FakeMedtrackApi(
         subcategories: List<String>?,
         page: Int?,
     ): CaseListResponseDto {
+        beforeListCases?.invoke()
         listCasesCalls += 1
         lastListCasesBucket = bucket
         lastListCasesAssignedTo = assignedTo
@@ -971,6 +1123,7 @@ private class FakeMedtrackApi(
 
     override suspend fun searchCases(request: CaseSearchRequestDto): CaseSearchResponseDto {
         caseSearchRequests += request
+        beforeSearchCases?.invoke(request)
         return caseSearchResponses[request.cursor] ?: CaseSearchResponseDto(
             nextCursor = null,
             stats = caseListResponse.stats,
@@ -979,8 +1132,9 @@ private class FakeMedtrackApi(
     }
 
     override suspend fun caseDetail(caseId: String): CaseDetailDto {
-        val before = beforeCaseDetail ?: unused()
-        before()
+        beforeCaseDetail?.invoke()
+        detailResponse?.let { return it }
+        if (beforeCaseDetail == null) unused()
         return CaseDetailDto(case = sampleCaseSummary(), tasks = listOf(sampleTask(7).copy(
             title = "Authoritative cancellation", status = "CANCELLED", statusLabel = "Cancelled", canComplete = false)))
     }
@@ -1000,10 +1154,15 @@ private class FakeMedtrackApi(
 
     override suspend fun updateCase(caseId: String, request: com.naveenhospital.medtrack.core.network.model.UpdateCaseRequestDto): com.naveenhospital.medtrack.core.network.model.CaseUpdateResponseDto = unused()
     override suspend fun createTask(caseId: String, request: com.naveenhospital.medtrack.core.network.model.CreateTaskRequestDto): TaskWriteResponseDto = unused()
-    override suspend fun updateTask(taskId: String, request: com.naveenhospital.medtrack.core.network.model.UpdateTaskRequestDto): TaskWriteResponseDto = unused()
+    override suspend fun updateTask(taskId: String, request: com.naveenhospital.medtrack.core.network.model.UpdateTaskRequestDto): TaskWriteResponseDto {
+        lastTaskPatch = request
+        patchError?.let { throw it }
+        return TaskWriteResponseDto("Task saved", sampleTask(taskId.toLong()), sampleCaseSummary())
+    }
     override suspend fun addTaskNote(taskId: String, request: com.naveenhospital.medtrack.core.network.model.TaskNoteRequestDto): TaskWriteResponseDto = unused()
     override suspend fun updateVitals(vitalId: String, request: com.naveenhospital.medtrack.core.network.model.VitalsUpdateRequestDto): VitalsWriteResponseDto = unused()
     override suspend fun completeTask(taskId: String, request: ClientWriteRequestDto): TaskWriteResponseDto {
+        lastCompletion = request
         completeTaskError?.let { throw it }
         return TaskWriteResponseDto(
             message = "Task completed.",
@@ -1012,6 +1171,7 @@ private class FakeMedtrackApi(
         )
     }
     override suspend fun logCall(caseId: String, request: LogCallRequestDto): CallWriteResponseDto {
+        beforeLogCall?.invoke()
         logCallError?.let { throw it }
         lastLogCallCaseId = caseId
         lastLogCallRequest = request
@@ -1019,6 +1179,7 @@ private class FakeMedtrackApi(
             message = "Call outcome logged.",
             callLog = CallLogDto(
                 id = 1,
+                reason = request.reason.orEmpty(),
                 taskId = request.taskId,
                 outcome = request.outcome,
                 outcomeLabel = "No answer",

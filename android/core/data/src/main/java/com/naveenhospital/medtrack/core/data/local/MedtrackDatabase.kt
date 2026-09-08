@@ -20,6 +20,7 @@ class AccountGenerationRevokedException : IllegalStateException(
         CaseEntity::class,
         CaseStatsEntity::class,
         TaskEntity::class,
+        CallLogEntity::class,
         VitalEntity::class,
         VitalsThresholdEntity::class,
         CategoryOptionsEntity::class,
@@ -29,7 +30,7 @@ class AccountGenerationRevokedException : IllegalStateException(
         SyncConflictEntity::class,
         CacheMetadataEntity::class,
     ],
-    version = 13,
+    version = 14,
     exportSchema = true,
 )
 abstract class MedtrackDatabase : RoomDatabase() {
@@ -37,6 +38,7 @@ abstract class MedtrackDatabase : RoomDatabase() {
     abstract fun caseDao(): CaseDao
     abstract fun caseStatsDao(): CaseStatsDao
     abstract fun taskDao(): TaskDao
+    abstract fun callLogDao(): CallLogDao
     abstract fun vitalDao(): VitalDao
     abstract fun vitalsThresholdDao(): VitalsThresholdDao
     abstract fun categoryOptionsDao(): CategoryOptionsDao
@@ -103,6 +105,7 @@ abstract class MedtrackDatabase : RoomDatabase() {
         notificationDao().clearForOwner(ownerAccountId)
         pushTokenDao().clearForOwner(ownerAccountId)
         taskDao().clearForOwner(ownerAccountId)
+        callLogDao().clearForOwner(ownerAccountId)
         vitalDao().clearForOwner(ownerAccountId)
         caseDao().clearCases(ownerAccountId)
         caseStatsDao().clearForOwner(ownerAccountId)
@@ -150,6 +153,7 @@ abstract class MedtrackDatabase : RoomDatabase() {
                         MIGRATION_10_11,
                         MIGRATION_11_12,
                         MIGRATION_12_13,
+                        MIGRATION_13_14,
                     )
                     .build()
                     .also { INSTANCE = it }
@@ -541,6 +545,22 @@ abstract class MedtrackDatabase : RoomDatabase() {
             }
         }
 
+        internal val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE tasks ADD COLUMN frequencyLabel TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE tasks ADD COLUMN serverUpdatedAt TEXT NOT NULL DEFAULT ''")
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS call_logs (
+                        ownerAccountId TEXT NOT NULL, id INTEGER NOT NULL, caseId TEXT NOT NULL,
+                        taskId INTEGER, taskTitle TEXT NOT NULL, reason TEXT NOT NULL,
+                        outcome TEXT NOT NULL, outcomeLabel TEXT NOT NULL, notes TEXT NOT NULL,
+                        staffUser TEXT NOT NULL, createdAt TEXT NOT NULL, createdAtEpochMicros INTEGER NOT NULL,
+                        clientEventAt TEXT, PRIMARY KEY(ownerAccountId, id)
+                    )
+                """.trimIndent())
+            }
+        }
+
         internal val ALL_MIGRATIONS: Array<Migration> = arrayOf(
             MIGRATION_1_2,
             MIGRATION_2_3,
@@ -554,6 +574,7 @@ abstract class MedtrackDatabase : RoomDatabase() {
             MIGRATION_10_11,
             MIGRATION_11_12,
             MIGRATION_12_13,
+            MIGRATION_13_14,
         )
     }
 }

@@ -26,20 +26,38 @@ class MedtrackDatabaseMigrationTest {
         InstrumentationRegistry.getInstrumentation().targetContext.getDatabasePath(name).absolutePath
 
     @Test
+    fun stage2UpgradePreservesOwnedPendingBytesAndTaskNotes() {
+        val name = databasePath("stage2_13_to_14")
+        val json = """{"client_write_id":"legacy-call","outcome":"attempted"}"""
+        helper.createDatabase(name, 13).use { db ->
+            db.execSQL("INSERT INTO pending_writes (ownerAccountId, clientWriteId, writeType, caseId, taskId, payloadJson, retryCount, lastError, createdAtMillis, updatedAtMillis) VALUES ('a','legacy-call','call_outcome','42',NULL,?,2,NULL,1,2)", arrayOf(json))
+            db.execSQL("INSERT INTO tasks (ownerAccountId,id,caseId,title,dueDate,status,statusLabel,canComplete,notes,updatedAtMillis) VALUES ('a','7','42','Review','2026-09-08','SCHEDULED','Scheduled',1,'Keep notes',1)")
+        }
+        helper.runMigrationsAndValidate(name, 14, true, *MedtrackDatabase.ALL_MIGRATIONS).use { db ->
+            db.query("SELECT payloadJson,retryCount FROM pending_writes WHERE ownerAccountId='a'").use { cursor ->
+                assertTrue(cursor.moveToFirst()); assertEquals(json,cursor.getString(0)); assertEquals(2,cursor.getInt(1))
+            }
+            db.query("SELECT notes,frequencyLabel,serverUpdatedAt FROM tasks WHERE ownerAccountId='a'").use { cursor ->
+                assertTrue(cursor.moveToFirst()); assertEquals("Keep notes",cursor.getString(0)); assertEquals("",cursor.getString(1)); assertEquals("",cursor.getString(2))
+            }
+        }
+    }
+
+    @Test
     fun everySupportedSchemaVersionMigratesToCurrentSchema() {
-        (1..12).forEach { startVersion ->
-            val databaseName = databasePath("migration_${startVersion}_to_13")
+        (1..13).forEach { startVersion ->
+            val databaseName = databasePath("migration_${startVersion}_to_14")
             helper.createDatabase(databaseName, startVersion).close()
 
             helper.runMigrationsAndValidate(
                 databaseName,
-                13,
+                14,
                 true,
                 *MedtrackDatabase.ALL_MIGRATIONS,
             ).use { database ->
                 database.query("PRAGMA user_version").use { cursor ->
                     assertTrue(cursor.moveToFirst())
-                    assertEquals(13, cursor.getInt(0))
+                    assertEquals(14, cursor.getInt(0))
                 }
             }
         }
@@ -61,7 +79,7 @@ class MedtrackDatabaseMigrationTest {
 
         helper.runMigrationsAndValidate(
             databaseName,
-            13,
+            14,
             true,
             *MedtrackDatabase.ALL_MIGRATIONS,
         ).use { database ->
@@ -96,7 +114,7 @@ class MedtrackDatabaseMigrationTest {
 
     @Test
     fun lifecycleUpgradePreservesV11OwnedRowsButRequiresFreshActivation() {
-        val databaseName = databasePath("migration_11_to_13_owned_rows")
+        val databaseName = databasePath("migration_11_to_14_owned_rows")
         helper.createDatabase(databaseName, 11).use { database ->
             database.execSQL(
                 """
@@ -110,7 +128,7 @@ class MedtrackDatabaseMigrationTest {
 
         helper.runMigrationsAndValidate(
             databaseName,
-            13,
+            14,
             true,
             *MedtrackDatabase.ALL_MIGRATIONS,
         ).use { database ->

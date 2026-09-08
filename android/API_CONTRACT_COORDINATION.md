@@ -91,3 +91,38 @@ response contains `next_cursor`, full case summaries, and stats. Android keeps
 every filter fixed across cursor pages. A known `invalid_cursor` clears the
 partial result and restarts once from `cursor=null`; it never falls back to a
 PHI-bearing query URL.
+
+## Issue 113 Stage 2: task edits and calls
+
+The full task editor retains an immutable owner-qualified snapshot of the task
+shown when opened. Existing PATCH uses the original server `base_updated_at`,
+touched `base_values`, and a submission `client_write_id`. Frequency is
+`frequency_label` (free text, maximum 40); full notes use `notes`. Empty strings
+clear; omission preserves. Refresh cannot replace the draft baseline. Quick
+note repository writes use this same PATCH. Task editing stays online-only.
+
+New completion writes include optional `base_values` with original `status` and
+`due_date`, captured before optimistic completion. Legacy queued envelopes omit
+those keys and retain receipt identity. Cache receipt time is not a server revision.
+
+All five call entrypoints share task/General patient call selection. New general
+calls require a trimmed reason of 1-500 characters, validated in UI and repository
+before sending or queueing. Task-linked reason is optional. Save as attempted
+obeys the same validation; cancelling or dismissing records no call. Nullable
+request reason defaults are omitted from JSON, so legacy replay never synthesizes
+reason, timestamp, task ID or write identity. Backend accepts absent legacy
+reason, rejects explicit null, and rejects explicit blank for taskless calls.
+No version key is added.
+
+Existing call_logs supplies newest 20 by server created_at and ID; write receipts
+upsert by server ID. New reason/task_title/staff_user response strings default
+empty, client_event_at is nullable, and historical empty reasons remain empty.
+Room 14 adds account-qualified bounded call rows and task frequency/server revision.
+Receipt ordering retains server microsecond precision. Case refresh replaces the
+bounded snapshot; scope denial, cache/dataset reset and account revocation clear
+it under account-generation guards. Foreground/worker task mapping and rollback
+snapshots preserve every editable field. Migration 13-to-14 preserves owned rows
+and pending JSON without destructive migration.
+
+This is recent call history; Stage 4 owns the combined timeline redesign. Local
+validation is not production, Firebase or physical-device acceptance.

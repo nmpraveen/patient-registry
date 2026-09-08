@@ -110,6 +110,9 @@ import com.naveenhospital.medtrack.core.data.sync.PendingWriteTypes
 import com.naveenhospital.medtrack.core.data.auth.LockVerificationResult
 import com.naveenhospital.medtrack.core.data.auth.SessionRestoreResult
 import com.naveenhospital.medtrack.core.domain.model.CategoryFilterOption
+import com.naveenhospital.medtrack.core.domain.model.CallOutcomeInput
+import com.naveenhospital.medtrack.core.domain.model.CallTaskChoice
+import com.naveenhospital.medtrack.core.data.repository.MedtrackRepository
 import com.naveenhospital.medtrack.core.domain.model.PatientCase
 import com.naveenhospital.medtrack.core.domain.model.CaseCategory
 import com.naveenhospital.medtrack.core.domain.model.NotificationItem
@@ -652,20 +655,23 @@ fun MedtrackApp(
                         }
                     }
 
-                    fun submitCallOutcome(patientCase: PatientCase, outcome: String, note: String?, attemptedAt: String?) {
+                    fun submitCallOutcome(patientCase: PatientCase, input: CallOutcomeInput, attemptedAt: String?, report: (String?) -> Unit) {
                         scope.launch {
                             runCatching {
                                 container.medtrackRepository.logCallOutcome(
                                     caseId = patientCase.id,
-                                    taskId = patientCase.nextTaskId,
-                                    outcome = outcome,
-                                    note = note,
+                                    taskId = input.taskId,
+                                    reason = input.reason,
+                                    outcome = input.outcome,
+                                    note = input.note,
                                     attemptedAt = attemptedAt,
                                 )
                             }.onSuccess { result ->
+                                report(if (result.conflict) result.message else null)
                                 actionMessage = result.message
                                 refreshHome()
                             }.onFailure {
+                                report(it.message ?: "Call logging failed")
                                 actionMessage = it.message ?: "Call logging failed"
                             }
                         }
@@ -790,8 +796,8 @@ fun MedtrackApp(
                         },
                     )
 
-                    DialerOutcomeSheet(dialerHandoff) { selectedCase, outcome, note, attemptedAt ->
-                        submitCallOutcome(selectedCase, outcome, note, attemptedAt)
+                    DialerOutcomeSheet(dialerHandoff, container.medtrackRepository) { selectedCase, input, attemptedAt, report ->
+                        submitCallOutcome(selectedCase, input, attemptedAt, report)
                     }
                 }
                 composable(Routes.CASES) {
@@ -816,20 +822,23 @@ fun MedtrackApp(
                         }
                     }
 
-                    fun submitCasesCallOutcome(patientCase: PatientCase, outcome: String, note: String?, attemptedAt: String?) {
+                    fun submitCasesCallOutcome(patientCase: PatientCase, input: CallOutcomeInput, attemptedAt: String?, report: (String?) -> Unit) {
                         scope.launch {
                             runCatching {
                                 container.medtrackRepository.logCallOutcome(
                                     caseId = patientCase.id,
-                                    taskId = patientCase.nextTaskId,
-                                    outcome = outcome,
-                                    note = note,
+                                    taskId = input.taskId,
+                                    reason = input.reason,
+                                    outcome = input.outcome,
+                                    note = input.note,
                                     attemptedAt = attemptedAt,
                                 )
                             }.onSuccess { result ->
+                                report(if (result.conflict) result.message else null)
                                 refreshCaseList()
                                 snackbarHostState.showSnackbar(result.message)
                             }.onFailure {
+                                report(it.message ?: "Call logging failed")
                                 snackbarHostState.showSnackbar(it.message ?: "Call logging failed")
                             }
                         }
@@ -854,8 +863,8 @@ fun MedtrackApp(
                         onOpenCase = { caseId -> navController.navigate(Routes.caseDetail(caseId)) },
                     )
 
-                    DialerOutcomeSheet(dialerHandoff) { selectedCase, outcome, note, attemptedAt ->
-                        submitCasesCallOutcome(selectedCase, outcome, note, attemptedAt)
+                    DialerOutcomeSheet(dialerHandoff, container.medtrackRepository) { selectedCase, input, attemptedAt, report ->
+                        submitCasesCallOutcome(selectedCase, input, attemptedAt, report)
                     }
                 }
                 composable(Routes.CASE_DETAIL) { entry ->
@@ -863,6 +872,7 @@ fun MedtrackApp(
                     val caseId = entry.arguments?.getString("caseId").orEmpty()
                     val cachedCase by container.medtrackRepository.observeCase(caseId).collectAsState(initial = null)
                     val tasks by container.medtrackRepository.observeTasks(caseId).collectAsState(initial = emptyList())
+                    val callLogs by container.medtrackRepository.observeCallLogs(caseId).collectAsState(initial = emptyList())
                     val vitals by container.medtrackRepository.observeVitals(caseId).collectAsState(initial = emptyList())
                     val vitalsThresholds by container.medtrackRepository.vitalsThresholds.collectAsState()
                     var caseActionMessage by remember { mutableStateOf<String?>(null) }
@@ -899,17 +909,19 @@ fun MedtrackApp(
                         }
                     }
 
-                    fun submitCaseCallOutcome(patientCase: PatientCase, outcome: String, note: String?, attemptedAt: String?) {
+                    fun submitCaseCallOutcome(patientCase: PatientCase, input: CallOutcomeInput, attemptedAt: String?, report: (String?) -> Unit) {
                         scope.launch {
                             runCatching {
                                 container.medtrackRepository.logCallOutcome(
                                     caseId = patientCase.id,
-                                    taskId = patientCase.nextTaskId,
-                                    outcome = outcome,
-                                    note = note,
+                                    taskId = input.taskId,
+                                    reason = input.reason,
+                                    outcome = input.outcome,
+                                    note = input.note,
                                     attemptedAt = attemptedAt,
                                 )
                             }.onSuccess { result ->
+                                report(if (result.conflict) result.message else null)
                                 caseActionMessage = result.message
                                 if (!result.queued) {
                                     refreshCaseDetail()
@@ -918,6 +930,7 @@ fun MedtrackApp(
                                     }
                                 }
                             }.onFailure {
+                                report(it.message ?: "Call logging failed")
                                 caseActionMessage = it.message ?: "Call logging failed"
                             }
                         }
@@ -940,6 +953,7 @@ fun MedtrackApp(
                     }
 
                     CaseDetailScreen(
+                        callLogs = callLogs,
                         modifier = Modifier.fillMaxSize(),
                         caseId = caseId,
                         patientCase = patientCase,
@@ -1036,12 +1050,6 @@ fun MedtrackApp(
                                         } else {
                                             TaskWriteOutcome.Failure("Task is unavailable.")
                                         }
-                                    is TaskSheetAction.Note ->
-                                        if (taskId != null) {
-                                            container.medtrackRepository.addTaskNote(taskId, caseId, action.text)
-                                        } else {
-                                            TaskWriteOutcome.Failure("Task is unavailable.")
-                                        }
                                 }
                                 when (outcome) {
                                     is TaskWriteOutcome.Success -> {
@@ -1081,8 +1089,8 @@ fun MedtrackApp(
                         },
                     )
 
-                    DialerOutcomeSheet(dialerHandoff) { selectedCase, outcome, note, attemptedAt ->
-                        submitCaseCallOutcome(selectedCase, outcome, note, attemptedAt)
+                    DialerOutcomeSheet(dialerHandoff, container.medtrackRepository) { selectedCase, input, attemptedAt, report ->
+                        submitCaseCallOutcome(selectedCase, input, attemptedAt, report)
                     }
                 }
                 composable(Routes.CREATE_CASE) { entry ->
@@ -1146,20 +1154,23 @@ fun MedtrackApp(
                         }
                     }
 
-                    fun submitCallOutcome(patientCase: PatientCase, outcome: String, note: String?, attemptedAt: String?) {
+                    fun submitCallOutcome(patientCase: PatientCase, input: CallOutcomeInput, attemptedAt: String?, report: (String?) -> Unit) {
                         scope.launch {
                             runCatching {
                                 container.medtrackRepository.logCallOutcome(
                                     caseId = patientCase.id,
-                                    taskId = patientCase.nextTaskId,
-                                    outcome = outcome,
-                                    note = note,
+                                    taskId = input.taskId,
+                                    reason = input.reason,
+                                    outcome = input.outcome,
+                                    note = input.note,
                                     attemptedAt = attemptedAt,
                                 )
                             }.onSuccess { result ->
+                                report(if (result.conflict) result.message else null)
                                 actionMessage = result.message
                                 refreshCalls()
                             }.onFailure {
+                                report(it.message ?: "Call logging failed")
                                 actionMessage = it.message ?: "Call logging failed"
                             }
                         }
@@ -1200,8 +1211,8 @@ fun MedtrackApp(
                         },
                     )
 
-                    DialerOutcomeSheet(dialerHandoff) { selectedCase, outcome, note, attemptedAt ->
-                        submitCallOutcome(selectedCase, outcome, note, attemptedAt)
+                    DialerOutcomeSheet(dialerHandoff, container.medtrackRepository) { selectedCase, input, attemptedAt, report ->
+                        submitCallOutcome(selectedCase, input, attemptedAt, report)
                     }
                 }
                 composable(Routes.NOTIFICATIONS) {
@@ -1253,22 +1264,25 @@ fun MedtrackApp(
                         }
                     }
 
-                    fun submitAlertCallOutcome(selectedCase: PatientCase, outcome: String, note: String?, attemptedAt: String?) {
+                    fun submitAlertCallOutcome(selectedCase: PatientCase, input: CallOutcomeInput, attemptedAt: String?, report: (String?) -> Unit) {
                         scope.launch {
                             runCatching {
                                 container.medtrackRepository.logCallOutcome(
                                     caseId = selectedCase.id,
-                                    taskId = selectedCase.nextTaskId,
-                                    outcome = outcome,
-                                    note = note,
+                                    taskId = input.taskId,
+                                    reason = input.reason,
+                                    outcome = input.outcome,
+                                    note = input.note,
                                     attemptedAt = attemptedAt,
                                 )
                             }.onSuccess { result ->
+                                report(if (result.conflict) result.message else null)
                                 snackbarHostState.showSnackbar(result.message)
                                 if (!result.queued) {
                                     runCatching { container.medtrackRepository.refreshCaseDetail(selectedCase.id) }
                                 }
                             }.onFailure {
+                                report(it.message ?: "Call logging failed")
                                 snackbarHostState.showSnackbar(it.message ?: "Call logging failed")
                             }
                         }
@@ -1289,8 +1303,8 @@ fun MedtrackApp(
                         },
                     )
 
-                    DialerOutcomeSheet(dialerHandoff) { selectedCase, outcome, note, attemptedAt ->
-                        submitAlertCallOutcome(selectedCase, outcome, note, attemptedAt)
+                    DialerOutcomeSheet(dialerHandoff, container.medtrackRepository) { selectedCase, input, attemptedAt, report ->
+                        submitAlertCallOutcome(selectedCase, input, attemptedAt, report)
                     }
                 }
                 composable(Routes.ME) {
@@ -2242,25 +2256,27 @@ private fun DialerHandoff.startCall(
 @Composable
 private fun DialerOutcomeSheet(
     handoff: DialerHandoff,
-    onSubmit: (patientCase: PatientCase, outcome: String, note: String?, attemptedAt: String?) -> Unit,
+    repository: MedtrackRepository,
+    onSubmit: (PatientCase, CallOutcomeInput, String?, (String?) -> Unit) -> Unit,
 ) {
     val patientCase = handoff.outcomeCase ?: return
+    val tasks by remember(repository, patientCase.id) { repository.observeTasks(patientCase.id) }
+        .collectAsState(initial = emptyList())
+    LaunchedEffect(patientCase.id) { runCatching { repository.refreshCaseDetail(patientCase.id) } }
+    val choices = tasks.map { CallTaskChoice(it.id, it.title) }.toMutableList()
+    patientCase.nextTaskId?.let { id ->
+        if (choices.none { it.id == id }) choices.add(CallTaskChoice(id, patientCase.nextTaskTitle ?: "Selected task"))
+    }
     CallOutcomeSheet(
         patientName = patientCase.patientName,
-        onOutcome = { outcome, note ->
-            val attemptedAt = handoff.outcomeAttemptedAt
-            handoff.clearOutcome()
-            onSubmit(patientCase, outcome, note, attemptedAt)
-        },
-        onAttempted = {
-            val attemptedAt = handoff.outcomeAttemptedAt
-            handoff.clearOutcome()
-            onSubmit(
-                patientCase,
-                "attempted",
-                "Mobile dialer opened; outcome was not confirmed.",
-                attemptedAt,
-            )
+        tasks = choices,
+        initialTaskId = patientCase.nextTaskId,
+        onDismiss = { handoff.clearOutcome() },
+        onSubmit = { input, report ->
+            onSubmit(patientCase, input, handoff.outcomeAttemptedAt) { error ->
+                report(error)
+                if (error == null) handoff.clearOutcome()
+            }
         },
     )
 }

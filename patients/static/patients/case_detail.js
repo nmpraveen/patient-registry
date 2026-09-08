@@ -414,6 +414,17 @@
       return;
     }
 
+    [taskEditorRescheduleForm, taskEditorNoteForm].forEach((form) => {
+      if (!form) return;
+      let input = form.querySelector('[name="edit_baseline"]');
+      if (!input) {
+        input = document.createElement("input");
+        input.type = "hidden";
+        input.name = "edit_baseline";
+        form.appendChild(input);
+      }
+      input.value = trigger.dataset.taskBaseline || "";
+    });
     const copy = taskEditorCopy[nextMode];
     if (!copy) {
       return;
@@ -572,6 +583,16 @@
         window.history.replaceState({}, "", href);
       }
     });
+  });
+
+  shell.querySelectorAll('form [name="reason"]').forEach((reason) => {
+    const form = reason.closest("form");
+    const task = form?.querySelector('[name="task"]');
+    if (!task) return;
+    const update = () => { reason.required = !task.value; };
+    task.addEventListener("change", update);
+    form.addEventListener("reset", () => window.setTimeout(update, 0));
+    update();
   });
 
   ajaxForms.forEach((form) => {

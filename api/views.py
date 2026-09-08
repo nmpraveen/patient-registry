@@ -53,6 +53,7 @@ from patients.audit import record_audit_event
 from patients.auth_security import current_auth_version
 from patients.theme import build_theme_category_colors, resolve_category_theme
 from patients.vitals_thresholds import vitals_thresholds_payload
+from patients.task_editing import changed_field_conflicts, lock_edit_actor, task_change_note, task_values
 from patients.forms import CaseForm, TaskForm
 from patients.follow_up import attention_filter, attention_queryset, worklist_queryset
 from patients.intake_access import resolve_case_intake_patient
@@ -72,6 +73,7 @@ from patients.views import (
     _dashboard_category_icon_path,
     _dashboard_subcategory_icon_path,
     _display_user_name,
+    _ensure_rch_completion_follow_up,
     _patient_search_queryset,
     _reopen_task_follow_up_cleanup,
     _save_task_note_inline,
@@ -678,16 +680,8 @@ class CaseDetailView(APIView):
         payload["vitals"] = [_serialize_vital(vital) for vital in vitals]
         payload["red_flag_reasons"] = _risk_reasons(case)
         payload["call_logs"] = [
-            {
-                "id": log.id,
-                "task_id": log.task_id,
-                "outcome": log.outcome,
-                "outcome_label": log.get_outcome_display(),
-                "notes": log.notes,
-                "client_event_at": log.client_event_at.isoformat() if log.client_event_at else None,
-                "created_at": log.created_at.isoformat(),
-            }
-            for log in case.call_logs.select_related("task").order_by("-created_at", "-id")[:20]
+            _serialize_call_log_for_api(log)
+            for log in case.call_logs.select_related("task", "staff_user").order_by("-created_at", "-id")[:20]
         ]
         return Response(payload)
 
@@ -943,16 +937,7 @@ def _optimistic_patch_conflicts(*, current_values, request_data, base_values, ba
     if base_updated_at > updated_at:
         return ["base_updated_at"]
     touched_fields = [key for key in request_data if key not in PATCH_CONTROL_FIELDS]
-    conflicts = []
-    for field in touched_fields:
-        if field not in current_values or field not in base_values:
-            conflicts.append(field)
-            continue
-        current = _json_safe_payload(current_values[field])
-        base = _json_safe_payload(base_values[field])
-        if current != base:
-            conflicts.append(field)
-    return sorted(set(conflicts))
+    return changed_field_conflicts(_json_safe_payload(current_values), _json_safe_payload(base_values), touched_fields)
 
 
 def _optimistic_conflict_response(fields):
@@ -1098,26 +1083,7 @@ def _idempotency_key_digest(client_write_id):
 
 
 def _lock_mobile_authorization_context(user):
-    locked_user = get_user_model().objects.select_for_update().get(pk=user.pk)
-    UserSecurityState.objects.select_for_update().get_or_create(user=locked_user)
-    through = get_user_model().groups.through
-    list(
-        through.objects.select_for_update()
-        .filter(user_id=locked_user.pk)
-        .order_by("pk")
-        .values_list("pk", flat=True)
-    )
-    role_names = list(locked_user.groups.order_by("name").values_list("name", flat=True))
-    list(RoleSetting.objects.select_for_update().filter(role_name__in=role_names).order_by("pk"))
-    for cache_name in (
-        "_medtrack_effective_role_policy",
-        "_cached_role_settings",
-        "_capability_cache",
-        "_cached_group_names",
-    ):
-        if hasattr(locked_user, cache_name):
-            delattr(locked_user, cache_name)
-    return locked_user
+    return lock_edit_actor(user)
 
 
 def _canonical_payload_hash(data):
@@ -1181,10 +1147,11 @@ def _authorize_idempotent_target(user, operation, target_type, target_id, *, loc
             list(Task.objects.select_for_update().filter(case_id=target.pk).order_by("pk"))
         return target
     if target_type == "task":
-        base = Task.objects.select_for_update() if lock else Task.objects.all()
-        target = get_object_or_404(_accessible_task_queryset(user, base), pk=target_id)
+        target = get_object_or_404(_accessible_task_queryset(user), pk=target_id)
         if lock:
+            Case.objects.select_for_update().get(pk=target.case_id)
             list(Task.objects.select_for_update().filter(case_id=target.case_id).order_by("pk"))
+            target = get_object_or_404(_accessible_task_queryset(user), pk=target_id)
         return target
     if target_type == "vital":
         base = VitalEntry.objects.select_for_update() if lock else VitalEntry.objects.all()
@@ -1311,6 +1278,9 @@ def _serialize_call_log_for_api(call_log):
     return {
         "id": call_log.id,
         "task_id": call_log.task_id,
+        "task_title": call_log.task.title if call_log.task_id else "",
+        "staff_user": _display_user_name(call_log.staff_user) if call_log.staff_user_id else "",
+        "reason": call_log.reason,
         "outcome": call_log.outcome,
         "outcome_label": call_log.get_outcome_display(),
         "notes": call_log.notes,
@@ -1355,6 +1325,11 @@ class TaskCompleteView(APIView):
                 ),
                 pk=pk,
             )
+            baseline = serializer.validated_data.get("base_values")
+            if baseline is not None:
+                conflicts = changed_field_conflicts(task_values(task), baseline, ("status", "due_date"))
+                if conflicts:
+                    return _optimistic_conflict_response(conflicts)
             success, message = _complete_task_inline(task, user=request.user)
             if not success:
                 return {"message": message}, status.HTTP_400_BAD_REQUEST
@@ -1528,6 +1503,11 @@ class TaskDetailView(APIView):
             data.update(
                 {key: value for key, value in request.data.items() if key not in PATCH_CONTROL_FIELDS}
             )
+            null_fields = [key for key in ("title", "due_date", "status", "task_type", "frequency_label", "notes")
+                           if key in request.data and request.data[key] is None]
+            if null_fields:
+                return {"code": "invalid_request", "message": "Text and date fields cannot be null.",
+                        "errors": {key: ["Use an empty string to clear optional text."] for key in null_fields}}, status.HTTP_400_BAD_REQUEST
             form = TaskForm(data, instance=task, allow_reopen=can_reopen)
             if not form.is_valid():
                 return {
@@ -1550,7 +1530,7 @@ class TaskDetailView(APIView):
                     label = "reminder" if cancelled == 1 else "reminders"
                     note = f"{note} ({cancelled} follow-up {label} cancelled)"
             else:
-                note = f"Task updated: {updated.title} ({updated.status})"
+                note = task_change_note(updated, current_values)
             create_case_activity(
                 case=updated.case,
                 task=updated,
@@ -1558,6 +1538,7 @@ class TaskDetailView(APIView):
                 event_type=ActivityEventType.TASK,
                 note=note,
             )
+            _ensure_rch_completion_follow_up(updated, previous_status=previous_status, user=request.user)
             return {
                 "message": "Task updated.",
                 "task": _serialize_task(updated, can_complete=has_capability(request.user, "task_edit")),
@@ -1587,19 +1568,15 @@ class TaskNoteView(APIView):
             404: contract.ErrorResponseSerializer,
         },
     )
+    @transaction.atomic
     def post(self, request, pk):
+        request.user = lock_edit_actor(request.user)
         if not has_capability(request.user, "task_edit"):
             return Response(
                 {"message": "You do not have permission to add task notes."},
                 status=status.HTTP_403_FORBIDDEN,
             )
-        task = get_object_or_404(
-            _accessible_task_queryset(
-                request.user,
-                Task.objects.select_related("case", "case__category"),
-            ),
-            pk=pk,
-        )
+        task = _authorize_idempotent_target(request.user, "task_update", "task", pk, lock=True)
         note_text = (request.data.get("note") or "").strip()
         success, message = _save_task_note_inline(task, note_text=note_text, user=request.user)
         if not success:
@@ -1780,6 +1757,7 @@ class CallOutcomeView(APIView):
                 task=task,
                 outcome=outcome,
                 notes=note,
+                reason=serializer.validated_data.get("reason", ""),
                 staff_user=request.user,
                 client_event_at=attempted_at,
             )

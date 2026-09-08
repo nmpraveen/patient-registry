@@ -4,6 +4,25 @@ The generated OpenAPI document at `/api/schema/` is the machine-readable source 
 truth for the mobile API. This file records security-sensitive semantics that clients
 must preserve across generated DTO or sync changes.
 
+## Task editing and calls (issue #113 Stage 2)
+
+Task PATCH retains changed-only `base_values`/`base_updated_at` semantics. `frequency_label`
+is free text up to 40 characters; `notes` is text. Empty strings clear either optional
+field; null is invalid. Assignee null still unassigns. Current native quick notes use PATCH.
+Optional completion `base_values` contains exactly `status` and `due_date`; changed
+preconditions return 409, and an absent object preserves old queued completion requests.
+
+Call outcome POST adds optional `reason` (trimmed, max 500). Omission remains accepted
+for legacy queued taskless calls. Explicit null is invalid; explicit blank/whitespace
+is invalid without a task. Newly authored current taskless calls require a nonblank
+reason in UI/repository/server web form. Task-associated calls keep reason optional.
+Do not add absent keys or rotate write IDs when decoding/replaying old outbox JSON.
+
+Case-detail `call_logs` and call-write `call_log` add empty-default strings `reason`,
+`task_title`, `staff_user`. History remains newest 20 ordered by `-created_at, -id`.
+Receipt timestamps and optional `client_event_at` retain their distinct meanings.
+See [Stage 2 behavior and rollback](docs/issue-113-stage-2.md).
+
 ## Case edits
 
 `PATCH /api/cases/{id}/` is a true partial update:

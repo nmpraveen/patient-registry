@@ -1842,6 +1842,7 @@ class CallLog(MandatoryAuditModelMixin, models.Model):
     case = models.ForeignKey(Case, on_delete=models.CASCADE, related_name="call_logs")
     task = models.ForeignKey(Task, on_delete=models.SET_NULL, null=True, blank=True, related_name="call_logs")
     outcome = models.CharField(max_length=40, choices=CallOutcome.choices)
+    reason = models.CharField(max_length=500, blank=True, default="", db_default="")
     notes = models.TextField(blank=True)
     staff_user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="call_logs")
     client_event_at = models.DateTimeField(null=True, blank=True)

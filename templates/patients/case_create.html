@@ -68,7 +68,7 @@
     ></div>
 
     <div class="case-create-layout">
-      <form method="post" id="case-create-form" class="case-create-main case-create-expanded" novalidate>
+      <form method="post" id="case-create-form" data-bound-draft="{{ form.is_bound|yesno:'true,false' }}" class="case-create-main case-create-expanded" novalidate>
         {% csrf_token %}
         {{ form.status }}
         {{ form.selected_patient }}

@@ -152,6 +152,19 @@ class Stage4ScreenTests(TestCase):
         self.assertContains(page, '<details class="case-create-card case-create-optional">')
         self.assertContains(page, 'id="case-create-form"')
 
+    def test_intake_server_rejection_marks_retained_draft_including_non_field_errors(self):
+        from unittest.mock import patch
+        from django.core.exceptions import ValidationError
+        url = reverse("patients:case_create")
+        fresh = self.client.get(url)
+        self.assertContains(fresh, 'data-bound-draft="false"')
+        with patch("patients.forms.CaseForm.clean", side_effect=ValidationError("Synthetic server rejection")):
+            rejected = self.client.post(url, {"first_name": "Retained synthetic draft"})
+        self.assertEqual(rejected.status_code, 200)
+        self.assertTrue(rejected.context["form"].non_field_errors())
+        self.assertContains(rejected, 'data-bound-draft="true"')
+        self.assertContains(rejected, "Retained synthetic draft")
+
     def test_related_cases_are_patient_specific_and_scoped(self):
         sibling = Case.objects.create(patient=self.case.patient, uhid=self.case.uhid, category=self.category,
                                       first_name="Synthetic", last_name="Stagefour", created_by=self.user)

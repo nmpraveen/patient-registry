@@ -1258,6 +1258,7 @@
   }
 
   document.addEventListener("DOMContentLoaded", () => {
+    hasUnsavedChanges = document.getElementById("case-create-form")?.dataset.boundDraft === "true";
     syncHelpMode(readHelpPreference());
     bindHelpToggle();
     bindPatientSearch();

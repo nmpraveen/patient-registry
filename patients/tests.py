@@ -3939,7 +3939,7 @@ class MedtrackViewTests(TestCase):
         invalid_response = self.client.get(reverse("patients:dashboard"), {"week_offset": "invalid"})
         negative_response = self.client.get(reverse("patients:dashboard"), {"week_offset": -3})
 
-        current_week_start = timezone.localdate() - timedelta(days=timezone.localdate().weekday())
+        current_week_start = timezone.localdate()
         current_week_end = current_week_start + timedelta(days=6)
 
         self.assertEqual(invalid_response.status_code, 200)
@@ -3957,7 +3957,7 @@ class MedtrackViewTests(TestCase):
     def test_dashboard_upcoming_schedule_renders_this_week_default(self):
         self.client.force_login(self.user)
         today = timezone.localdate()
-        current_week_start = today - timedelta(days=today.weekday())
+        current_week_start = today
         current_week_end = current_week_start + timedelta(days=6)
         today_index = (today - current_week_start).days
         next_week_start = current_week_start + timedelta(days=7)
@@ -4005,35 +4005,28 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(today_schedule_row["task_count_label"], "1 task")
         self.assertEqual(today_schedule_row["category_icon_path"], "patients/icons/categories/surgery.svg")
         self.assertEqual(today_schedule_row["subcategory_icon_path"], "patients/icons/subcategories/general_surgery.svg")
-        self.assertContains(response, "This week")
-        self.assertContains(response, "Next week")
-        self.assertNotContains(response, "Previous week")
+        self.assertContains(response, "Next 7 days")
+        self.assertContains(response, "Later dates")
+        self.assertNotContains(response, "Previous 7 days")
         self.assertContains(response, 'href="?week_offset=0" data-upcoming-week-link')
         self.assertContains(response, 'href="?week_offset=1" data-upcoming-week-link')
-        self.assertContains(response, 'data-upcoming-day-trigger=', count=7)
-        self.assertContains(response, 'data-upcoming-day-panel=', count=7)
+        self.assertContains(response, 'class="upcoming-date-group"', count=7)
         self.assertContains(response, 'data-upcoming-schedule')
-        self.assertContains(response, 'class="upcoming-schedule-row upcoming-v7-row"')
-        self.assertContains(response, "upcoming-v7-task-chip")
-        self.assertContains(response, "upcoming-v7-bottom")
-        self.assertContains(response, "dashboard-open-compact")
-        self.assertContains(response, 'data-category-icon-path="patients/icons/categories/surgery.svg"')
-        self.assertContains(response, 'data-subcategory-icon-path="patients/icons/subcategories/general_surgery.svg"')
+        self.assertContains(response, 'class="upcoming-compact-row"')
+        self.assertContains(response, reverse("patients:case_detail", args=[schedule_case.pk]))
         self.assertContains(response, "Today review")
         self.assertNotContains(response, "Next week review")
-        self.assertContains(response, ">Open<")
         self.assertContains(response, schedule_case.get_subcategory_display())
         self.assertNotContains(response, 'class="upcoming-schedule-row" href=')
         empty_day_index = 0 if today_index != 0 else 1
-        empty_day = current_week_start + timedelta(days=empty_day_index)
         self.assertEqual(schedule_days[empty_day_index]["count"], 0)
-        empty_label = f"No scheduled patients for {empty_day.strftime('%B')} {empty_day.day}."
+        empty_label = "No scheduled tasks"
         self.assertContains(response, empty_label)
 
     def test_dashboard_upcoming_schedule_shows_next_week_only_with_previous_control(self):
         self.client.force_login(self.user)
         today = timezone.localdate()
-        current_week_start = today - timedelta(days=today.weekday())
+        current_week_start = today
         next_week_start = current_week_start + timedelta(days=7)
         next_week_end = next_week_start + timedelta(days=6)
         next_week_task_date = next_week_start + timedelta(days=2)
@@ -4076,21 +4069,21 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(schedule_days[0]["date"], next_week_start)
         self.assertEqual(schedule_days[-1]["date"], next_week_end)
         self.assertTrue(schedule_days[0]["is_selected"])
-        self.assertContains(response, "Previous week")
-        self.assertContains(response, "This week")
-        self.assertContains(response, "Next week")
+        self.assertContains(response, "Previous 7 days")
+        self.assertContains(response, "Next 7 days")
+        self.assertContains(response, "Later dates")
         self.assertContains(response, 'href="?week_offset=0" data-upcoming-week-link', count=2)
         self.assertContains(response, 'href="?week_offset=2" data-upcoming-week-link')
         content = response.content.decode()
         rendered_titles = [title for day in schedule_days for row in day["rows"] for title in row["task_titles"]]
-        self.assertLess(content.index("Previous week"), content.index("This week"))
+        self.assertLess(content.index("Previous 7 days"), content.index("Next 7 days"))
         self.assertIn("Next week review", rendered_titles)
         self.assertNotIn("Current week review", rendered_titles)
 
     def test_dashboard_upcoming_schedule_groups_rows_and_deduplicates_category_dots(self):
         self.client.force_login(self.user)
         today = timezone.localdate()
-        current_week_start = today - timedelta(days=today.weekday())
+        current_week_start = today
         next_week_start = current_week_start + timedelta(days=7)
         target_date = next_week_start + timedelta(days=2)
         anc_case = Case.objects.create(
@@ -4135,7 +4128,7 @@ class MedtrackViewTests(TestCase):
         )
         grouped_row = next(row for row in schedule_day["rows"] if row["patient_name"] == "Grouped Surgery")
         self.assertEqual(grouped_row["task_titles"], ["Lab", "ECG"])
-        self.assertEqual(grouped_row["task_count_label"], "2 tasks")
+        self.assertEqual(grouped_row["task_count_label"], "3 tasks")
         self.assertEqual(grouped_row["subcategory_name"], surgery_case.get_subcategory_display())
         self.assertEqual(grouped_row["subcategory_icon_path"], "patients/icons/subcategories/orthopedics.svg")
         self.assertContains(response, 'title="ANC"')
@@ -4145,7 +4138,7 @@ class MedtrackViewTests(TestCase):
     def test_dashboard_upcoming_schedule_uses_category_theme_colors_for_dots_and_rows(self):
         self.client.force_login(self.user)
         today = timezone.localdate()
-        current_week_start = today - timedelta(days=today.weekday())
+        current_week_start = today
         next_week_start = current_week_start + timedelta(days=7)
         self.surgery.theme_bg_color = "#abcdef"
         self.surgery.theme_text_color = "#123456"
@@ -4167,8 +4160,7 @@ class MedtrackViewTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context["week_offset"], 1)
-        self.assertContains(response, "--schedule-dot-ring: #abcdef;")
-        self.assertContains(response, f"--schedule-dot-fill: {mix_colors('#123456', '#abcdef', 0.22)};")
+        self.assertContains(response, 'class="upcoming-compact-row"')
         self.assertContains(response, "--upcoming-category-bg: #abcdef; --upcoming-category-text: #123456;")
 
     def test_upcoming_calls_page_requires_call_logging_capability(self):

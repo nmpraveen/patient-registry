@@ -4432,3 +4432,9 @@
 .case-composer__cancel:focus {
   background: color-mix(in srgb, var(--theme-shell-page-bg) 84%, var(--theme-shell-surface-bg) 16%);
 }
+
+/* Main-content history remains readable with every filter on small screens. */
+.case-detail-timeline__filters { display: flex; flex-wrap: wrap; gap: .25rem; }
+.case-detail-section-head--timeline { flex-wrap: wrap; }
+.case-timeline-row { flex-wrap: wrap; gap: .4rem; }
+.timeline-item { overflow-wrap: anywhere; }

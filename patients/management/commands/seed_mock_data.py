@@ -89,6 +89,7 @@ class Command(BaseCommand):
     ]
 
     def add_arguments(self, parser):
+        parser.add_argument("--screen-scenarios", action="store_true", help="Include seven-day task groups and paged timeline examples in the first synthetic case.")
         parser.add_argument("--follow-up-scenarios", action="store_true", help="Include dormant, missing EDD, overdue EDD and resolved ANC examples (use --count 12).")
         parser.add_argument("--count", type=int)
         parser.add_argument(
@@ -758,6 +759,19 @@ class Command(BaseCommand):
                 note=f"Call outcome logged: {call_log.get_outcome_display()}",
             )
 
+    def seed_screen_scenarios(self, case, actor, today):
+        from patients.models import Task
+        for offset, title in ((0, "Synthetic review"), (0, "Synthetic review"), (6, "Synthetic day seven"), (7, "Synthetic later visit")):
+            task = Task.objects.create(case=case, title=title, due_date=today + timedelta(days=offset),
+                                       assigned_user=actor, created_by=actor)
+            CaseActivityLog.objects.create(case=case, task=task, user=actor, event_type=ActivityEventType.TASK,
+                                           note=f"Synthetic task created: {title}")
+        for index in range(34):
+            CaseActivityLog.objects.create(case=case, user=actor, event_type=ActivityEventType.NOTE,
+                                           note=f"Synthetic timeline note {index + 1}")
+        CallLog.objects.create(case=case, staff_user=actor, outcome=CallOutcome.CALL_BACK_LATER,
+                               reason="Synthetic general follow-up", notes="Synthetic case-wide call")
+
     def handle(self, *args, **options):
         if not settings.ALLOW_MOCK_DATA_SEEDING:
             raise CommandError(
@@ -875,6 +889,8 @@ class Command(BaseCommand):
                 ),
             )
 
+            if options["screen_scenarios"] and i == 1:
+                self.seed_screen_scenarios(case, staff_users["admin"], today)
             self.seed_calls_for_case(case, demo_user, scenario, rng, staff_users)
             self.seed_mobile_notifications_for_case(case, today)
             if include_vitals:

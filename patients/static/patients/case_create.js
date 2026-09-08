@@ -1,4 +1,6 @@
 (() => {
+  let hasUnsavedChanges = false;
+  let isSaving = false;
   const PREVIEW_EVENT = "case-preview-refresh";
   const IDENTITY_EVENT = "case-identity-refresh";
   const PREVIEW_FIELDS = new Set([
@@ -583,6 +585,8 @@
 
   function focusField(input) {
     if (!input) return;
+    const optional = input.closest("details");
+    if (optional) optional.open = true;
     if (input instanceof HTMLInputElement && input.type === "hidden") {
       const gplaButton = input.closest("[data-gpla-counter]")?.querySelector("[data-gpla-step='increment']");
       if (gplaButton instanceof HTMLElement) {
@@ -1070,6 +1074,7 @@
       if (!validateCaseFormBeforeSubmit(caseForm)) {
         return;
       }
+      isSaving = true;
       disableSubmitButtons(true);
       HTMLFormElement.prototype.submit.call(caseForm);
     });
@@ -1238,6 +1243,7 @@
         return;
       }
 
+      isSaving = true;
       window.setTimeout(() => disableSubmitButtons(true), 0);
     });
   }
@@ -1284,6 +1290,16 @@
   });
 
   window.addEventListener("pageshow", () => {
+    isSaving = false;
     disableSubmitButtons(false);
+  });
+  document.addEventListener("input", (event) => {
+    if (event.target.closest("#case-create-form")) hasUnsavedChanges = true;
+  });
+  document.addEventListener("change", (event) => {
+    if (event.target.closest("#case-create-form")) hasUnsavedChanges = true;
+  });
+  window.addEventListener("beforeunload", (event) => {
+    if (hasUnsavedChanges && !isSaving) { event.preventDefault(); event.returnValue = ""; }
   });
 })();

@@ -8,8 +8,8 @@
   </div>
   <div class="case-create-card__body">
     <div class="row g-3">
-      <div class="col-12 case-create-grid{% if show_inline_errors and form.ncd_flags.errors %} is-invalid{% endif %}">
-        <label class="form-label">{{ form.ncd_flags.label }}</label>
+      <details class="col-12 case-create-grid"{% if form.ncd_flags.value or form.ncd_flags.errors %} open{% endif %}>
+        <summary class="form-label">{{ form.ncd_flags.label }}</summary>
         <div class="case-create-pill-grid">
           {% for choice in form.ncd_flags %}
             <label class="case-create-pill-check">
@@ -23,7 +23,7 @@
             <div class="invalid-feedback d-block">{{ error }}</div>
           {% endfor %}
         {% endif %}
-      </div>
+      </details>
 
       {% if case_create_state.show_anc_fields %}
         {% include 'patients/partials/case_create_field.html' with field=form.high_risk col_class='col-12 col-lg-6' %}

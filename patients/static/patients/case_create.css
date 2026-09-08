@@ -1325,3 +1325,9 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* One continuous intake; required clinical fields stay expanded. */
+.case-create-expanded { gap: 0; border: 1px solid var(--theme-shell-surface-border); border-radius: .75rem; background: var(--theme-shell-surface-bg); }
+.case-create-expanded > .case-create-card { border: 0; border-radius: 0; box-shadow: none; border-bottom: 1px solid var(--theme-shell-surface-border); background: transparent; }
+.case-create-expanded > .case-create-card:first-of-type { border-radius: .75rem .75rem 0 0; }
+.case-create-optional summary { cursor: pointer; }

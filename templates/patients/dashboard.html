@@ -2521,6 +2521,9 @@
       display: inline-block;
     }
   }
+  .upcoming-compact-row { padding: .6rem .75rem; margin-bottom: .4rem; border: 1px solid var(--upcoming-category-border, var(--theme-shell-surface-border)); border-radius: .5rem; background: color-mix(in srgb, var(--theme-shell-surface-bg) 94%, var(--upcoming-category-bg) 6%); overflow-wrap: anywhere; }
+  .upcoming-compact-row summary { cursor: pointer; }
+  .upcoming-date-group { min-width: 0; }
 </style>
 
 <h1 class="h4 mb-3">Dashboard</h1>
@@ -2645,159 +2648,35 @@
         <h2 class="h6">Upcoming</h2>
         <div class="upcoming-schedule-controls" aria-label="Upcoming schedule week filters">
           {% if show_previous_week %}
-            <a class="upcoming-schedule-control" href="?week_offset={{ previous_week_offset }}" data-upcoming-week-link>Previous week</a>
+            <a class="upcoming-schedule-control" href="?week_offset={{ previous_week_offset }}" data-upcoming-week-link>Previous 7 days</a>
           {% endif %}
-          <a class="upcoming-schedule-control{% if week_offset == 0 %} is-active{% endif %}" href="?week_offset=0" data-upcoming-week-link{% if week_offset == 0 %} aria-current="page"{% endif %}>This week</a>
-          <a class="upcoming-schedule-control" href="?week_offset={{ next_week_offset }}" data-upcoming-week-link>Next week</a>
+          <a class="upcoming-schedule-control{% if week_offset == 0 %} is-active{% endif %}" href="?week_offset=0" data-upcoming-week-link{% if week_offset == 0 %} aria-current="page"{% endif %}>Next 7 days</a>
+          <a class="upcoming-schedule-control" href="?week_offset={{ next_week_offset }}" data-upcoming-week-link>Later dates</a>
         </div>
       </div>
 
-      <div class="upcoming-schedule-rail" role="tablist" aria-label="Upcoming schedule dates">
+      <div class="upcoming-date-groups">
         {% for day in appointment_schedule_days %}
-          <button
-            type="button"
-            class="upcoming-schedule-day{% if day.is_selected %} is-active{% endif %}"
-            data-upcoming-day-trigger="{{ day.date_key }}"
-            role="tab"
-            aria-selected="{% if day.is_selected %}true{% else %}false{% endif %}"
-            aria-controls="upcoming-schedule-panel-{{ day.date_key }}"
-          >
-            <span class="upcoming-schedule-day-month">{{ day.date|date:'M' }}</span>
-            <span class="upcoming-schedule-day-number">{{ day.date|date:'j' }}</span>
-            <span class="upcoming-schedule-day-label">{{ day.date|date:'D' }}</span>
-            <span class="upcoming-schedule-day-dots">
-              {% for category in day.categories %}
-                <span
-                  class="upcoming-schedule-dot"
-                  style="--schedule-dot-fill: {{ category.dot_color }}; --schedule-dot-ring: {{ category.bg_color }};"
-                  title="{{ category.name }}"
-                ></span>
-              {% endfor %}
-            </span>
-          </button>
-        {% endfor %}
-      </div>
-
-      <div class="upcoming-schedule-panels">
-        {% for day in appointment_schedule_days %}
-          <section
-            id="upcoming-schedule-panel-{{ day.date_key }}"
-            class="upcoming-schedule-panel{% if day.is_selected %} is-active{% endif %}"
-            data-upcoming-day-panel="{{ day.date_key }}"
-            role="tabpanel"
-          >
-            <div class="upcoming-schedule-panel-header">
-              <div>
-                <div class="upcoming-schedule-panel-title">{{ day.date|date:'l, F j' }}</div>
-                <div class="upcoming-schedule-panel-copy">
-                  {% if day.count %}
-                    {{ day.count }} patient{{ day.count|pluralize }} scheduled.
-                  {% else %}
-                    No patients scheduled for this day yet.
-                  {% endif %}
+          <section class="upcoming-date-group" aria-labelledby="upcoming-date-{{ day.date_key }}">
+            <h3 class="h6 mt-3 mb-2" id="upcoming-date-{{ day.date_key }}">{{ day.date|date:'D, j M' }} <span class="text-muted small">{{ day.count }} case{{ day.count|pluralize }}</span></h3>
+            {% for row in day.rows %}
+              <article class="upcoming-compact-row" style="--upcoming-category-bg: {{ row.category_bg_color }}; --upcoming-category-text: {{ row.category_text_color }}; --upcoming-category-border: {{ row.category_border_color }};">
+                <div class="d-flex flex-wrap justify-content-between gap-2">
+                  <a href="{{ row.detail_url }}" class="fw-semibold">{{ row.patient_name }}</a>
+                  <span class="small" title="{{ row.category_name }}">{{ row.category_name }}{% if row.subcategory_name %} · {{ row.subcategory_name }}{% endif %}</span>
                 </div>
-              </div>
-              {% if day.subcategories %}
-                <div class="upcoming-schedule-legend">
-                  {% for subcategory in day.subcategories %}
-                    <span
-                      class="upcoming-schedule-legend-pill dashboard-category-inline-icon"
-                      title="{{ subcategory.label }}"
-                      aria-label="{{ subcategory.label }}"
-                      {% if subcategory.icon_path %}data-subcategory-icon-path="{{ subcategory.icon_path }}"{% endif %}
-                      style="background: {{ subcategory.bg_color }}; color: {{ subcategory.text_color }}; border: 1px solid color-mix(in srgb, {{ subcategory.text_color }} 16%, var(--theme-shell-surface-bg));"
-                    >
-                      <span class="dashboard-category-icon-glyph">
-                        {% if subcategory.icon_path %}
-                          {% inline_static_svg subcategory.icon_path %}
-                        {% else %}
-                          <span class="dashboard-row-category-fallback">{{ subcategory.label|slice:":2"|upper }}</span>
-                        {% endif %}
-                      </span>
-                      <span class="dashboard-category-icon-label">{{ subcategory.label }}</span>
-                    </span>
-                  {% endfor %}
-                </div>
-              {% else %}
-                <span class="upcoming-schedule-open-pill">Open day</span>
-              {% endif %}
-            </div>
-
-            {% if day.rows %}
-              <div class="upcoming-schedule-list">
-                {% for row in day.rows %}
-                  <div
-                    class="upcoming-schedule-row upcoming-v7-row"
-                    style="--upcoming-category-bg: {{ row.category_bg_color }}; --upcoming-category-text: {{ row.category_text_color }}; --upcoming-category-border: {{ row.category_border_color }};"
-                  >
-                    <span class="dashboard-row-category-icon upcoming-v7-icon" aria-hidden="true"{% if row.category_icon_path %} data-category-icon-path="{{ row.category_icon_path }}"{% endif %}>
-                      {% if row.category_icon_path %}
-                        {% inline_static_svg row.category_icon_path %}
-                      {% else %}
-                        <span class="dashboard-row-category-fallback">{{ row.category_name|slice:":2"|upper }}</span>
-                      {% endif %}
-                    </span>
-                    <div class="upcoming-schedule-row-main upcoming-v7-main">
-                      <div class="upcoming-v7-title-line">
-                        <span class="upcoming-schedule-row-name upcoming-v7-name">{{ row.patient_name }}</span>
-                        {% if row.sex_age != "-" %}<span class="upcoming-v7-sex-age">{{ row.sex_age }}</span>{% endif %}
-                      </div>
-                      <div class="upcoming-v7-bottom">
-                        <span class="upcoming-schedule-row-diagnosis">{{ row.diagnosis }}</span>
-                        <span class="upcoming-v7-dot" aria-hidden="true"></span>
-                        <span class="upcoming-v7-task-chips">
-                          {% for task_title in row.task_titles %}
-                            <span class="upcoming-v7-task-chip">{{ task_title }}</span>
-                          {% endfor %}
-                        </span>
-                      </div>
-                    </div>
-                    <div class="upcoming-schedule-row-meta upcoming-v7-meta">
-                      <div class="dashboard-compact-detail-pills">
-                        {% if row.subcategory_name %}
-                          <span
-                            class="upcoming-schedule-row-category dashboard-category-inline-icon"
-                            title="{{ row.subcategory_name }}"
-                            aria-label="{{ row.subcategory_name }}"
-                            {% if row.subcategory_icon_path %}data-subcategory-icon-path="{{ row.subcategory_icon_path }}"{% endif %}
-                            style="background: {{ row.category_bg_color }}; color: {{ row.category_text_color }}; border: 1px solid color-mix(in srgb, {{ row.category_text_color }} 16%, var(--theme-shell-surface-bg));"
-                          >
-                            <span class="dashboard-category-icon-glyph">
-                              {% if row.subcategory_icon_path %}
-                                {% inline_static_svg row.subcategory_icon_path %}
-                              {% else %}
-                                <span class="dashboard-row-category-fallback">{{ row.subcategory_name|slice:":2"|upper }}</span>
-                              {% endif %}
-                            </span>
-                            <span class="dashboard-category-icon-label">{{ row.subcategory_name }}</span>
-                          </span>
-                        {% else %}
-                          <span
-                            class="upcoming-schedule-row-category dashboard-category-inline-icon"
-                            title="{{ row.category_name }}"
-                            aria-label="{{ row.category_name }}"
-                            {% if row.category_icon_path %}data-category-icon-path="{{ row.category_icon_path }}"{% endif %}
-                            style="background: {{ row.category_bg_color }}; color: {{ row.category_text_color }}; border: 1px solid color-mix(in srgb, {{ row.category_text_color }} 16%, var(--theme-shell-surface-bg));"
-                          >
-                            <span class="dashboard-category-icon-glyph">
-                              {% if row.category_icon_path %}
-                                {% inline_static_svg row.category_icon_path %}
-                              {% else %}
-                                <span class="dashboard-row-category-fallback">{{ row.category_name|slice:":2"|upper }}</span>
-                              {% endif %}
-                            </span>
-                            <span class="dashboard-category-icon-label">{{ row.category_name }}</span>
-                          </span>
-                        {% endif %}
-                        <a class="upcoming-schedule-open-link dashboard-open-compact" href="{{ row.detail_url }}">Open</a>
-                      </div>
-                    </div>
-                  </div>
-                {% endfor %}
-              </div>
-            {% else %}
-              <div class="upcoming-schedule-empty">No scheduled patients for {{ day.date|date:'F j' }}.</div>
-            {% endif %}
+                {% if row.task_count > 1 %}
+                  <details>
+                    <summary class="small py-2">{{ row.task_count }} tasks · {{ row.tasks.0.title }} · {{ row.tasks.0.assigned_user|default:'Unassigned' }}</summary>
+                    <ul class="list-unstyled mb-0">
+                      {% for task in row.tasks %}<li class="d-flex flex-wrap justify-content-between gap-2 py-1"><span>{{ task.title }}</span><span class="small text-muted">{{ task.assigned_user|default:'Unassigned' }}</span></li>{% endfor %}
+                    </ul>
+                  </details>
+                {% else %}
+                  {% for task in row.tasks %}<div class="d-flex flex-wrap justify-content-between gap-2 py-1"><span>{{ task.title }}</span><span class="small text-muted">{{ task.assigned_user|default:'Unassigned' }}</span></div>{% endfor %}
+                {% endif %}
+              </article>
+            {% empty %}<p class="small text-muted mb-1">No scheduled tasks</p>{% endfor %}
           </section>
         {% endfor %}
       </div>

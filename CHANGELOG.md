@@ -1,3 +1,10 @@
+## 2026.09.08.02.21
+
+- Add scoped PhoneBook search, multiple labelled numbers, per-user favourites and manager maintenance across web and native.
+- Add separately scheduled staff reminders with fixed calendar recurrence, scoped reassignment and versioned, idempotent completion history.
+- Add scheduled staff announcements with explicit audiences, priority before pagination, safe expiry/resume handling and retained editable records after publisher deletion.
+- Include operational apps in runtime packaging and full database recovery; preserve patient-bundle exclusion and existing clinical permissions.
+
 ## 2026.09.08.02.07
 
 - Expand web and native intake into one validated form with one Save action, optional details and draft protection; retain immutable MTNO and optional hospital IDs.

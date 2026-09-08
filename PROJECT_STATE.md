@@ -1,5 +1,14 @@
 # PROJECT_STATE.md
 
+## Issue #113 Stage 5 staff operations
+
+Stage 4 is merged as PR #118 at `64d6c6cf2d9af1d0b998bdf4bd628c72d8c4c70b`; earlier pending Stage 4 entries below are historical. Stage 5 integrates only its nine feature commits onto that actual squash, with every patch and the full product tree unchanged from the accepted runtime checkpoint.
+
+PhoneBook, reminders and announcements have separate domain tables, explicit staff/manager permissions, audited versioned writes, web management and native consumption/actions. Reminders preserve calendar anchors and completion history; announcement audiences and mandatory expiry apply across list/detail/banner, with priority ordered before pagination. Deleted publishers remain null and announcements remain editable. Runtime packaging and guarded synthetic seeding include all three apps. Full database recovery includes them; patient-data bundles intentionally exclude them. The reminder timer is source-only and is not enabled by this release.
+
+Validation includes the 651-test combined backend run (two expected skips and two query-budget failures subsequently corrected and rechecked), 26 affected rechecks with original query caps, 12 announcement regressions plus a strengthened deleted-publisher web-edit check, strict schema, fresh PostgreSQL migrations and actual identity constraints. Native evidence includes 83 tests, compile/lint and the matching APK's functional XML/API smoke for contacts, account isolation, reminders, clinical navigation and announcement priority/expiry. Secure native screenshots provide no pixel proof; expiry's first post-boundary observation was about 24.5 seconds later. Component synthetic full-database restore evidence is retained; no new production or final all-app restore is claimed.
+
+The same independent source review cleared all three announcement findings and preserved clearance through unchanged transplants. Final pushed-head review/CI and the coordinator's bounded cross-stage acceptance remain required. See [Stage 5 behavior and verification](docs/issue-113-stage-5.md). This release does not activate production, install scheduler units or configure external notifications.
 ## Issue #113 Stage 4 implementation
 
 Stage 4 integrates from actual Stage 3 squash `cc1ad400f0b9d6da3e432d04428a26a14db46710` (PR #117). Its pending-review entries below are historical and superseded by that merge.

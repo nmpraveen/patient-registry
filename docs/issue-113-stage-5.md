@@ -44,4 +44,4 @@ python manage.py seed_staff_operations --owner <existing-settings-manager>
 Both require ALLOW_MOCK_DATA_SEEDING=true in an explicitly authorised test environment. Production remains false. The seed is repeatable and uses fictional 202-555-01xx numbers. It does not delete existing operational data.
 
 ## Integration status
-All three backend apps and native consumers are integrated on the declared Stage4 source boundary. Actual Stage4 squash rebase, one combined Stage5 PR, exact-head review/CI, and production activation remain separate gates. Runtime packaging includes all three apps through the explicit Docker/build-context/image-scan allowlists.
+All three backend apps and native consumers are integrated on actual Stage4 squash 64d6c6cf2d9af1d0b998bdf4bd628c72d8c4c70b (PR #118). The combined Stage5 PR, exact-head review/CI, coordinator integrated acceptance and production activation remain separate gates. Runtime packaging includes all three apps through the explicit Docker/build-context/image-scan allowlists.

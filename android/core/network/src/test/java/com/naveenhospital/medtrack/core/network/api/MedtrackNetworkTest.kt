@@ -1,6 +1,7 @@
 package com.naveenhospital.medtrack.core.network.api
 
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.async
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
@@ -23,6 +24,57 @@ class MedtrackNetworkTest {
     @After
     fun tearDown() {
         server.shutdown()
+    }
+
+    @Test
+    fun concurrentClinicalAndStaff401UseOneRotatingRefresh() = runBlocking {
+        val access = java.util.concurrent.atomic.AtomicReference("expired")
+        val refresh = java.util.concurrent.atomic.AtomicReference("original-refresh")
+        val expiredRequests = java.util.concurrent.CountDownLatch(2)
+        val refreshCount = java.util.concurrent.atomic.AtomicInteger()
+        val verified = java.util.concurrent.atomic.AtomicInteger()
+        server.dispatcher = object : okhttp3.mockwebserver.Dispatcher() {
+            override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse {
+                fun json(body: String) = MockResponse().setHeader("Content-Type", "application/json").setBody(body)
+                if (request.path == "/api/auth/token/refresh/") {
+                    if (refreshCount.incrementAndGet() != 1) return MockResponse().setResponseCode(401)
+                    assertEquals("original-refresh", MedtrackNetwork.contractMoshi()
+                        .adapter(com.naveenhospital.medtrack.core.network.model.RefreshTokenRequestDto::class.java)
+                        .fromJson(request.body.readUtf8())!!.refresh)
+                    return json(sessionBody("1", "renewed", "rotated"))
+                }
+                if (request.getHeader("Authorization") == "Bearer expired") {
+                    expiredRequests.countDown()
+                    check(expiredRequests.await(5, java.util.concurrent.TimeUnit.SECONDS))
+                    return MockResponse().setResponseCode(401)
+                }
+                return when (request.requestUrl!!.encodedPath) {
+                    "/api/me/" -> json("""{"id":1,"username":"synthetic","display_name":"Synthetic","roles":[],"capabilities":{"staff_operations":false},"data_scope":{"case_data_scope":"ALL","call_queue":true,"intake_patient_lookup":true}}""")
+                    "/api/metadata/categories/" -> json("""{"categories":[]}""")
+                    "/api/staff/announcements/" -> json("""{"count":0,"results":[]}""")
+                    else -> MockResponse().setResponseCode(404)
+                }
+            }
+        }
+        val api = MedtrackNetwork.create(
+            server.url("/").toString(), accessTokenProvider = access::get,
+            refreshTokenProvider = refresh::get, expectedAccountIdProvider = { "1" },
+            sessionIncarnationProvider = { "session" },
+            sessionUpdater = { newAccess, newRefresh -> access.set(newAccess); refresh.set(newRefresh); true },
+            onProfileVerified = { profile ->
+                assertFalse(profile.capabilities["staff_operations"] ?: true)
+                verified.incrementAndGet()
+            },
+        )
+        val staff: StaffOperationsApi = api
+        val clinicalRequest = async { api.categories() }
+        val staffRequest = async { staff.staffAnnouncements() }
+        assertTrue(clinicalRequest.await().categories.isEmpty())
+        assertTrue(staffRequest.await().results.isEmpty())
+        assertEquals(1, refreshCount.get())
+        assertEquals(1, verified.get())
+        assertEquals(jwt("1", "rotated"), refresh.get())
+        assertEquals(6, server.requestCount)
     }
 
     @Test

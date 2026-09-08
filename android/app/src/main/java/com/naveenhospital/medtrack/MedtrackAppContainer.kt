@@ -42,15 +42,8 @@ class MedtrackAppContainer @Inject constructor(@ApplicationContext context: Cont
 
     val staffToolsRepository = StaffToolsRepository(
         apiForSession = { identity ->
-            MedtrackNetwork.create(
-                baseUrl = apiBaseUrl,
-                accessTokenProvider = { tokenStore.accessTokenFor(identity) },
-                refreshTokenProvider = { tokenStore.refreshTokenFor(identity) },
-                expectedAccountIdProvider = { identity.accountId.takeIf { tokenStore.isCurrent(identity) } },
-                expectedMobileDeviceIdProvider = { identity.mobileDeviceId },
-                sessionIncarnationProvider = { tokenStore.sessionIdentityFor(identity.accountId)?.incarnation },
-                sessionUpdater = { access, refresh -> tokenStore.updateSessionForIdentity(identity, access, refresh) },
-            )
+            check(tokenStore.isCurrent(identity)) { "Staff session changed" }
+            apiForAccount(identity.accountId)
         },
         sessionIsCurrent = { identity ->
             tokenStore.isCurrent(identity) && medtrackRepository.activeAccountId() == identity.accountId
@@ -104,8 +97,8 @@ class MedtrackAppContainer @Inject constructor(@ApplicationContext context: Cont
         onAccountCommitted = { accountId ->
             lockStore.activateAccount(accountId)
             medtrackRepository.activateAccount(accountId)
-            staffToolsRepository.activate(tokenStore.sessionIdentityFor(accountId))
         },
+        onProfileVerified = { identity, profile -> staffToolsRepository.updateProfile(identity, profile) },
         onSessionCleared = { sessionIdentity ->
             accountInvalidator.invalidate(sessionIdentity)
         },
@@ -138,6 +131,9 @@ class MedtrackAppContainer @Inject constructor(@ApplicationContext context: Cont
                 },
                 sessionUpdater = { access, refresh ->
                     tokenStore.updateSessionForIdentity(sessionIdentity, access, refresh)
+                },
+                onProfileVerified = { profile ->
+                    if (tokenStore.isCurrent(sessionIdentity)) staffToolsRepository.updateProfile(sessionIdentity, profile)
                 },
                 enableDebugLogging = BuildConfig.DEBUG && BuildConfig.FLAVOR != "prod",
             )

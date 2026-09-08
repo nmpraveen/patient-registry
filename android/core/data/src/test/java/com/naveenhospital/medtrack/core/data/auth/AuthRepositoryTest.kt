@@ -63,6 +63,26 @@ class AuthRepositoryTest {
     }
 
     @Test
+    fun verifiedProfileIsPublishedOnlyAfterAccountCommit() = runTest {
+        val api = FakeAuthApi()
+        var committed = false
+        var published: UserProfileDto? = null
+        val repository = AuthRepository(
+            anonymousApi = api, verificationApiForAccessToken = { api }, apiForAccount = { api },
+            tokenStore = tokenStore,
+            onAccountCommitted = { committed = true },
+            onProfileVerified = { identity, profile ->
+                assertTrue(committed)
+                assertTrue(tokenStore.isCurrent(identity))
+                assertEquals(identity.accountId, profile.id.toString())
+                published = profile
+            },
+        )
+        val profile = repository.login("admin", "pass")
+        assertEquals(profile, published)
+    }
+
+    @Test
     fun loginSavesJwtSessionAndReturnsCurrentUser() = runTest {
         val api = FakeAuthApi()
         val repository = AuthRepository(api = api, tokenStore = tokenStore)

@@ -249,6 +249,7 @@ fun MedtrackApp(
     val cachedCases by container.medtrackRepository.cases.collectAsState(initial = emptyList())
     val shellCategoryOptions by container.medtrackRepository.categoryOptions.collectAsState(initial = emptyList())
     val snackbarHostState = remember { SnackbarHostState() }
+    val staffSession by container.staffToolsRepository.activeSession.collectAsState()
     var currentUserProfile by remember { mutableStateOf<UserProfileDto?>(null) }
     var currentUserDisplayName by remember { mutableStateOf<String?>(null) }
     var showQuickAddSheet by remember { mutableStateOf(false) }
@@ -738,7 +739,7 @@ fun MedtrackApp(
                         ) },
                         onOpenUpcomingCase = { id -> navController.navigate(Routes.caseDetail(id)) },
                         modifier = Modifier.fillMaxSize(),
-                        staffSummary = { StaffSummaryBanner(container.staffToolsRepository) { tab -> navController.navigate("staff_tools/$tab") } },
+                        staffSummary = { if (staffSession != null) StaffSummaryBanner(container.staffToolsRepository) { tab -> navController.navigate("staff_tools/$tab") } },
                         cases = pagedCases,
                         stats = stats,
                         searchQuery = homeSearchQuery,
@@ -1358,7 +1359,7 @@ fun MedtrackApp(
                             navController.navigate(Routes.NOTIFICATIONS)
                         },
                         onSignOut = { signOut() },
-                        onOpenStaffTools = { navController.navigate("staff_tools/0") },
+                        onOpenStaffTools = if (staffSession != null) ({ navController.navigate("staff_tools/0") }) else null,
                     )
                 }
             }
@@ -1847,7 +1848,7 @@ private fun ProfileScreen(
     overdueUnreadCount: Int,
     onOpenNotifications: (String?) -> Unit,
     onSignOut: () -> Unit,
-    onOpenStaffTools: () -> Unit,
+    onOpenStaffTools: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -1927,7 +1928,9 @@ private fun ProfileScreen(
             )
         }
 
-        OutlinedButton(onClick = onOpenStaffTools, modifier = Modifier.fillMaxWidth()) { Text("Staff tools") }
+        if (onOpenStaffTools != null) {
+            OutlinedButton(onClick = onOpenStaffTools, modifier = Modifier.fillMaxWidth()) { Text("Staff tools") }
+        }
 
         Text(
             text = "NOTIFICATIONS",

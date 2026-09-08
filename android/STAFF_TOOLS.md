@@ -45,3 +45,19 @@ preservation, dialer sanitation and expiry boundaries/response latency. Integrat
 Stage 5 must run the affected Android unit targets and lint, then perform synthetic
 emulator smoke after the true Stage 4 predecessor is integrated. Local implementation
 and unit checks do not constitute production or physical-device acceptance.
+
+
+### Current profile authorization and shared transport
+
+Staff tools require `GET /api/me/` capability `staff_operations: true`. Unknown
+profiles and older responses without this additive capability remain disabled,
+even if role names or `manage_settings` suggest staff access. The verified profile
+activates the session only after account commit. Home, Profile and direct staff
+navigation observe that authorized session. A refreshed profile denying access or
+a staff HTTP 403 clears all staff content and ends polling; a new verified allowed
+profile can enable it again. Session/request guards still discard obsolete results.
+
+Staff operations reuse the account's existing `MedtrackApi` instance, including its
+single refresh authenticator and rotating-token lock. Automatic token refresh also
+publishes its verified profile for current staff permission changes. This change
+does not alter the separate background sync client architecture.

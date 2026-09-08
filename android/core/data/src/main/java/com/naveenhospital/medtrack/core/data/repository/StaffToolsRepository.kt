@@ -41,9 +41,22 @@ class StaffToolsRepository(
     val dueReminderCount = noticeStore.state
     private var serverClock: StaffServerClock? = null
     private var activeApi: StaffOperationsApi? = null
+    private var authorizationGeneration = 0L
+
+    /** Unknown/older profiles and unrelated accounts never activate staff reads. */
+    @Synchronized
+    fun updateProfile(identity: AccountSessionIdentity, profile: UserProfileDto) {
+        if (!sessionIsCurrent(identity) || profile.id.toString() != identity.accountId) return
+        authorizationGeneration++
+        val authorized = profile.capabilities["staff_operations"] == true
+        if (!authorized) activate(null)
+        else if (session.value != identity) activate(identity, authorized = true)
+    }
 
     @Synchronized
-    fun activate(identity: AccountSessionIdentity?) {
+    fun activate(identity: AccountSessionIdentity?, authorized: Boolean = false) {
+        authorizationGeneration++
+        val identity = identity?.takeIf { authorized && sessionIsCurrent(it) }
         screenStore.activate(identity)
         bannerStore.activate(identity)
         noticeStore.activate(identity)
@@ -75,6 +88,7 @@ class StaffToolsRepository(
 
     private suspend fun load(block: suspend (StaffOperationsApi) -> StaffContent) {
         val identity = requireSession()
+        val authorization = authorizationFor(identity)
         val request = screenStore.begin(identity)
         screenStore.publish(identity, request, StaffScreenState(loading = true))
         try {
@@ -84,6 +98,7 @@ class StaffToolsRepository(
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
+            denyIfForbidden(identity, authorization, error)
             checkSession(identity)
             screenStore.publish(identity, request, StaffScreenState(error = staffError(error)))
         }
@@ -159,6 +174,7 @@ class StaffToolsRepository(
 
     suspend fun refreshDueNotices() {
         val identity = requireSession()
+        val authorization = authorizationFor(identity)
         val request = noticeStore.begin(identity)
         try {
             val result = api(identity).reminderOccurrences(status = "notices")
@@ -166,13 +182,15 @@ class StaffToolsRepository(
             noticeStore.publish(identity, request, result.count)
         } catch (cancelled: CancellationException) {
             throw cancelled
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            denyIfForbidden(identity, authorization, error)
             // No stale notices after a failed fresh scope check.
         }
     }
 
     suspend fun refreshBanner() {
         val identity = requireSession()
+        val authorization = authorizationFor(identity)
         val request = bannerStore.begin(identity)
         try {
             val started = monotonicMillis()
@@ -186,9 +204,22 @@ class StaffToolsRepository(
             }
         } catch (cancelled: CancellationException) {
             throw cancelled
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            denyIfForbidden(identity, authorization, error)
             // A failed fresh read leaves the banner empty, never stale or from another audience.
         }
+    }
+
+    @Synchronized
+    private fun authorizationFor(identity: AccountSessionIdentity): Long {
+        checkSession(identity)
+        return authorizationGeneration
+    }
+
+    @Synchronized
+    private fun denyIfForbidden(identity: AccountSessionIdentity, authorization: Long, error: Exception) {
+        if (session.value == identity && authorizationGeneration == authorization &&
+            (error as? HttpException)?.code() == 403) activate(null)
     }
 
     @Synchronized

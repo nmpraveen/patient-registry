@@ -5,6 +5,7 @@ import com.naveenhospital.medtrack.core.domain.model.StaffAnnouncement
 import com.naveenhospital.medtrack.core.network.api.StaffOperationsApi
 import com.naveenhospital.medtrack.core.network.model.*
 import java.io.IOException
+import okhttp3.ResponseBody.Companion.toResponseBody
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
@@ -13,10 +14,108 @@ import org.junit.Test
 
 class StaffToolsRepositoryTest {
     private val identity = AccountSessionIdentity("1", "one")
-    private fun repository(api: StaffOperationsApi) = StaffToolsRepository({ api }, { it == identity }, { 0L }).apply { activate(identity) }
+    private fun repository(api: StaffOperationsApi) = StaffToolsRepository({ api }, { it == identity }, { 0L }).apply { activate(identity, authorized = true) }
     private val contact = DirectoryContactDto(1, "Switchboard", phones = listOf(DirectoryPhoneDto("Desk", "123456")), isActive = true, isFavourite = false, version = 2)
     private val occurrence = ReminderOccurrenceDto(7, 3, "Check supplies", 1, "Staff One", "2026-09-08", "2026-09-07", isActive = true, canComplete = true, definitionVersion = 4)
     private val definition = StaffReminderDto(3, "Check supplies", 1, 1, "Staff One", true, "2026-09-08", 1, "ONCE", true, 4, true, true)
+
+    private fun profile(allowed: Boolean? = true) = UserProfileDto(
+        1, "synthetic", "Synthetic", listOf("unbacked-group"),
+        allowed?.let { mapOf("staff_operations" to it) } ?: emptyMap(),
+        DataScopeDto("ALL", true, true),
+    )
+
+    @Test fun unknownDeniedAndMixedVersionProfilesNeverCreateClientOrPoll() = runTest {
+        var clients = 0
+        val repository = StaffToolsRepository({ clients++; error("Denied client") }, { it == identity }, { 0L })
+        repository.activate(identity)
+        for (permission in listOf(null, false)) {
+            repository.updateProfile(identity, profile(permission))
+            assertNull(repository.activeSession.value)
+            assertTrue(runCatching { repository.refreshBanner() }.exceptionOrNull() is kotlinx.coroutines.CancellationException)
+            assertTrue(runCatching { repository.refreshDueNotices() }.exceptionOrNull() is kotlinx.coroutines.CancellationException)
+            assertTrue(runCatching { repository.directory("", false, 1) }.exceptionOrNull() is kotlinx.coroutines.CancellationException)
+        }
+        assertEquals(0, clients)
+    }
+
+    @Test fun currentProfileRevocationClearsContentAndRejectsLateResponse() = runTest {
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        var delayed = false
+        val api = object : StaffApiStub() {
+            override suspend fun directory(query: String, favourites: Boolean, page: Int): StaffPageDto<DirectoryContactDto> {
+                if (delayed) { entered.complete(Unit); release.await() }
+                return StaffPageDto(1, results = listOf(contact))
+            }
+        }
+        val repository = repository(api)
+        repository.directory("", false, 1)
+        assertNotNull(repository.screen.value.content)
+        delayed = true
+        val pending = launch { repository.directory("", false, 1) }
+        entered.await()
+        repository.updateProfile(identity, profile(false))
+        assertNull(repository.activeSession.value)
+        // A new allowed snapshot of this same session must not accept the old request.
+        repository.updateProfile(identity, profile(true))
+        release.complete(Unit)
+        pending.join()
+        assertNull(repository.screen.value.content)
+        repository.updateProfile(identity.copy(incarnation = "obsolete"), profile(false))
+        assertEquals(identity, repository.activeSession.value)
+    }
+
+    @Test fun delayedForbiddenCannotRevokeNewerAuthorization() = runTest {
+        for (revokeFirst in listOf(false, true)) {
+            for (surface in listOf("screen", "banner", "notices")) {
+                val entered = CompletableDeferred<Unit>()
+                val release = CompletableDeferred<Unit>()
+                suspend fun forbidden(): Nothing {
+                    entered.complete(Unit)
+                    release.await()
+                    throw retrofit2.HttpException(retrofit2.Response.error<Unit>(403, "{}".toResponseBody()))
+                }
+                val api = object : StaffApiStub() {
+                    override suspend fun directory(query: String, favourites: Boolean, page: Int): StaffPageDto<DirectoryContactDto> = forbidden()
+                    override suspend fun staffAnnouncements(page: Int): StaffPageDto<StaffAnnouncementDto> = forbidden()
+                    override suspend fun reminderOccurrences(status: String, reminderId: Long?, page: Int): StaffPageDto<ReminderOccurrenceDto> = forbidden()
+                }
+                val repository = repository(api)
+                val pending = launch {
+                    when (surface) {
+                        "screen" -> repository.directory("", false, 1)
+                        "banner" -> repository.refreshBanner()
+                        else -> repository.refreshDueNotices()
+                    }
+                }
+                entered.await()
+                if (revokeFirst) repository.updateProfile(identity, profile(false))
+                repository.updateProfile(identity, profile(true))
+                release.complete(Unit)
+                pending.join()
+                assertEquals("$surface revokeFirst=$revokeFirst", identity, repository.activeSession.value)
+            }
+        }
+    }
+
+    @Test fun forbiddenStaffReadDeactivatesAllPollingUntilNewAuthorizedProfile() = runTest {
+        var reads = 0
+        val api = object : StaffApiStub() {
+            override suspend fun staffAnnouncements(page: Int): StaffPageDto<StaffAnnouncementDto> {
+                reads++
+                throw retrofit2.HttpException(retrofit2.Response.error<Unit>(403,
+                    "{}".toResponseBody()))
+            }
+        }
+        val repository = repository(api)
+        repository.refreshBanner()
+        assertNull(repository.activeSession.value)
+        repeat(3) { runCatching { repository.refreshBanner() }; runCatching { repository.refreshDueNotices() } }
+        assertEquals(1, reads)
+        assertTrue(repository.announcements.value.isEmpty())
+        assertEquals(0, repository.dueReminderCount.value)
+    }
 
     @Test fun delayedNetworkResponseCannotRepopulateAfterRevocation() = runTest {
         val entered = CompletableDeferred<Unit>()
@@ -113,7 +212,7 @@ class StaffToolsRepositoryTest {
                 )), serverNow = "2026-09-07T00:00:00Z")
             }
         }
-        val repository = StaffToolsRepository({ api }, { it == identity }, { elapsed }).apply { activate(identity) }
+        val repository = StaffToolsRepository({ api }, { it == identity }, { elapsed }).apply { activate(identity, authorized = true) }
         repository.refreshBanner()
         assertTrue(repository.visibleAnnouncements().isEmpty())
     }

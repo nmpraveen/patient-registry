@@ -32,6 +32,7 @@ class AuthRepository(
         newAccountId: String,
     ) -> Unit = { _, _ -> },
     private val onAccountCommitted: suspend (accountId: String) -> Unit = {},
+    private val onProfileVerified: (AccountSessionIdentity, UserProfileDto) -> Unit = { _, _ -> },
     private val onSessionCleared: suspend (session: AccountSessionIdentity?) -> Unit = {},
 ) {
     constructor(api: MedtrackApi, tokenStore: TokenStore) : this(
@@ -127,6 +128,7 @@ class AuthRepository(
                         "Authenticated account identity changed unexpectedly.",
                     )
                 }
+                onProfileVerified(sessionIdentity, profile)
                 verifiedProfile = profile
                 profile
             }
@@ -231,6 +233,7 @@ class AuthRepository(
                     ?: error("Unable to bind the verified MEDTRACK session identity.")
                 onAccountCommitted(verifiedAccountId)
             }
+            onProfileVerified(requireNotNull(committedSession), profile)
             verifiedProfile = profile
             profile
         }.getOrElse { failure ->

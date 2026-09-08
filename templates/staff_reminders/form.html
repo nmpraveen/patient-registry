@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}{% if reminder %}Edit reminder{% else %}New reminder{% endif %} · MEDTRACK{% endblock %}
+{% block content %}
+<h1 class="h3">{% if reminder %}Edit reminder{% else %}New reminder{% endif %}</h1>
+<form method="post" class="col-lg-7">
+  {% csrf_token %}
+  {{ form.non_field_errors }}
+  {% for field in form %}
+    {% if field.is_hidden %}{{ field }}{{ field.errors }}{% else %}
+    <div class="mb-3">{{ field.label_tag }}{{ field }}{{ field.errors }}</div>
+    {% endif %}
+  {% endfor %}
+  {% if reminder %}<p class="small text-muted">To change the repeat schedule, deactivate this reminder and create a new one.</p>{% endif %}
+  <button class="btn btn-primary" type="submit">Save</button>
+  <a class="btn btn-outline-secondary" href="{% url 'staff_reminders:list' %}">Cancel</a>
+</form>
+{% endblock %}

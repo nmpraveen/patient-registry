@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Edit contact{% endblock %}
+{% block content %}
+<h1 class="h3">{% if contact %}Edit contact{% else %}Add contact{% endif %}</h1>
+<form method="post" class="staff-form">{% csrf_token %}{{ form.as_p }}
+<fieldset><legend class="h5">Phone numbers</legend>{{ phones.management_form }}{{ phones.non_form_errors }}
+<div id="phone-rows">{% for phone in phones %}<div class="card card-body mb-2">{{ phone.as_p }}</div>{% endfor %}</div>
+<template id="phone-empty"><div class="card card-body mb-2">{{ phones.empty_form.as_p }}</div></template>
+<button class="btn btn-outline-secondary mb-3" type="button" id="add-phone">Add phone</button></fieldset>
+<button class="btn btn-primary" type="submit">Save contact</button> <a href="{% url 'staff_directory:list' %}">Cancel</a></form>
+<script src="{% static 'staff_directory/forms.js' %}" defer></script>
+{% endblock %}

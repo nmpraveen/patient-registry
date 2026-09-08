@@ -36,6 +36,7 @@ object MedtrackNetwork {
         sessionIncarnationProvider: () -> String? = { null },
         sessionUpdater: (access: String, refresh: String?) -> Boolean = { _, _ -> false },
         enableDebugLogging: Boolean = false,
+        onProfileVerified: (UserProfileDto) -> Unit = {},
     ): MedtrackApi {
         val normalizedBaseUrl = baseUrl.withTrailingSlash()
         val moshi = contractMoshi()
@@ -63,6 +64,7 @@ object MedtrackNetwork {
                     currentSessionIncarnationProvider = sessionIncarnationProvider,
                     sessionUpdater = sessionUpdater,
                     moshi = moshi,
+                    onProfileVerified = onProfileVerified,
                 ),
             )
         if (enableDebugLogging) {
@@ -109,6 +111,7 @@ private class RefreshTokenAuthenticator(
     private val currentSessionIncarnationProvider: () -> String?,
     private val sessionUpdater: (access: String, refresh: String?) -> Boolean,
     private val moshi: Moshi,
+    private val onProfileVerified: (UserProfileDto) -> Unit,
 ) : Authenticator {
     private val refreshClient = OkHttpClient()
     private val refreshRequestAdapter = moshi.adapter(RefreshTokenRequestDto::class.java)
@@ -165,6 +168,7 @@ private class RefreshTokenAuthenticator(
             if (!sessionUpdater(access, session.refresh)) return@synchronized null
             if (expectedAccountIdProvider() != expectedAccountId) return@synchronized null
             if (currentSessionIncarnationProvider() != sessionIncarnation) return@synchronized null
+            onProfileVerified(profile)
             response.request.withBearer(access)
         }
     }

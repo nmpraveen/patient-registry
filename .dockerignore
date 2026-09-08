@@ -13,6 +13,12 @@
 !api/**
 !patients/
 !patients/**
+!staff_directory/
+!staff_directory/**
+!staff_announcements/
+!staff_announcements/**
+!staff_reminders/
+!staff_reminders/**
 !templates/
 !templates/**
 

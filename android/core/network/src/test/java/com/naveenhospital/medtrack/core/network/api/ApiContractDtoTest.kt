@@ -27,6 +27,15 @@ class ApiContractDtoTest {
     private val moshi = MedtrackNetwork.contractMoshi()
 
     @Test
+    fun staffCapabilityIsExplicitAndOlderPayloadIsDenied() {
+        val adapter = moshi.adapter(com.naveenhospital.medtrack.core.network.model.UserProfileDto::class.java)
+        val legacy = """{"id":1,"username":"synthetic","display_name":"Synthetic","roles":["admin"],"capabilities":{"manage_settings":true},"data_scope":{"case_data_scope":"ALL","call_queue":true,"intake_patient_lookup":true}}"""
+        assertFalse(adapter.fromJson(legacy)!!.capabilities["staff_operations"] ?: false)
+        val allowed = legacy.replace("\"manage_settings\":true", "\"staff_operations\":true")
+        assertTrue(adapter.fromJson(allowed)!!.capabilities["staff_operations"] ?: false)
+    }
+
+    @Test
     fun mtnoIsAdditiveAcrossSearchDetailAndEditWithBlankUhid() {
         val cases = moshi.adapter(CaseSearchResponseDto::class.java)
         val patients = moshi.adapter(PatientSearchResponseDto::class.java)

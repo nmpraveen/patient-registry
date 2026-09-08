@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block title %}Publish announcement{% endblock %}
+{% block content %}
+<h1 class="h3">{% if announcement %}Edit announcement{% else %}Publish announcement{% endif %}</h1>
+<form method="post" class="staff-form">{% csrf_token %}{{ form.as_p }}
+<button class="btn btn-primary" type="submit">Save announcement</button> <a href="{% url 'staff_announcements:list' %}?manage=true">Cancel</a></form>
+{% endblock %}

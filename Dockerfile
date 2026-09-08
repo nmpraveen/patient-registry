@@ -30,6 +30,9 @@ COPY manage.py VERSION CHANGELOG.md /app/
 COPY patient_registry /app/patient_registry
 COPY api /app/api
 COPY patients /app/patients
+COPY staff_directory /app/staff_directory
+COPY staff_announcements /app/staff_announcements
+COPY staff_reminders /app/staff_reminders
 COPY templates /app/templates
 
 # Apply commit-specific metadata after dependency installation so changing the

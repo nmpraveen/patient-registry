@@ -1,5 +1,18 @@
 # RUNBOOK.md
 
+## Issue #113 Stage 5 staff operations
+
+Clinical `seed_mock_data` and its cleanup do not create or delete operational staff rows. Use only the explicit `seed_staff_operations` command for staff demonstrations in an isolated synthetic environment. Do not identify or delete maintained records by mutable demo names. Scheduler catch-up pauses without cursor advancement for inactive or unauthorized assignees and resumes when eligible; remaining counts exclude paused definitions.
+
+Native staff access requires the current `/api/me/` capability `staff_operations: true`; absent capability defaults to disabled. Raw group labels and `is_staff` are not substitutes. Profile denial or staff 403 clears staff state and stops polling, while a later verified allowed profile can re-enable it. The account's shared API client owns the foreground refresh lock, including concurrent clinical and staff requests. Retain generation guards so an old denial cannot override that newer profile.
+
+Use [Stage 5 behavior and contracts](docs/issue-113-stage-5.md) for `/staff/directory/`, `/staff/reminders/`, `/staff/announcements/` and their existing-JWT API routes. Reads require explicit active RoleSetting membership or an active superuser; `is_staff` alone grants nothing. Existing `manage_settings` controls directory/announcement maintenance. Reminder owner/current assignee scope and fresh authenticated write checks remain enforced.
+
+For an explicitly authorized synthetic environment, migrate from zero and run `python manage.py test staff_directory staff_announcements staff_reminders`, strict OpenAPI validation and migration drift checks. Reuse matching completed evidence instead of repeating a full suite solely for Git metadata changes. Announcement migration0002 allows validation of the already nullable publisher after user deletion. Do not remove migration/identity guards to force rollback.
+
+The existing guarded seed command `python manage.py seed_staff_operations --owner <synthetic-settings-manager>` requires `ALLOW_MOCK_DATA_SEEDING=true` for that command only. Normal runtime retains false. Run bounded reminder catch-up with `python manage.py schedule_staff_reminders --limit 500 --per-reminder 24`; inspect processed/remaining/failure output and confirm identical retries create no duplicates. Source-only `deploy/systemd/medtrack-staff-reminders.service` and `.timer` require separate authorized installation/activation. They send no external notifications.
+
+Operational tables and favourites are included in full PostgreSQL backups, not patient-data ZIP bundles. Preserve existing full recovery and outgoing patient identity checkpoint requirements. Native operational state is session-owned memory; after replacing a synthetic database, clear the synthetic dev-package session and log in explicitly using the new fixture identities. Do not reuse old IDs/tokens as acceptance evidence. Native protected-screen XML/API receipts establish behavior, not pixel accuracy.
 ## Issue #113 Stage 4 screens and history
 
 Use [Stage 4 behavior and verification](docs/issue-113-stage-4.md) for the scoped Upcoming, timeline and related-case read contracts. Upcoming starts on the hospital's current date and spans seven inclusive dates; each task keeps its own identity even when titles match. Timeline pages are bounded to 30 canonical events. Invalid or expired cursors require a fresh first page; repeat the current filters. Patient searches belong in the POST body, never in a URL. Taskless call receipts remain separate from task completion.

@@ -1,0 +1,5 @@
+{% if staff_announcement_banner %}
+<aside class="alert alert-info d-flex flex-wrap justify-content-between gap-2 text-break" aria-label="Staff announcement" data-announcement-expires="{{ staff_announcement_banner.ends_at|date:'c' }}" data-server-now="{{ server_now|date:'c' }}">
+<a class="text-reset" href="{% url 'staff_announcements:detail' staff_announcement_banner.pk %}"><strong>{{ staff_announcement_banner.get_priority_display }}:</strong> {{ staff_announcement_banner.text|truncatechars:140 }}</a><a class="text-reset" href="{% url 'staff_announcements:list' %}">All announcements</a>
+</aside>
+{% endif %}

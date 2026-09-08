@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}{{ reminder.title }} · MEDTRACK{% endblock %}
+{% block content %}
+<a href="{% url 'staff_reminders:list' %}">Reminders</a>
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 my-3">
+  <h1 class="h3 text-break">{{ reminder.title }}</h1>
+  <a class="btn btn-outline-primary" href="{% url 'staff_reminders:edit' reminder.pk %}">Edit</a>
+</div>
+<dl class="row">
+  <dt class="col-sm-4">Assigned to</dt><dd class="col-sm-8">{{ reminder.assignee.get_full_name|default:reminder.assignee.username }}{% if not reminder.assignee.is_active %} · Staff inactive{% endif %}</dd>
+  <dt class="col-sm-4">First due date</dt><dd class="col-sm-8">{{ reminder.due_date|date:"j M Y" }}</dd>
+  <dt class="col-sm-4">Repeat</dt><dd class="col-sm-8">{{ reminder.get_recurrence_display }}</dd>
+  <dt class="col-sm-4">Advance notice</dt><dd class="col-sm-8">{{ reminder.advance_notice_days }} days</dd>
+  <dt class="col-sm-4">Status</dt><dd class="col-sm-8">{{ reminder.is_active|yesno:"Active,Inactive" }}</dd>
+</dl>
+<h2 class="h5">Occurrences</h2>
+<div class="list-group mb-3">
+{% for occurrence in page_obj %}
+  <div class="list-group-item d-flex flex-wrap justify-content-between align-items-center gap-2">
+    <div>{{ occurrence.due_date|date:"j M Y" }}{% if occurrence.completed_at %}<div class="small">Completed {{ occurrence.completed_at|date:"j M Y H:i" }} · {{ occurrence.completed_by.get_full_name|default:occurrence.completed_by.username }}</div>{% endif %}</div>
+    {% if not occurrence.completed_at and reminder.is_active %}<form method="post" action="{% url 'staff_reminders:complete' occurrence.pk %}">{% csrf_token %}<input type="hidden" name="version" value="{{ reminder.version }}"><button class="btn btn-sm btn-outline-primary" type="submit">Complete</button></form>{% endif %}
+  </div>
+{% endfor %}
+</div>
+{% include "staff_reminders/pagination.html" %}
+{% endblock %}

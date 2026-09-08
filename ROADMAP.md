@@ -1,5 +1,12 @@
 # ROADMAP.md
 
+## Issue #113 Stage 5 source gate
+
+- All four late PR #119 comments are corrected and have focused lane review GO: scheduler staff eligibility, explicit operational seeding, native authorization gates and shared refresh transport. Complete fresh CI and final pushed-head correspondence for this consolidated update. The earlier clinical acceptance is complete; its database-proof helper lookup was corrected without changing product code.
+
+- Stage 4 is merged in PR #118 at `64d6c6cf2d9af1d0b998bdf4bd628c72d8c4c70b`; its earlier pending-review entries below are historical.
+- Stage 5 implements separate PhoneBook, fixed-anchor reminders and scheduled announcements across web/API/native. The same source review clears pagination priority, stale banner responses and deleted-publisher handling. Complete the final pushed-head correspondence/CI and coordinator's bounded integrated acceptance; preserve already passing scope, concurrency, calendar, native and recovery evidence.
+- Keep issue #113 open for the coordinator's final coverage and integration decision. Production deployment, real-data migration, scheduler activation and physical-device acceptance remain separate authorized gates. [Stage 5 contract](docs/issue-113-stage-5.md).
 ## Issue #113 Stage 4 source gate
 
 - Stage 3 is merged in PR #117 at `cc1ad400f0b9d6da3e432d04428a26a14db46710`; its earlier pending entries below are historical.

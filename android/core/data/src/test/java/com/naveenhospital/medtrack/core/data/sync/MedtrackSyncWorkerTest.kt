@@ -1143,7 +1143,7 @@ private class FakeSyncApi(
     private val notificationPages: Map<String?, NotificationsResponseDto> = emptyMap(),
     private val notificationErrors: Map<String?, Throwable> = emptyMap(),
     private val notificationFirstPageSequence: List<NotificationsResponseDto> = emptyList(),
-) : MedtrackApi {
+) : MedtrackApi, com.naveenhospital.medtrack.core.network.api.StaffOperationsApi by com.naveenhospital.medtrack.core.data.unusedStaffApi() {
     var listCasesCalls = 0
     override suspend fun relatedCases(caseId: String, cursor: String?): com.naveenhospital.medtrack.core.network.model.RelatedCasePageDto = error("Unused")
 

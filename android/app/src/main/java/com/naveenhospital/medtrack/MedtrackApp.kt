@@ -143,6 +143,9 @@ import java.util.TimeZone
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import com.naveenhospital.medtrack.operations.StaffToolsScreen
+import com.naveenhospital.medtrack.operations.StaffSummaryBanner
+import androidx.compose.material3.OutlinedButton
 
 private const val IDLE_RELOCK_MILLIS = 15 * 60 * 1000L
 private const val UI_REVIEW_AUTO_LOGIN = false
@@ -165,6 +168,7 @@ private object Routes {
     const val NOTIFICATIONS = "notifications"
     const val ALERT_DETAIL = "alerts/{notificationId}"
     const val ME = "me"
+    const val STAFF_TOOLS = "staff_tools/{tab}"
 
     fun caseDetail(caseId: String): String = "cases/$caseId"
     fun createCase(category: CaseCategory, label: String): String = "create_case/${category.name}/${Uri.encode(label)}"
@@ -245,6 +249,7 @@ fun MedtrackApp(
     val cachedCases by container.medtrackRepository.cases.collectAsState(initial = emptyList())
     val shellCategoryOptions by container.medtrackRepository.categoryOptions.collectAsState(initial = emptyList())
     val snackbarHostState = remember { SnackbarHostState() }
+    val staffSession by container.staffToolsRepository.activeSession.collectAsState()
     var currentUserProfile by remember { mutableStateOf<UserProfileDto?>(null) }
     var currentUserDisplayName by remember { mutableStateOf<String?>(null) }
     var showQuickAddSheet by remember { mutableStateOf(false) }
@@ -734,6 +739,7 @@ fun MedtrackApp(
                         ) },
                         onOpenUpcomingCase = { id -> navController.navigate(Routes.caseDetail(id)) },
                         modifier = Modifier.fillMaxSize(),
+                        staffSummary = { if (staffSession != null) StaffSummaryBanner(container.staffToolsRepository) { tab -> navController.navigate("staff_tools/$tab") } },
                         cases = pagedCases,
                         stats = stats,
                         searchQuery = homeSearchQuery,
@@ -1323,6 +1329,13 @@ fun MedtrackApp(
                         submitAlertCallOutcome(selectedCase, input, attemptedAt, report)
                     }
                 }
+                composable(Routes.STAFF_TOOLS) { entry ->
+                    StaffToolsScreen(
+                        repository = container.staffToolsRepository,
+                        onBack = { navController.popBackStack() },
+                        initialTab = entry.arguments?.getString("tab")?.toIntOrNull() ?: 0,
+                    )
+                }
                 composable(Routes.ME) {
                     LaunchedEffect(Unit) {
                         if (currentUserProfile == null) {
@@ -1346,6 +1359,7 @@ fun MedtrackApp(
                             navController.navigate(Routes.NOTIFICATIONS)
                         },
                         onSignOut = { signOut() },
+                        onOpenStaffTools = if (staffSession != null) ({ navController.navigate("staff_tools/0") }) else null,
                     )
                 }
             }
@@ -1834,6 +1848,7 @@ private fun ProfileScreen(
     overdueUnreadCount: Int,
     onOpenNotifications: (String?) -> Unit,
     onSignOut: () -> Unit,
+    onOpenStaffTools: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -1911,6 +1926,10 @@ private fun ProfileScreen(
                 icon = Icons.Outlined.ErrorOutline,
                 modifier = Modifier.weight(1f),
             )
+        }
+
+        if (onOpenStaffTools != null) {
+            OutlinedButton(onClick = onOpenStaffTools, modifier = Modifier.fillMaxWidth()) { Text("Staff tools") }
         }
 
         Text(

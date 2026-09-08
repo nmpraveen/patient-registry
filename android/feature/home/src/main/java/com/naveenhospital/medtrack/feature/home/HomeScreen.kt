@@ -188,6 +188,7 @@ fun HomeScreen(
     loadUpcoming: suspend (String?, String?) -> com.naveenhospital.medtrack.core.domain.model.UpcomingPage,
     onOpenUpcomingCase: (String) -> Unit,
     modifier: Modifier = Modifier,
+    staffSummary: @Composable () -> Unit = {},
 ) {
     var expandedCaseId by remember { mutableStateOf<String?>(null) }
     var riskCaseId by remember { mutableStateOf<String?>(null) }
@@ -200,6 +201,7 @@ fun HomeScreen(
             .padding(horizontal = HomeUiScale.ScreenHorizontalPadding, vertical = HomeUiScale.ScreenVerticalPadding),
         verticalArrangement = Arrangement.spacedBy(HomeUiScale.SectionGap),
     ) {
+        staffSummary()
         V2aHeader()
 
         SearchFilterBar(

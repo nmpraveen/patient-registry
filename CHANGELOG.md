@@ -1,3 +1,16 @@
+## 2026.09.08.02.57
+
+- Pause reminder catch-up when an assignee loses staff authorization, preserving the calendar cursor and completion history.
+- Keep staff fixtures in the explicit operational seed command so clinical mock-data cleanup leaves maintained staff records untouched.
+- Gate native staff tools and polling on the verified server capability, guard stale denial responses, and share the account token-refresh client.
+
+## 2026.09.08.02.21
+
+- Add scoped PhoneBook search, multiple labelled numbers, per-user favourites and manager maintenance across web and native.
+- Add separately scheduled staff reminders with fixed calendar recurrence, scoped reassignment and versioned, idempotent completion history.
+- Add scheduled staff announcements with explicit audiences, priority before pagination, safe expiry/resume handling and retained editable records after publisher deletion.
+- Include operational apps in runtime packaging and full database recovery; preserve patient-bundle exclusion and existing clinical permissions.
+
 ## 2026.09.08.02.07
 
 - Expand web and native intake into one validated form with one Save action, optional details and draft protection; retain immutable MTNO and optional hospital IDs.

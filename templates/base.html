@@ -1534,6 +1534,11 @@
                   {% endif %}
                 </div>
                 <div class="global-nav-utility">
+                  {% if staff_operations_allowed %}
+                    <a class="btn btn-sm btn-outline-light" href="{% url 'staff_directory:list' %}">PhoneBook</a>
+                    <a class="btn btn-sm btn-outline-light" href="{% url 'staff_reminders:list' %}">Reminders</a>
+                    <a class="btn btn-sm btn-outline-light" href="{% url 'staff_announcements:list' %}">Announcements</a>
+                  {% endif %}
                   <a
                     class="nav-icon-button"
                     href="{% url 'patients:settings' %}"
@@ -1567,6 +1572,9 @@
     </nav>
 
     <main id="main-content" class="container-fluid container-lg px-3 px-md-0 pb-4" tabindex="-1">
+      {% if staff_operations_allowed %}
+        <div id="staff-announcement-banner" data-url="{% url 'staff_announcements:banner' %}"></div>
+      {% endif %}
       {% if messages %}
         {% for message in messages %}
           <div class="alert alert-{{ message.tags|default:'info'|message_alert_class }} mb-2">{{ message }}</div>
@@ -1574,6 +1582,10 @@
       {% endif %}
 
       {% block content %}{% endblock %}
+      {% if staff_operations_allowed %}
+        <link rel="stylesheet" href="{% static 'staff_directory/staff.css' %}">
+        <script src="{% static 'staff_announcements/expiry.js' %}" defer></script>
+      {% endif %}
     </main>
     <script src="{% static 'patients/vendor/bootstrap/5.3.3/bootstrap.bundle.min.js' %}"></script>
     <script

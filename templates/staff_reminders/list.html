@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Reminders · MEDTRACK{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <h1 class="h3 mb-0">Reminders</h1>
+  <a class="btn btn-primary" href="{% url 'staff_reminders:create' %}">New reminder</a>
+</div>
+<nav aria-label="Reminder filters" class="d-flex flex-wrap gap-2 mb-3">
+  <a class="btn btn-sm {% if status == 'notices' %}btn-primary{% else %}btn-outline-secondary{% endif %}" href="?status=notices">Due notices</a>
+  <a class="btn btn-sm {% if status == 'pending' %}btn-primary{% else %}btn-outline-secondary{% endif %}" href="?status=pending">Pending</a>
+  <a class="btn btn-sm {% if status == 'completed' %}btn-primary{% else %}btn-outline-secondary{% endif %}" href="?status=completed">Completed</a>
+  <a class="btn btn-sm {% if status == 'all' %}btn-primary{% else %}btn-outline-secondary{% endif %}" href="?status=all">All</a>
+</nav>
+<div class="list-group mb-3">
+{% for occurrence in page_obj %}
+  <div class="list-group-item d-flex flex-wrap justify-content-between align-items-center gap-2">
+    <div class="text-break">
+      <a href="{% url 'staff_reminders:detail' occurrence.reminder_id %}">{{ occurrence.reminder.title }}</a>
+      <div class="small">{{ occurrence.due_date|date:"j M Y" }} · {{ occurrence.reminder.assignee.get_full_name|default:occurrence.reminder.assignee.username }}{% if not occurrence.reminder.assignee.is_active %} · Staff inactive{% endif %}{% if not occurrence.reminder.is_active %} · Inactive{% endif %}{% if occurrence.completed_at %} · Completed{% endif %}</div>
+    </div>
+    {% if not occurrence.completed_at and occurrence.reminder.is_active %}
+    <form method="post" action="{% url 'staff_reminders:complete' occurrence.pk %}">{% csrf_token %}<input type="hidden" name="version" value="{{ occurrence.reminder.version }}"><button class="btn btn-sm btn-outline-primary" type="submit">Complete</button></form>
+    {% endif %}
+  </div>
+{% empty %}<p class="text-muted">No reminders.</p>{% endfor %}
+</div>
+{% include "staff_reminders/pagination.html" %}
+{% endblock %}

@@ -1,5 +1,18 @@
 # PROJECT_STATE.md
 
+## Issue #113 Stage 5 staff operations
+
+The four late PR #119 findings are corrected. Scheduler selection and remaining-work counts use current eligible staff, with actor-before-definition locks and a fresh authorization check; loss of eligibility preserves the cursor/history until authorization returns or reassignment. The clinical mock seed no longer creates staff rows; the explicit operational seed remains. `/api/me/` supplies `capabilities.staff_operations`, and native staff routes/polling require a verified allowed profile. Staff and clinical foreground calls share the account refresh client; stale denial responses cannot override newer authorization.
+
+Focused validation passes 34 backend/integration checks, two profile checks and 44 native tests, plus strict schema, no migration drift, app compilation and affected lint. Both lane corrections have focused review GO. The combined push requires fresh exact-head CI and final correspondence. Prior clinical acceptance remains valid: its interrupted database assertion was a test-helper lookup error, and the corrected read-only proof confirmed the one stored receipt without a product change. Native correction evidence is focused tests/compile/lint; the emulator was not rerun for these changes.
+
+Stage 4 is merged as PR #118 at `64d6c6cf2d9af1d0b998bdf4bd628c72d8c4c70b`; earlier pending Stage 4 entries below are historical. Stage 5 integrates only its nine feature commits onto that actual squash, with every patch and the full product tree unchanged from the accepted runtime checkpoint.
+
+PhoneBook, reminders and announcements have separate domain tables, explicit staff/manager permissions, audited versioned writes, web management and native consumption/actions. Reminders preserve calendar anchors and completion history; announcement audiences and mandatory expiry apply across list/detail/banner, with priority ordered before pagination. Deleted publishers remain null and announcements remain editable. Runtime packaging and guarded synthetic seeding include all three apps. Full database recovery includes them; patient-data bundles intentionally exclude them. The reminder timer is source-only and is not enabled by this release.
+
+Validation includes the 651-test combined backend run (two expected skips and two query-budget failures subsequently corrected and rechecked), 26 affected rechecks with original query caps, 12 announcement regressions plus a strengthened deleted-publisher web-edit check, strict schema, fresh PostgreSQL migrations and actual identity constraints. Native evidence includes 83 tests, compile/lint and the matching APK's functional XML/API smoke for contacts, account isolation, reminders, clinical navigation and announcement priority/expiry. Secure native screenshots provide no pixel proof; expiry's first post-boundary observation was about 24.5 seconds later. Component synthetic full-database restore evidence is retained; no new production or final all-app restore is claimed.
+
+The same independent source review cleared all three announcement findings and preserved clearance through unchanged transplants. Final pushed-head review/CI and the coordinator's bounded cross-stage acceptance remain required. See [Stage 5 behavior and verification](docs/issue-113-stage-5.md). This release does not activate production, install scheduler units or configure external notifications.
 ## Issue #113 Stage 4 implementation
 
 Stage 4 integrates from actual Stage 3 squash `cc1ad400f0b9d6da3e432d04428a26a14db46710` (PR #117). Its pending-review entries below are historical and superseded by that merge.

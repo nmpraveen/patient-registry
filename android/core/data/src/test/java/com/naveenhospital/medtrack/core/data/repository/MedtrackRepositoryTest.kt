@@ -1137,7 +1137,7 @@ private class FakeMedtrackApi(
     private val completeTaskError: Throwable? = null,
     private val logCallError: Throwable? = null,
     private val addVitalsError: Throwable? = null,
-) : MedtrackApi {
+) : MedtrackApi, com.naveenhospital.medtrack.core.network.api.StaffOperationsApi by com.naveenhospital.medtrack.core.data.unusedStaffApi() {
     override suspend fun relatedCases(caseId: String, cursor: String?): com.naveenhospital.medtrack.core.network.model.RelatedCasePageDto = error("Unused")
 
     var beforeStage4Read: (suspend () -> Unit)? = null

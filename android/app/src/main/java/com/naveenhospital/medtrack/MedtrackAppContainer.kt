@@ -9,6 +9,8 @@ import com.naveenhospital.medtrack.core.data.auth.MobileDeviceCredentialStore
 import com.naveenhospital.medtrack.core.data.auth.TokenStore
 import com.naveenhospital.medtrack.core.data.local.MedtrackDatabase
 import com.naveenhospital.medtrack.core.data.repository.MedtrackRepository
+import com.naveenhospital.medtrack.core.data.repository.StaffToolsRepository
+import android.os.SystemClock
 import com.naveenhospital.medtrack.core.data.sync.MedtrackSyncWorker
 import com.naveenhospital.medtrack.core.network.api.MedtrackApi
 import com.naveenhospital.medtrack.core.network.api.MedtrackNetwork
@@ -38,6 +40,17 @@ class MedtrackAppContainer @Inject constructor(@ApplicationContext context: Cont
         },
     )
 
+    val staffToolsRepository = StaffToolsRepository(
+        apiForSession = { identity ->
+            check(tokenStore.isCurrent(identity)) { "Staff session changed" }
+            apiForAccount(identity.accountId)
+        },
+        sessionIsCurrent = { identity ->
+            tokenStore.isCurrent(identity) && medtrackRepository.activeAccountId() == identity.accountId
+        },
+        monotonicMillis = SystemClock::elapsedRealtime,
+    )
+
     private val accountInvalidator = AccountSessionInvalidator(
         context = appContext,
         database = database,
@@ -46,6 +59,9 @@ class MedtrackAppContainer @Inject constructor(@ApplicationContext context: Cont
     )
 
     private val visibilityInvalidationListener: (String) -> Unit = { accountId ->
+        if (staffToolsRepository.activeSession.value?.accountId == accountId) {
+            staffToolsRepository.activate(null)
+        }
         if (medtrackRepository.activeAccountId() == accountId) {
             medtrackRepository.deactivateAccount()
         }
@@ -71,6 +87,7 @@ class MedtrackAppContainer @Inject constructor(@ApplicationContext context: Cont
         tokenStore = tokenStore,
         mobileDeviceCredentials = mobileDeviceCredentials,
         onBeforeAccountCommit = { previousSession, newAccountId ->
+            staffToolsRepository.activate(null)
             medtrackRepository.deactivateAccount()
             previousSession?.let { accountApis.remove(it.accountId) }
             if (previousSession != null && previousSession.accountId != newAccountId) {
@@ -81,6 +98,7 @@ class MedtrackAppContainer @Inject constructor(@ApplicationContext context: Cont
             lockStore.activateAccount(accountId)
             medtrackRepository.activateAccount(accountId)
         },
+        onProfileVerified = { identity, profile -> staffToolsRepository.updateProfile(identity, profile) },
         onSessionCleared = { sessionIdentity ->
             accountInvalidator.invalidate(sessionIdentity)
         },
@@ -113,6 +131,9 @@ class MedtrackAppContainer @Inject constructor(@ApplicationContext context: Cont
                 },
                 sessionUpdater = { access, refresh ->
                     tokenStore.updateSessionForIdentity(sessionIdentity, access, refresh)
+                },
+                onProfileVerified = { profile ->
+                    if (tokenStore.isCurrent(sessionIdentity)) staffToolsRepository.updateProfile(sessionIdentity, profile)
                 },
                 enableDebugLogging = BuildConfig.DEBUG && BuildConfig.FLAVOR != "prod",
             )

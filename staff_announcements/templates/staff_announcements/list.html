@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Announcements{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3"><h1 class="h3 mb-0">Announcements</h1>{% if can_manage %}<div class="d-flex gap-2"><a class="btn btn-outline-primary" href="?manage={{ manage|yesno:'false,true' }}">{% if manage %}Current{% else %}Manage{% endif %}</a><a class="btn btn-primary" href="{% url 'staff_announcements:create' %}">Publish</a></div>{% endif %}</div>
+<div class="list-group">
+{% for item in page_obj %}<a class="list-group-item list-group-item-action text-break" href="{% url 'staff_announcements:detail' item.pk %}{% if manage %}?manage=true{% endif %}" {% if not manage %}data-announcement-expires="{{ item.ends_at|date:'c' }}" data-server-now="{{ server_now|date:'c' }}"{% endif %}><span class="badge bg-secondary">{{ item.get_priority_display }}</span>{% if not item.is_active %} <span class="badge bg-secondary">Inactive</span>{% endif %}<p class="my-2">{{ item.text|truncatechars:200 }}</p><small>{{ item.starts_at }} – {{ item.ends_at }}</small></a>
+{% empty %}<p>No announcements.</p>{% endfor %}
+</div>
+<nav class="d-flex gap-3 mt-3" aria-label="Announcement pages">{% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}&amp;manage={{ manage|yesno:'true,false' }}">Previous</a>{% endif %}{% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}&amp;manage={{ manage|yesno:'true,false' }}">Next</a>{% endif %}</nav>
+{% endblock %}

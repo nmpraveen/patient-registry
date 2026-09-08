@@ -89,6 +89,7 @@ data class FollowUpDto(
 )
 
 data class CaseSummaryDto(
+    val mtno: String = "",
     @Json(name = "follow_up") val followUp: FollowUpDto? = null,
     @Json(name = "updated_at") val updatedAt: String = "",
     val id: Long,
@@ -284,6 +285,7 @@ data class PatientSearchResponseDto(
 )
 
 data class PatientLookupDto(
+    val mtno: String = "",
     val id: Long,
     val uhid: String,
     val name: String,
@@ -416,6 +418,7 @@ data class CaseEditFormDto(
 )
 
 data class CaseEditCaseDto(
+    val mtno: String = "",
     val id: Long,
     @Json(name = "base_updated_at") val baseUpdatedAt: String,
     @Json(name = "patient_mode") val patientMode: String? = null,

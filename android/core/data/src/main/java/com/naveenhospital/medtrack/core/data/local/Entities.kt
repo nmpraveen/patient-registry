@@ -13,6 +13,7 @@ data class AccountLifecycleEntity(
 
 @Entity(tableName = "cases", primaryKeys = ["ownerAccountId", "id"])
 data class CaseEntity(
+    @ColumnInfo(defaultValue = "''") val mtno: String = "",
     @ColumnInfo(defaultValue = "''") val followUpLabel: String = "",
     @ColumnInfo(defaultValue = "''") val ancOutcomeSummary: String = "",
     @ColumnInfo(defaultValue = "''") val serverUpdatedAt: String = "",

@@ -21,7 +21,9 @@ class CaseFormState(
 
     // Patient (new)
     var patientMode by mutableStateOf("new")
-    var useTemporaryUhid by mutableStateOf(true)
+    var useTemporaryUhid by mutableStateOf(false)
+    var mtno by mutableStateOf("")
+        private set
     var uhid by mutableStateOf("")
     var prefix by mutableStateOf("")
     var firstName by mutableStateOf("")
@@ -113,6 +115,7 @@ class CaseFormState(
         // Edit always shows the patient fields inline with a stable UHID (no temp regeneration).
         patientMode = "new"
         useTemporaryUhid = false
+        mtno = prefill.mtno
         uhid = prefill.uhid.orEmpty()
         prefix = prefill.prefix.orEmpty()
         firstName = prefill.firstName.orEmpty()
@@ -182,7 +185,6 @@ class CaseFormState(
                 patientMode == "new" && gender.isBlank() -> "Choose a sex."
                 patientMode == "new" && age.toIntOrNull() == null -> "Enter a valid age."
                 patientMode == "new" && phone.length != 10 -> "Enter a 10-digit phone number."
-                patientMode == "new" && !useTemporaryUhid && uhid.isBlank() -> "Enter a UHID or use a temporary ID."
                 else -> null
             }
             "Clinical" -> when {
@@ -216,7 +218,7 @@ class CaseFormState(
 
     fun reviewPatientLine(): String {
         return if (patientMode == "existing") {
-            selectedPatient?.let { "${it.name}  •  ${it.uhid}" } ?: "-"
+            selectedPatient?.let { "${it.name}  •  ${listOf(it.mtno, it.uhid).filter(String::isNotBlank).joinToString(" · ")}" } ?: "-"
         } else {
             val name = listOf(prefix, firstName, lastName).filter { it.isNotBlank() }.joinToString(" ")
             val suffix = age.toIntOrNull()?.let { "  •  ${it}y" } ?: ""

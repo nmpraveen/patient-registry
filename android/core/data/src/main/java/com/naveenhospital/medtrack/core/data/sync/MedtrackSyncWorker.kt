@@ -986,6 +986,7 @@ private fun Throwable.rethrowAccountBoundaryFailure() {
 
 private fun CaseSummaryDto.toEntityForSync(ownerAccountId: String): CaseEntity =
     CaseEntity(
+        mtno = mtno,
         followUpLabel = listOfNotNull(followUp?.label, followUp?.effectiveEdd?.let { "EDD $it" },
             "EDD missing — review needed".takeIf { followUp?.eddMissing == true }).filter { it.isNotBlank() }.joinToString(" · "),
         ancOutcomeSummary = listOfNotNull(followUp?.outcomeLabel, followUp?.outcomeDate,

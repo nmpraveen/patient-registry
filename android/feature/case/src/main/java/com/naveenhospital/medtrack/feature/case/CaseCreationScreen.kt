@@ -374,7 +374,7 @@ private fun ExistingPatientPicker(state: CaseFormState) {
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text(picked.name.ifBlank { "Patient" }, color = MedtrackColors.Ink, fontWeight = FontWeight.ExtraBold)
                     Text(
-                        "${picked.uhid}  •  ${picked.genderLabel}  •  ${picked.age ?: "-"}y",
+                        listOf(picked.mtno, picked.uhid).filter(String::isNotBlank).joinToString(" · "),
                         color = MedtrackColors.Muted,
                         style = MaterialTheme.typography.bodySmall,
                     )
@@ -396,7 +396,7 @@ private fun ExistingPatientPicker(state: CaseFormState) {
                 Column(Modifier.padding(13.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(patient.name.ifBlank { "Unnamed" }, color = MedtrackColors.Ink, fontWeight = FontWeight.Bold)
                     Text(
-                        "${patient.uhid}  •  ${patient.phoneNumber.ifBlank { "no phone" }}",
+                        listOf(patient.mtno, patient.uhid).filter(String::isNotBlank).joinToString(" · "),
                         color = MedtrackColors.Muted,
                         style = MaterialTheme.typography.bodySmall,
                     )
@@ -409,15 +409,10 @@ private fun ExistingPatientPicker(state: CaseFormState) {
 @Composable
 private fun NewPatientFields(state: CaseFormState) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        ToggleRow(
-            label = "Use temporary patient ID",
-            help = "Generate a local ID now; add the real UHID later.",
-            checked = state.useTemporaryUhid,
-            onChange = { state.useTemporaryUhid = it },
-        )
-        if (!state.useTemporaryUhid) {
-            TextField("UHID", state.uhid, required = true) { state.uhid = it }
+        if (state.mtno.isNotBlank()) {
+            Text(state.mtno, color = MedtrackColors.Muted, style = MaterialTheme.typography.bodyMedium)
         }
+        TextField("UHID (optional)", state.uhid) { state.uhid = it }
         FieldRow {
             DropdownField("Prefix", state.prefix, state.metadata.prefixes, { state.prefix = it }, Modifier.weight(1f), required = true)
             TextField("First name", state.firstName, Modifier.weight(1.6f), required = true) { state.firstName = it }
@@ -966,7 +961,7 @@ private fun SearchField(value: String, onValueChange: (String) -> Unit) {
             Icon(Icons.Outlined.Search, contentDescription = null, tint = MedtrackColors.Primary, modifier = Modifier.size(20.dp))
             Box(Modifier.weight(1f)) {
                 if (value.isBlank()) {
-                    Text("Search UHID, name or phone", color = MedtrackColors.Faint, style = MaterialTheme.typography.bodyMedium)
+                    Text("Search MTNO, UHID, name or phone", color = MedtrackColors.Faint, style = MaterialTheme.typography.bodyMedium)
                 }
                 BasicTextField(
                     value = value,

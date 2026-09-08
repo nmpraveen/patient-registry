@@ -26,6 +26,7 @@ data class CaseFormMetadata(
 )
 
 data class PatientLookup(
+    val mtno: String = "",
     val id: Long,
     val uhid: String,
     val name: String,

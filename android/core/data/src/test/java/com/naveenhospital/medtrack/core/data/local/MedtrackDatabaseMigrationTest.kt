@@ -26,6 +26,36 @@ class MedtrackDatabaseMigrationTest {
         InstrumentationRegistry.getInstrumentation().targetContext.getDatabasePath(name).absolutePath
 
     @Test
+    fun identityUpgradePreservesOwnedCasesAndLegacyOutboxBytes() {
+        val name = databasePath("stage3_14_to_15")
+        val payload = """{"use_temporary_uhid":true,"uhid":"TMP-LEGACY","client_write_id":"legacy-id"}"""
+        helper.createDatabase(name, 14).use { db ->
+            for (owner in listOf("a", "b")) {
+                db.execSQL("INSERT INTO cases (ownerAccountId,id,uhid,patientName,category,status,diagnosis,isHighRisk,highRiskReasons,updatedAtMillis) VALUES (?,'42','TMP-LEGACY','Synthetic','Medicine','ACTIVE','Review',0,'',1)", arrayOf(owner))
+                db.execSQL("INSERT INTO pending_writes (ownerAccountId,clientWriteId,writeType,caseId,taskId,payloadJson,retryCount,lastError,createdAtMillis,updatedAtMillis) VALUES (?,'legacy-id','call_outcome','42',NULL,?,2,NULL,1,2)", arrayOf(owner, payload))
+            }
+        }
+        helper.runMigrationsAndValidate(name, 15, true, *MedtrackDatabase.ALL_MIGRATIONS).use { db ->
+            db.query("SELECT ownerAccountId,mtno,uhid FROM cases ORDER BY ownerAccountId").use { cursor ->
+                assertEquals(2, cursor.count)
+                for (owner in listOf("a", "b")) {
+                    assertTrue(cursor.moveToNext())
+                    assertEquals(owner, cursor.getString(0))
+                    assertEquals("", cursor.getString(1))
+                    assertEquals("TMP-LEGACY", cursor.getString(2))
+                }
+            }
+            db.query("SELECT payloadJson,retryCount FROM pending_writes").use { cursor ->
+                assertEquals(2, cursor.count)
+                while (cursor.moveToNext()) {
+                    assertEquals(payload, cursor.getString(0))
+                    assertEquals(2, cursor.getInt(1))
+                }
+            }
+        }
+    }
+
+    @Test
     fun stage2UpgradePreservesOwnedPendingBytesAndTaskNotes() {
         val name = databasePath("stage2_13_to_14")
         val json = """{"client_write_id":"legacy-call","outcome":"attempted"}"""
@@ -45,19 +75,19 @@ class MedtrackDatabaseMigrationTest {
 
     @Test
     fun everySupportedSchemaVersionMigratesToCurrentSchema() {
-        (1..13).forEach { startVersion ->
-            val databaseName = databasePath("migration_${startVersion}_to_14")
+        (1..14).forEach { startVersion ->
+            val databaseName = databasePath("migration_${startVersion}_to_15")
             helper.createDatabase(databaseName, startVersion).close()
 
             helper.runMigrationsAndValidate(
                 databaseName,
-                14,
+                15,
                 true,
                 *MedtrackDatabase.ALL_MIGRATIONS,
             ).use { database ->
                 database.query("PRAGMA user_version").use { cursor ->
                     assertTrue(cursor.moveToFirst())
-                    assertEquals(14, cursor.getInt(0))
+                    assertEquals(15, cursor.getInt(0))
                 }
             }
         }

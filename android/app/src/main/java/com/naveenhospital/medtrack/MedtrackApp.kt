@@ -884,6 +884,7 @@ fun MedtrackApp(
                     var caseActionMessage by remember { mutableStateOf<String?>(null) }
                     var caseError by remember { mutableStateOf<String?>(null) }
                     var caseRefreshing by remember { mutableStateOf(false) }
+                    var timelineRevision by remember(caseId) { mutableStateOf(0) }
                     var hadPendingWrites by remember(caseId) { mutableStateOf(false) }
                     val dialerHandoff = rememberDialerHandoff(caseId)
                     val patientCase = cachedCase ?: cases.firstOrNull { it.id == caseId }
@@ -903,6 +904,7 @@ fun MedtrackApp(
 
                     fun refreshCaseDetail() {
                         if (caseId.isBlank()) return
+                        timelineRevision += 1
                         scope.launch {
                             caseRefreshing = true
                             caseError = null
@@ -959,6 +961,9 @@ fun MedtrackApp(
                     }
 
                     CaseDetailScreen(
+                        loadRelatedCases = { cursor -> container.medtrackRepository.loadRelatedCases(caseId, cursor) },
+                        onOpenRelatedCase = { id -> navController.navigate(Routes.caseDetail(id)) },
+                        timelineRevision = timelineRevision,
                         loadTimeline = { filter, cursor -> container.medtrackRepository.loadCaseTimeline(caseId, filter, cursor) },
                         callLogs = callLogs,
                         modifier = Modifier.fillMaxSize(),
@@ -1033,6 +1038,7 @@ fun MedtrackApp(
                                 runCatching { container.medtrackRepository.recordAncAction(caseId, payload) }
                                     .onSuccess { message ->
                                         caseActionMessage = message
+                                        timelineRevision += 1
                                         runCatching { container.medtrackRepository.refreshActiveCaseList() }
                                             .onFailure {
                                                 if (it is CancellationException) throw it

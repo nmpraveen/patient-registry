@@ -38,3 +38,6 @@ fun shiftUpcomingDate(value: String, days: Int): String? {
     }
     return format.format(calendar.time)
 }
+
+data class RelatedCase(val id: Long, val department: String, val diagnosis: String, val status: String)
+data class RelatedCasePage(val results: List<RelatedCase>, val nextCursor: String?)

@@ -42,6 +42,12 @@ import retrofit2.http.Query
 import retrofit2.Response
 
 interface MedtrackApi {
+    @GET("api/cases/{caseId}/related/")
+    suspend fun relatedCases(
+        @Path("caseId") caseId: String,
+        @Query("cursor") cursor: String? = null,
+    ): com.naveenhospital.medtrack.core.network.model.RelatedCasePageDto
+
     @GET("api/upcoming/")
     suspend fun upcoming(
         @Query("start_date") startDate: String? = null,

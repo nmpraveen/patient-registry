@@ -71,7 +71,7 @@ internal fun UpcomingScreen(
     val groups = remember(rows) { groupUpcomingTasks(rows) }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         page?.let { current ->
-            Text("${current.startDate} – ${current.endDate}", color = MedtrackColors.Ink, fontWeight = FontWeight.Bold)
+            Text("${current.startDate} â€“ ${current.endDate}", color = MedtrackColors.Ink, fontWeight = FontWeight.Bold)
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             TextButton(enabled = page?.let { it.startDate > it.hospitalToday } == true && !loading, onClick = {
@@ -110,7 +110,7 @@ internal fun UpcomingScreen(
                 }
             }
             item {
-                if (loading) Text("Loading tasks…", color = MedtrackColors.Muted)
+                if (loading) Text("Loading tasksâ€¦", color = MedtrackColors.Muted)
                 else if (error != null) {
                     Text(error.orEmpty(), color = MedtrackColors.Danger)
                     TextButton(onClick = { requestVersion += 1 }) { Text("Retry") }

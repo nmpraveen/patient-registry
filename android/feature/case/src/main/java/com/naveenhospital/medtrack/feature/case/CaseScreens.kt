@@ -245,14 +245,18 @@ fun CaseDetailScreen(
     canEditTask: Boolean = false,
     taskMetadata: TaskFormMetadata? = null,
     callLogs: List<PatientCallLog> = emptyList(),
+    timelineRevision: Int = 0,
+    loadRelatedCases: suspend (String?) -> com.naveenhospital.medtrack.core.domain.model.RelatedCasePage = { throw IllegalStateException("Patient cases unavailable") },
+    onOpenRelatedCase: (String) -> Unit = {},
     loadTimeline: suspend (String, String?) -> com.naveenhospital.medtrack.core.domain.model.CaseTimelinePage = { _, _ -> throw IllegalStateException("Timeline unavailable") },
     onEditCase: () -> Unit = {},
     onAncAction: (Map<String, Any>, (String?) -> Unit) -> Unit = { _, report -> report("Unavailable") },
     onTaskAction: (TaskSheetAction, String?, (String?) -> Unit) -> Unit = { _, _, cb -> cb(null) },
     onEditVitals: (String, VitalsEntryInput) -> Unit = { _, _ -> },
 ) {
+    val relatedCases = rememberRelatedCases(caseId, timelineRevision, loadRelatedCases)
     var timelineFilter by remember(caseId) { mutableStateOf("all") }
-    val timeline = rememberTimeline(caseId, timelineFilter, isRefreshing, loadTimeline)
+    val timeline = rememberTimeline(caseId, timelineFilter, isRefreshing, timelineRevision, loadTimeline)
     var showAncDialog by remember(caseId) { mutableStateOf(false) }
     var showVitalsDialog by rememberSaveable { mutableStateOf(false) }
     var editingVital by remember(caseId) { mutableStateOf<PatientVital?>(null) }
@@ -322,6 +326,7 @@ fun CaseDetailScreen(
                         }
                     }
                 } else {
+                    item { RelatedCaseSelector(caseId, relatedCases, onOpenRelatedCase) }
                     item {
                         CaseHero(
                             patientCase = patientCase,
@@ -346,7 +351,7 @@ fun CaseDetailScreen(
                                 .firstOrNull()
                             Text(next?.title ?: patientCase.nextTaskTitle ?: "No scheduled task", fontWeight = FontWeight.Bold)
                             next?.let {
-                                Text(listOf(it.dueDate.orEmpty(), it.assignedUser.orEmpty()).filter(String::isNotBlank).joinToString(" · "))
+                                Text(listOf(it.dueDate.orEmpty(), it.assignedUser.orEmpty()).filter(String::isNotBlank).joinToString(" Â· "))
                             }
                         }
                     }
@@ -416,7 +421,7 @@ fun CaseDetailScreen(
                         MedtrackCompactCard { TimelineEventRow(event, timeline.timezone) }
                     }
                     item {
-                        if (timeline.loading) Text("Loading timeline…", color = MedtrackColors.Muted)
+                        if (timeline.loading) Text("Loading timelineâ€¦", color = MedtrackColors.Muted)
                         else if (timeline.error != null) {
                             Text(timeline.error, color = MedtrackColors.Danger)
                             TextButton(onClick = timeline.retry) { Text("Retry") }

@@ -41,3 +41,9 @@ data class UpcomingSearchRequestDto(
     @Json(name = "assigned_to") val assignedTo: String? = null,
     @Json(name = "scope_context") val scopeContext: String? = null,
 )
+
+data class RelatedCaseDto(val id: Long, val department: String, val diagnosis: String, val status: String)
+data class RelatedCasePageDto(
+    val results: List<RelatedCaseDto>,
+    @Json(name = "next_cursor") val nextCursor: String? = null,
+)

@@ -1138,6 +1138,8 @@ private class FakeMedtrackApi(
     private val logCallError: Throwable? = null,
     private val addVitalsError: Throwable? = null,
 ) : MedtrackApi {
+    override suspend fun relatedCases(caseId: String, cursor: String?): com.naveenhospital.medtrack.core.network.model.RelatedCasePageDto = error("Unused")
+
     var beforeStage4Read: (suspend () -> Unit)? = null
     var lastUpcomingSearch: com.naveenhospital.medtrack.core.network.model.UpcomingSearchRequestDto? = null
     override suspend fun upcoming(startDate: String?, cursor: String?, categories: List<String>?, subcategories: List<String>?, assignedTo: String?, scopeContext: String?): com.naveenhospital.medtrack.core.network.model.UpcomingPageDto {

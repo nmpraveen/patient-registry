@@ -213,6 +213,16 @@ class MedtrackRepository(
         return AccountSession(ownerAccountId, generation, apiForAccount(ownerAccountId))
     }
 
+    suspend fun loadRelatedCases(caseId: String, cursor: String? = null): com.naveenhospital.medtrack.core.domain.model.RelatedCasePage {
+        val session = activeSession()
+        val page = session.api.relatedCases(caseId, cursor)
+        requireStillActive(session)
+        return com.naveenhospital.medtrack.core.domain.model.RelatedCasePage(
+            page.results.map { com.naveenhospital.medtrack.core.domain.model.RelatedCase(it.id, it.department, it.diagnosis, it.status) },
+            page.nextCursor,
+        )
+    }
+
     // Paged presentation data stays in the active screen's memory, never a shared cache.
     suspend fun loadUpcoming(
         startDate: String? = null, cursor: String? = null, query: String = "",
@@ -221,7 +231,7 @@ class MedtrackRepository(
     ): com.naveenhospital.medtrack.core.domain.model.UpcomingPage {
         val session = activeSession()
         val normalizedQuery = query.trim()
-        require(normalizedQuery.isEmpty() || normalizedQuery.length in 3..80) { "Search needs 3–80 characters." }
+        require(normalizedQuery.isEmpty() || normalizedQuery.length in 3..80) { "Search needs 3â€“80 characters." }
         val page = if (normalizedQuery.isEmpty()) {
             session.api.upcoming(startDate, cursor, categories, subcategories, assignedTo, scopeContext)
         } else {

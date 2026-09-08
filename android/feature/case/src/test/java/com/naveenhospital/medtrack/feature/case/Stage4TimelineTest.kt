@@ -6,6 +6,14 @@ import java.util.Locale
 import java.util.TimeZone
 
 class Stage4TimelineTest {
+    @Test fun validationFocusChoosesRequiredDateWithoutLosingOptionalErrorTargets() {
+        assertEquals("EDD", validationFocusLabel("Enter an EDD (LMP-based or USG)."))
+        assertEquals("LMP", validationFocusLabel("Enter the LMP date."))
+        assertEquals("Subcategory", validationFocusLabel("Choose a subcategory."))
+        assertEquals("Notes", serverFieldLabels["notes"])
+        assertEquals("Referred by", serverFieldLabels["referred_by"])
+    }
+
     @Test fun timestampUsesHospitalTimezoneAcrossMidnightAndRetainsInput() {
         val locale = Locale.getDefault()
         val zone = TimeZone.getDefault()

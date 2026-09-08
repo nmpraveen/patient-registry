@@ -50,6 +50,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -159,6 +160,10 @@ private fun CaseFormScaffold(
     state.searchPatients = searchPatients
     val scrollState = rememberScrollState()
     var optionalExpanded by remember { mutableStateOf(false) }
+    var focusRequest by remember { mutableStateOf<Pair<String, Int>?>(null) }
+    fun focusField(label: String?) {
+        if (label != null) focusRequest = label to ((focusRequest?.second ?: 0) + 1)
+    }
     var submitting by remember { mutableStateOf(false) }
     var banner by remember { mutableStateOf<String?>(null) }
 
@@ -180,6 +185,7 @@ private fun CaseFormScaffold(
         )
     }
 
+    CompositionLocalProvider(LocalCaseFocus provides focusRequest) {
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -253,6 +259,7 @@ private fun CaseFormScaffold(
                     val validationError = stepTitles.firstNotNullOfOrNull(state::validateStep)
                     if (validationError != null) {
                         banner = validationError
+                        focusField(validationFocusLabel(validationError))
                         return@BottomBar
                     }
                     banner = null
@@ -264,6 +271,7 @@ private fun CaseFormScaffold(
                             is CaseSubmitResult.Banner -> {
                                 banner = result.text
                                 if (result.fields.any { it in setOf("blood_group", "place", "referred_by", "notes") }) optionalExpanded = true
+                                focusField(result.fields.firstNotNullOfOrNull { serverFieldLabels[it] })
                             }
                         }
                     }
@@ -271,6 +279,7 @@ private fun CaseFormScaffold(
             )
         }
     }
+}
 }
 
 private fun CaseCreateOutcome.ValidationError.bannerText(): String {
@@ -704,7 +713,7 @@ private fun FieldShell(
     Surface(
         modifier = modifier
             .height(FieldHeight)
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
+            .then(if (onClick != null) formFocusModifier(label.substringBefore(" (optional)")).clickable(onClick = onClick) else Modifier),
         shape = RoundedCornerShape(14.dp),
         color = fill,
         border = BorderStroke(1.5.dp, borderColor),
@@ -746,7 +755,7 @@ internal fun TextField(
             keyboardOptions = KeyboardOptions(keyboardType = keyboard),
             textStyle = MaterialTheme.typography.bodyMedium.copy(color = MedtrackColors.Ink, fontWeight = FontWeight.Bold),
             cursorBrush = SolidColor(MedtrackColors.Primary),
-            modifier = Modifier
+            modifier = formFocusModifier(label)
                 .fillMaxWidth()
                 .onFocusChanged { focused = it.isFocused },
         )
@@ -789,7 +798,7 @@ internal fun MultilineField(
                 onValueChange = onValueChange,
                 textStyle = MaterialTheme.typography.bodyMedium.copy(color = MedtrackColors.Ink, fontWeight = FontWeight.Medium),
                 cursorBrush = SolidColor(MedtrackColors.Primary),
-                modifier = Modifier
+                modifier = formFocusModifier(label)
                     .fillMaxWidth()
                     .heightIn(min = 38.dp)
                     .onFocusChanged { focused = it.isFocused },
@@ -996,7 +1005,7 @@ private fun SearchField(value: String, onValueChange: (String) -> Unit) {
                     singleLine = true,
                     textStyle = MaterialTheme.typography.bodyMedium.copy(color = MedtrackColors.Ink, fontWeight = FontWeight.Bold),
                     cursorBrush = SolidColor(MedtrackColors.Primary),
-                    modifier = Modifier
+                    modifier = formFocusModifier("Existing patient")
                         .fillMaxWidth()
                         .onFocusChanged { focused = it.isFocused },
                 )

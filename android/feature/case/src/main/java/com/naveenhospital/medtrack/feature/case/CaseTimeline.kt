@@ -32,18 +32,18 @@ internal data class TimelineUiState(
 
 @Composable
 internal fun rememberTimeline(
-    caseId: String, filter: String, refreshing: Boolean,
+    caseId: String, filter: String, refreshing: Boolean, revision: Int,
     load: suspend (String, String?) -> CaseTimelinePage,
 ): TimelineUiState {
     val loader by rememberUpdatedState(load)
-    var events by remember(caseId, filter) { mutableStateOf<List<CaseTimelineEvent>>(emptyList()) }
-    var timezone by remember(caseId, filter) { mutableStateOf("UTC") }
-    var nextCursor by remember(caseId, filter) { mutableStateOf<String?>(null) }
-    var requestedCursor by remember(caseId, filter) { mutableStateOf<String?>(null) }
-    var retryCount by remember(caseId, filter) { mutableStateOf(0) }
-    var loading by remember(caseId, filter) { mutableStateOf(true) }
-    var error by remember(caseId, filter) { mutableStateOf<String?>(null) }
-    LaunchedEffect(caseId, filter, refreshing, requestedCursor, retryCount) {
+    var events by remember(caseId, filter, revision) { mutableStateOf<List<CaseTimelineEvent>>(emptyList()) }
+    var timezone by remember(caseId, filter, revision) { mutableStateOf("UTC") }
+    var nextCursor by remember(caseId, filter, revision) { mutableStateOf<String?>(null) }
+    var requestedCursor by remember(caseId, filter, revision) { mutableStateOf<String?>(null) }
+    var retryCount by remember(caseId, filter, revision) { mutableStateOf(0) }
+    var loading by remember(caseId, filter, revision) { mutableStateOf(true) }
+    var error by remember(caseId, filter, revision) { mutableStateOf<String?>(null) }
+    LaunchedEffect(caseId, filter, refreshing, revision, requestedCursor, retryCount) {
         if (refreshing) {
             events = emptyList()
             nextCursor = null
@@ -92,7 +92,7 @@ internal fun TimelineEventRow(event: CaseTimelineEvent, timezone: String) {
         if (event.taskTitle.isNotBlank() && event.taskTitle != event.headline) Text(event.taskTitle, color = MedtrackColors.Muted)
         if (event.reason.isNotBlank()) Text(event.reason, color = MedtrackColors.Ink)
         if (event.details.isNotBlank()) Text(event.details, color = MedtrackColors.InkSoft)
-        Text(listOf(timelineTimestamp(event.timestamp, timezone), event.actor).filter { it.isNotBlank() }.joinToString(" · "),
+        Text(listOf(timelineTimestamp(event.timestamp, timezone), event.actor).filter { it.isNotBlank() }.joinToString(" Â· "),
             style = MaterialTheme.typography.labelSmall, color = MedtrackColors.Muted)
     }
 }

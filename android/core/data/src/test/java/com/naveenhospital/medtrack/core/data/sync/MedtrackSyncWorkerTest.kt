@@ -1145,6 +1145,8 @@ private class FakeSyncApi(
     private val notificationFirstPageSequence: List<NotificationsResponseDto> = emptyList(),
 ) : MedtrackApi {
     var listCasesCalls = 0
+    override suspend fun relatedCases(caseId: String, cursor: String?): com.naveenhospital.medtrack.core.network.model.RelatedCasePageDto = error("Unused")
+
     override suspend fun upcoming(startDate: String?, cursor: String?, categories: List<String>?, subcategories: List<String>?, assignedTo: String?, scopeContext: String?): com.naveenhospital.medtrack.core.network.model.UpcomingPageDto = error("Unused")
     override suspend fun searchUpcoming(request: com.naveenhospital.medtrack.core.network.model.UpcomingSearchRequestDto): com.naveenhospital.medtrack.core.network.model.UpcomingPageDto = error("Unused")
     override suspend fun caseTimeline(caseId: String, filter: String, cursor: String?): com.naveenhospital.medtrack.core.network.model.CaseTimelinePageDto = error("Unused")

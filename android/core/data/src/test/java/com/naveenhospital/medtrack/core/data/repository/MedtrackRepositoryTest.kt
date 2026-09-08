@@ -174,9 +174,6 @@ class MedtrackRepositoryTest {
         val request = input.toUpdateRequestDto("identity-edit", baseline)
         assertEquals(PatchField.Value("UH-NEW"), request.uhid)
         assertEquals(mapOf("uhid" to ""), request.baseValues)
-        val encoded = com.naveenhospital.medtrack.core.network.api.MedtrackNetwork.contractMoshi()
-            .adapter(com.naveenhospital.medtrack.core.network.model.UpdateCaseRequestDto::class.java).toJson(request)
-        assertFalse(encoded.contains("mtno"))
         assertEquals(PatchField.Omitted, request.useTemporaryUhid)
     }
 

@@ -96,6 +96,7 @@ class ApiContractDtoTest {
             clientWriteId = PatchField.Value("contract-test-write"),
         )
         val json = moshi.adapter(UpdateCaseRequestDto::class.java).toJson(request)
+        assertFalse(json.contains("mtno"))
 
         assertTrue(json.contains("\"surgery_done\":true"))
         assertTrue(json.contains("\"diagnosis\":\"Post-operative review\""))

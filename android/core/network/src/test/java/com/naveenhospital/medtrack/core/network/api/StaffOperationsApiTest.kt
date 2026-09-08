@@ -48,8 +48,16 @@ class StaffOperationsApiTest {
             val api = MedtrackNetwork.create(server.url("/").toString())
             val result = api.staffAnnouncements()
             assertEquals("2026-09-07T00:00:00Z", result.serverNow)
-            assertEquals("Staff One", result.results.single().publisher.name)
+            assertEquals("Staff One", result.results.single().publisher?.name)
             assertEquals("/api/staff/announcements/?page=1", server.takeRequest().path)
+        }
+    }
+
+    @Test fun deletedPublisherDoesNotPreventAnnouncementConsumption() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody("""{"id":1,"text":"Notice","priority":"normal","audience":"all_staff","starts_at":"2026-09-07T00:00:00Z","ends_at":"2026-09-07T01:00:00Z","publisher":null,"version":1,"server_now":"2026-09-07T00:00:00Z"}"""))
+            val api = MedtrackNetwork.create(server.url("/").toString())
+            assertNull(api.staffAnnouncement(1).publisher)
         }
     }
 }

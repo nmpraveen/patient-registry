@@ -198,7 +198,7 @@ private fun DirectoryContactDto.toContact() = DirectoryContact(
 )
 
 private fun StaffAnnouncementDto.toAnnouncement() = StaffAnnouncement(
-    id, text.lineSequence().first().take(100), text, priority, publisher.name, startsAt, endsAt,
+    id, text.lineSequence().first().take(100), text, priority, publisher?.name ?: "Former staff", startsAt, endsAt,
 )
 
 private fun staffError(error: Exception): String = when ((error as? HttpException)?.code()) {

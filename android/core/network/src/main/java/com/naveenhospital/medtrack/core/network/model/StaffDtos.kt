@@ -32,7 +32,7 @@ data class StaffAnnouncementDto(
     val audience: String,
     @Json(name = "starts_at") val startsAt: String,
     @Json(name = "ends_at") val endsAt: String,
-    val publisher: StaffPersonDto,
+    val publisher: StaffPersonDto?,
     val version: Long,
     @Json(name = "server_now") val serverNow: String? = null,
 )

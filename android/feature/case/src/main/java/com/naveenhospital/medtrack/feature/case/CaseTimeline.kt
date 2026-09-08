@@ -68,7 +68,7 @@ internal fun rememberTimeline(
     }
     return TimelineUiState(events, timezone, loading, error, nextCursor != null,
         loadMore = { if (!loading) requestedCursor = nextCursor },
-        retry = { retryCount += 1 },
+        retry = { requestedCursor = null; events = emptyList(); nextCursor = null; retryCount += 1 },
     )
 }
 

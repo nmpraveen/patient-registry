@@ -1,6 +1,5 @@
 package com.naveenhospital.medtrack.feature.cases
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.material3.AlertDialog
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.rememberScrollState
@@ -96,6 +95,7 @@ fun CaseCreationScreen(
     submit: suspend (NewCaseInput) -> CaseCreateOutcome,
     onBack: () -> Unit,
     onCreated: (Long, String) -> Unit,
+    navigationBackHandler: @Composable (() -> Unit) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val scope = rememberCoroutineScope()
@@ -140,6 +140,7 @@ fun CaseCreationScreen(
                     }
                 },
                 onDone = onCreated,
+                navigationBackHandler = navigationBackHandler,
                 modifier = modifier,
             )
         }
@@ -155,6 +156,7 @@ private fun CaseFormScaffold(
     onBack: () -> Unit,
     onSubmit: (NewCaseInput, (CaseSubmitResult) -> Unit) -> Unit,
     onDone: (Long, String) -> Unit,
+    navigationBackHandler: @Composable (() -> Unit) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     state.searchPatients = searchPatients
@@ -175,7 +177,7 @@ private fun CaseFormScaffold(
     val close = {
         if (state.category != null && state.toInput() != initialDraft) confirmDiscard = true else onBack()
     }
-    BackHandler { if (!submitting) close() }
+    navigationBackHandler { if (!submitting) close() }
     if (confirmDiscard) {
         AlertDialog(
             onDismissRequest = { confirmDiscard = false },
@@ -311,6 +313,7 @@ fun CaseEditScreen(
     submit: suspend (NewCaseInput) -> CaseEditOutcome,
     onBack: () -> Unit,
     onSaved: (Long, String) -> Unit,
+    navigationBackHandler: @Composable (() -> Unit) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val scope = rememberCoroutineScope()
@@ -357,6 +360,7 @@ fun CaseEditScreen(
                     }
                 },
                 onDone = onSaved,
+                navigationBackHandler = navigationBackHandler,
                 modifier = modifier,
             )
         }

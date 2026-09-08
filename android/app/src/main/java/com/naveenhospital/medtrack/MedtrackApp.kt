@@ -1,5 +1,6 @@
 package com.naveenhospital.medtrack
 
+import androidx.activity.compose.BackHandler
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
@@ -1111,6 +1112,7 @@ fun MedtrackApp(
                         CaseCategory.valueOf(entry.arguments?.getString("category").orEmpty())
                     }.getOrDefault(CaseCategory.ANC)
                     CaseCreationScreen(
+                        navigationBackHandler = { close -> BackHandler(onBack = close) },
                         modifier = Modifier.fillMaxSize(),
                         initialCategory = category,
                         loadMetadata = { container.medtrackRepository.loadCaseFormMetadata() },
@@ -1131,6 +1133,7 @@ fun MedtrackApp(
                 composable(Routes.EDIT_CASE) { entry ->
                     val caseId = entry.arguments?.getString("caseId").orEmpty()
                     CaseEditScreen(
+                        navigationBackHandler = { close -> BackHandler(onBack = close) },
                         modifier = Modifier.fillMaxSize(),
                         loadPrefill = { container.medtrackRepository.loadCaseEditForm(caseId) },
                         searchPatients = { query -> container.medtrackRepository.searchPatients(query) },

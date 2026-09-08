@@ -42,7 +42,7 @@ internal fun rememberRelatedCases(caseId: String, revision: Int, load: suspend (
         finally { loading = false }
     }
     return RelatedCasesState(rows, loading, error, nextCursor != null,
-        more = { if (!loading) cursor = nextCursor }, retry = { retry += 1 })
+        more = { if (!loading) cursor = nextCursor }, retry = { cursor = null; rows = emptyList(); nextCursor = null; retry += 1 })
 }
 @Composable
 internal fun RelatedCaseSelector(caseId: String, state: RelatedCasesState, onSelect: (String) -> Unit) {

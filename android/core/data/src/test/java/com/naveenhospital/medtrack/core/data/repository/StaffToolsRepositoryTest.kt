@@ -134,6 +134,19 @@ class StaffToolsRepositoryTest {
         assertNull(repository.screen.value.content)
         assertNotNull(repository.screen.value.error)
     }
+
+    @Test fun reassignmentBetweenDetailAndHistoryCannotAuthorizeNewerOccurrence() = runTest {
+        val api = object : StaffApiStub() {
+            override suspend fun staffReminder(id: Long) = definition
+            override suspend fun reminderOccurrences(status: String, reminderId: Long?, page: Int) = StaffPageDto(
+                1, results = listOf(occurrence.copy(definitionVersion = 5, assigneeId = 2, assigneeName = "Staff Two")),
+            )
+        }
+        val repository = repository(api)
+        repository.reminder(3, 1)
+        assertNull(repository.screen.value.content)
+        assertEquals("This item changed. Refresh before trying again.", repository.screen.value.error)
+    }
 }
 
 private abstract class StaffApiStub : StaffOperationsApi {

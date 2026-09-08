@@ -133,6 +133,11 @@ class StaffToolsRepository(
     private suspend fun reminderContent(api: StaffOperationsApi, id: Long, page: Int): StaffContent.Reminder {
         val definition = api.staffReminder(id)
         val history = api.reminderOccurrences(status = "all", reminderId = id, page = page)
+        // The two reads may straddle reassignment. Never pair an old displayed assignee
+        // with a newer occurrence version that would authorize completion of changed work.
+        if (history.results.any { it.reminderId != definition.id || it.definitionVersion != definition.version }) {
+            throw StaffRefreshRequired()
+        }
         return StaffContent.Reminder(definition, history.results, history.next != null)
     }
 
@@ -201,7 +206,9 @@ private fun StaffAnnouncementDto.toAnnouncement() = StaffAnnouncement(
     id, text.lineSequence().first().take(100), text, priority, publisher?.name ?: "Former staff", startsAt, endsAt,
 )
 
-private fun staffError(error: Exception): String = when ((error as? HttpException)?.code()) {
+private class StaffRefreshRequired : Exception()
+
+private fun staffError(error: Exception): String = when (if (error is StaffRefreshRequired) 409 else (error as? HttpException)?.code()) {
     401, 403 -> "Access is no longer available."
     404 -> "This item is no longer available."
     409 -> "This item changed. Refresh before trying again."

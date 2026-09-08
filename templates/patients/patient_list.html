@@ -13,8 +13,8 @@
 
       <form method="get" class="row g-2 mb-3">
         <div class="col-12 col-lg-6">
-          <label class="visually-hidden" for="patient-list-search">Search patients by UHID, name, phone, or place</label>
-          <input id="patient-list-search" class="form-control" type="search" name="q" value="{{ query|default:'' }}" placeholder="UHID, name, phone, or place" />
+          <label class="visually-hidden" for="patient-list-search">Search patients by MTNO, UHID, name, phone, or place</label>
+          <input id="patient-list-search" class="form-control" type="search" name="q" value="{{ query|default:'' }}" placeholder="MTNO, UHID, name, phone, or place" />
         </div>
         <div class="col-12 col-lg-auto">
           <button class="btn btn-outline-primary w-100" type="submit">Search</button>
@@ -26,7 +26,7 @@
           <table class="table align-middle">
             <thead>
               <tr>
-                <th>UHID</th>
+                <th>MTNO / UHID</th>
                 <th>Name</th>
                 <th>Phone</th>
                 <th>Place</th>
@@ -38,7 +38,7 @@
             <tbody>
               {% for patient in patients %}
                 <tr>
-                  <td>{{ patient.uhid }}</td>
+                  <td>{{ patient.mtno }}{% if patient.uhid %} · {{ patient.uhid }}{% endif %}</td>
                   <td>
                     <div class="fw-semibold">{{ patient.full_name|default:patient.patient_name }}</div>
                     {% if patient.age_display != "-" %}

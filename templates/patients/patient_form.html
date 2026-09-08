@@ -5,8 +5,7 @@
     <div class="card-body">
       <div class="d-flex justify-content-between align-items-center mb-3">
         <div>
-          <h1 class="h4 mb-1">Edit Patient</h1>
-          <p class="text-muted mb-0">Update the canonical patient identity record.</p>
+          <h1 class="h4 mb-1">Edit Patient · {{ patient.mtno }}</h1>
         </div>
         <a class="btn btn-outline-secondary" href="{% url 'patients:patient_detail' patient.pk %}">Cancel</a>
       </div>
@@ -23,6 +22,7 @@
           </div>
         {% endif %}
         {% for field in form %}
+          {% if field.is_hidden %}{{ field }}{% else %}
           <div class="col-12 col-lg-6">
             <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
             {{ field }}
@@ -33,6 +33,7 @@
               <div class="invalid-feedback d-block">{{ error }}</div>
             {% endfor %}
           </div>
+          {% endif %}
         {% endfor %}
         <div class="col-12">
           <button class="btn btn-primary" type="submit">Save Patient</button>

@@ -1851,7 +1851,7 @@ class MobileApiTests(APITestCase):
         self.assertEqual(found.status_code, 200)
         self.assertEqual(found.wsgi_request.get_full_path(), search_url)
         self.assertEqual(set(found.json()), {"next_cursor", "results"})
-        self.assertEqual(set(found.json()["results"][0]), {"id", "uhid", "name"})
+        self.assertEqual(set(found.json()["results"][0]), {"id", "mtno", "uhid", "name"})
         self.assertEqual(phone.json()["results"][0]["uhid"], self.case.uhid)
 
     def test_patient_search_cursor_is_stable_and_bound_to_normalized_query(self):
@@ -2429,7 +2429,7 @@ class MobileCaseCreateTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         results = response.json()["results"]
         self.assertTrue(any(row["name"].endswith("Lakshmi Devi") for row in results))
-        self.assertEqual(set(results[0]), {"id", "uhid", "name"})
+        self.assertEqual(set(results[0]), {"id", "mtno", "uhid", "name"})
 
     def test_case_form_metadata_returns_choice_lists(self):
         response = self.client.get(reverse("api:case_form_metadata"))

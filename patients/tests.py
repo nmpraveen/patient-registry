@@ -2208,7 +2208,7 @@ class MedtrackViewTests(TestCase):
             reverse("patients:patient_merge", kwargs={"pk": source_case.patient_id}),
             {
                 "target_patient": target_case.patient_id,
-                "confirm_target_uhid": target_case.patient.uhid,
+                "confirm_target_uhid": target_case.patient.mtno,
                 "confirm_merge": "on",
             },
         )

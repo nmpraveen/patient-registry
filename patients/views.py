@@ -1,3 +1,4 @@
+from .identity import patient_identifier_query, case_identifier_query
 import hashlib
 import json
 import secrets
@@ -607,7 +608,6 @@ def _merge_patient_records(*, source_patient, target_patient, actor):
 
         moved_cases = [case for case in affected_cases if case.patient_id == source_patient.pk]
         for case in moved_cases:
-            previous_uhid = case.uhid
             case.patient = target_patient
             case.sync_identity_from_patient()
             case.save(
@@ -632,7 +632,7 @@ def _merge_patient_records(*, source_patient, target_patient, actor):
                 case=case,
                 user=actor,
                 event_type=ActivityEventType.SYSTEM,
-                note=f"Patient record merged: {previous_uhid} -> {target_patient.uhid}",
+                note=f"Patient record merged: {source_patient.mtno} -> {target_patient.mtno}",
             )
 
         source_patient.merged_into = target_patient
@@ -855,7 +855,7 @@ def _patient_search_queryset(query="", *, user=None, allow_intake_lookup=False):
     normalized_query = (query or "").strip()
     if normalized_query:
         filters = (
-            Q(uhid__icontains=normalized_query)
+            patient_identifier_query(normalized_query)
             | Q(first_name__icontains=normalized_query)
             | Q(last_name__icontains=normalized_query)
             | Q(patient_name__icontains=normalized_query)
@@ -927,6 +927,7 @@ def _serialize_patient_search_result(patient):
     return {
         "id": patient.id,
         "record_type": "patient",
+        "mtno": patient.mtno,
         "uhid": patient.uhid,
         "name": patient.full_name or patient.patient_name or patient.uhid,
         "blood_group": patient.blood_group or "",
@@ -959,7 +960,7 @@ def _case_management_queryset(query=""):
     normalized_query = (query or "").strip()
     if normalized_query:
         queryset = queryset.filter(
-            Q(uhid__icontains=normalized_query)
+            case_identifier_query(normalized_query)
             | Q(first_name__icontains=normalized_query)
             | Q(last_name__icontains=normalized_query)
             | Q(patient_name__icontains=normalized_query)
@@ -991,7 +992,7 @@ def _patient_queryset(query="", *, user=None):
     if not normalized_query:
         return queryset
     query_filter = (
-        Q(uhid__icontains=normalized_query)
+        patient_identifier_query(normalized_query)
         | Q(first_name__icontains=normalized_query)
         | Q(last_name__icontains=normalized_query)
         | Q(patient_name__icontains=normalized_query)
@@ -1044,6 +1045,7 @@ def _serialize_patient_search_result(patient, *, exclude_case_id=None, user=None
         category_tags.append({"kind": "temporary", "label": "Temporary ID"})
     return {
         "id": patient.id,
+        "mtno": patient.mtno,
         "uhid": patient.uhid,
         "name": patient.full_name or patient.patient_name or patient.uhid,
         "prefix": patient.prefix or "",
@@ -1066,12 +1068,12 @@ def _serialize_patient_search_result(patient, *, exclude_case_id=None, user=None
         "is_temporary_id": patient.is_temporary_id,
         "case_count": (
             patient.case_count
-            if exclude_case_id is None and hasattr(patient, "case_count")
+            if user is None and exclude_case_id is None and hasattr(patient, "case_count")
             else case_queryset.count()
         ),
         "active_case_count": (
             patient.active_case_count
-            if exclude_case_id is None and hasattr(patient, "active_case_count")
+            if user is None and exclude_case_id is None and hasattr(patient, "active_case_count")
             else active_case_queryset.filter(status=CaseStatus.ACTIVE).count()
         ),
         "tags": category_tags,
@@ -1709,7 +1711,8 @@ def _build_case_detail_summary(case, *, user, tasks, call_logs, activity_logs, l
         "task_call_summary": task_call_summary,
         "case_summary": {
             "id": case.id,
-            "uhid": case.uhid,
+            "mtno": case.mtno,
+        "uhid": case.uhid,
             "name": case.full_name or case.patient_name,
             "short_name": _case_initials(case),
             "age_label": _case_age_label(case),
@@ -2338,7 +2341,7 @@ def _normalized_search_category_groups(raw_values):
 
 def _case_search_direct_query(query):
     return (
-        Q(uhid__icontains=query)
+        case_identifier_query(query)
         | Q(first_name__icontains=query)
         | Q(last_name__icontains=query)
         | Q(patient_name__icontains=query)
@@ -3334,7 +3337,8 @@ def _build_upcoming_call_queue(filters):
         rows.append(
             {
                 "case_id": case.id,
-                "uhid": case.uhid,
+                "mtno": case.mtno,
+        "uhid": case.uhid,
                 "primary_task_id": primary_task.id,
                 "patient_name": patient_name,
                 "short_name": _build_short_name(case),
@@ -3719,7 +3723,7 @@ class PatientMergeView(LoginRequiredMixin, CaseDataAccessMixin, View):
         except ValidationError as exc:
             messages.error(request, exc.messages[0])
             return redirect("patients:patient_detail", pk=source_patient.pk)
-        messages.success(request, f"Merged {source_patient.uhid} into {target_patient.uhid}.")
+        messages.success(request, f"Merged {source_patient.mtno} into {target_patient.mtno}.")
         return redirect("patients:patient_detail", pk=target_patient.pk)
 
 
@@ -3751,7 +3755,8 @@ class FollowUpListView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
         groups = {}
         for case in cases:
             key = ("patient", case.patient_id) if case.patient_id else ("case", case.pk)
-            groups.setdefault(key, {"name": case.full_name or case.patient_name, "uhid": case.uhid, "cases": []})["cases"].append(case)
+            groups.setdefault(key, {"name": case.full_name or case.patient_name, "mtno": case.mtno,
+                                    "uhid": case.uhid, "cases": []})["cases"].append(case)
         page.object_list = list(groups.values())
         return paginator, page, page.object_list, is_paginated
 
@@ -4108,10 +4113,13 @@ class UniversalCaseSearchView(LoginRequiredMixin, CaseDataAccessMixin, View):
             for log in call_logs:
                 matching_call_logs.setdefault(log.case_id, []).append(log.notes)
 
+        identifier_match_ids = set(Case.objects.filter(pk__in=[case.pk for case in cases]).filter(
+            case_identifier_query(query)).values_list("pk", flat=True))
         scored = []
         for case in cases:
             full_name = case.full_name or case.patient_name
             structured_score = max(
+                130 if case.pk in identifier_match_ids else 0,
                 self._score_value(query, case.uhid),
                 self._score_value(query, full_name),
                 self._score_value(query, case.phone_number),
@@ -4184,7 +4192,8 @@ class UniversalCaseSearchView(LoginRequiredMixin, CaseDataAccessMixin, View):
                 {
                     "id": case.id,
                     "record_type": "case",
-                    "uhid": case.uhid,
+                    "mtno": case.mtno,
+        "uhid": case.uhid,
                     "name": case.full_name or case.patient_name,
                     "age": age,
                     "village": village,
@@ -4372,7 +4381,7 @@ def _build_case_identity_matches(form, *, actor=None, exclude_case_id=None):
     if len(uhid_value) >= 3:
         patient_matches = list(
             identity_queryset
-            .filter(uhid__iexact=uhid_value)
+            .filter(patient_identifier_query(uhid_value, lookup="iexact"))
             .order_by("patient_name", "uhid")[:3]
         )
         serialized_patient_matches = []
@@ -5093,7 +5102,6 @@ class QuickCaseCreateView(LoginRequiredMixin, CreateView):
         with transaction.atomic():
             form.actor = self.request.user
             form.instance.created_by = self.request.user
-            form.instance.uhid = generate_quick_entry_uhid()
             response = super().form_valid(form)
             details_task = create_quick_entry_details_task(self.object, self.request.user, due_date=self.object.review_date)
             created_tasks = build_default_tasks(self.object, self.request.user)
@@ -5325,7 +5333,7 @@ class PatientMergeView(LoginRequiredMixin, PatientMergeAccessMixin, View):
 
         messages.success(
             request,
-            f"Merged {source_patient.uhid} into {target_patient.uhid}. Reassigned {affected_case_count} case(s).",
+            f"Merged {source_patient.mtno} into {target_patient.mtno}. Reassigned {affected_case_count} case(s).",
         )
         return redirect("patients:patient_detail", pk=target_patient.pk)
 

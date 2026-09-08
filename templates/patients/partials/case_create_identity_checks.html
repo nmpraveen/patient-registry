@@ -13,7 +13,7 @@
               <div class="case-create-match-link">
                 <a class="case-create-match-link__name" href="{{ patient.detail_url }}">{{ patient.name }}</a>
                 <span class="case-create-match-link__meta">
-                  {{ patient.uhid }}
+                  {{ patient.mtno }}{% if patient.uhid %} · {{ patient.uhid }}{% endif %}
                   {% if patient.phone_number %} &middot; {{ patient.phone_number }}{% endif %}
                   {% if patient.place %} &middot; {{ patient.place }}{% endif %}
                 </span>

@@ -203,6 +203,9 @@ class Command(BaseCommand):
         }
 
     def _get_or_create_patient(self, patient_kwargs):
+        if not patient_kwargs["uhid"]:
+            # Missing hospital UHID is not a deduplication key; MTNO is allocated on save.
+            return Patient.objects.create(**patient_kwargs)
         patient, created = Patient.objects.get_or_create(
             uhid=patient_kwargs["uhid"],
             defaults=patient_kwargs,
@@ -272,6 +275,7 @@ class Command(BaseCommand):
             patient_kwargs = self._build_patient_kwargs(shared_profile, 1, today, demo_user)
         elif scenario == "quick_entry_pending_details":
             patient_kwargs = self._build_patient_kwargs(profile, index, today, demo_user, temporary=True)
+            patient_kwargs["uhid"] = ""
         else:
             patient_kwargs = self._build_patient_kwargs(profile, index, today, demo_user)
         return self._get_or_create_patient(patient_kwargs)

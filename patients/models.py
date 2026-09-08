@@ -545,10 +545,11 @@ class Patient(MandatoryAuditModelMixin, models.Model):
         from .identity import reserve_patient_identity
 
         using = kwargs.get("using") or self._state.db or "default"
+        previous = None
         if self._state.adding:
             reserve_patient_identity(self, using=using)
         else:
-            previous = type(self).objects.using(using).filter(pk=self.pk).values("mtno", "identity_uuid").get()
+            previous = type(self).objects.using(using).filter(pk=self.pk).values("mtno", "identity_uuid", "uhid", "merged_into_id").get()
             if previous["mtno"] != self.mtno or previous["identity_uuid"] != self.identity_uuid:
                 raise ValidationError("Patient MTNO and identity binding are immutable.")
         self.uhid = " ".join((self.uhid or "").split()).upper()
@@ -561,6 +562,10 @@ class Patient(MandatoryAuditModelMixin, models.Model):
         self._normalize_identity_fields()
         super().save(*args, **kwargs)
         self.sync_case_mirrors()
+        if previous and (previous["uhid"] != self.uhid or previous["merged_into_id"] != self.merged_into_id):
+            # Restart identity search snapshots only; never revoke write receipts/outbox for a merge.
+            from api.models import MobileOpaqueCursor
+            MobileOpaqueCursor.objects.using(using).filter(kind__in=["patient_search", "case_search"]).delete()
 
     def __str__(self) -> str:
         return f"{self.mtno} - {self.full_name or self.patient_name}"

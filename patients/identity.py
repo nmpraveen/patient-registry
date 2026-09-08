@@ -125,10 +125,14 @@ def reconcile_identity_allocator(*, minimum_high_water=0, bindings=(), using="de
 
 def patient_identifier_query(query, *, lookup="icontains"):
     """Apply only to already-scoped survivor querysets; aliases expose no demographics."""
+    from .models import Patient
+
+    alias_targets = Patient.objects.filter(merged_into__isnull=False).filter(
+        Q(**{f"mtno__{lookup}": query}) | Q(**{f"uhid__{lookup}": query})
+    ).values("merged_into_id")
     return (
         Q(**{f"mtno__{lookup}": query}) | Q(**{f"uhid__{lookup}": query})
-        | Q(**{f"merged_patients__mtno__{lookup}": query})
-        | Q(**{f"merged_patients__uhid__{lookup}": query})
+        | Q(pk__in=alias_targets)
     )
 
 

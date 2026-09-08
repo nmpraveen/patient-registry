@@ -18,7 +18,7 @@
         </div>
 
         <div class="case-detail-meta-row">
-          <span class="case-detail-uhid">UHID. {{ case.uhid }}</span>
+          <span class="case-detail-uhid">{{ case.mtno }}{% if case.uhid %} · UHID {{ case.uhid }}{% endif %}</span>
 
           {% if case.gender %}
             <span class="case-detail-meta-sep" aria-hidden="true"></span>

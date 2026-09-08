@@ -1533,7 +1533,7 @@ private fun LatestVitalMetric?.vitalTone(): VitalTone {
 private fun String.firstNumber(): Float? =
     Regex("""\d+(\.\d+)?""").find(this)?.value?.toFloatOrNull()
 
-private fun PatientCase.matchesCaseSearch(query: String): Boolean {
+internal fun PatientCase.matchesCaseSearch(query: String): Boolean {
     val needle = query.trim()
     if (needle.isBlank()) return true
     return listOfNotNull(
@@ -1560,7 +1560,7 @@ private fun PatientCase.matchesCaseFilter(filter: String): Boolean =
 private fun PatientCase.riskReasonCount(): Int =
     highRiskReasons.count { it.isNotBlank() }.coerceAtLeast(1)
 
-private fun PatientCase.dedupeKey(): String =
+internal fun PatientCase.dedupeKey(): String =
     mtno.takeIf { it.isNotBlank() }?.let { "mtno:$it" }
         ?: uhid.takeIf { it.isNotBlank() }?.let { "uhid:$it" }
         ?: "case:$id"

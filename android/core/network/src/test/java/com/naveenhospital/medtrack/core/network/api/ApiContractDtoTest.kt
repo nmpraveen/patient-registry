@@ -48,7 +48,7 @@ class ApiContractDtoTest {
     @Test
     fun blankUhidAndLegacyTemporaryRequestsNeverSendMtno() {
         val adapter = moshi.adapter(com.naveenhospital.medtrack.core.network.model.CreateCaseRequestDto::class.java)
-        val current = com.naveenhospital.medtrack.core.network.model.CreateCaseRequestDto(patientMode = "new", category = 2, uhid = "")
+        val current = com.naveenhospital.medtrack.core.network.model.CreateCaseRequestDto(patientMode = "new", category = 2, uhid = "", clientWriteId = "blank-uhid")
         val currentJson = adapter.toJson(current)
         assertFalse(currentJson.contains("mtno"))
         assertFalse(adapter.fromJson(currentJson)!!.useTemporaryUhid)

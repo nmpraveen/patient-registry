@@ -364,6 +364,7 @@ private fun CallQueueRow(
 
 private fun PatientCase.callIdentityLine(): String =
     listOfNotNull(
+        mtno,
         uhid,
         sexLabel?.trim()?.takeIf { it.isNotBlank() }?.take(1)?.uppercase(Locale.US),
         age?.let { it.toString() },

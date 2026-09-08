@@ -22,6 +22,8 @@ class CaseFormState(
     // Patient (new)
     var patientMode by mutableStateOf("new")
     var useTemporaryUhid by mutableStateOf(false)
+        private set
+    private var originalUhid = ""
     var mtno by mutableStateOf("")
         private set
     var uhid by mutableStateOf("")
@@ -114,7 +116,8 @@ class CaseFormState(
         status = prefill.status ?: "ACTIVE"
         // Edit always shows the patient fields inline with a stable UHID (no temp regeneration).
         patientMode = "new"
-        useTemporaryUhid = false
+        useTemporaryUhid = prefill.useTemporaryUhid
+        originalUhid = prefill.uhid.orEmpty()
         mtno = prefill.mtno
         uhid = prefill.uhid.orEmpty()
         prefix = prefill.prefix.orEmpty()
@@ -247,7 +250,7 @@ class CaseFormState(
         return NewCaseInput(
             patientMode = patientMode,
             selectedPatientId = if (patientMode == "existing") selectedPatient?.id else null,
-            useTemporaryUhid = patientMode == "new" && useTemporaryUhid,
+            useTemporaryUhid = isEdit && uhid == originalUhid && useTemporaryUhid,
             uhid = uhid.ifBlank { null },
             prefix = prefix.ifBlank { null },
             firstName = firstName.ifBlank { null },

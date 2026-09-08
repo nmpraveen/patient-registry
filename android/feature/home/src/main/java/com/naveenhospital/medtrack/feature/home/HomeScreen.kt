@@ -418,7 +418,7 @@ private fun SearchFilterBar(
                 decorationBox = { innerTextField ->
                     if (value.isBlank()) {
                         Text(
-                            text = "Search patient, UHID, phone",
+                            text = "Search name, MTNO, UHID, phone",
                             color = MedtrackColors.Muted.copy(alpha = 0.72f),
                             style = MaterialTheme.typography.bodySmall.copy(fontSize = HomeUiScale.SearchText),
                             maxLines = 1,

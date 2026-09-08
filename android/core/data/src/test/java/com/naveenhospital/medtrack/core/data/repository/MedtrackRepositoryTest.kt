@@ -118,6 +118,18 @@ class MedtrackRepositoryTest {
     }
 
     @Test
+    fun editPrefillMapsReadOnlyMtnoWithOptionalHospitalId() = runTest {
+        val api = FakeMedtrackApi()
+        api.editFormResponse = com.naveenhospital.medtrack.core.network.model.CaseEditFormDto(
+            canEdit = true,
+            case = CaseEditCaseDto(mtno = "MT-000042", id = 42, baseUpdatedAt = "v1", uhid = "", surgeryDone = false),
+        )
+        val prefill = repository(api).loadCaseEditForm("42")
+        assertEquals("MT-000042", prefill.mtno)
+        assertEquals("", prefill.uhid)
+    }
+
+    @Test
     fun identityRefreshFollowsMergeAndUndoWithoutChangingCaseKey() = runTest {
         val api = FakeMedtrackApi(beforeCaseDetail = {})
         val initial = api.caseDetail("42")
@@ -1073,6 +1085,7 @@ class MedtrackRepositoryTest {
 private class FakeMedtrackApi(
     var beforeListCases: (suspend () -> Unit)? = null,
     var beforeSearchCases: (suspend (CaseSearchRequestDto) -> Unit)? = null,
+    var editFormResponse: com.naveenhospital.medtrack.core.network.model.CaseEditFormDto? = null,
     var detailResponse: CaseDetailDto? = null,
     var patchError: Throwable? = null,
     var beforeLogCall: (suspend () -> Unit)? = null,
@@ -1176,7 +1189,7 @@ private class FakeMedtrackApi(
     }
     override suspend fun caseFormMetadata(): com.naveenhospital.medtrack.core.network.model.CaseFormMetadataDto = unused()
     override suspend fun taskFormMetadata(): com.naveenhospital.medtrack.core.network.model.TaskFormMetadataDto = unused()
-    override suspend fun caseEditForm(caseId: String): com.naveenhospital.medtrack.core.network.model.CaseEditFormDto = unused()
+    override suspend fun caseEditForm(caseId: String): com.naveenhospital.medtrack.core.network.model.CaseEditFormDto = editFormResponse ?: unused()
     override suspend fun ancAction(caseId: String, request: Map<String, Any>) =
         com.naveenhospital.medtrack.core.network.model.CaseUpdateResponseDto(
             message = "ANC action recorded.", caseId = 42, case = sampleCaseSummary(),

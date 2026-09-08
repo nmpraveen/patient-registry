@@ -1,0 +1,14 @@
+.staff-form { max-width: 48rem; }
+.staff-form p { margin-bottom: 1rem; }
+.staff-form label { display: block; margin-bottom: .25rem; }
+.staff-form input:not([type=checkbox]):not([type=hidden]),
+.staff-form select, .staff-form textarea {
+  display: block; width: 100%; max-width: 100%; padding: .5rem .75rem;
+  color: var(--bs-body-color); background: var(--bs-body-bg);
+  border: 1px solid var(--bs-border-color); border-radius: var(--bs-border-radius);
+}
+.staff-form input[type=checkbox] { width: 1.1rem; height: 1.1rem; }
+.staff-form .errorlist { color: var(--bs-danger); padding-left: 1.2rem; }
+.staff-form input:focus-visible, .staff-form textarea:focus-visible, .staff-form select:focus-visible {
+  outline: 2px solid var(--bs-primary); outline-offset: 2px;
+}

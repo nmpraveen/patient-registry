@@ -45,6 +45,10 @@ urlpatterns = [
     path("api/schema/", SpectacularAPIView.as_view(), name="api_schema"),
     path("api/", include("api.urls")),
     path("patients/", include("patients.urls")),
+    path("staff/directory/", include("staff_directory.urls")),
+    path("staff/announcements/", include("staff_announcements.urls")),
+    path("api/staff/directory/", include("staff_directory.api_urls")),
+    path("api/staff/announcements/", include("staff_announcements.api_urls")),
     path("", RedirectView.as_view(pattern_name="patients:dashboard", permanent=False)),
 ]
 

@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}PhoneBook{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3"><h1 class="h3 mb-0">PhoneBook</h1>{% if can_manage %}<a class="btn btn-primary" href="{% url 'staff_directory:create' %}">Add contact</a>{% endif %}</div>
+<form method="get" class="d-flex flex-wrap gap-2 mb-3">
+<label class="visually-hidden" for="contact-search">Search contacts</label><input class="form-control flex-grow-1 w-auto" id="contact-search" name="q" value="{{ q }}" maxlength="100" placeholder="Search contacts">
+<label class="align-self-center"><input type="checkbox" name="favourites" value="true" {% if favourites %}checked{% endif %}> Favourites</label>
+{% if can_manage %}<label class="align-self-center"><input type="checkbox" name="include_inactive" value="true" {% if include_inactive %}checked{% endif %}> Include inactive</label>{% endif %}
+<button class="btn btn-outline-primary" type="submit">Search</button></form>
+<div class="list-group">
+{% for contact in page_obj %}
+<a class="list-group-item list-group-item-action" href="{% url 'staff_directory:detail' contact.pk %}"><strong>{{ contact.name }}</strong>{% if contact.favourite_for_user %} <span aria-label="Favourite">★</span>{% endif %}{% if not contact.is_active %} <span class="badge bg-secondary">Inactive</span>{% endif %}<div class="text-break">{{ contact.role_specialty }}{% if contact.organization %} · {{ contact.organization }}{% endif %}</div></a>
+{% empty %}<p>No contacts found.</p>{% endfor %}
+</div>
+<nav class="d-flex gap-3 mt-3" aria-label="Contact pages">{% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}&amp;q={{ q|urlencode }}&amp;favourites={{ favourites|yesno:'true,false' }}&amp;include_inactive={{ include_inactive|yesno:'true,false' }}">Previous</a>{% endif %}{% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}&amp;q={{ q|urlencode }}&amp;favourites={{ favourites|yesno:'true,false' }}&amp;include_inactive={{ include_inactive|yesno:'true,false' }}">Next</a>{% endif %}</nav>
+{% endblock %}

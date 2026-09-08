@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}{{ contact.name }} · PhoneBook{% endblock %}
+{% block content %}
+<a href="{% url 'staff_directory:list' %}">PhoneBook</a>
+<div class="card mt-3"><div class="card-body text-break"><h1 class="h3">{{ contact.name }}</h1><p>{{ contact.role_specialty }}{% if contact.organization %} · {{ contact.organization }}{% endif %}</p>
+{% if not contact.is_active %}<p class="badge bg-secondary">Inactive</p>{% endif %}
+<ul class="list-unstyled">{% for phone in contact.phones %}<li class="mb-2">{{ phone.label }} <a href="tel:{{ phone.number|cut:' '|cut:'('|cut:')'|cut:'-' }}{% if phone.extension %};ext={{ phone.extension }}{% endif %}">{{ phone.number }}</a>{% if phone.extension %} ext. {{ phone.extension }}{% endif %}</li>{% endfor %}</ul>
+<div>{{ contact.notes|linebreaksbr }}</div>
+<div class="d-flex flex-wrap gap-2 mt-3">{% if contact.is_active %}<form method="post" action="{% url 'staff_directory:favourite' contact.pk %}">{% csrf_token %}<input type="hidden" name="is_favourite" value="{{ contact.favourite_for_user|yesno:'false,true' }}"><button class="btn btn-outline-primary" type="submit">{% if contact.favourite_for_user %}Remove favourite{% else %}Add favourite{% endif %}</button></form>{% endif %}{% if can_manage %}<a class="btn btn-outline-secondary" href="{% url 'staff_directory:edit' contact.pk %}">Edit contact</a>{% endif %}</div>
+</div></div>
+{% endblock %}

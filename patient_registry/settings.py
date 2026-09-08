@@ -48,6 +48,8 @@ INSTALLED_APPS = [
     "drf_spectacular",
     "patients",
     "api.apps.ApiConfig",
+    "staff_directory",
+    "staff_announcements",
 ]
 
 MIDDLEWARE = [
@@ -79,6 +81,7 @@ TEMPLATES = [
                 "django.contrib.messages.context_processors.messages",
                 "patient_registry.context_processors.app_version",
                 "patient_registry.context_processors.global_theme",
+                "staff_announcements.context_processors.staff_operations",
             ],
         },
     },

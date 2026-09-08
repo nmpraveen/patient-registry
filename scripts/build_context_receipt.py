@@ -23,7 +23,8 @@ TOP_LEVEL_INPUTS = {
     "manage.py",
     "requirements.txt",
 }
-RUNTIME_ROOTS = ("api/", "patient_registry/", "patients/", "templates/")
+RUNTIME_ROOTS = ("api/", "patient_registry/", "patients/", "templates/",
+                 "staff_directory/", "staff_announcements/")
 FORBIDDEN_COMPONENTS = {
     ".git",
     ".mypy_cache",

@@ -1,3 +1,9 @@
+## 2026.09.08.00.11
+
+- Keep cancelled tasks cancelled in full editors and preserve audited, idempotent RCH completion follow-ups across web and mobile.
+- Preserve native call history during ordinary list refreshes and support precise receipt timestamps on Android API 24.
+- Retain a database default for rollback call inserts; export reason-bearing bundle version 3 and accept versions 1, 2 and 3.
+
 ## 2026.09.07.23.47
 
 - Expose web and native task editing with original-field conflict safeguards, before/after activity, calendar dates, frequency and notes.

@@ -4,6 +4,8 @@
 
 - Stage 1 is merged in PR #115 at `4531f09c728f1c11141f7f636a4f14fc43eb740a`. The correction records below describe its completed review history. Stage 2 integrates from that exact main base; production activation remains separate.
 
+- Stage 2 review corrections cover cancelled-status/RCH parity, retained call history, API24 timestamps and database/bundle rollback compatibility. Focused server/native checks pass. Complete the same review's correction recheck and fresh exact-head CI; bundle format3 is the predecessor for Stage3 identity format4.
+
 - The remaining Recent Cases lock inversion is fixed with precise audited Case-only updates. Eight targeted tests pass, including actual concurrent endpoints, clinical preservation, permissions, linkage and rollback; complete correction-only recheck and fresh exact-head CI without reopening prior clearances.
 
 - The bounded native ANC callback cancellation correction adds explicit propagation in both error paths. The five-case extracted callback harness and incremental compile pass; preserve prior clearances and complete fresh exact-head CI plus the focused guard recheck.

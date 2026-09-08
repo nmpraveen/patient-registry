@@ -49,9 +49,9 @@
             <h3 id="merge-review-title" class="h6 mb-3">Review Patient Merge</h3>
             <dl class="row small mb-3">
               <dt class="col-5 col-md-3">Source MTNO</dt>
-              <dd class="col-7 col-md-9"><strong>{{ merge_review.source_patient.mtno }}</strong></dd>
+              <dd class="col-7 col-md-9"><strong>{{ merge_review.source_patient.mtno }}</strong>{% if merge_review.source_patient.uhid %} · {{ merge_review.source_patient.uhid }}{% endif %}</dd>
               <dt class="col-5 col-md-3">Target MTNO</dt>
-              <dd class="col-7 col-md-9"><strong>{{ merge_review.target_patient.mtno }}</strong></dd>
+              <dd class="col-7 col-md-9"><strong>{{ merge_review.target_patient.mtno }}</strong>{% if merge_review.target_patient.uhid %} · {{ merge_review.target_patient.uhid }}{% endif %}</dd>
               <dt class="col-5 col-md-3">Source cases</dt>
               <dd class="col-7 col-md-9">{{ merge_review.source_case_count }} will move</dd>
               <dt class="col-5 col-md-3">Target cases</dt>

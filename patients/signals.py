@@ -31,16 +31,14 @@ def _capture_changed_fields(sender, instance):
     if not instance.pk:
         instance._audit_changed_fields = []
         return
-    field_names = [
-        field.attname
+    field_names = {
+        field.attname: field.name
         for field in sender._meta.concrete_fields
         if not field.primary_key and field.name not in IGNORED_CHANGE_FIELDS
-    ]
+    }
     previous = sender.objects.filter(pk=instance.pk).values(*field_names).first()
     instance._audit_changed_fields = [
-        sender._meta.get_field(field_name.removesuffix("_id")).name
-        if field_name.endswith("_id")
-        else field_name
+        field_names[field_name]
         for field_name in field_names
         if previous is not None and previous.get(field_name) != getattr(instance, field_name)
     ]

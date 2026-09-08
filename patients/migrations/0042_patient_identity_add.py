@@ -15,5 +15,5 @@ class Migration(migrations.Migration):
         migrations.AddField(model_name="patient", name="mtno", field=models.CharField(max_length=32, null=True, unique=True, editable=False, blank=True)),
         migrations.AddField(model_name="patient", name="identity_uuid", field=models.UUIDField(null=True, unique=True, editable=False)),
         migrations.AlterField(model_name="patient", name="uhid", field=models.CharField(max_length=64, blank=True, default="")),
-        migrations.AddConstraint(model_name="patient", constraint=models.UniqueConstraint(fields=["uhid"], condition=~models.Q(uhid=""), name="patient_nonblank_uhid_unique")),
+        migrations.AddConstraint(model_name="patient", constraint=models.UniqueConstraint(fields=["uhid"], condition=~models.Q(uhid=""), name="patient_nonblank_uhid_unique", violation_error_message="Patient with this UHID already exists. Select the existing patient.")),
     ]

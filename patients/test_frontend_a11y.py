@@ -262,7 +262,7 @@ class FrontendAccessibilityRegressionTests(TestCase):
         self.assertContains(calls_response, "UHID UH-A11Y-SOURCE")
         self.assertContains(calls_response, 'role="status" aria-live="polite"')
 
-    def test_patient_merge_requires_review_target_uhid_and_confirmation(self):
+    def test_patient_merge_requires_review_target_mtno_and_confirmation(self):
         detail_url = reverse("patients:patient_detail", kwargs={"pk": self.source_case.patient_id})
         merge_url = reverse("patients:patient_merge", kwargs={"pk": self.source_case.patient_id})
 
@@ -276,7 +276,7 @@ class FrontendAccessibilityRegressionTests(TestCase):
         self.assertContains(review, "Source - will move")
         self.assertContains(review, "Target - remains")
         self.assertContains(review, "Complete affected set")
-        self.assertContains(review, "Type target UHID to confirm")
+        self.assertContains(review, "Type target MTNO to confirm")
 
         rejected = self.client.post(
             merge_url,
@@ -295,7 +295,7 @@ class FrontendAccessibilityRegressionTests(TestCase):
             merge_url,
             {
                 "target_patient": self.target_case.patient_id,
-                "confirm_target_uhid": self.target_case.patient.uhid,
+                "confirm_target_uhid": self.target_case.patient.mtno,
                 "confirm_merge": "on",
             },
         )
@@ -372,7 +372,7 @@ class FrontendAccessibilityRegressionTests(TestCase):
             reverse("patients:patient_merge", kwargs={"pk": source_case.patient_id}),
             {
                 "target_patient": target_case.patient_id,
-                "confirm_target_uhid": target_case.patient.uhid,
+                "confirm_target_uhid": target_case.patient.mtno,
                 "confirm_merge": "on",
             },
         )

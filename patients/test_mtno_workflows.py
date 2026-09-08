@@ -29,7 +29,7 @@ class MtnoWorkflowTests(TestCase):
     def payload(self, **overrides):
         return dict(patient_mode="new", prefix="MR", first_name="Synthetic", last_name="Example",
                     age=35, phone_number="9000000001", category=self.category.pk,
-                    surgical_pathway="SURVEILLANCE", review_date=str(timezone.localdate() + timedelta(days=5)),
+                    subcategory="GENERAL_SURGERY", surgical_pathway="SURVEILLANCE", review_date=str(timezone.localdate() + timedelta(days=5)),
                     **overrides)
 
     def create_case(self, **overrides):
@@ -151,8 +151,8 @@ class MtnoWorkflowTests(TestCase):
 
     def test_quick_web_entry_has_mtno_without_manufactured_uhid(self):
         response = self.client.post(reverse("patients:case_quick_create"), {"prefix":"MR","first_name":"Synthetic",
-            "age":40,"gender":"MALE","category":self.category.pk,"review_date":str(timezone.localdate())})
-        self.assertEqual(response.status_code, 302, response.content)
+            "age":40,"gender":"MALE","category":self.category.pk,"diagnosis":"Synthetic review","review_date":str(timezone.localdate())})
+        self.assertEqual(response.status_code, 302, response.context["form"].errors if response.context else response.status_code)
         case = Case.objects.get()
         self.assertTrue(case.mtno.startswith("MT-"))
         self.assertEqual(case.uhid, "")

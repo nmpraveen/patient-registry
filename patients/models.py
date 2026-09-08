@@ -452,7 +452,7 @@ class Patient(MandatoryAuditModelMixin, models.Model):
     class Meta:
         ordering = ["patient_name", "uhid"]
         constraints = [
-            models.UniqueConstraint(fields=["uhid"], condition=~models.Q(uhid=""), name="patient_nonblank_uhid_unique"),
+            models.UniqueConstraint(fields=["uhid"], condition=~models.Q(uhid=""), name="patient_nonblank_uhid_unique", violation_error_message="Patient with this UHID already exists. Select the existing patient."),
             models.CheckConstraint(condition=~models.Q(mtno=""), name="patient_mtno_present"),
         ]
         indexes = [

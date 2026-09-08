@@ -3814,7 +3814,7 @@ class CaseListView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
         )
         queryset = _accessible_case_queryset(
             self.request.user,
-            Case.objects.select_related("category")
+            Case.objects.select_related("category", "patient")
             .only(
                 "id",
                 "uhid",
@@ -3834,6 +3834,8 @@ class CaseListView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
                 "updated_at",
                 "category__id",
                 "category__name",
+                "patient__id",
+                "patient__mtno",
             )
             .annotate(task_count=Coalesce(Subquery(task_count_subquery, output_field=IntegerField()), 0))
         )

@@ -818,10 +818,6 @@ class Command(BaseCommand):
             demo_user.set_unusable_password()
             demo_user.save(update_fields=["password"])
         staff_users = self._ensure_demo_staff_users(User)
-        from staff_directory.seed import seed_demo_operations
-        seed_demo_operations(staff_users["admin"])
-        from staff_reminders.seed import seed_demo_reminders
-        seed_demo_reminders(staff_users["admin"], staff_users["nurse"])
 
         today = timezone.localdate()
         rng = random.Random(20260226)

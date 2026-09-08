@@ -137,6 +137,9 @@ class MeView(APIView):
         responses={200: contract.MeResponseSerializer},
     )
     def get(self, request):
+        from staff_directory.access import is_authorized_staff
+
+        staff_operations = is_authorized_staff(request.user, fresh=True)
         return Response(
             {
                 "id": request.user.id,
@@ -151,6 +154,7 @@ class MeView(APIView):
                     "task_reopen": has_capability(request.user, "task_reopen"),
                     "note_add": has_capability(request.user, "note_add"),
                     "manage_settings": has_capability(request.user, "manage_settings"),
+                    "staff_operations": staff_operations,
                 },
                 "data_scope": role_data_scope_payload(request.user),
             }

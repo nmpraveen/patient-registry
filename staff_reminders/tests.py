@@ -110,6 +110,47 @@ class ReminderServiceTests(ReminderFixture, TestCase):
         update_reminder(self.owner, reminder.pk, {"assignee_id": self.other.pk}, 1)
         self.assertEqual(schedule_reminders(as_of=date(2025, 3, 31))["created"], 2)
 
+    def test_last_staff_group_loss_pauses_cursor_and_restoration_resumes_anchor(self):
+        reminder = self.create()
+        completed = complete_occurrence(self.owner, reminder.occurrences.get().pk, 1)
+        before = (reminder.next_index, reminder.next_notice_date, reminder.last_scheduled_at)
+        group = self.assignee.groups.get()
+        self.assignee.groups.clear()
+        self.assertEqual(schedule_reminders(as_of=date(2025, 3, 31))["created"], 0)
+        self.assertEqual(schedule_reminders(as_of=date(2025, 3, 31))["remaining_definitions"], 0)
+        reminder.refresh_from_db()
+        self.assertEqual((reminder.next_index, reminder.next_notice_date, reminder.last_scheduled_at), before)
+        self.assertEqual(reminder.occurrences.count(), 1)
+        completed.refresh_from_db()
+        self.assertIsNotNone(completed.completed_at)
+        self.assignee.groups.add(group)
+        self.assertEqual(schedule_reminders(as_of=date(2025, 3, 31))["created"], 2)
+        self.assertEqual(list(reminder.occurrences.values_list("due_date", flat=True)),
+                         [date(2025, 1, 31), date(2025, 2, 28), date(2025, 3, 31)])
+
+    def test_deleted_role_pauses_but_active_superuser_needs_no_group(self):
+        reminder = self.create()
+        RoleSetting.objects.filter(role_name="Reminder test staff").delete()
+        self.assertEqual(schedule_reminders(as_of=date(2025, 3, 31))["created"], 0)
+        reminder.refresh_from_db()
+        self.assertEqual(reminder.next_index, 1)
+        update_reminder(self.manager, reminder.pk, {"assignee_id": self.manager.pk}, 1)
+        self.assertEqual(schedule_reminders(as_of=date(2025, 3, 31))["created"], 2)
+
+    def test_authorization_loss_after_selection_does_not_advance_cursor(self):
+        reminder = self.create()
+
+        def revoke_then_lock(actor):
+            self.assignee.groups.clear()
+            return lock_edit_actor(actor)
+
+        with patch("staff_reminders.services.lock_edit_actor", side_effect=revoke_then_lock):
+            self.assertEqual(schedule_reminders(as_of=date(2025, 3, 31))["created"], 0)
+        reminder.refresh_from_db()
+        self.assertEqual(reminder.next_index, 1)
+        self.assertIsNone(reminder.last_scheduled_at)
+        self.assertEqual(reminder.occurrences.count(), 1)
+
     def test_deactivation_preserves_rows_and_stops_completion(self):
         reminder = self.create()
         update_reminder(self.owner, reminder.pk, {"is_active": False}, 1)

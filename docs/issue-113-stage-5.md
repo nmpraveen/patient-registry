@@ -1,6 +1,6 @@
 # Stage 5 staff operations
 
-PhoneBook, reminders and announcements use separate Django applications. They never create patient records or clinical tasks. Existing active staff with explicit RoleSetting membership, and active superusers, can read the directory and announcements addressed to them. A bare Django is_staff flag grants no access. Existing manage_settings capability controls contact maintenance and announcement publication.
+PhoneBook, reminders and announcements use separate Django applications. They never create patient records or clinical tasks. Existing active staff with explicit RoleSetting membership, and active superusers, can read the directory and announcements addressed to them. A bare Django is_staff flag grants no access. GET /api/me/ exposes this current authorization as capabilities.staff_operations; clients must not infer it from group labels. Existing manage_settings capability controls contact maintenance and announcement publication.
 
 ## PhoneBook
 /staff/directory/ provides search, per-user favourites, contact details, multiple labelled numbers/extensions and call links. Managers add/edit/deactivate contacts. Inactive contacts disappear from reader lists/details/favourite writes; managers can include and reactivate them. Existing favourites are retained through deactivation and return if reactivated.
@@ -23,7 +23,7 @@ The /api/staff/reminders/ definition list/create and {id}/ detail/PATCH expose t
 
 GET /api/staff/reminders/occurrences/?status=pending|completed|all|notices&reminder_id={optional-id} returns scoped occurrence identity, reminder_id, title, assignee, due_date/notice_date, completion actor/time, active state, can_complete and definition_version. POST occurrences/{id}/complete/ requires {version:definition_version} for first completion; stale assignment/content yields409. A completed replay returns original completion after rechecking current scope. Completion never changes the recurrence anchor. Lists use fixed50 pagination, server_now and server_today.
 
-The first occurrence is created atomically with its definition. Later occurrences are generated only by the bounded schedule_staff_reminders command. It uses definition row locks, resumable indices and unique occurrence constraints. Inactive assignees pause future generation until reassignment. Completion history remains intact.
+The first occurrence is created atomically with its definition. Later occurrences are generated only by the bounded schedule_staff_reminders command. It uses actor-before-definition row locks, resumable indices and unique occurrence constraints. Inactive assignees or those losing their last backed RoleSetting pause future generation without advancing the calendar cursor. Current eligibility is rechecked under locks; restoring authorization or reassigning eligible staff resumes bounded catch-up from the original anchor. Remaining-work counts include only currently eligible definitions. Completion history remains intact.
 
 Source-only deploy/systemd/medtrack-staff-reminders.service and .timer provide a supervised minute-by-minute command with limit500 and per-reminder24. They are not installed or enabled by application startup or this source change. At an authorised deployment, install these units alongside existing MEDTRACK units, enable the timer, and verify successful journal output; monitor remaining_definitions and failures. Missed invocations catch up in bounded repeat runs. No external notification delivery is configured.
 
@@ -35,13 +35,13 @@ Browser no-store/CSP and existing session/device security remain in force. Nativ
 Full PostgreSQL backups include all new operational tables, their foreign keys, favourites and audit records. Patient-data ZIP bundles intentionally exclude these apps and cannot restore them. Restore operational records with the full database recovery process.
 
 ## Synthetic seed
-The existing seed_mock_data command now adds a synthetic switchboard contact, favourite, current staff announcement and every-two-months reminder. A standalone command seeds all three administrative apps:
+The clinical seed_mock_data command and its mock-data cleanup do not create or remove staff operational records. To add a synthetic switchboard contact, favourite, current announcement and every-two-months reminder, explicitly seed the three administrative apps:
 
 ```text
 python manage.py seed_staff_operations --owner <existing-settings-manager>
 ```
 
-Both require ALLOW_MOCK_DATA_SEEDING=true in an explicitly authorised test environment. Production remains false. The seed is repeatable and uses fictional 202-555-01xx numbers. It does not delete existing operational data.
+This command requires ALLOW_MOCK_DATA_SEEDING=true in an explicitly authorised test environment. Production remains false. The seed is repeatable and uses fictional 202-555-01xx numbers. It does not delete existing operational data. Use it only in an isolated synthetic environment: clinical mock-data cleanup intentionally leaves these separately requested staff records intact.
 
 ## Integration status
 All three backend apps and native consumers are integrated on actual Stage4 squash 64d6c6cf2d9af1d0b998bdf4bd628c72d8c4c70b (PR #118). The combined Stage5 PR, exact-head review/CI, coordinator integrated acceptance and production activation remain separate gates. Runtime packaging includes all three apps through the explicit Docker/build-context/image-scan allowlists.

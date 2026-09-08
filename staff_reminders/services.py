@@ -4,6 +4,7 @@ from datetime import date
 from zoneinfo import ZoneInfo
 
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 from django.shortcuts import get_object_or_404
@@ -13,7 +14,7 @@ from patients.audit import record_audit_event
 from patients.models import AuditEvent
 from patients.task_editing import lock_edit_actor
 from .models import Reminder, ReminderOccurrence
-from .policy import assignees, require_staff, visible_reminders
+from .policy import assignees, authorized_staff, require_staff, visible_reminders
 
 
 class StaleReminder(ValidationError):
@@ -139,15 +140,28 @@ def schedule_reminders(*, as_of=None, limit=500, per_reminder=24):
         raise ValueError("limit must be 1..5000 and per_reminder 1..120")
     created = processed = 0
     seen = []
+    eligible = assignees().order_by().values("pk")
     while created < limit and processed < limit:
         with transaction.atomic():
-            reminder = (Reminder.objects.select_for_update(skip_locked=True, of=("self",)).filter(
-                is_active=True, assignee__is_active=True, next_notice_date__lte=as_of,
-            ).exclude(pk__in=seen).order_by("next_notice_date", "pk").first())
-            if reminder is None:
+            candidate = (Reminder.objects.filter(
+                is_active=True, assignee_id__in=eligible, next_notice_date__lte=as_of,
+            ).exclude(pk__in=seen).order_by("next_notice_date", "pk").values("pk", "assignee_id").first())
+            if candidate is None:
                 break
-            seen.append(reminder.pk)
+            seen.append(candidate["pk"])
             processed += 1
+            # Match mutation lock order: actor/security/roles before definition.
+            # Eligibility may change after candidate selection; do not advance a
+            # revoked or reassigned definition's cursor from that old snapshot.
+            actor = lock_edit_actor(get_user_model()(pk=candidate["assignee_id"]))
+            if not authorized_staff(actor):
+                continue
+            reminder = (Reminder.objects.select_for_update(skip_locked=True).filter(
+                pk=candidate["pk"], assignee_id=actor.pk,
+                is_active=True, next_notice_date__lte=as_of,
+            ).first())
+            if reminder is None:
+                continue
             for _ in range(min(per_reminder, limit - created)):
                 if reminder.next_notice_date is None or reminder.next_notice_date > as_of:
                     break
@@ -161,5 +175,5 @@ def schedule_reminders(*, as_of=None, limit=500, per_reminder=24):
                 set_next_notice(reminder)
             reminder.last_scheduled_at = timezone.now()
             reminder.save(update_fields=["next_index", "next_notice_date", "last_scheduled_at"])
-    remaining = Reminder.objects.filter(is_active=True, assignee__is_active=True, next_notice_date__lte=as_of).count()
+    remaining = Reminder.objects.filter(is_active=True, assignee_id__in=eligible, next_notice_date__lte=as_of).count()
     return {"as_of": as_of.isoformat(), "created": created, "processed": processed, "remaining_definitions": remaining}

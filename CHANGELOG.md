@@ -1,3 +1,9 @@
+## 2026.09.08.00.39
+
+- Assign permanent MTNO identities with a retained issuance ledger, immutable database guards and additive backfill; allow missing hospital UHID while preserving existing identifiers.
+- Carry read-only MTNO through scoped web/API/native search and editing, safe merge aliases, Room 15 and legacy offline payloads.
+- Export identity bundle version 4 with versions 1/2/3 compatibility, protected merge evidence and trusted outgoing checkpoints for older restores.
+
 ## 2026.09.08.00.11
 
 - Keep cancelled tasks cancelled in full editors and preserve audited, idempotent RCH completion follow-ups across web and mobile.

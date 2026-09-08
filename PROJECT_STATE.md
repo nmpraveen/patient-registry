@@ -1,5 +1,14 @@
 # PROJECT_STATE.md
 
+## Issue #113 Stage 3 combined implementation
+
+Stage 3 integrates permanent MTNO, optional hospital UHID, web/API/native identity views and recovery on actual Stage 2 main `4ca2a2ec7da113180bcb0885d9384ff9974fa796` (PR #116). Seven feature commits rebased from the reviewed predecessor with identical combined tree `e804eafa5876e12839471354ca0812aac2348830`; Stage 1/2 history remains in the base. The prior Stage 2 pending-review wording below is historical and superseded by its merge.
+
+The initial combined suite ran 589 tests (two expected local-helper skips) and identified eight failures. All eight now pass within 69 affected regressions, including the original 15-query guard, legacy bundle tests, scope/merge checks and seed assertions. The actual list N+1 and Boolean audit-field lookup were corrected; approved MTNO/bundle-4 assertions replace obsolete quick-entry/confirmation expectations. Strict OpenAPI, migration drift and applied-schema checks pass. Synthetic historical backfill fails atomically on ambiguous orphans and passes after an explicit mapping, preserving identifiers/timestamps and retry stability. Browser quick creation, later UHID assignment and MTNO search pass; case headers fit 320/390/430/1440 widths. Reused lane evidence includes 143 native tests, affected compilation/lint, actual PostgreSQL old-snapshot restore with outgoing issuance carry-forward, and fresh-target merged-bundle import.
+
+The single combined Stage 3 PR still requires coordinator review and exact-head CI before merge. No deployment or production migration/activation was performed. Read [Stage 3](docs/issue-113-stage-3.md) for migration, total-loss and protected-evidence limits; coordination `stage-3-report.md` records failure dispositions and evidence paths. Stages 4/5 retain separate gates.
+
+
 ## Issue #113 Stage 2 implementation
 
 The combined review corrections enforce cancelled-task status in full editors, share RCH completion follow-up policy, retain the reason database default for old-code inserts and advance reason-bearing bundles to version 3 while accepting versions 1/2. Ordinary native list refreshes preserve call history; cursor-reset, revoked-session and access-denial purges remain enforced. The API 24 timestamp correction passes 63 targeted tests, affected-module lint and app compilation; history correction passes 62 repository/worker tests and affected compilation. Server corrections pass 55 targeted tests plus schema/migration checks; the actual Stage 1 reader rejects new bundles before import. The focused reviewer recheck and fresh exact-head CI supersede the initial NO-GO and 9/10 result.

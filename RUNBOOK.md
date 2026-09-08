@@ -1,5 +1,18 @@
 # RUNBOOK.md
 
+## Issue #113 Stage 3 identity validation and recovery
+
+Use [Stage 3 identity and recovery](docs/issue-113-stage-3.md). Migrations 0042-0044 preserve historical identifiers/timestamps and fail atomically on ambiguous patientless cases; review and supply an explicit reconciliation mapping before retrying. They are not safely reversed after issuance. Keep the reviewed source, encrypted full backup and latest outgoing issuance checkpoint together for any later release/recovery.
+
+Run `python manage.py test patients.test_mtno_identity patients.test_mtno_workflows patients.test_identity_recovery patients.test_frontend_a11y patients.test_task_review_fixes patients.tests.PatientDataBundleTests` on isolated PostgreSQL with DEBUG=false and ALLOW_MOCK_DATA_SEEDING=false, then required affected regressions, strict schema and migration checks. `python manage.py verify_patient_identity` validates the stored snapshot only; `--repair-floor` reconciles upward and cannot establish numbers absent from an older snapshot.
+
+Export a new restricted checkpoint with `python manage.py patient_identity_checkpoint export --output /restricted/new-checkpoint.json`. Apply a trusted latest outgoing checkpoint using `python manage.py patient_identity_checkpoint apply --input /restricted/outgoing.json --expected-sha256 <independently-verified-digest>`. The digest verifies integrity; operators must establish source trust and recency. Never replace the surviving latest checkpoint with an older one. Total loss of later issuance evidence blocks strict never-recycle write activation.
+
+The guarded restore script fences outgoing writes and persists/applies final issuance before activation or rollback. Missing/incompatible outgoing identity schema, capture or binding failure denies write activation; fenced failures leave services stopped. Do not bypass this by invoking an older restore script. Bundle 4 imports accept 1/2/3/4; earlier readers cannot restore identity format 4. Patient-only replacement rejects protected local merge-recovery evidence before deletion; use an eligible fresh target or verified full-database recovery. It never fabricates historical undo evidence.
+
+Stage 3 evidence: lead `output/stage3` and `output/playwright`; recovery lane `output/identity-recovery`; native lane report `stage-3-native-report.md`. Browser date selection succeeded using the calendar; preexisting Crayons inline-icon CSP errors remain a local UI limitation. The browser and all proof databases contain synthetic data only. Actual production archive/attestation, migration and physical-device acceptance remain separate release gates.
+
+
 ## Issue #113 Stage 2 validation and rollback
 
 Use the [Stage 2 contract](docs/issue-113-stage-2.md) for task edit baselines, general-call reasons and old outbox replay rules. Run `python manage.py test patients.test_task_calls patients.test_task_review_fixes` against isolated PostgreSQL with DEBUG=false and ALLOW_MOCK_DATA_SEEDING=false, followed by required regressions/schema/migration checks. Do not reuse production or another lane's database. Migration0041 adds CallLog.reason with a persistent empty database default, allowing old ORM inserts when the schema is retained on code rollback. Preserve recorded reasons and suspend new general-call authoring if reverting to code that cannot store the field. Bundle exports use version3; imports accept1/2/3. Earlier readers reject version3, so use compatible code for restoration. Production activation remains a separate backed-up release gate.

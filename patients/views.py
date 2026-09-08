@@ -1473,6 +1473,23 @@ def _complete_task_inline(task, *, user):
     return True, "Task marked as completed."
 
 
+def _ensure_rch_completion_follow_up(task, *, previous_status, user):
+    if (previous_status == TaskStatus.COMPLETED or task.status != TaskStatus.COMPLETED
+            or task.title != RCH_REMINDER_TASK_TITLE):
+        return
+    completed_local = timezone.localtime(task.completed_at) if task.completed_at else timezone.localtime()
+    next_due_date = completed_local.date() + timedelta(days=RCH_REMINDER_INTERVAL_DAYS)
+    reminder = ensure_rch_reminder_task(task.case, user, due_date=next_due_date)
+    if reminder:
+        create_case_activity(
+            case=task.case,
+            task=reminder,
+            user=user,
+            event_type=ActivityEventType.TASK,
+            note=f"RCH still pending. Next reminder scheduled for {reminder.due_date:%d-%m-%Y}.",
+        )
+
+
 def _reopen_task_follow_up_cleanup(task):
     if task.title != RCH_REMINDER_TASK_TITLE:
         return 0
@@ -5837,22 +5854,7 @@ class TaskUpdateView(LoginRequiredMixin, UpdateView):
             event_type=ActivityEventType.TASK,
             note=note,
         )
-        if (
-            previous_status != TaskStatus.COMPLETED
-            and self.object.status == TaskStatus.COMPLETED
-            and self.object.title == RCH_REMINDER_TASK_TITLE
-        ):
-            completed_local = timezone.localtime(self.object.completed_at) if self.object.completed_at else timezone.now()
-            next_due_date = completed_local.date() + timedelta(days=RCH_REMINDER_INTERVAL_DAYS)
-            reminder = ensure_rch_reminder_task(self.object.case, self.request.user, due_date=next_due_date)
-            if reminder:
-                create_case_activity(
-                    case=self.object.case,
-                    task=reminder,
-                    user=self.request.user,
-                    event_type=ActivityEventType.TASK,
-                    note=f"RCH still pending. Next reminder scheduled for {reminder.due_date:%d-%m-%Y}.",
-                )
+        _ensure_rch_completion_follow_up(self.object, previous_status=previous_status, user=self.request.user)
         return response
 
     def get_success_url(self):

@@ -73,6 +73,7 @@ from patients.views import (
     _dashboard_category_icon_path,
     _dashboard_subcategory_icon_path,
     _display_user_name,
+    _ensure_rch_completion_follow_up,
     _patient_search_queryset,
     _reopen_task_follow_up_cleanup,
     _save_task_note_inline,
@@ -1537,6 +1538,7 @@ class TaskDetailView(APIView):
                 event_type=ActivityEventType.TASK,
                 note=note,
             )
+            _ensure_rch_completion_follow_up(updated, previous_status=previous_status, user=request.user)
             return {
                 "message": "Task updated.",
                 "task": _serialize_task(updated, can_complete=has_capability(request.user, "task_edit")),

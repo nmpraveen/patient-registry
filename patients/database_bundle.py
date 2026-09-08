@@ -30,7 +30,8 @@ from .models import (
 )
 
 
-BUNDLE_SCHEMA_VERSION = 2
+BUNDLE_SCHEMA_VERSION = 3
+SUPPORTED_BUNDLE_SCHEMA_VERSIONS = {1, 2, 3}
 PATIENT_DATA_FILENAME = "patient_data.json"
 MANIFEST_FILENAME = "manifest.json"
 BACKUP_FILENAME_PREFIX = "patient-data-bundle"
@@ -473,7 +474,7 @@ def _validate_manifest_and_payload(manifest, payload, patient_data_bytes):
     if not isinstance(manifest, dict):
         raise BundleValidationError("Backup manifest must be a JSON object.")
     schema_version = manifest.get("schema_version")
-    if schema_version not in {1, BUNDLE_SCHEMA_VERSION}:
+    if schema_version not in SUPPORTED_BUNDLE_SCHEMA_VERSIONS:
         raise BundleValidationError(
             f"Backup schema version {schema_version} is not supported."
         )
@@ -554,7 +555,7 @@ def _validate_manifest_and_payload(manifest, payload, patient_data_bytes):
             )
 
         patient_uhid = case_data.get("patient_uhid") or uhid
-        if schema_version >= BUNDLE_SCHEMA_VERSION:
+        if schema_version >= 2:
             if not patient_uhid:
                 raise BundleValidationError(f"Case {uhid} is missing a patient reference.")
             if patient_uhid not in patient_uhids:

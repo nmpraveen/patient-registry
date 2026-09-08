@@ -783,6 +783,11 @@ class TaskForm(StyledModelForm):
         instance = getattr(self, "instance", None)
         if not instance or not instance.pk:
             return
+        if instance.status == TaskStatus.CANCELLED:
+            self.fields["status"].choices = [
+                choice for choice in self.fields["status"].choices if choice[0] == TaskStatus.CANCELLED
+            ]
+            return
         if instance.status == TaskStatus.COMPLETED:
             allowed_statuses = {TaskStatus.COMPLETED}
             if self.allow_reopen:

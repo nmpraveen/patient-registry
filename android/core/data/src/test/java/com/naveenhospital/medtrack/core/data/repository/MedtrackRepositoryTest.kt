@@ -88,6 +88,58 @@ class MedtrackRepositoryTest {
     }
 
     @Test
+    fun lateListRefreshPreservesLatestDetailHistoryEvenOutsideFilteredPage() = runTest {
+        for (retainedInPage in listOf(true, false)) {
+            val entered = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            val detail = FakeMedtrackApi(beforeCaseDetail = {}).caseDetail("42")
+            val api = FakeMedtrackApi(
+                beforeListCases = { entered.complete(Unit); release.await() },
+                caseListResponse = CaseListResponseDto(
+                    count = if (retainedInPage) 1 else 0, next = null, previous = null,
+                    stats = CaseStatsDto(today = 1, upcoming = 0, overdue = 0, awaiting = 0, red = 0),
+                    results = if (retainedInPage) listOf(detail.case) else emptyList(),
+                ),
+            )
+            val repository = repository(api)
+            val listRefresh = async { repository.refreshCases(bucket = "today") }
+            entered.await()
+            api.detailResponse = detail.copy(callLogs = listOf(CallLogDto(
+                id = 91L, taskId = null, reason = "Latest authoritative receipt", outcome = "REACHED",
+                outcomeLabel = "Reached", notes = "", createdAt = "2026-09-07T00:00:00Z",
+            )))
+            repository.refreshCaseDetail("42")
+            assertEquals(listOf(91L), repository.observeCallLogs("42").first().map { it.id })
+            release.complete(Unit)
+            listRefresh.await()
+            assertEquals(listOf(91L), repository.observeCallLogs("42").first().map { it.id })
+            assertEquals(retainedInPage, repository.observeCase("42").first() != null)
+        }
+    }
+
+    @Test
+    fun invalidCursorResetStillPurgesOwnerHistory() = runTest {
+        val detail = FakeMedtrackApi(beforeCaseDetail = {}).caseDetail("42")
+        val api = FakeMedtrackApi(
+            beforeSearchCases = { request ->
+                if (request.cursor != null) throw HttpException(Response.error<Any>(400,
+                    "{\"code\":\"invalid_cursor\"}".toResponseBody()))
+            },
+            caseSearchResponses = mapOf(null to CaseSearchResponseDto(
+                nextCursor = "expired", results = listOf(detail.case),
+                stats = CaseStatsDto(today = 1, upcoming = 0, overdue = 0, awaiting = 0, red = 0),
+            )),
+        )
+        val repository = repository(api)
+        repository.refreshCases(query = "Test")
+        repository.logCallOutcome("42", null, "reached", null, reason = "Appointment")
+        assertEquals(1, repository.observeCallLogs("42").first().size)
+        repository.loadNextCases(query = "Test")
+        assertTrue(repository.observeCallLogs("42").first().isEmpty())
+        assertEquals(listOf(null, "expired", null), api.caseSearchRequests.map { it.cursor })
+    }
+
+    @Test
     fun taskPatchUsesEditorSnapshotAfterRefreshAndRetainsConflictDraft() = runTest {
         val api = FakeMedtrackApi(beforeCaseDetail = {})
         val initial = api.caseDetail("42")
@@ -988,6 +1040,8 @@ class MedtrackRepositoryTest {
 }
 
 private class FakeMedtrackApi(
+    var beforeListCases: (suspend () -> Unit)? = null,
+    var beforeSearchCases: (suspend (CaseSearchRequestDto) -> Unit)? = null,
     var detailResponse: CaseDetailDto? = null,
     var patchError: Throwable? = null,
     var beforeLogCall: (suspend () -> Unit)? = null,
@@ -1057,6 +1111,7 @@ private class FakeMedtrackApi(
         subcategories: List<String>?,
         page: Int?,
     ): CaseListResponseDto {
+        beforeListCases?.invoke()
         listCasesCalls += 1
         lastListCasesBucket = bucket
         lastListCasesAssignedTo = assignedTo
@@ -1068,6 +1123,7 @@ private class FakeMedtrackApi(
 
     override suspend fun searchCases(request: CaseSearchRequestDto): CaseSearchResponseDto {
         caseSearchRequests += request
+        beforeSearchCases?.invoke(request)
         return caseSearchResponses[request.cursor] ?: CaseSearchResponseDto(
             nextCursor = null,
             stats = caseListResponse.stats,

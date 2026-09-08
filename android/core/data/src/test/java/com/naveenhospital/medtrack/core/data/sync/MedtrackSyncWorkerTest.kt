@@ -43,6 +43,9 @@ import com.naveenhospital.medtrack.core.network.model.VitalsRequestDto
 import com.naveenhospital.medtrack.core.network.model.VitalsThresholdsDto
 import com.naveenhospital.medtrack.core.network.model.VitalsWriteResponseDto
 import java.io.IOException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import com.naveenhospital.medtrack.core.data.local.toEntity
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.runBlocking
@@ -90,6 +93,42 @@ class MedtrackSyncWorkerTest {
         database.close()
         authPrefs.edit().clear().commit()
         lockPrefs.edit().clear().commit()
+    }
+
+    @Test
+    fun backgroundListRefreshPreservesConcurrentReceipt() = runTest {
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val api = FakeSyncApi(beforeListCases = { entered.complete(Unit); release.await() })
+        val refresh = async {
+            refreshCaseListForSync(api, database, ACCOUNT_ID, accountGeneration, { ACCOUNT_ID }, 100L)
+        }
+        entered.await()
+        val receipt = CallLogDto(id = 91L, taskId = null, reason = "Latest receipt", outcome = "REACHED",
+            outcomeLabel = "Reached", notes = "", createdAt = "2026-09-07T00:00:00Z")
+        database.callLogDao().upsert(receipt.toEntity(ACCOUNT_ID, "42"))
+        release.complete(Unit)
+        refresh.await()
+        assertEquals(listOf(91L), database.callLogDao().observeForCase(ACCOUNT_ID, "42").first().map { it.id })
+        assertEquals(1, api.listCasesCalls)
+        database.invalidateAndClearAccountData(ACCOUNT_ID)
+        assertTrue(database.callLogDao().observeForCase(ACCOUNT_ID, "42").first().isEmpty())
+    }
+
+    @Test
+    fun revokedAccountRejectsLateBackgroundListRefresh() = runTest {
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val api = FakeSyncApi(beforeListCases = { entered.complete(Unit); release.await() })
+        val refresh = async {
+            runCatching { refreshCaseListForSync(api, database, ACCOUNT_ID, accountGeneration, { ACCOUNT_ID }, 100L) }
+        }
+        entered.await()
+        database.invalidateAndClearAccountData(ACCOUNT_ID)
+        release.complete(Unit)
+        assertTrue(refresh.await().isFailure)
+        assertNull(database.caseDao().caseById(ACCOUNT_ID, "42"))
+        assertTrue(database.callLogDao().observeForCase(ACCOUNT_ID, "42").first().isEmpty())
     }
 
     @Test
@@ -1094,6 +1133,7 @@ private fun jwt(accountId: String, marker: String, mobileDeviceId: String? = nul
 }
 
 private class FakeSyncApi(
+    val beforeListCases: (suspend () -> Unit)? = null,
     val beforeLogCall: (suspend () -> Unit)? = null,
     private val completeTaskError: Throwable? = null,
     var logCallError: Throwable? = null,
@@ -1103,6 +1143,7 @@ private class FakeSyncApi(
     private val notificationErrors: Map<String?, Throwable> = emptyMap(),
     private val notificationFirstPageSequence: List<NotificationsResponseDto> = emptyList(),
 ) : MedtrackApi {
+    var listCasesCalls = 0
     val callRequests = mutableListOf<LogCallRequestDto>()
     var lastCompletion: ClientWriteRequestDto? = null
     var completeTaskCalls: Int = 0
@@ -1161,7 +1202,13 @@ private class FakeSyncApi(
         categories: List<String>?,
         subcategories: List<String>?,
         page: Int?,
-    ): CaseListResponseDto = unused()
+    ): CaseListResponseDto {
+        listCasesCalls += 1
+        beforeListCases?.invoke()
+        return CaseListResponseDto(count = 1, next = null, previous = null,
+            stats = CaseStatsDto(today = 1, upcoming = 0, overdue = 0, awaiting = 0, red = 0),
+            results = listOf(sampleCase()))
+    }
     override suspend fun searchCases(
         request: com.naveenhospital.medtrack.core.network.model.CaseSearchRequestDto,
     ): com.naveenhospital.medtrack.core.network.model.CaseSearchResponseDto = unused()

@@ -381,7 +381,7 @@ class MedtrackRepository(
         }
         requireStillActive(session)
         commitAccountMutation(session) {
-            database.callLogDao().clearForOwner(session.ownerAccountId)
+            // A filtered list snapshot does not invalidate independently refreshed case history.
             database.caseDao().clearCases(session.ownerAccountId)
             database.caseDao().upsertCases(page.results.map { it.toEntity(session.ownerAccountId) })
             database.caseStatsDao().upsertStats(page.stats.toEntity(session.ownerAccountId, activeCaseListKey))
@@ -1408,7 +1408,7 @@ private class CaseRemoteMediator(
                 isLocallyActive = isAccountActive,
             ) {
                 if (loadType == LoadType.REFRESH || page.cursorReset) {
-                    database.callLogDao().clearForOwner(ownerAccountId)
+                    if (page.cursorReset) database.callLogDao().clearForOwner(ownerAccountId)
                     database.caseDao().clearCases(ownerAccountId)
                 }
                 database.caseDao().upsertCases(page.results.map { it.toEntity(ownerAccountId) })

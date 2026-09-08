@@ -196,28 +196,7 @@ class MedtrackSyncWorker(
         // commits remain bound to the captured account generation below.
         require(api.me().id > 0L) { "Authenticated mobile identity is invalid." }
         val now = System.currentTimeMillis()
-        val defaultCaseListKey = caseListCacheKey(
-            bucket = "today",
-            query = null,
-            assignedTo = null,
-            scopeContext = null,
-            categories = emptyList(),
-            subcategories = emptyList(),
-        )
-        if (database.shouldRefresh(ownerAccountId, defaultCaseListKey, now)) {
-            val response = api.listCases(bucket = "today", page = 1)
-            database.commitForAccount(
-                ownerAccountId = ownerAccountId,
-                generation = accountGeneration,
-                isLocallyActive = { activeAccountId() == ownerAccountId },
-            ) {
-                database.callLogDao().clearForOwner(ownerAccountId)
-                database.caseDao().clearCases(ownerAccountId)
-                database.caseDao().upsertCases(response.results.map { it.toEntityForSync(ownerAccountId) })
-                database.caseStatsDao().upsertStats(response.stats.toEntityForSync(ownerAccountId, defaultCaseListKey, now))
-                database.markCacheFresh(ownerAccountId, defaultCaseListKey, now)
-            }
-        }
+        refreshCaseListForSync(api, database, ownerAccountId, accountGeneration, activeAccountId, now)
 
         if (database.shouldRefresh(ownerAccountId, CACHE_KEY_VITALS_THRESHOLDS, now)) {
             val response = api.vitalsThresholds()
@@ -900,6 +879,37 @@ internal suspend fun fetchAllNotifications(
         datasetEpoch = requireNotNull(datasetEpoch),
         notifications = notificationsByEventId.values.toList(),
     )
+}
+
+internal suspend fun refreshCaseListForSync(
+    api: com.naveenhospital.medtrack.core.network.api.MedtrackApi,
+    database: MedtrackDatabase,
+    ownerAccountId: String,
+    accountGeneration: Long,
+    activeAccountId: () -> String?,
+    now: Long,
+) {
+    val defaultCaseListKey = caseListCacheKey(
+        bucket = "today",
+        query = null,
+        assignedTo = null,
+        scopeContext = null,
+        categories = emptyList(),
+        subcategories = emptyList(),
+    )
+    if (database.shouldRefresh(ownerAccountId, defaultCaseListKey, now)) {
+        val response = api.listCases(bucket = "today", page = 1)
+        database.commitForAccount(
+            ownerAccountId = ownerAccountId,
+            generation = accountGeneration,
+            isLocallyActive = { activeAccountId() == ownerAccountId },
+        ) {
+            database.caseDao().clearCases(ownerAccountId)
+            database.caseDao().upsertCases(response.results.map { it.toEntityForSync(ownerAccountId) })
+            database.caseStatsDao().upsertStats(response.stats.toEntityForSync(ownerAccountId, defaultCaseListKey, now))
+            database.markCacheFresh(ownerAccountId, defaultCaseListKey, now)
+        }
+    }
 }
 
 internal suspend fun replaceNotificationSnapshot(

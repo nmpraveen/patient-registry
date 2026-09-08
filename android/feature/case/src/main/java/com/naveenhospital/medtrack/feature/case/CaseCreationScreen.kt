@@ -1,6 +1,9 @@
 package com.naveenhospital.medtrack.feature.cases
 
+import androidx.compose.material3.AlertDialog
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -46,6 +49,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -91,6 +95,7 @@ fun CaseCreationScreen(
     submit: suspend (NewCaseInput) -> CaseCreateOutcome,
     onBack: () -> Unit,
     onCreated: (Long, String) -> Unit,
+    navigationBackHandler: @Composable (() -> Unit) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val scope = rememberCoroutineScope()
@@ -117,7 +122,7 @@ fun CaseCreationScreen(
             CaseFormScaffold(
                 state = state,
                 screenTitle = "New case",
-                finalActionLabel = "Create case",
+                finalActionLabel = "Save case",
                 searchPatients = searchPatients,
                 onBack = onBack,
                 onSubmit = { input, onResult ->
@@ -128,13 +133,14 @@ fun CaseCreationScreen(
                         onResult(
                             when (outcome) {
                                 is CaseCreateOutcome.Success -> CaseSubmitResult.Success(outcome.caseId, outcome.message)
-                                is CaseCreateOutcome.ValidationError -> CaseSubmitResult.Banner(outcome.bannerText())
+                                is CaseCreateOutcome.ValidationError -> CaseSubmitResult.Banner(outcome.bannerText(), outcome.errors.keys)
                                 is CaseCreateOutcome.Failure -> CaseSubmitResult.Banner(outcome.message)
                             },
                         )
                     }
                 },
                 onDone = onCreated,
+                navigationBackHandler = navigationBackHandler,
                 modifier = modifier,
             )
         }
@@ -150,17 +156,38 @@ private fun CaseFormScaffold(
     onBack: () -> Unit,
     onSubmit: (NewCaseInput, (CaseSubmitResult) -> Unit) -> Unit,
     onDone: (Long, String) -> Unit,
+    navigationBackHandler: @Composable (() -> Unit) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     state.searchPatients = searchPatients
-    var step by remember { mutableStateOf(0) }
+    val scrollState = rememberScrollState()
+    var optionalExpanded by remember { mutableStateOf(false) }
+    var focusRequest by remember { mutableStateOf<Pair<String, Int>?>(null) }
+    fun focusField(label: String?) {
+        if (label != null) focusRequest = label to ((focusRequest?.second ?: 0) + 1)
+    }
     var submitting by remember { mutableStateOf(false) }
     var banner by remember { mutableStateOf<String?>(null) }
 
     val category = state.category
     val stepTitles = state.stepTitles()
     val pathwayColor = category?.name.handoffColor()
+    val initialDraft = remember(state) { state.category?.let { state.toInput() } }
+    var confirmDiscard by remember { mutableStateOf(false) }
+    val close = {
+        if (state.category != null && state.toInput() != initialDraft) confirmDiscard = true else onBack()
+    }
+    navigationBackHandler { if (!submitting) close() }
+    if (confirmDiscard) {
+        AlertDialog(
+            onDismissRequest = { confirmDiscard = false },
+            title = { Text("Discard unsaved changes?") },
+            confirmButton = { TextButton(onClick = onBack) { Text("Discard") } },
+            dismissButton = { TextButton(onClick = { confirmDiscard = false }) { Text("Keep editing") } },
+        )
+    }
 
+    CompositionLocalProvider(LocalCaseFocus provides focusRequest) {
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -176,7 +203,7 @@ private fun CaseFormScaffold(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconSquareButton(onClick = onBack) {
+            IconSquareButton(onClick = { if (!submitting) close() }) {
                 Icon(Icons.Outlined.Close, contentDescription = "Close", tint = MedtrackColors.Ink)
             }
             Text(
@@ -191,22 +218,34 @@ private fun CaseFormScaffold(
             CategoryChip(category?.name ?: screenTitle, pathwayColor)
         }
 
-        Stepper(stepTitles, step)
-
-        LazyColumn(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth(),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+        // Keep required controls mounted together: validation and optional-detail toggles
+        // never replace the user's active field or discard their draft.
+        Column(
+            modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(scrollState)
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            item {
-                when (stepTitles.getOrNull(step)) {
-                    "Patient" -> PatientStep(state)
-                    "Clinical" -> ClinicalStep(state)
-                    "ANC", "Surgery", "Medicine" -> PathwayStep(state)
-                    else -> ReviewStep(state)
+            MedtrackSectionTitle(title = "Patient and contact")
+            PatientStep(state)
+            MedtrackSectionTitle(title = "Department and diagnosis")
+            DropdownField(
+                "Department", category?.id?.toString().orEmpty(),
+                state.metadata.categories.map { FormChoice(it.id.toString(), it.name) },
+                { id -> state.metadata.categories.firstOrNull { it.id.toString() == id }?.let(state::selectCategory) },
+                required = true,
+            )
+            ClinicalStep(state)
+            PathwayStep(state)
+            TextButton(onClick = { optionalExpanded = !optionalExpanded }) {
+                Text(if (optionalExpanded) "Hide optional details" else "Optional details")
+            }
+            if (optionalExpanded) {
+                if (state.patientMode == "new") {
+                    DropdownField("Blood group", state.bloodGroup, state.metadata.bloodGroups, { state.bloodGroup = it }, optional = true)
+                    TextField("Place / district", state.place, optional = true) { state.place = it }
                 }
+                TextField("Referred by", state.referredBy, optional = true) { state.referredBy = it }
+                MultilineField("Notes", state.notes, optional = true) { state.notes = it }
             }
         }
 
@@ -214,26 +253,27 @@ private fun CaseFormScaffold(
         Column(modifier = Modifier.fillMaxWidth()) {
             banner?.let { BannerError(it) }
             BottomBar(
-                primaryLabel = if (step < stepTitles.lastIndex) "Continue" else finalActionLabel,
+                primaryLabel = finalActionLabel,
                 submitting = submitting,
-                showBack = step > 0,
-                onBack = { if (step > 0) { banner = null; step -= 1 } },
+                showBack = false,
+                onBack = {},
                 onPrimary = {
-                    banner = null
-                    val stepError = state.validateStep(stepTitles[step])
-                    if (stepError != null) {
-                        banner = stepError
+                    val validationError = stepTitles.firstNotNullOfOrNull(state::validateStep)
+                    if (validationError != null) {
+                        banner = validationError
+                        focusField(validationFocusLabel(validationError))
                         return@BottomBar
                     }
-                    if (step < stepTitles.lastIndex) {
-                        step += 1
-                    } else {
-                        submitting = true
-                        onSubmit(state.toInput()) { result ->
-                            submitting = false
-                            when (result) {
-                                is CaseSubmitResult.Success -> onDone(result.caseId, result.message)
-                                is CaseSubmitResult.Banner -> banner = result.text
+                    banner = null
+                    submitting = true
+                    onSubmit(state.toInput()) { result ->
+                        submitting = false
+                        when (result) {
+                            is CaseSubmitResult.Success -> onDone(result.caseId, result.message)
+                            is CaseSubmitResult.Banner -> {
+                                banner = result.text
+                                if (result.fields.any { it in setOf("blood_group", "place", "referred_by", "notes") }) optionalExpanded = true
+                                focusField(result.fields.firstNotNullOfOrNull { serverFieldLabels[it] })
                             }
                         }
                     }
@@ -242,20 +282,21 @@ private fun CaseFormScaffold(
         }
     }
 }
+}
 
 private fun CaseCreateOutcome.ValidationError.bannerText(): String {
-    val details = errors.values.flatten().take(3)
+    val details = errors.values.flatten()
     return if (details.isEmpty()) message else details.joinToString("  •  ")
 }
 
 private fun CaseEditOutcome.ValidationError.bannerText(): String {
-    val details = errors.values.flatten().take(3)
+    val details = errors.values.flatten()
     return if (details.isEmpty()) message else details.joinToString("  •  ")
 }
 
 internal sealed interface CaseSubmitResult {
     data class Success(val caseId: Long, val message: String) : CaseSubmitResult
-    data class Banner(val text: String) : CaseSubmitResult
+    data class Banner(val text: String, val fields: Set<String> = emptySet()) : CaseSubmitResult
 }
 
 internal val caseStatusChoices = listOf(
@@ -272,6 +313,7 @@ fun CaseEditScreen(
     submit: suspend (NewCaseInput) -> CaseEditOutcome,
     onBack: () -> Unit,
     onSaved: (Long, String) -> Unit,
+    navigationBackHandler: @Composable (() -> Unit) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val scope = rememberCoroutineScope()
@@ -311,13 +353,14 @@ fun CaseEditScreen(
                         onResult(
                             when (outcome) {
                                 is CaseEditOutcome.Success -> CaseSubmitResult.Success(outcome.caseId, outcome.message)
-                                is CaseEditOutcome.ValidationError -> CaseSubmitResult.Banner(outcome.bannerText())
+                                is CaseEditOutcome.ValidationError -> CaseSubmitResult.Banner(outcome.bannerText(), outcome.errors.keys)
                                 is CaseEditOutcome.Failure -> CaseSubmitResult.Banner(outcome.message)
                             },
                         )
                     }
                 },
                 onDone = onSaved,
+                navigationBackHandler = navigationBackHandler,
                 modifier = modifier,
             )
         }
@@ -360,8 +403,11 @@ private fun ExistingPatientPicker(state: CaseFormState) {
                     delay(300)
                     if (state.patientQuery.trim() != normalizedQuery) return@launch
                     state.searching = true
-                    state.patientResults = runCatching { state.searchPatients(normalizedQuery) }.getOrDefault(emptyList())
-                    state.searching = false
+                    val results = runCatching { state.searchPatients(normalizedQuery) }.getOrDefault(emptyList())
+                    if (state.patientQuery.trim() == normalizedQuery) {
+                        state.patientResults = results
+                        state.searching = false
+                    }
                 }
             },
         )
@@ -424,13 +470,9 @@ private fun NewPatientFields(state: CaseFormState) {
                 state.age = it.filter(Char::isDigit).take(3)
             }
         }
-        FieldRow {
-            TextField("Phone", state.phone, Modifier.weight(1.3f), required = true, keyboard = KeyboardType.Phone) {
-                state.phone = it.filter(Char::isDigit).take(10)
-            }
-            DropdownField("Blood group", state.bloodGroup, state.metadata.bloodGroups, { state.bloodGroup = it }, Modifier.weight(1f), optional = true)
+        TextField("Phone", state.phone, required = true, keyboard = KeyboardType.Phone) {
+            state.phone = it.filter(Char::isDigit).take(10)
         }
-        TextField("Place / district", state.place, optional = true) { state.place = it }
     }
 }
 
@@ -446,7 +488,6 @@ private fun ClinicalStep(state: CaseFormState) {
             DropdownField("Subcategory", state.subcategory, category.subcategories, { state.subcategory = it }, required = true)
         }
         MultilineField("Diagnosis / reason", state.diagnosis, required = true) { state.diagnosis = it }
-        TextField("Referred by", state.referredBy, optional = true) { state.referredBy = it }
         ToggleRow(
             label = "High risk",
             help = "Flag this case for closer follow-up.",
@@ -455,7 +496,6 @@ private fun ClinicalStep(state: CaseFormState) {
         )
         MedtrackSectionTitle(title = "Comorbidities (NCD)")
         MultiSelectChips(state.metadata.ncdFlags, state.ncdFlags, { state.toggleNcd(it) }, MedtrackColors.Medicine)
-        MultilineField("Notes", state.notes, optional = true) { state.notes = it }
     }
 }
 
@@ -677,7 +717,7 @@ private fun FieldShell(
     Surface(
         modifier = modifier
             .height(FieldHeight)
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
+            .then(if (onClick != null) formFocusModifier(label.substringBefore(" (optional)")).clickable(onClick = onClick) else Modifier),
         shape = RoundedCornerShape(14.dp),
         color = fill,
         border = BorderStroke(1.5.dp, borderColor),
@@ -719,7 +759,7 @@ internal fun TextField(
             keyboardOptions = KeyboardOptions(keyboardType = keyboard),
             textStyle = MaterialTheme.typography.bodyMedium.copy(color = MedtrackColors.Ink, fontWeight = FontWeight.Bold),
             cursorBrush = SolidColor(MedtrackColors.Primary),
-            modifier = Modifier
+            modifier = formFocusModifier(label)
                 .fillMaxWidth()
                 .onFocusChanged { focused = it.isFocused },
         )
@@ -762,7 +802,7 @@ internal fun MultilineField(
                 onValueChange = onValueChange,
                 textStyle = MaterialTheme.typography.bodyMedium.copy(color = MedtrackColors.Ink, fontWeight = FontWeight.Medium),
                 cursorBrush = SolidColor(MedtrackColors.Primary),
-                modifier = Modifier
+                modifier = formFocusModifier(label)
                     .fillMaxWidth()
                     .heightIn(min = 38.dp)
                     .onFocusChanged { focused = it.isFocused },
@@ -969,7 +1009,7 @@ private fun SearchField(value: String, onValueChange: (String) -> Unit) {
                     singleLine = true,
                     textStyle = MaterialTheme.typography.bodyMedium.copy(color = MedtrackColors.Ink, fontWeight = FontWeight.Bold),
                     cursorBrush = SolidColor(MedtrackColors.Primary),
-                    modifier = Modifier
+                    modifier = formFocusModifier("Existing patient")
                         .fillMaxWidth()
                         .onFocusChanged { focused = it.isFocused },
                 )

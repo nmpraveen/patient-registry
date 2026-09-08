@@ -245,11 +245,18 @@ fun CaseDetailScreen(
     canEditTask: Boolean = false,
     taskMetadata: TaskFormMetadata? = null,
     callLogs: List<PatientCallLog> = emptyList(),
+    timelineRevision: Int = 0,
+    loadRelatedCases: suspend (String?) -> com.naveenhospital.medtrack.core.domain.model.RelatedCasePage = { throw IllegalStateException("Patient cases unavailable") },
+    onOpenRelatedCase: (String) -> Unit = {},
+    loadTimeline: suspend (String, String?) -> com.naveenhospital.medtrack.core.domain.model.CaseTimelinePage = { _, _ -> throw IllegalStateException("Timeline unavailable") },
     onEditCase: () -> Unit = {},
     onAncAction: (Map<String, Any>, (String?) -> Unit) -> Unit = { _, report -> report("Unavailable") },
     onTaskAction: (TaskSheetAction, String?, (String?) -> Unit) -> Unit = { _, _, cb -> cb(null) },
     onEditVitals: (String, VitalsEntryInput) -> Unit = { _, _ -> },
 ) {
+    val relatedCases = rememberRelatedCases(caseId, timelineRevision, loadRelatedCases)
+    var timelineFilter by remember(caseId) { mutableStateOf("all") }
+    val timeline = rememberTimeline(caseId, timelineFilter, isRefreshing, timelineRevision, loadTimeline)
     var showAncDialog by remember(caseId) { mutableStateOf(false) }
     var showVitalsDialog by rememberSaveable { mutableStateOf(false) }
     var editingVital by remember(caseId) { mutableStateOf<PatientVital?>(null) }
@@ -319,6 +326,7 @@ fun CaseDetailScreen(
                         }
                     }
                 } else {
+                    item { RelatedCaseSelector(caseId, relatedCases, onOpenRelatedCase) }
                     item {
                         CaseHero(
                             patientCase = patientCase,
@@ -332,6 +340,18 @@ fun CaseDetailScreen(
                                 TextButton(onClick = { showAncDialog = true }, enabled = patientCase.serverUpdatedAt.isNotBlank() && patientCase.followUpLabel.isNotBlank()) {
                                     Text("ANC outcome / EDD correction")
                                 }
+                            }
+                        }
+                    }
+                    item {
+                        MedtrackCompactCard {
+                            MedtrackSectionEyebrow(title = "Next action", trailing = "Selected case")
+                            val next = tasks.filter { it.isActionable() }
+                                .sortedWith(compareBy<PatientTask> { it.dueDate ?: "9999-12-31" }.thenBy { it.id })
+                                .firstOrNull()
+                            Text(next?.title ?: patientCase.nextTaskTitle ?: "No scheduled task", fontWeight = FontWeight.Bold)
+                            next?.let {
+                                Text(listOf(it.dueDate.orEmpty(), it.assignedUser.orEmpty()).filter(String::isNotBlank).joinToString(" · "))
                             }
                         }
                     }
@@ -390,22 +410,24 @@ fun CaseDetailScreen(
                         }
                     }
                     item {
-                        MedtrackCompactCard {
-                            MedtrackSectionEyebrow(title = "Recent calls", trailing = "Latest 20")
-                            if (callLogs.isEmpty()) Text("No recent calls", color = MedtrackColors.Muted)
-                            callLogs.forEach { call ->
-                                Column(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-                                    Text(call.outcomeLabel, fontWeight = FontWeight.Bold)
-                                    Text(call.taskTitle.ifBlank { "General patient call" }, color = MedtrackColors.Muted)
-                                    if (call.reason.isNotBlank()) Text(call.reason)
-                                    if (call.notes.isNotBlank()) Text(call.notes)
-                                    Text(
-                                        listOf(call.createdAtEpochMicros.caseCallDateLabel(), call.staffUser).filter { it.isNotBlank() }.joinToString(" · "),
-                                        style = MaterialTheme.typography.labelSmall, color = MedtrackColors.Muted,
-                                    )
-                                }
+                        MedtrackSectionEyebrow(title = "Timeline", trailing = "${timeline.events.size} loaded")
+                        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            listOf("all" to "All", "calls" to "Calls", "tasks" to "Tasks", "notes" to "Notes", "clinical" to "Clinical").forEach { (value, label) ->
+                                FilterChip(selected = timelineFilter == value, onClick = { timelineFilter = value }, label = { Text(label) })
                             }
                         }
+                    }
+                    items(timeline.events, key = { "timeline:${it.id}" }) { event ->
+                        MedtrackCompactCard { TimelineEventRow(event, timeline.timezone) }
+                    }
+                    item {
+                        if (timeline.loading) Text("Loading timeline…", color = MedtrackColors.Muted)
+                        else if (timeline.error != null) {
+                            Text(timeline.error, color = MedtrackColors.Danger)
+                            TextButton(onClick = timeline.retry) { Text("Retry") }
+                        } else if (timeline.hasMore) {
+                            TextButton(onClick = timeline.loadMore) { Text("Load more events") }
+                        } else if (timeline.events.isEmpty()) Text("No events", color = MedtrackColors.Muted)
                     }
                     item {
                         VitalsHistoryCard(
@@ -593,6 +615,10 @@ private fun CaseHero(
                     }
                 }
 
+                patientCase.phoneNumber?.takeIf { it.isNotBlank() }?.let {
+                    Text(it, color = MedtrackColors.Ink, style = MaterialTheme.typography.bodyMedium)
+                }
+                Text("Selected case", color = MedtrackColors.Muted, style = MaterialTheme.typography.labelSmall)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                     HeroPill(patientCase.categoryLabel, visual.tint)
                     patientCase.subcategoryLabel?.takeIf { it.isNotBlank() }?.let { HeroPill(it, visual.tint) }

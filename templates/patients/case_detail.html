@@ -13,7 +13,11 @@
     {% include 'patients/partials/case_detail_hero.html' %}
     {% with attention=case.follow_up %}
     <section class="card card-body mb-3">
-      <strong>{{ attention.label }}</strong>
+      <div class="d-flex flex-wrap justify-content-between gap-2">
+        <div><span class="small text-muted">Selected case #{{ case.pk }}</span><h2 class="h5 mb-1">{{ case.category.name }} · {{ case.diagnosis|default:'Diagnosis pending' }}</h2></div>
+        <strong>{{ attention.label }}</strong>
+      </div>
+      <div class="mt-2"><strong>Next action:</strong> {% if next_task %}{{ next_task.title }} · {{ next_task.due_date|date:'d M Y' }} · {{ next_task.assigned_user|default:'Unassigned' }}{% else %}No open tasks{% endif %}</div>
       {% if attention.edd_missing %}<span>EDD missing — review needed</span>{% endif %}
       {% if attention.outcome %}<span>{{ attention.outcome_label }} · {{ attention.outcome_date }} · {{ attention.reason }}{% if attention.referral_destination %} · {{ attention.referral_destination }}{% endif %}</span>{% endif %}
       {% if case.workflow_key == 'anc' and can_anc_edit %}<a href="{% url 'patients:anc_action' case.pk %}">ANC outcome / EDD correction</a>{% endif %}

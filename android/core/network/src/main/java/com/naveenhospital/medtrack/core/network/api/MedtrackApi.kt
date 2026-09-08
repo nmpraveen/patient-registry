@@ -42,6 +42,32 @@ import retrofit2.http.Query
 import retrofit2.Response
 
 interface MedtrackApi {
+    @GET("api/cases/{caseId}/related/")
+    suspend fun relatedCases(
+        @Path("caseId") caseId: String,
+        @Query("cursor") cursor: String? = null,
+    ): com.naveenhospital.medtrack.core.network.model.RelatedCasePageDto
+
+    @GET("api/upcoming/")
+    suspend fun upcoming(
+        @Query("start_date") startDate: String? = null,
+        @Query("cursor") cursor: String? = null,
+        @Query("category") categories: List<String>? = null,
+        @Query("subcategory") subcategories: List<String>? = null,
+        @Query("assigned_to") assignedTo: String? = null,
+        @Query("scope_context") scopeContext: String? = null,
+    ): com.naveenhospital.medtrack.core.network.model.UpcomingPageDto
+
+    @POST("api/upcoming/search/")
+    suspend fun searchUpcoming(@Body request: com.naveenhospital.medtrack.core.network.model.UpcomingSearchRequestDto): com.naveenhospital.medtrack.core.network.model.UpcomingPageDto
+
+    @GET("api/cases/{caseId}/timeline/")
+    suspend fun caseTimeline(
+        @Path("caseId") caseId: String,
+        @Query("filter") filter: String = "all",
+        @Query("cursor") cursor: String? = null,
+    ): com.naveenhospital.medtrack.core.network.model.CaseTimelinePageDto
+
     @POST("api/auth/token/")
     suspend fun login(@Body request: LoginRequestDto): Response<LoginResponseDto>
 

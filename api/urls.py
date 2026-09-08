@@ -1,3 +1,5 @@
+from .stage4_views import CaseTimelineView, UpcomingTasksView, UpcomingSearchView
+from .stage4_views import RelatedCasesView
 from django.urls import path
 from .token_views import AuthVersionTokenObtainPairView, AuthVersionTokenRefreshView
 
@@ -29,6 +31,10 @@ from .views import (
 app_name = "api"
 
 urlpatterns = [
+    path("cases/<int:pk>/related/", RelatedCasesView.as_view(), name="related_cases"),
+    path("upcoming/search/", UpcomingSearchView.as_view(), name="upcoming_search"),
+    path("upcoming/", UpcomingTasksView.as_view(), name="upcoming_tasks"),
+    path("cases/<int:pk>/timeline/", CaseTimelineView.as_view(), name="case_timeline"),
     path("cases/<int:pk>/anc/", AncActionView.as_view(), name="anc_action"),
     path("auth/token/", AuthVersionTokenObtainPairView.as_view(), name="token_obtain_pair"),
     path("auth/token/refresh/", AuthVersionTokenRefreshView.as_view(), name="token_refresh"),

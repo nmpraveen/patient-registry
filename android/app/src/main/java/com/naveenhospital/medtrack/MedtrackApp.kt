@@ -1,5 +1,6 @@
 package com.naveenhospital.medtrack
 
+import androidx.activity.compose.BackHandler
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
@@ -726,6 +727,12 @@ fun MedtrackApp(
                     }
 
                     HomeScreen(
+                        loadUpcoming = { date, cursor -> container.medtrackRepository.loadUpcoming(
+                            startDate = date, cursor = cursor, query = homeSearchQuery,
+                            categories = selectedCategories.sorted(), subcategories = selectedSubcategories.sorted(),
+                            assignedTo = selectedScope,
+                        ) },
+                        onOpenUpcomingCase = { id -> navController.navigate(Routes.caseDetail(id)) },
                         modifier = Modifier.fillMaxSize(),
                         cases = pagedCases,
                         stats = stats,
@@ -878,6 +885,7 @@ fun MedtrackApp(
                     var caseActionMessage by remember { mutableStateOf<String?>(null) }
                     var caseError by remember { mutableStateOf<String?>(null) }
                     var caseRefreshing by remember { mutableStateOf(false) }
+                    var timelineRevision by remember(caseId) { mutableStateOf(0) }
                     var hadPendingWrites by remember(caseId) { mutableStateOf(false) }
                     val dialerHandoff = rememberDialerHandoff(caseId)
                     val patientCase = cachedCase ?: cases.firstOrNull { it.id == caseId }
@@ -897,6 +905,7 @@ fun MedtrackApp(
 
                     fun refreshCaseDetail() {
                         if (caseId.isBlank()) return
+                        timelineRevision += 1
                         scope.launch {
                             caseRefreshing = true
                             caseError = null
@@ -953,6 +962,10 @@ fun MedtrackApp(
                     }
 
                     CaseDetailScreen(
+                        loadRelatedCases = { cursor -> container.medtrackRepository.loadRelatedCases(caseId, cursor) },
+                        onOpenRelatedCase = { id -> navController.navigate(Routes.caseDetail(id)) },
+                        timelineRevision = timelineRevision,
+                        loadTimeline = { filter, cursor -> container.medtrackRepository.loadCaseTimeline(caseId, filter, cursor) },
                         callLogs = callLogs,
                         modifier = Modifier.fillMaxSize(),
                         caseId = caseId,
@@ -1026,6 +1039,7 @@ fun MedtrackApp(
                                 runCatching { container.medtrackRepository.recordAncAction(caseId, payload) }
                                     .onSuccess { message ->
                                         caseActionMessage = message
+                                        timelineRevision += 1
                                         runCatching { container.medtrackRepository.refreshActiveCaseList() }
                                             .onFailure {
                                                 if (it is CancellationException) throw it
@@ -1098,6 +1112,7 @@ fun MedtrackApp(
                         CaseCategory.valueOf(entry.arguments?.getString("category").orEmpty())
                     }.getOrDefault(CaseCategory.ANC)
                     CaseCreationScreen(
+                        navigationBackHandler = { close -> BackHandler(onBack = close) },
                         modifier = Modifier.fillMaxSize(),
                         initialCategory = category,
                         loadMetadata = { container.medtrackRepository.loadCaseFormMetadata() },
@@ -1118,6 +1133,7 @@ fun MedtrackApp(
                 composable(Routes.EDIT_CASE) { entry ->
                     val caseId = entry.arguments?.getString("caseId").orEmpty()
                     CaseEditScreen(
+                        navigationBackHandler = { close -> BackHandler(onBack = close) },
                         modifier = Modifier.fillMaxSize(),
                         loadPrefill = { container.medtrackRepository.loadCaseEditForm(caseId) },
                         searchPatients = { query -> container.medtrackRepository.searchPatients(query) },

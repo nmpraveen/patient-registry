@@ -1,27 +1,28 @@
-<section id="clinical-timeline" class="case-detail-panel case-detail-timeline card" data-testid="case-detail-timeline">
+<section id="clinical-timeline" tabindex="-1" class="case-detail-panel case-detail-timeline card" data-testid="case-detail-timeline">
   <div class="card-header case-detail-section-head case-detail-section-head--timeline">
     <div>
-      <p class="case-detail-label mb-1">Activity trail</p>
+      <p class="case-detail-label mb-1">{{ timeline_timezone }}</p>
       <h2 class="h5 mb-0">Clinical Timeline</h2>
     </div>
     <div class="btn-group btn-group-sm case-detail-timeline__filters" role="group" aria-label="Timeline filter">
       {% for key, label in timeline_filter_options %}
-        <a href="{% url 'patients:case_detail' case.id %}?timeline={{ key }}&show_logs=1#clinical-timeline" class="btn {% if timeline_filter == key %}btn-primary{% else %}btn-outline-primary{% endif %}">{{ label }}</a>
+        <a href="{% url 'patients:case_detail' case.id %}?timeline={{ key }}&show_logs=1#clinical-timeline"{% if timeline_filter == key %} aria-current="true"{% endif %} class="btn {% if timeline_filter == key %}btn-primary{% else %}btn-outline-primary{% endif %}">{{ label }}</a>
       {% endfor %}
     </div>
   </div>
-  <div id="clinical-timeline-body" class="collapse {% if not timeline_collapsed %}show{% endif %}">
+  <div id="clinical-timeline-body" class="show">
     <div class="card-body">
+      {% if timeline_error %}<p role="alert">{{ timeline_error }}</p>{% endif %}
       {% if timeline_entries %}
         <ul class="timeline-list">
           {% for entry in timeline_entries %}
-            <li class="timeline-item">
+            <li class="timeline-item" data-event-id="{{ entry.id }}">
               <div class="case-timeline-row">
                 <div>
                   <span class="badge {% if entry.event_type == 'CALL' %}text-bg-warning{% elif entry.event_type == 'TASK' %}text-bg-primary{% elif entry.event_type == 'NOTE' %}text-bg-secondary{% else %}text-bg-dark{% endif %}">{{ entry.event_label }}</span>
                   {% if entry.task_title %}<span class="small text-muted ms-1">Task: {{ entry.task_title }}</span>{% endif %}
                 </div>
-                <small class="text-muted">{{ entry.timestamp_local|date:'d-m-y H:i' }} | {{ entry.actor }}</small>
+                <small class="text-muted"><time datetime="{{ entry.timestamp|date:'c' }}">{{ entry.timestamp_local|date:'d M Y H:i' }}</time> | {{ entry.actor }}</small>
               </div>
               <div class="mt-1">{{ entry.headline }}</div>
               {% if entry.reason %}<div class="small">Reason: {{ entry.reason }}</div>{% endif %}
@@ -32,6 +33,10 @@
       {% else %}
         <p class="mb-0 text-muted">No timeline entries for this filter.</p>
       {% endif %}
+      <nav class="d-flex flex-wrap gap-2 mt-3" aria-label="Timeline pages">
+        {% if timeline_has_cursor %}<a class="btn btn-sm btn-outline-primary" href="?timeline={{ timeline_filter }}#clinical-timeline">Latest entries</a>{% endif %}
+        {% if timeline_next_cursor %}<a class="btn btn-sm btn-outline-primary" href="?timeline={{ timeline_filter }}&timeline_cursor={{ timeline_next_cursor|urlencode }}#clinical-timeline">Older entries</a>{% endif %}
+      </nav>
     </div>
   </div>
 </section>

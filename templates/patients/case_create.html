@@ -68,7 +68,7 @@
     ></div>
 
     <div class="case-create-layout">
-      <form method="post" id="case-create-form" class="case-create-main" novalidate>
+      <form method="post" id="case-create-form" data-bound-draft="{{ form.is_bound|yesno:'true,false' }}" class="case-create-main case-create-expanded" novalidate>
         {% csrf_token %}
         {{ form.status }}
         {{ form.selected_patient }}
@@ -76,7 +76,6 @@
         <section class="case-create-card">
           <div class="case-create-card__header">
             <div>
-              <p class="case-create-card__eyebrow">Step 1</p>
               <h2 class="h5 mb-1">Case Type</h2>
               <p class="case-create-card__subtitle case-create-help-text mb-0">Choose the clinical lane for this case.</p>
             </div>
@@ -116,7 +115,6 @@
         <section class="case-create-card">
           <div class="case-create-card__header">
             <div>
-              <p class="case-create-card__eyebrow">Step 2</p>
               <h2 class="h5 mb-1">Patient</h2>
               <p class="case-create-card__subtitle case-create-help-text mb-0">Choose whether this case is for a new or existing patient, then confirm the identity record before saving.</p>
             </div>
@@ -274,7 +272,6 @@
         <section class="case-create-card">
           <div class="case-create-card__header">
             <div>
-              <p class="case-create-card__eyebrow">Step 3</p>
               <h2 class="h5 mb-1">Clinical Snapshot</h2>
               <p class="case-create-card__subtitle case-create-help-text mb-0">Diagnosis stays visible for every case while the workflow panel below branches into the relevant follow-up details.</p>
             </div>
@@ -289,33 +286,23 @@
 
         {% include 'patients/partials/case_create_risk_panel.html' %}
 
-        <section class="case-create-card">
-          <div class="case-create-card__header">
-            <div>
-              <p class="case-create-card__eyebrow">Step 5</p>
-              <h2 class="h5 mb-1">Referral & Notes</h2>
-              <p class="case-create-card__subtitle case-create-help-text mb-0">Finish with referral context and free-text notes that travel with the case detail page after save.</p>
-            </div>
-          </div>
-          <div class="case-create-card__body">
-            <div class="row g-3">
-              {% include 'patients/partials/case_create_field.html' with field=form.referred_by col_class='col-12 col-lg-5' %}
-              {% include 'patients/partials/case_create_field.html' with field=form.notes col_class='col-12 col-lg-7' %}
-            </div>
-          </div>
-        </section>
+        <details class="case-create-card case-create-optional"{% if form.referred_by.errors or form.notes.errors %} open{% endif %}>
+          <summary class="p-3 fw-semibold">Optional details</summary>
+          <div class="case-create-card__body"><div class="row g-3">
+            {% include 'patients/partials/case_create_field.html' with field=form.referred_by col_class='col-12 col-lg-5' %}
+            {% include 'patients/partials/case_create_field.html' with field=form.notes col_class='col-12 col-lg-7' %}
+          </div></div>
+        </details>
+        <div class="d-flex flex-wrap gap-2 p-3">
+          <button class="btn btn-primary" type="submit" data-case-submit-button><span class="case-create-submit-label">Save Case</span><span class="spinner-border spinner-border-sm d-none" aria-hidden="true"></span></button>
+          <a class="btn btn-outline-secondary" href="{% url 'patients:dashboard' %}">Cancel</a>
+        </div>
       </form>
 
       {% include 'patients/partials/case_create_summary_panel.html' %}
     </div>
 
-    <div class="case-create-mobile-bar d-lg-none">
-      <button class="btn btn-primary" type="button" data-case-submit-button>
-        <span class="case-create-submit-label">Save Case</span>
-        <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
-      </button>
-      <a class="btn btn-outline-secondary" href="{% url 'patients:dashboard' %}">Cancel</a>
-    </div>
+
   </article>
 {% endblock %}
 {% block extra_scripts %}

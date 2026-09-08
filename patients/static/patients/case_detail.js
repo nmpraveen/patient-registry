@@ -578,10 +578,10 @@
       if (timeline) {
         timeline.scrollIntoView({ behavior: "smooth", block: "start" });
       }
-      const href = link.getAttribute("href");
-      if (href) {
-        window.history.replaceState({}, "", href);
-      }
+      if (timeline) timeline.focus({ preventScroll: true });
+      const timelineUrl = new URL(window.location.href);
+      timelineUrl.hash = "clinical-timeline";
+      window.history.replaceState({}, "", timelineUrl.href);
     });
   });
 
@@ -636,7 +636,9 @@
           setVitalsEditor("");
         }
         window.setTimeout(() => {
-          window.location.reload();
+          const nextUrl = new URL(window.location.href);
+          nextUrl.searchParams.delete("timeline_cursor");
+          window.location.assign(nextUrl.href);
         }, 300);
       } catch {
         showFeedback("error", "The update could not be completed. Please try again.");

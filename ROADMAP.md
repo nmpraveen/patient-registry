@@ -1,5 +1,11 @@
 # ROADMAP.md
 
+## Issue #113 Stage 4 source gate
+
+- Stage 3 is merged in PR #117 at `cc1ad400f0b9d6da3e432d04428a26a14db46710`; its earlier pending entries below are historical.
+
+- Stage 4 combines continuous intake, date-grouped Upcoming, scoped sibling cases and bounded canonical history across web/API/native. Local browser, backend and representative native evidence is complete, including the corrected self-reassignment receipt path. Finish the same integrated review and exact pushed-head CI on the actual Stage 3 squash; Stage 5 must preserve the receipt correction. Native protected-screen smoke supplies XML/API evidence, with explicit unrun cases recorded in the Stage 4 report. Production and physical-device acceptance remain separate.
+
 ## Issue #113 Stage 3 source gate
 
 - Stage 3's four fresh GitHub comments are implemented and locally verified: API/import serialization, constant-query calls identity, clinical-page MTNO labels and reserved namespace enforcement. Complete their bounded closeout and fresh exact-head CI on PR #117. Preserve the independent inherited task-receipt fix as Stage 4 ownership.

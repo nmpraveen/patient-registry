@@ -330,6 +330,7 @@ TIMELINE_FILTER_OPTIONS = (
     ("calls", "Calls"),
     ("tasks", "Tasks"),
     ("notes", "Notes"),
+    ("clinical", "Clinical"),
 )
 TASK_NOTE_MARKER = "[Task:"
 LEGACY_TASK_NOTE_PREFIX = "Task note updated:"
@@ -1685,7 +1686,7 @@ def _validation_error_payload(error):
     return {"__all__": [str(message) for message in messages_list]}
 
 
-def _build_case_detail_summary(case, *, user, tasks, call_logs, activity_logs, latest_vital, timeline_filter):
+def _build_case_detail_summary(case, *, user, tasks, call_logs, activity_logs, latest_vital, timeline_filter, call_summary_override=None):
     today = timezone.localdate()
     task_sections = _build_actionable_task_sections(tasks, today, prominent_limit=5)
     task_counts = _case_task_counts(tasks, today)
@@ -1696,7 +1697,7 @@ def _build_case_detail_summary(case, *, user, tasks, call_logs, activity_logs, l
     next_task = task_sections["prominent_tasks"][0] if task_sections["prominent_tasks"] else None
     latest_activity = activity_logs[0] if activity_logs else None
     latest_call_log = call_logs[0] if call_logs else None
-    call_summary = CallLog.summarize_case(call_logs)
+    call_summary = call_summary_override if call_summary_override is not None else CallLog.summarize_case(call_logs)
     progress_percent = round((task_counts["completed"] / task_counts["total"]) * 100) if task_counts["total"] else 0
     latest_vitals_summary = _build_latest_vitals_summary(latest_vital)
     latest_vitals_snapshot = _build_latest_vitals_snapshot(latest_vital, summary=latest_vitals_summary)
@@ -2752,6 +2753,8 @@ class DashboardView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
         "due_date",
         "status",
         "case_id",
+        "assigned_user_id",
+        "assigned_user__username",
         "case__id",
         "case__prefix",
         "case__first_name",
@@ -2955,8 +2958,9 @@ class DashboardView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
                         "sex_age": _case_sex_age_label(case),
                         "diagnosis": case.diagnosis or case.category.name,
                         "task_titles": unique_titles,
-                        "task_count": len(unique_titles),
-                        "task_count_label": _dashboard_task_count_label(unique_titles),
+                        "tasks": grouped,
+                        "task_count": len(grouped),
+                        "task_count_label": _dashboard_task_count_label(grouped),
                         "subcategory_name": case.get_subcategory_display() if case.subcategory else "",
                         "subcategory_icon_path": _dashboard_subcategory_icon_path(case.subcategory),
                         "category_name": category_theme["name"],
@@ -3000,7 +3004,7 @@ class DashboardView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
     def _task_queryset(self):
         return _accessible_task_queryset(
             self.request.user,
-            Task.objects.select_related("case", "case__category")
+            Task.objects.select_related("case", "case__category", "assigned_user")
             .only(*self.task_only_fields)
             .order_by("due_date", "case_id", "id")
         )
@@ -3011,7 +3015,7 @@ class DashboardView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         today = timezone.localdate()
-        current_week_start = self._week_start_for(today)
+        current_week_start = today
         week_offset = self._parse_week_offset(self.request.GET.get("week_offset", "0"))
         selected_week_start = current_week_start + timedelta(days=week_offset * 7)
         selected_week_end = selected_week_start + timedelta(days=6)
@@ -5357,8 +5361,16 @@ class CaseDetailView(LoginRequiredMixin, DetailView):
         case = self.object
         patient = case.patient
         tasks = list(case.tasks.select_related("assigned_user", "case__category").order_by("due_date", "id"))
-        call_logs = list(case.call_logs.select_related("staff_user", "task", "task__case__category").order_by("-created_at", "-id"))
-        activity_logs = list(case.activity_logs.select_related("user", "task", "task__case__category").order_by("-created_at", "-id")[:200])
+        # Summary needs only the latest receipt per task and latest overall call;
+        # full call/activity history is read exclusively through bounded timeline pages.
+        latest_call_id = case.call_logs.order_by("-created_at", "-id").values_list("id", flat=True).first()
+        latest_per_task = case.call_logs.filter(task_id=OuterRef("task_id")).order_by("-created_at", "-id").values("id")[:1]
+        call_logs = list(case.call_logs.filter(Q(pk=Subquery(latest_per_task)) | Q(pk=latest_call_id))
+                         .select_related("staff_user", "task", "task__case__category").order_by("-created_at", "-id"))
+        call_summary_override = CallLog.summarize_case(call_logs)
+        if call_logs and call_logs[0].outcome != CallOutcome.ANSWERED_CONFIRMED_VISIT:
+            call_summary_override["failed_attempt_count"] = case.call_logs.filter(outcome__in=CallLog.FAILED_OUTCOMES).count()
+        activity_logs = list(case.activity_logs.select_related("user", "task", "task__case__category").order_by("-created_at", "-id")[:1])
         latest_vital = case.vitals.order_by("-recorded_at", "-id").first()
         recent_vitals = list(case.vitals.order_by("-recorded_at", "-id")[:4])
         today = timezone.localdate()
@@ -5398,12 +5410,22 @@ class CaseDetailView(LoginRequiredMixin, DetailView):
         context["progress_class"] = "bg-success" if context["progress_percent"] >= 50 else "bg-warning"
         context["timeline_filter_options"] = TIMELINE_FILTER_OPTIONS
         context["timeline_filter"] = timeline_filter
-        context["timeline_entries"] = _build_timeline_entries(
-            call_logs=call_logs,
-            activity_logs=activity_logs,
-            timeline_filter=timeline_filter,
-        )
-        context["timeline_collapsed"] = self.request.GET.get("show_logs") != "1"
+        from api.stage4_views import case_timeline_payload
+        from api.cursors import CursorValidationError
+        try:
+            timeline_page_data = case_timeline_payload(
+                case, self.request.user, filter_key=timeline_filter, cursor=self.request.GET.get("timeline_cursor"),
+            )
+        except (CursorValidationError, ValueError, KeyError, TypeError):
+            context["timeline_error"] = "This page has expired. Refresh the timeline."
+            timeline_page_data = {"results": [], "next_cursor": None}
+        context["timeline_entries"] = timeline_page_data["results"]
+        for entry in context["timeline_entries"]:
+            entry["timestamp_local"] = timezone.localtime(entry["timestamp"])
+        context["timeline_next_cursor"] = timeline_page_data["next_cursor"]
+        context["timeline_has_cursor"] = bool(self.request.GET.get("timeline_cursor"))
+        context["timeline_timezone"] = settings.TIME_ZONE
+        context["timeline_collapsed"] = False
         context["logs_url"] = f"{reverse('patients:case_detail', kwargs={'pk': case.pk})}?show_logs=1#clinical-timeline"
         context["task_form"] = TaskForm()
         context["log_form"] = ActivityLogForm()
@@ -5432,6 +5454,7 @@ class CaseDetailView(LoginRequiredMixin, DetailView):
             activity_logs=activity_logs,
             latest_vital=latest_vital,
             timeline_filter=timeline_filter,
+            call_summary_override=call_summary_override,
         )
         context["task_counts"] = detail_summary["task_counts"]
         context["open_task_count"] = detail_summary["task_counts"]["open"]

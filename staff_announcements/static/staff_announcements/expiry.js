@@ -30,6 +30,7 @@ async function refreshBanner() {
   }
 }
 if (banner) {
+  refreshBanner();
   window.setInterval(refreshBanner, 60000);
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) banner.replaceChildren();

@@ -11,19 +11,19 @@ from patients.policy import effective_role_policy, has_capability
 from patients.task_editing import lock_edit_actor
 
 
-def is_authorized_staff(user):
-    policy = effective_role_policy(user, fresh=True)
+def is_authorized_staff(user, *, fresh=False):
+    policy = effective_role_policy(user, fresh=fresh)
     return bool(user.is_authenticated and user.is_active and (user.is_superuser or policy.role_names))
 
 
-def require_staff(user, *, manage=False):
-    if not is_authorized_staff(user) or (manage and not has_capability(user, "manage_settings", fresh=True)):
+def require_staff(user, *, manage=False, fresh=False):
+    if not is_authorized_staff(user, fresh=fresh) or (manage and not has_capability(user, "manage_settings", fresh=fresh)):
         raise PermissionDenied("You do not have access to this staff operation.")
 
 
 def mutation_actor(user, *, manage=False, request=None):
     actor = lock_edit_actor(user)
-    require_staff(actor, manage=manage)
+    require_staff(actor, manage=manage, fresh=True)
     if request is not None:
         token = getattr(request, "auth", None)
         if token is not None:

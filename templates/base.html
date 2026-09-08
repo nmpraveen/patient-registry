@@ -1573,7 +1573,7 @@
 
     <main id="main-content" class="container-fluid container-lg px-3 px-md-0 pb-4" tabindex="-1">
       {% if staff_operations_allowed %}
-        <div id="staff-announcement-banner" data-url="{% url 'staff_announcements:banner' %}">{% include 'staff_announcements/banner.html' %}</div>
+        <div id="staff-announcement-banner" data-url="{% url 'staff_announcements:banner' %}"></div>
       {% endif %}
       {% if messages %}
         {% for message in messages %}

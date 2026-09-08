@@ -14,7 +14,7 @@ def announcements_for(user, *, manage=False, now=None):
     if manage:
         return queryset
     now = now or timezone.now()
-    roles = effective_role_policy(user, fresh=True).role_names
+    roles = effective_role_policy(user).role_names
     return queryset.filter(is_active=True, starts_at__lte=now, ends_at__gt=now).filter(
         Q(audience=Announcement.Audience.ALL_STAFF)
         | Q(audience=Announcement.Audience.SELECTED_ROLES, audience_roles__role_name__in=roles)

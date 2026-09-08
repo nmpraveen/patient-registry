@@ -378,7 +378,7 @@ private class FakeAuthApi(
     private val refreshError: Throwable? = null,
     private val meError: Throwable? = null,
     private val profile: UserProfileDto = userProfile(),
-) : MedtrackApi {
+) : MedtrackApi, com.naveenhospital.medtrack.core.network.api.StaffOperationsApi by com.naveenhospital.medtrack.core.data.unusedStaffApi() {
     override suspend fun relatedCases(caseId: String, cursor: String?): com.naveenhospital.medtrack.core.network.model.RelatedCasePageDto = error("Unused")
 
     override suspend fun upcoming(startDate: String?, cursor: String?, categories: List<String>?, subcategories: List<String>?, assignedTo: String?, scopeContext: String?): com.naveenhospital.medtrack.core.network.model.UpcomingPageDto = error("Unused")

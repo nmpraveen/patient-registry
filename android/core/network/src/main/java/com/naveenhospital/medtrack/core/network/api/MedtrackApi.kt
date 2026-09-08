@@ -41,7 +41,7 @@ import retrofit2.http.Path
 import retrofit2.http.Query
 import retrofit2.Response
 
-interface MedtrackApi {
+interface MedtrackApi : StaffOperationsApi {
     @GET("api/cases/{caseId}/related/")
     suspend fun relatedCases(
         @Path("caseId") caseId: String,

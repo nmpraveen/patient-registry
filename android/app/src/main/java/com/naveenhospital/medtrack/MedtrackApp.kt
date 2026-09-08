@@ -726,6 +726,12 @@ fun MedtrackApp(
                     }
 
                     HomeScreen(
+                        loadUpcoming = { date, cursor -> container.medtrackRepository.loadUpcoming(
+                            startDate = date, cursor = cursor, query = homeSearchQuery,
+                            categories = selectedCategories.sorted(), subcategories = selectedSubcategories.sorted(),
+                            assignedTo = selectedScope,
+                        ) },
+                        onOpenUpcomingCase = { id -> navController.navigate(Routes.caseDetail(id)) },
                         modifier = Modifier.fillMaxSize(),
                         cases = pagedCases,
                         stats = stats,
@@ -953,6 +959,7 @@ fun MedtrackApp(
                     }
 
                     CaseDetailScreen(
+                        loadTimeline = { filter, cursor -> container.medtrackRepository.loadCaseTimeline(caseId, filter, cursor) },
                         callLogs = callLogs,
                         modifier = Modifier.fillMaxSize(),
                         caseId = caseId,

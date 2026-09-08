@@ -185,6 +185,8 @@ fun HomeScreen(
     onMessagePatient: (PatientCase) -> Unit,
     onCompleteTask: (PatientCase) -> Unit,
     onOpenCase: (PatientCase) -> Unit,
+    loadUpcoming: suspend (String?, String?) -> com.naveenhospital.medtrack.core.domain.model.UpcomingPage,
+    onOpenUpcomingCase: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var expandedCaseId by remember { mutableStateOf<String?>(null) }
@@ -230,6 +232,15 @@ fun HomeScreen(
             Text(text = "Refreshing", color = MedtrackColors.Muted)
         }
 
+        if (selectedBucket == "upcoming") {
+            UpcomingScreen(
+                filterKey = listOf(searchQuery, selectedScope, selectedCategories.sorted(), selectedSubcategories.sorted()),
+                refreshing = isRefreshing,
+                load = loadUpcoming,
+                onOpenCase = onOpenUpcomingCase,
+                modifier = Modifier.weight(1f),
+            )
+        } else {
         ListHeader(
             selectedBucket = selectedBucket,
             itemCount = cases.itemCount,
@@ -308,6 +319,7 @@ fun HomeScreen(
                     }
                 }
             }
+        }
         }
     }
 

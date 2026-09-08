@@ -118,6 +118,22 @@ class MedtrackRepositoryTest {
     }
 
     @Test
+    fun stage4ResponsesCannotCrossAccountGeneration() = runTest {
+        for (timeline in listOf(false, true)) {
+            val api = FakeMedtrackApi()
+            val repository = repository(api)
+            api.beforeStage4Read = {
+                repository.deactivateAccount()
+                repository.activateAccount("other-account")
+            }
+            val failure = runCatching {
+                if (timeline) repository.loadCaseTimeline("42", "all") else repository.loadUpcoming()
+            }.exceptionOrNull()
+            assertTrue(failure is IllegalStateException)
+        }
+    }
+
+    @Test
     fun editPrefillMapsReadOnlyMtnoWithOptionalHospitalId() = runTest {
         val api = FakeMedtrackApi()
         api.editFormResponse = com.naveenhospital.medtrack.core.network.model.CaseEditFormDto(
@@ -175,6 +191,19 @@ class MedtrackRepositoryTest {
         assertEquals(PatchField.Value("UH-NEW"), request.uhid)
         assertEquals(mapOf("uhid" to ""), request.baseValues)
         assertEquals(PatchField.Omitted, request.useTemporaryUhid)
+    }
+
+    @Test
+    fun upcomingSearchPreservesPrivateQueryFiltersAndCursor() = runTest {
+        val api = FakeMedtrackApi()
+        val repository = repository(api)
+        repository.loadUpcoming("2026-09-08", "cursor", "  Synthetic  ", listOf("Medicine"), listOf("Review"), "me")
+        val request = api.lastUpcomingSearch!!
+        assertEquals("Synthetic", request.query)
+        assertEquals("cursor", request.cursor)
+        assertEquals(listOf("Medicine"), request.category)
+        assertEquals("me", request.assignedTo)
+        assertTrue(runCatching { repository.loadUpcoming(query = "ab") }.isFailure)
     }
 
     @Test
@@ -1109,6 +1138,21 @@ private class FakeMedtrackApi(
     private val logCallError: Throwable? = null,
     private val addVitalsError: Throwable? = null,
 ) : MedtrackApi {
+    var beforeStage4Read: (suspend () -> Unit)? = null
+    var lastUpcomingSearch: com.naveenhospital.medtrack.core.network.model.UpcomingSearchRequestDto? = null
+    override suspend fun upcoming(startDate: String?, cursor: String?, categories: List<String>?, subcategories: List<String>?, assignedTo: String?, scopeContext: String?): com.naveenhospital.medtrack.core.network.model.UpcomingPageDto {
+        beforeStage4Read?.invoke()
+        return com.naveenhospital.medtrack.core.network.model.UpcomingPageDto("2026-09-08", "2026-09-08", "2026-09-14", "Asia/Kolkata", emptyList())
+    }
+    override suspend fun searchUpcoming(request: com.naveenhospital.medtrack.core.network.model.UpcomingSearchRequestDto): com.naveenhospital.medtrack.core.network.model.UpcomingPageDto {
+        lastUpcomingSearch = request
+        return upcoming(request.startDate, request.cursor, request.category, request.subcategory, request.assignedTo, request.scopeContext)
+    }
+    override suspend fun caseTimeline(caseId: String, filter: String, cursor: String?): com.naveenhospital.medtrack.core.network.model.CaseTimelinePageDto {
+        beforeStage4Read?.invoke()
+        return com.naveenhospital.medtrack.core.network.model.CaseTimelinePageDto(emptyList(), null, "Asia/Kolkata")
+    }
+
     var lastTaskPatch: com.naveenhospital.medtrack.core.network.model.UpdateTaskRequestDto? = null
     var lastCompletion: ClientWriteRequestDto? = null
     val patientSearchRequests = mutableListOf<PatientSearchRequestDto>()

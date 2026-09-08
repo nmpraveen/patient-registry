@@ -213,6 +213,43 @@ class MedtrackRepository(
         return AccountSession(ownerAccountId, generation, apiForAccount(ownerAccountId))
     }
 
+    // Paged presentation data stays in the active screen's memory, never a shared cache.
+    suspend fun loadUpcoming(
+        startDate: String? = null, cursor: String? = null, query: String = "",
+        categories: List<String> = emptyList(), subcategories: List<String> = emptyList(),
+        assignedTo: String? = null, scopeContext: String? = null,
+    ): com.naveenhospital.medtrack.core.domain.model.UpcomingPage {
+        val session = activeSession()
+        val normalizedQuery = query.trim()
+        require(normalizedQuery.isEmpty() || normalizedQuery.length in 3..80) { "Search needs 3–80 characters." }
+        val page = if (normalizedQuery.isEmpty()) {
+            session.api.upcoming(startDate, cursor, categories, subcategories, assignedTo, scopeContext)
+        } else {
+            session.api.searchUpcoming(com.naveenhospital.medtrack.core.network.model.UpcomingSearchRequestDto(
+                normalizedQuery, startDate, cursor, categories, subcategories, assignedTo, scopeContext,
+            ))
+        }
+        requireStillActive(session)
+        return com.naveenhospital.medtrack.core.domain.model.UpcomingPage(
+            page.hospitalToday, page.startDate, page.endDate, page.timezone,
+            page.results.map { com.naveenhospital.medtrack.core.domain.model.UpcomingTask(
+                it.id, it.caseId, it.patientName, it.department, it.title, it.dueDate, it.assignedUserName,
+            ) }, page.nextCursor,
+        )
+    }
+
+    suspend fun loadCaseTimeline(caseId: String, filter: String, cursor: String? = null): com.naveenhospital.medtrack.core.domain.model.CaseTimelinePage {
+        val session = activeSession()
+        val page = session.api.caseTimeline(caseId, filter, cursor)
+        requireStillActive(session)
+        return com.naveenhospital.medtrack.core.domain.model.CaseTimelinePage(
+            page.results.map { com.naveenhospital.medtrack.core.domain.model.CaseTimelineEvent(
+                it.id, it.eventType, it.eventLabel, it.timestamp, it.actor, it.taskTitle,
+                it.headline, it.reason, it.details,
+            ) }, page.nextCursor, page.timezone,
+        )
+    }
+
     private fun requireStillActive(session: AccountSession) {
         check(
             activeAccountId.value == session.ownerAccountId && activeGeneration == session.generation,

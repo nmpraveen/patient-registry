@@ -19,7 +19,7 @@ class Announcement(models.Model):
     audience_roles = models.ManyToManyField("patients.RoleSetting", blank=True)
     starts_at = models.DateTimeField(db_index=True)
     ends_at = models.DateTimeField(db_index=True)
-    publisher = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL)
+    publisher = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL)
     is_active = models.BooleanField(default=True)
     version = models.PositiveIntegerField(default=1)
     updated_at = models.DateTimeField(auto_now=True)

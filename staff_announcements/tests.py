@@ -73,6 +73,52 @@ class AnnouncementTests(TestCase):
         save_announcement(self.manager, {"version": 1, "is_active": False}, pk=urgent.pk)
         self.assertEqual(banner_for(self.reader).pk, self.item.pk)
 
+    def test_priority_precedes_pagination_and_management_retains_recency(self):
+        urgent = save_announcement(self.manager, {**self.data, "priority": "urgent"})
+        Announcement.objects.bulk_create([
+            Announcement(publisher=self.manager, **{**self.data, "text": f"Newer normal {index}",
+                         "starts_at": self.now - timedelta(minutes=30)})
+            for index in range(51)
+        ])
+        response = self.api.get("/api/staff/announcements/")
+        self.assertEqual(response.data["count"], 53)
+        self.assertEqual(len(response.data["results"]), 50)
+        self.assertEqual(response.data["results"][0]["id"], urgent.pk)
+        self.assertEqual(banner_for(self.reader).pk, urgent.pk)
+        self.api.force_authenticate(self.manager)
+        managed = self.api.get("/api/staff/announcements/?manage=true")
+        self.assertNotIn(urgent.pk, [row["id"] for row in managed.data["results"]])
+
+    def test_deleted_publisher_web_detail_has_fallback(self):
+        self.manager.delete()
+        self.item.refresh_from_db()
+        self.assertIsNone(self.item.publisher_id)
+        web_login(self.client, self.reader)
+        response = self.client.get(f"/staff/announcements/{self.item.pk}/")
+        self.assertContains(response, "Published by Former staff member")
+
+    def test_deleted_publisher_can_be_updated_without_inventing_publisher(self):
+        self.manager.delete()
+        replacement = staff_user("replacement", manager=True)
+        self.api.force_authenticate(replacement)
+        response = self.api.patch(f"/api/staff/announcements/{self.item.pk}/",
+                                  {"version": 1, "text": "Updated preserved announcement"}, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.item.refresh_from_db()
+        self.assertEqual(self.item.version, 2)
+        self.assertEqual(self.item.text, "Updated preserved announcement")
+        self.assertIsNone(self.item.publisher_id)
+        web_login(self.client, replacement)
+        response = self.client.post(f"/staff/announcements/{self.item.pk}/edit/", {
+            **self.data, "version": 2, "text": "Web edit of preserved announcement", "is_active": True,
+            "starts_at": self.item.starts_at.isoformat(), "ends_at": self.item.ends_at.isoformat(),
+        })
+        self.assertRedirects(response, f"/staff/announcements/{self.item.pk}/?manage=true")
+        self.item.refresh_from_db()
+        self.assertEqual(self.item.version, 3)
+        self.assertEqual(self.item.text, "Web edit of preserved announcement")
+        self.assertIsNone(self.item.publisher_id)
+
     def test_time_and_publisher_payload_and_no_store(self):
         response = self.api.get(f"/api/staff/announcements/{self.item.pk}/")
         self.assertEqual(response.data["publisher"]["id"], self.manager.pk)

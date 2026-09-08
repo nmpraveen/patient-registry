@@ -18,15 +18,15 @@ def announcements_for(user, *, manage=False, now=None):
     return queryset.filter(is_active=True, starts_at__lte=now, ends_at__gt=now).filter(
         Q(audience=Announcement.Audience.ALL_STAFF)
         | Q(audience=Announcement.Audience.SELECTED_ROLES, audience_roles__role_name__in=roles)
-    ).distinct()
-
-
-def banner_for(user):
-    return announcements_for(user).annotate(
+    ).distinct().annotate(
         priority_rank=Case(When(priority="urgent", then=Value(0)),
                            When(priority="important", then=Value(1)),
                            default=Value(2), output_field=IntegerField())
-    ).order_by("priority_rank", "-starts_at", "-pk").first()
+    ).order_by("priority_rank", "-starts_at", "-pk")
+
+
+def banner_for(user):
+    return announcements_for(user).first()
 
 
 @transaction.atomic

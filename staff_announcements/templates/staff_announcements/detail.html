@@ -3,6 +3,6 @@
 {% block content %}
 <a href="{% url 'staff_announcements:list' %}{% if manage %}?manage=true{% endif %}">Announcements</a>
 <article class="card mt-3" {% if not manage %}data-announcement-expires="{{ announcement.ends_at|date:'c' }}" data-server-now="{{ server_now|date:'c' }}"{% endif %}><div class="card-body text-break"><h1 class="h4">{{ announcement.get_priority_display }} announcement</h1>
-<div class="mb-3">{{ announcement.text|linebreaksbr }}</div><p class="small">{{ announcement.starts_at }} – {{ announcement.ends_at }}</p><p class="small">Published by {{ announcement.publisher.get_full_name|default:announcement.publisher.username|default:'Former staff member' }}</p>
+<div class="mb-3">{{ announcement.text|linebreaksbr }}</div><p class="small">{{ announcement.starts_at }} – {{ announcement.ends_at }}</p><p class="small">Published by {% if announcement.publisher %}{{ announcement.publisher.get_full_name|default:announcement.publisher.username }}{% else %}Former staff member{% endif %}</p>
 {% if can_manage %}<a class="btn btn-outline-primary" href="{% url 'staff_announcements:edit' announcement.pk %}">Edit announcement</a>{% endif %}</div></article>
 {% endblock %}

@@ -41,23 +41,13 @@ def install_guards(apps, schema_editor):
     """)
 
 
-def remove_guards(apps, schema_editor):
-    if schema_editor.connection.vendor != "postgresql":
-        return
-    schema_editor.execute("""
-        DROP TRIGGER IF EXISTS patient_identity_guard ON patients_patient;
-        DROP TRIGGER IF EXISTS patient_issuance_guard ON patients_patientidentityissuance;
-        DROP TRIGGER IF EXISTS patient_allocator_guard ON patients_patientidentityallocator;
-        DROP FUNCTION IF EXISTS patients_identity_immutable();
-        DROP FUNCTION IF EXISTS patients_allocator_monotonic();
-    """)
-
-
 class Migration(migrations.Migration):
     dependencies = [("patients", "0043_patient_identity_backfill")]
     operations = [
         migrations.AlterField(model_name="patient", name="mtno", field=models.CharField(max_length=32, unique=True, editable=False, blank=True)),
         migrations.AlterField(model_name="patient", name="identity_uuid", field=models.UUIDField(default=uuid.uuid4, unique=True, editable=False)),
         migrations.AddConstraint(model_name="patient", constraint=models.CheckConstraint(condition=~models.Q(mtno=""), name="patient_mtno_present")),
-        migrations.RunPython(install_guards, remove_guards),
+        # Refuse reversal here, before any guard or constraint can be removed.
+        # The earlier backfill's refusal alone would leave this migration undone.
+        migrations.RunPython(install_guards),
     ]

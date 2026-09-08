@@ -2,6 +2,8 @@
 
 ## Issue #113 Stage 3 source gate
 
+- Stage 3 review corrections address the two validated migration blockers: whole-group ambiguity preflight and irreversible enforcement before reverse mutation. Focused PostgreSQL regressions pass. Finish the correction-only recheck and fresh exact-head CI on the existing PR #117; no broader review restart or production activation.
+
 - Stage 2 is merged in PR #116 at `4ca2a2ec7da113180bcb0885d9384ff9974fa796`; its earlier pending gates below are historical.
 - Stage 3 combines permanent MTNO, optional UHID, native read-only identity and issuance-safe migration/import/restore. Local affected regressions, schema/migration and synthetic browser/backfill/restore proofs pass; complete one combined coordinator review and exact-head CI before merge.
 - Carry trusted outgoing issuance through older database recovery, preserve protected merge evidence and reconcile ambiguous legacy case linkage explicitly. Production activation remains a separate backed-up release.

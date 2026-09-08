@@ -28,18 +28,34 @@ def backfill(apps, schema_editor):
 
     identity_fields = ["prefix", "first_name", "last_name", "patient_name", "gender", "blood_group",
                        "date_of_birth", "place", "age", "phone_number", "alternate_phone_number"]
-    # Only exact existing nonblank identifiers are evidence of common identity.
-    for case in Case.objects.using(using).filter(patient_id__isnull=True).order_by("pk"):
+    # Preflight the whole exact-UHID group before linking or allocating. A blank
+    # first record cannot establish compatibility between later nonblank values.
+    orphan_cases = list(Case.objects.using(using).filter(patient_id__isnull=True).order_by("pk"))
+    evidence_by_uhid = {}
+    for case in orphan_cases:
         if not case.uhid or case.uhid != " ".join(case.uhid.split()).upper():
             raise RuntimeError("Patientless legacy case requires a reviewed identity mapping before migration.")
         patient = by_uhid.get(case.uhid)
-        if patient:
-            if patient.merged_into_id or any(
-                getattr(patient, field) not in (None, "") and getattr(case, field) not in (None, "")
-                and getattr(patient, field) != getattr(case, field) for field in identity_fields
-            ):
+        if patient and patient.merged_into_id:
+            raise RuntimeError("Conflicting patientless legacy identity requires reviewed reconciliation.")
+        if case.uhid not in evidence_by_uhid:
+            evidence_by_uhid[case.uhid] = {
+                field: getattr(patient, field) if patient else None for field in identity_fields
+            }
+        evidence = evidence_by_uhid[case.uhid]
+        for field in identity_fields:
+            value = getattr(case, field)
+            if value in (None, ""):
+                continue
+            if evidence[field] not in (None, "") and evidence[field] != value:
                 raise RuntimeError("Conflicting patientless legacy identity requires reviewed reconciliation.")
-        else:
+            evidence[field] = value
+
+    # Consistent evidence only validates linkage; it does not rewrite or fill
+    # historical demographics from other rows.
+    for case in orphan_cases:
+        patient = by_uhid.get(case.uhid)
+        if patient is None:
             patient = Patient.objects.using(using).create(
                 uhid=case.uhid, is_temporary_id=case.uhid.startswith("TMP-"),
                 created_by_id=case.created_by_id, **{field: getattr(case, field) for field in identity_fields},

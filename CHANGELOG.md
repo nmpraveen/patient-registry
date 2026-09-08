@@ -1,3 +1,8 @@
+## 2026.09.08.00.57
+
+- Reject conflicting identity evidence across an entire legacy UHID group before backfill linkage or issuance, including blank-first and partially blank existing-patient cases.
+- Refuse identity-enforcement migration reversal before removing guards or constraints; preserve ledger and allocator protection after failed downgrade attempts.
+
 ## 2026.09.08.00.39
 
 - Assign permanent MTNO identities with a retained issuance ledger, immutable database guards and additive backfill; allow missing hospital UHID while preserving existing identifiers.

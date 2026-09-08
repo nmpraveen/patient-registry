@@ -2,6 +2,8 @@
 
 ## Issue #113 Stage 3 identity validation and recovery
 
+Stage 3 correction verification: run `python manage.py test patients.test_identity_migrations patients.test_mtno_identity patients.test_mtno_workflows patients.test_identity_recovery` on isolated PostgreSQL. Historical tests create disposable separate schemas instead of stripping current guards. Blank-first or partially blank existing-Patient groups must reject conflicting later evidence before linkage/issuance. A requested 0044-to-0042 downgrade must fail while 0044 remains recorded, all three identity triggers and the presence constraint remain, ledger/floor are unchanged, and forbidden SQL identity/issuance/floor writes still fail. Use verified full recovery with outgoing issuance for rollback; never remove guards to force migration reversal.
+
 Use [Stage 3 identity and recovery](docs/issue-113-stage-3.md). Migrations 0042-0044 preserve historical identifiers/timestamps and fail atomically on ambiguous patientless cases; review and supply an explicit reconciliation mapping before retrying. They are not safely reversed after issuance. Keep the reviewed source, encrypted full backup and latest outgoing issuance checkpoint together for any later release/recovery.
 
 Run `python manage.py test patients.test_mtno_identity patients.test_mtno_workflows patients.test_identity_recovery patients.test_frontend_a11y patients.test_task_review_fixes patients.tests.PatientDataBundleTests` on isolated PostgreSQL with DEBUG=false and ALLOW_MOCK_DATA_SEEDING=false, then required affected regressions, strict schema and migration checks. `python manage.py verify_patient_identity` validates the stored snapshot only; `--repair-floor` reconciles upward and cannot establish numbers absent from an older snapshot.

@@ -1,3 +1,11 @@
+## 2026.09.08.02.07
+
+- Expand web and native intake into one validated form with one Save action, optional details and draft protection; retain immutable MTNO and optional hospital IDs.
+- Group Upcoming follow-ups by hospital date and case, preserve distinct tasks, and navigate scoped sibling cases.
+- Add bounded canonical timeline pages, filters and private body-only search with current scope and cursor validation.
+- Preserve active retry receipts when staff reassign their own tasks, while retaining scope-loss denial and other revocation cleanup.
+- Retain the unsaved-draft navigation warning after server validation rejection, including non-field errors.
+
 ## 2026.09.08.01.53
 
 - Serialize patient imports with API writes and receipt replays before actor/target locks; preserve Patient-before-Case editing and fresh linkage checks.

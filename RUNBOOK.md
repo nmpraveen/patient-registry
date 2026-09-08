@@ -1,5 +1,13 @@
 # RUNBOOK.md
 
+## Issue #113 Stage 4 screens and history
+
+Use [Stage 4 behavior and verification](docs/issue-113-stage-4.md) for the scoped Upcoming, timeline and related-case read contracts. Upcoming starts on the hospital's current date and spans seven inclusive dates; each task keeps its own identity even when titles match. Timeline pages are bounded to 30 canonical events. Invalid or expired cursors require a fresh first page; repeat the current filters. Patient searches belong in the POST body, never in a URL. Taskless call receipts remain separate from task completion.
+
+For scratch acceptance, migrate a fresh isolated PostgreSQL database, then run `python manage.py test patients.test_stage4 patients.test_mtno_identity patients.test_mtno_workflows patients.test_identity_recovery`, strict OpenAPI validation and migration drift checks. The existing `seed_mock_data --screen-scenarios` option creates same-title groups, seven-day boundaries and paged history; enable the mock seed gate only for the explicit synthetic seed command. The browser script requires synthetic `E2E_USERNAME`/`E2E_PASSWORD` and writes screenshots/receipts to `output/stage-4/browser/`. Native smoke uses the existing protected-screen workflow and records XML/API evidence when screenshots are blocked.
+
+Self-reassigning a task preserves its in-flight idempotency receipt. The same request may replay once while still authorized, but access loss denies replay; do not weaken role/device/dataset revocation to recover an edit. Stage 4 adds no model migration and does not change bundle format. Preserve Stage 3 identity migrations and its rollback restrictions during any code rollback. This run did not deploy or alter production/NAS/backups.
+
 ## Issue #113 Stage 3 identity validation and recovery
 
 For the GitHub comment correction, run `python manage.py test patients.test_identity_import_api patients.test_identity_migrations patients.test_mtno_identity patients.test_mtno_workflows patients.test_identity_recovery api.tests.MobileEditApiTests api.tests.MobileCaseCreateTests`, plus affected authorization/replay, legacy bundle and existing web-lock tests. Import and API keyed/unkeyed/replay paths lock the dataset before actor/target state; import then locks allocator, Patients and Cases. API case editing locks Patient before Case and rechecks linkage. Do not acquire a target or allocator lock before entering the replacement gate in callers.

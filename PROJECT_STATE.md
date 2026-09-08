@@ -1,5 +1,17 @@
 # PROJECT_STATE.md
 
+## Issue #113 Stage 4 implementation
+
+Stage 4 integrates from actual Stage 3 squash `cc1ad400f0b9d6da3e432d04428a26a14db46710` (PR #117). Its pending-review entries below are historical and superseded by that merge.
+
+Stage 4 combines expanded single-save intake, seven-day Upcoming groups, scoped patient-case navigation and an expanded canonical case timeline across web and native screens. The read APIs retain current object scope, body-only patient search, bounded pages and actor/filter/dataset-bound cursors. Stage 3 immutable MTNO and optional UHID behavior are preserved. The inherited self-reassignment retry-receipt failure is corrected only in assignment cleanup; account, role, device and dataset revocation retain their existing behavior.
+
+The same review's retained-draft correction keeps the unsaved navigation warning after server rejection; focused bound-form and real Cancel/Back browser checks pass.
+
+Local verification passed 36 combined backend identity/screen/recovery tests, strict schema validation and migration drift checks; the receipt correction passed 33 focused regressions plus three revocation tests. The browser matrix passed 13 checks at 320/390/430/1440, including a real blank-UHID save. Native validation reused 156 unit tests, compilation/lint and the same APK; representative XML/API smoke verified grouped date windows, sibling cases, paged history, task editing, a taskless call, intake and MTNO-preserving UHID edits. Secure native capture remained enabled, so no native pixel or overflow proof is claimed. Restricted-account switching, offline replay, stale conflicts, invalidated cursors and native fixtures exceeding 50 tasks/cases were not exercised in that representative smoke.
+
+See [Stage 4 behavior and verification](docs/issue-113-stage-4.md). The combined PR's current-head CI and the same integrated review remain merge gates; no production activation is implied.
+
 ## Issue #113 Stage 3 combined implementation
 
 Four subsequent GitHub comments were independently validated and corrected in one batch: actual API/import lock inversion, calls-queue identity N+1, missing MTNO on blank-UHID vitals/ANC pages and cross-namespace UHID collision. Imports and API writes/replays now share the dataset lock before actor/target locks; API/form identity edits use Patient-before-Case. New/imported MT-digits UHIDs are rejected, and incompatible legacy identities stop migration without rewriting. Validation passes 66 identity/API tests, 91 authorization/replay/accessibility/existing lock regressions, 12 legacy bundle checks and the final namespace endpoint/SQL-bypass check. Independent real PostgreSQL contention proof and synthetic 390px clinical-page smoke pass. Fresh corrected-head CI and bounded review/comment closeout remain the merge gate; the previous 7af502f all-ten CI success does not certify this revision.

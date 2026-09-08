@@ -4,7 +4,6 @@ import argparse
 import json
 import os
 import re
-from time import time_ns
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -103,7 +102,7 @@ def main():
         page.locator("label.case-create-choice").filter(has_text="Medicine").click()
         expect(page.locator('[name="review_frequency"]')).to_be_visible()
         page.locator('[name="subcategory"]').select_option("GENERAL_MEDICINE")
-        page.locator('[name="uhid"]').fill("S4-SMOKE-" + str(time_ns()))
+        page.locator('[name="uhid"]').fill("")  # Stage 3 optional hospital ID; server allocates MTNO.
         page.locator('[name="prefix"]').select_option("MR")
         page.locator('[name="first_name"]').fill("Synthetic")
         page.locator('[name="last_name"]').fill("Screen acceptance")

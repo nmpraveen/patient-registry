@@ -1,0 +1,11 @@
+[Unit]
+Description=Check MEDTRACK staff reminder schedules every minute
+
+[Timer]
+OnCalendar=*-*-* *:*:00
+AccuracySec=1s
+Persistent=true
+Unit=medtrack-staff-reminders.service
+
+[Install]
+WantedBy=timers.target

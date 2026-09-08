@@ -24,7 +24,7 @@ TOP_LEVEL_INPUTS = {
     "requirements.txt",
 }
 RUNTIME_ROOTS = ("api/", "patient_registry/", "patients/", "templates/",
-                 "staff_directory/", "staff_announcements/")
+                 "staff_directory/", "staff_announcements/", "staff_reminders/")
 FORBIDDEN_COMPONENTS = {
     ".git",
     ".mypy_cache",

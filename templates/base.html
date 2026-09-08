@@ -1536,6 +1536,7 @@
                 <div class="global-nav-utility">
                   {% if staff_operations_allowed %}
                     <a class="btn btn-sm btn-outline-light" href="{% url 'staff_directory:list' %}">PhoneBook</a>
+                    <a class="btn btn-sm btn-outline-light" href="{% url 'staff_reminders:list' %}">Reminders</a>
                     <a class="btn btn-sm btn-outline-light" href="{% url 'staff_announcements:list' %}">Announcements</a>
                   {% endif %}
                   <a

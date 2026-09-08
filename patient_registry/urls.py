@@ -49,6 +49,8 @@ urlpatterns = [
     path("staff/announcements/", include("staff_announcements.urls")),
     path("api/staff/directory/", include("staff_directory.api_urls")),
     path("api/staff/announcements/", include("staff_announcements.api_urls")),
+    path("staff/reminders/", include("staff_reminders.urls")),
+    path("api/staff/reminders/", include("staff_reminders.api_urls")),
     path("", RedirectView.as_view(pattern_name="patients:dashboard", permanent=False)),
 ]
 

@@ -1,0 +1,19 @@
+[Unit]
+Description=Schedule due MEDTRACK staff reminder occurrences once
+Documentation=file:///srv/medtrack/app/docs/issue-113-stage-5.md
+Requires=docker.service
+After=docker.service
+ConditionPathExists=/srv/medtrack/app/docker-compose.yml
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=/srv/medtrack/app
+ExecStart=/usr/bin/docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T web python manage.py schedule_staff_reminders --limit 500 --per-reminder 24
+UMask=0077
+TimeoutStartSec=5m
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict

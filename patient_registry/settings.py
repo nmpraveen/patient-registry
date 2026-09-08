@@ -50,6 +50,7 @@ INSTALLED_APPS = [
     "api.apps.ApiConfig",
     "staff_directory",
     "staff_announcements",
+    "staff_reminders",
 ]
 
 MIDDLEWARE = [

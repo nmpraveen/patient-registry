@@ -2775,6 +2775,57 @@ class MobileEditApiTests(APITestCase):
         self.assertEqual(self.case.tasks.filter(title="Idempotent task").count(), 1)
 
     # --- Task edit / reschedule / reopen / note ---
+    def test_idempotent_self_reassignment_preserves_inflight_receipt(self):
+        from patients.models import CaseActivityLog
+        recipient = get_user_model().objects.create_user(username="next-assignee")
+        for assignment in (recipient.pk, ""):
+            with self.subTest(assignment=assignment):
+                self.task.assigned_user = self.admin
+                self.task.save(update_fields=["assigned_user", "updated_at"])
+                url = reverse("api:task_detail", args=[self.task.pk])
+                old_key = f"before-reassign-{assignment}"
+                old_payload = self._task_patch_payload(self.task, {"title": "Before reassignment"})
+                old_payload["client_write_id"] = old_key
+                self.assertEqual(self.client.patch(url, old_payload, format="json").status_code, 200)
+                self.assertTrue(MobileWriteReceipt.objects.filter(client_write_id=_idempotency_key_digest(old_key)).exists())
+                payload = self._task_patch_payload(self.task, {"title": "Reassigned once", "assigned_user": assignment})
+                key = f"self-reassign-{assignment}"
+                payload["client_write_id"] = key
+                before = CaseActivityLog.objects.filter(task=self.task).count()
+                first = self.client.patch(url, payload, format="json")
+                self.assertEqual(first.status_code, 200, first.content)
+                self.task.refresh_from_db()
+                self.assertEqual(self.task.title, "Reassigned once")
+                self.assertEqual(self.task.assigned_user_id, assignment or None)
+                self.assertFalse(MobileWriteReceipt.objects.filter(client_write_id=_idempotency_key_digest(old_key)).exists())
+                receipt = MobileWriteReceipt.objects.get(client_write_id=_idempotency_key_digest(key))
+                self.assertEqual(receipt.status, MobileWriteReceipt.STATUS_APPLIED)
+                replay = self.client.patch(url, payload, format="json")
+                self.assertEqual(replay.status_code, 200, replay.content)
+                self.assertEqual(CaseActivityLog.objects.filter(task=self.task).count(), before + 1)
+
+    def test_self_reassignment_receipt_cannot_replay_after_scope_loss(self):
+        from patients.models import CaseActivityLog
+        role = RoleSetting.objects.create(role_name="Reassignment scoped", case_data_scope=CaseDataScope.ASSIGNED, can_task_edit=True)
+        group = Group.objects.create(name=role.role_name)
+        actor = get_user_model().objects.create_user(username="reassign-scoped")
+        actor.groups.add(group)
+        self.task.assigned_user = actor
+        self.task.save(update_fields=["assigned_user", "updated_at"])
+        client = APIClient()
+        client.force_authenticate(actor)
+        payload = self._task_patch_payload(self.task, {"assigned_user": self.admin.pk})
+        payload["client_write_id"] = "reassign-lose-scope"
+        url = reverse("api:task_detail", args=[self.task.pk])
+        first = client.patch(url, payload, format="json")
+        self.assertEqual(first.status_code, 200, first.content)
+        receipt = MobileWriteReceipt.objects.get(client_write_id=_idempotency_key_digest("reassign-lose-scope"))
+        self.assertEqual(receipt.status, MobileWriteReceipt.STATUS_APPLIED)
+        before = CaseActivityLog.objects.filter(task=self.task).count()
+        replay = client.patch(url, payload, format="json")
+        self.assertEqual(replay.status_code, 404, replay.content)
+        self.assertEqual(CaseActivityLog.objects.filter(task=self.task).count(), before)
+
     def test_task_patch_can_unassign(self):
         self.assertIsNotNone(self.task.assigned_user_id)
         response = self.client.patch(

@@ -386,11 +386,13 @@ def _user_can_access_case(user, case):
 
 
 def _purge_receipts_for_target_user(user_id, target_type, target_id):
+    # Assignment can change inside this actor's idempotent write. Keep its pending
+    # receipt until completion; every later replay still rechecks current scope.
     MobileWriteReceipt.objects.filter(
         user_id=user_id,
         target_type=target_type,
         target_id=str(target_id),
-    ).delete()
+    ).exclude(status=MobileWriteReceipt.STATUS_PENDING).delete()
 
 
 def _case_notification_recipients(case):

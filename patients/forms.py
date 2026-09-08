@@ -551,8 +551,10 @@ class CaseForm(StyledModelForm):
     def save(self, commit=True):
         instance = super().save(commit=False)
         if commit and instance.pk:
+            if instance.patient_id:
+                Patient.objects.select_for_update().filter(pk=instance.patient_id).first()
             current = Case.objects.select_for_update().get(pk=instance.pk)
-            if current.updated_at != self._loaded_updated_at:
+            if current.updated_at != self._loaded_updated_at or current.patient_id != instance.patient_id:
                 raise ValidationError("This case changed while you were editing. Reload before saving.")
         patient = self.cleaned_data.get("patient_instance") or getattr(self.instance, "patient", None)
         if isinstance(patient, Patient):

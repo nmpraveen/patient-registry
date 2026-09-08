@@ -2,7 +2,7 @@
 {% load static %}
 {% block content %}
 <h1>ANC outcome / EDD correction</h1>
-<p>{{ case.full_name }} · {{ case.uhid }} · {{ case.category.name }} · Case {{ case.pk }}</p>
+<p>{{ case.full_name }} · {{ case.mtno }}{% if case.uhid %} · {{ case.uhid }}{% endif %} · {{ case.category.name }} · Case {{ case.pk }}</p>
 <p>EDD corrections retain all task dates. Outcomes retain tasks unless you explicitly select open tasks to cancel. Completed history is preserved.</p>
 <form method="post" class="card card-body" style="max-width: 48rem">
   {% csrf_token %}{{ form.non_field_errors }}{{ form.base_updated_at }}

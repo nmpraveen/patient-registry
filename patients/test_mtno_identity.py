@@ -85,6 +85,24 @@ class PatientIdentityTests(TestCase):
         self.assertEqual(Patient.objects.count(), 0)
         self.assertEqual(identity_checkpoint(), checkpoint)
 
+    def test_mtno_namespace_rejects_new_and_later_hospital_ids_and_sql_bypass(self):
+        patient = Patient.objects.create(first_name="Synthetic", last_name="Example")
+        before = identity_checkpoint()
+        for value in (patient.mtno, " mt-000001 ", "MT-99"):
+            with self.subTest(value=value):
+                with self.assertRaises(ValidationError):
+                    Patient.objects.create(uhid=value)
+                patient.uhid = value
+                with self.assertRaises(ValidationError):
+                    patient.full_clean(exclude=["created_by", "merged_into"])
+                with self.assertRaises(ValidationError):
+                    patient.save()
+                with self.assertRaises(DatabaseError), transaction.atomic():
+                    Patient.objects.filter(pk=patient.pk).update(uhid=value)
+        patient.refresh_from_db()
+        self.assertEqual(patient.uhid, "")
+        self.assertEqual(identity_checkpoint(), before)
+
 
 @skipUnless(connection.vendor == "postgresql", "PostgreSQL lock/constraint proof")
 class PatientIdentityConcurrencyTests(TransactionTestCase):

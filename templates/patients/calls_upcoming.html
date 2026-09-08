@@ -908,7 +908,7 @@
           <div class="calls-sheet-row-shell">
             <div class="calls-sheet-row-select">
               <input id="call-case-{{ row.case_id }}" type="checkbox" name="case_ids" value="{{ row.case_id }}" data-case-select />
-              <label class="visually-hidden" for="call-case-{{ row.case_id }}">Select {{ row.patient_name }}, UHID {{ row.uhid }}, case {{ row.case_id }}</label>
+              <label class="visually-hidden" for="call-case-{{ row.case_id }}">Select {{ row.patient_name }}, {{ row.mtno }}{% if row.uhid %}, UHID {{ row.uhid }}{% endif %}, case {{ row.case_id }}</label>
             </div>
 
             <div>

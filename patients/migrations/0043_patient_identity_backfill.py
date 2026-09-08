@@ -1,5 +1,6 @@
 """Preserve source data; stop at ambiguous legacy identity instead of guessing."""
 import uuid
+import re
 
 from django.db import migrations
 
@@ -15,6 +16,8 @@ def backfill(apps, schema_editor):
     by_uhid = {}
     for patient in patients:
         canonical = " ".join(patient.uhid.split()).upper()
+        if re.fullmatch(r"MT-[0-9]+", canonical):
+            raise RuntimeError("Legacy UHID uses the reserved MTNO namespace; reviewed reconciliation is required, no identifiers were rewritten.")
         if canonical and (canonical != patient.uhid or canonical in by_uhid):
             raise RuntimeError("Legacy UHID requires explicit identity reconciliation; no identifiers were rewritten.")
         if canonical:
@@ -28,6 +31,9 @@ def backfill(apps, schema_editor):
 
     identity_fields = ["prefix", "first_name", "last_name", "patient_name", "gender", "blood_group",
                        "date_of_birth", "place", "age", "phone_number", "alternate_phone_number"]
+    for uhid in Case.objects.using(using).values_list("uhid", flat=True):
+        if re.fullmatch(r"MT-[0-9]+", " ".join(uhid.split()).upper()):
+            raise RuntimeError("Legacy case UHID uses the reserved MTNO namespace; reviewed reconciliation is required, no identifiers were rewritten.")
     # Preflight the whole exact-UHID group before linking or allocating. A blank
     # first record cannot establish compatibility between later nonblank values.
     orphan_cases = list(Case.objects.using(using).filter(patient_id__isnull=True).order_by("pk"))

@@ -3,6 +3,8 @@ from datetime import timedelta
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.test import TestCase
+from django.db import DatabaseError, connection, transaction
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APIClient
@@ -10,9 +12,9 @@ from rest_framework.test import APIClient
 from api.views import _case_edit_payload
 from .forms import CaseForm, PatientMergeConfirmationForm
 from .merge_recovery import recover_patient_merge
-from .models import Case, CaseDataScope, DepartmentConfig, Patient, PatientMergeRecovery, RoleSetting, ensure_default_departments
+from .models import Case, CaseDataScope, DepartmentConfig, Patient, PatientMergeRecovery, RoleSetting, Task, ensure_default_departments
 from .test_client import AuthVersionTestClient
-from .views import _merge_patient_records, _patient_search_queryset
+from .views import _build_upcoming_call_queue, _merge_patient_records, _patient_search_queryset
 
 
 class MtnoWorkflowTests(TestCase):
@@ -156,3 +158,46 @@ class MtnoWorkflowTests(TestCase):
         case = Case.objects.get()
         self.assertTrue(case.mtno.startswith("MT-"))
         self.assertEqual(case.uhid, "")
+
+    def test_blank_uhid_clinical_pages_show_permanent_identity(self):
+        case = self.create_case()
+        for route in ("case_vitals", "vitals_create"):
+            response = self.client.get(reverse("patients:" + route, args=[case.pk]))
+            self.assertContains(response, case.mtno)
+        case.category = DepartmentConfig.objects.get(name="ANC")
+        case.metadata = {"entry_mode": "quick_entry"}
+        case.save()
+        response = self.client.get(reverse("patients:anc_action", args=[case.pk]))
+        self.assertContains(response, case.mtno)
+
+    def test_call_queue_identity_queries_stay_constant_as_cases_grow(self):
+        today = timezone.localdate()
+        filters = {"range_start": today, "range_end": today}
+        first = self.create_case()
+        Task.objects.create(case=first, title="Synthetic call", due_date=today)
+        with CaptureQueriesContext(connection) as small:
+            first_rows = _build_upcoming_call_queue(filters)["rows"]
+        self.assertEqual(first_rows[0]["mtno"], first.mtno)
+        for _ in range(6):
+            case = self.create_case()
+            Task.objects.create(case=case, title="Synthetic call", due_date=today)
+        with CaptureQueriesContext(connection) as large:
+            rows = _build_upcoming_call_queue(filters)["rows"]
+        self.assertEqual(len(rows), 7)
+        self.assertEqual(len(large), len(small))
+        self.assertTrue(all(row["mtno"] and row["uhid"] == "" for row in rows))
+
+    def test_intake_rejects_uhid_in_permanent_number_namespace(self):
+        original = self.create_case()
+        response = self.api.post(reverse("api:case_list"), self.payload(uhid=original.mtno), format="json")
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(Patient.objects.count(), 1)
+        response = self.api.patch(reverse("api:case_detail", args=[original.pk]), {
+            "uhid": original.mtno, "base_values": {"uhid": ""},
+            "base_updated_at": original.updated_at.isoformat(),
+        }, format="json")
+        self.assertEqual(response.status_code, 400)
+        with self.assertRaises(DatabaseError), transaction.atomic():
+            Case.objects.filter(pk=original.pk).update(uhid=original.mtno)
+        original.refresh_from_db()
+        self.assertEqual(original.uhid, "")

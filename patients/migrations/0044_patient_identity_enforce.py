@@ -47,6 +47,8 @@ class Migration(migrations.Migration):
         migrations.AlterField(model_name="patient", name="mtno", field=models.CharField(max_length=32, unique=True, editable=False, blank=True)),
         migrations.AlterField(model_name="patient", name="identity_uuid", field=models.UUIDField(default=uuid.uuid4, unique=True, editable=False)),
         migrations.AddConstraint(model_name="patient", constraint=models.CheckConstraint(condition=~models.Q(mtno=""), name="patient_mtno_present")),
+        migrations.AddConstraint(model_name="patient", constraint=models.CheckConstraint(condition=~models.Q(uhid__iregex=r"^\s*MT-[0-9]+\s*$"), name="patient_uhid_not_mtno")),
+        migrations.AddConstraint(model_name="case", constraint=models.CheckConstraint(condition=~models.Q(uhid__iregex=r"^\s*MT-[0-9]+\s*$"), name="case_uhid_not_mtno")),
         # Refuse reversal here, before any guard or constraint can be removed.
         # The earlier backfill's refusal alone would leave this migration undone.
         migrations.RunPython(install_guards),

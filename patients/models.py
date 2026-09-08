@@ -454,6 +454,7 @@ class Patient(MandatoryAuditModelMixin, models.Model):
         constraints = [
             models.UniqueConstraint(fields=["uhid"], condition=~models.Q(uhid=""), name="patient_nonblank_uhid_unique", violation_error_message="Patient with this UHID already exists. Select the existing patient."),
             models.CheckConstraint(condition=~models.Q(mtno=""), name="patient_mtno_present"),
+            models.CheckConstraint(condition=~models.Q(uhid__iregex=r"^\s*MT-[0-9]+\s*$"), name="patient_uhid_not_mtno"),
         ]
         indexes = [
             models.Index(fields=["first_name", "last_name"]),
@@ -481,6 +482,8 @@ class Patient(MandatoryAuditModelMixin, models.Model):
 
     def clean(self):
         self.uhid = " ".join((self.uhid or "").split()).upper()
+        from .identity import validate_hospital_uhid
+        validate_hospital_uhid(self.uhid)
         phone_errors = {}
         if self.phone_number and (not self.phone_number.isdigit() or len(self.phone_number) != 10):
             phone_errors["phone_number"] = "Phone number must be exactly 10 digits."
@@ -542,9 +545,10 @@ class Patient(MandatoryAuditModelMixin, models.Model):
 
     @mandatory_audit_atomic
     def save(self, *args, **kwargs):
-        from .identity import reserve_patient_identity
+        from .identity import reserve_patient_identity, validate_hospital_uhid
 
         using = kwargs.get("using") or self._state.db or "default"
+        validate_hospital_uhid(self.uhid)
         previous = None
         if self._state.adding:
             reserve_patient_identity(self, using=using)
@@ -1250,6 +1254,7 @@ class Case(MandatoryAuditModelMixin, models.Model):
 
     class Meta:
         ordering = ["-updated_at"]
+        constraints = [models.CheckConstraint(condition=~models.Q(uhid__iregex=r"^\s*MT-[0-9]+\s*$"), name="case_uhid_not_mtno")]
         indexes = [
             models.Index(fields=["patient"]),
             models.Index(fields=["first_name", "last_name"]),

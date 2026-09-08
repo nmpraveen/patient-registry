@@ -138,3 +138,22 @@ class PatientIdentityMigrationTests(TransactionTestCase):
             self.assertEqual((patient.mtno, patient.identity_uuid), original)
             self.assertEqual(list(Issuance.objects.order_by("mtno").values()), ledger_before)
             self.assertEqual(list(Allocator.objects.values()), floor_before)
+
+    def test_legacy_reserved_uhids_stop_before_any_link_or_issuance(self):
+        for existing_patient in (False, True):
+            with self.subTest(existing_patient=existing_patient), self.historical_schema() as apps:
+                Patient = apps.get_model("patients", "Patient")
+                Case = apps.get_model("patients", "Case")
+                Issuance = apps.get_model("patients", "PatientIdentityIssuance")
+                self.seed_orphans(apps, ("Synthetic Alice",))
+                if existing_patient:
+                    Patient.objects.create(uhid="MT-000001", first_name="Synthetic")
+                else:
+                    Case.objects.update(uhid="MT-000001")
+                old_patients = list(Patient.objects.values())
+                old_cases = list(Case.objects.values())
+                with self.assertRaisesMessage(RuntimeError, "reserved MTNO namespace"):
+                    MigrationExecutor(connection).migrate([self.after])
+                self.assertEqual(list(Patient.objects.values()), old_patients)
+                self.assertEqual(list(Case.objects.values()), old_cases)
+                self.assertEqual(Issuance.objects.count(), 0)

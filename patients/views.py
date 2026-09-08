@@ -3220,8 +3220,8 @@ def _upcoming_call_flag_payloads(case):
 
 def _upcoming_call_task_queryset(*, range_start, range_end):
     return _visible_task_queryset(
-        Task.objects.select_related("case", "case__category")
-        .only(*DashboardView.task_only_fields)
+        Task.objects.select_related("case", "case__category", "case__patient")
+        .only(*DashboardView.task_only_fields, "case__uhid", "case__patient__id", "case__patient__mtno")
         .order_by("due_date", "case_id", "id")
     ).filter(status=TaskStatus.SCHEDULED, due_date__range=(range_start, range_end))
 
@@ -3338,7 +3338,7 @@ def _build_upcoming_call_queue(filters):
             {
                 "case_id": case.id,
                 "mtno": case.mtno,
-        "uhid": case.uhid,
+                "uhid": case.uhid,
                 "primary_task_id": primary_task.id,
                 "patient_name": patient_name,
                 "short_name": _build_short_name(case),

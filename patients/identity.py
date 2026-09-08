@@ -15,6 +15,11 @@ from django.db.models import Q
 MAX_IDENTITY_NUMBER = 9223372036854775807
 
 
+def validate_hospital_uhid(value):
+    if re.fullmatch(r"MT-[0-9]+", " ".join((value or "").split()).upper()):
+        raise ValidationError({"uhid": "MT- followed by digits is reserved for MTNO. Enter the hospital UHID."})
+
+
 def format_mtno(number):
     if type(number) is not int or not 1 <= number <= MAX_IDENTITY_NUMBER:
         raise ValidationError("Invalid MTNO allocation number.")

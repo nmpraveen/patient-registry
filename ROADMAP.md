@@ -2,6 +2,8 @@
 
 ## Issue #113 Stage 3 source gate
 
+- Stage 3's four fresh GitHub comments are implemented and locally verified: API/import serialization, constant-query calls identity, clinical-page MTNO labels and reserved namespace enforcement. Complete their bounded closeout and fresh exact-head CI on PR #117. Preserve the independent inherited task-receipt fix as Stage 4 ownership.
+
 - Stage 3 review corrections address the two validated migration blockers: whole-group ambiguity preflight and irreversible enforcement before reverse mutation. Focused PostgreSQL regressions pass. Finish the correction-only recheck and fresh exact-head CI on the existing PR #117; no broader review restart or production activation.
 
 - Stage 2 is merged in PR #116 at `4ca2a2ec7da113180bcb0885d9384ff9974fa796`; its earlier pending gates below are historical.

@@ -77,6 +77,26 @@ class IdentityRecoveryTests(TestCase):
         self.assertEqual(list(Patient.objects.order_by("pk").values_list("pk", "mtno", "identity_uuid")), before)
         self.assertEqual(identity_checkpoint(), checkpoint)
 
+    def test_reserved_hospital_namespace_rejects_all_bundle_versions_before_delete(self):
+        patient = self.patient("HOSP-SYNTHETIC")
+        self.case(patient)
+        _, original = bundle.load_bundle_archive(bundle.create_bundle_archive()[0])
+        checkpoint = identity_checkpoint()
+        for version in (1, 2, 3, 4):
+            with self.subTest(version=version):
+                payload = deepcopy(original)
+                payload["patients"][0]["uhid"] = patient.mtno
+                payload["cases"][0]["uhid"] = patient.mtno
+                payload["cases"][0]["patient_uhid"] = patient.mtno
+                if version < 4:
+                    payload.pop("identity")
+                self.assert_rejected_before_delete(payload, "reserved MTNO", version=version)
+                with self.assertRaisesMessage(bundle.BundleValidationError, "reserved MTNO"):
+                    bundle._replace_patient_data(payload)
+                patient.refresh_from_db()
+                self.assertEqual(patient.uhid, "HOSP-SYNTHETIC")
+                self.assertEqual(identity_checkpoint(), checkpoint)
+
     def test_two_blank_uhids_and_merged_source_round_trip_with_call_reason(self):
         survivor = self.patient()
         second = self.patient(name="Second")
@@ -267,7 +287,7 @@ class IdentityImportConcurrencyTests(TransactionTestCase):
         def importer():
             close_old_connections()
             try:
-                with identity_allocation_lock():
+                with bundle._replacement_lock():
                     locked.set()
                     if not release.wait(10):
                         raise AssertionError("Import barrier timed out")

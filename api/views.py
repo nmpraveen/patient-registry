@@ -35,6 +35,7 @@ from patients.models import (
     DepartmentConfig,
     Gender,
     NonCommunicableDisease,
+    Patient,
     ReviewFrequency,
     RoleSetting,
     SurgicalPathway,
@@ -967,6 +968,7 @@ def _idempotent_response(
     client_write_id = serializer.validated_data.get("client_write_id", "").strip()
     if not client_write_id:
         with transaction.atomic():
+            MobileDatasetState.objects.select_for_update().get_or_create(pk=1)
             locked_user = _lock_mobile_authorization_context(request.user)
             request.user = locked_user
             _authorize_idempotent_target(locked_user, operation, target_type, target_id, lock=True)
@@ -976,11 +978,11 @@ def _idempotent_response(
     binding = _idempotency_binding(request, operation, target_type, target_id)
     receipt_key = _idempotency_key_digest(client_write_id)
     with transaction.atomic():
+        dataset_state, _ = MobileDatasetState.objects.select_for_update().get_or_create(pk=1)
         purge_expired_mobile_receipts()
         locked_user = _lock_mobile_authorization_context(request.user)
         request.user = locked_user
         _authorize_idempotent_target(locked_user, operation, target_type, target_id, lock=True)
-        dataset_state, _ = MobileDatasetState.objects.select_for_update().get_or_create(pk=1)
         binding["authorization_hash"] = _authorization_hash(locked_user)
         binding["dataset_epoch"] = dataset_state.epoch
 
@@ -1055,11 +1057,11 @@ def _idempotent_replay_response(
     binding = _idempotency_binding(request, operation, target_type, target_id)
     receipt_key = _idempotency_key_digest(client_write_id)
     with transaction.atomic():
+        dataset_state, _ = MobileDatasetState.objects.select_for_update().get_or_create(pk=1)
         purge_expired_mobile_receipts()
         locked_user = _lock_mobile_authorization_context(request.user)
         request.user = locked_user
         _authorize_idempotent_target(locked_user, operation, target_type, target_id, lock=True)
-        dataset_state, _ = MobileDatasetState.objects.select_for_update().get_or_create(pk=1)
         receipt = MobileWriteReceipt.objects.select_for_update().filter(
             user=locked_user,
             client_write_id=receipt_key,
@@ -1148,8 +1150,15 @@ def _authorize_idempotent_target(user, operation, target_type, target_id, *, loc
     if not user.is_active or not has_capability(user, capability):
         raise PermissionDenied("Current authorization does not permit this operation.")
     if target_type == "case":
+        initial = None
+        if lock and operation == "case_update":
+            initial = get_object_or_404(_accessible_case_queryset(user), pk=target_id)
+            if initial.patient_id:
+                Patient.objects.select_for_update().filter(pk=initial.patient_id).first()
         base = Case.objects.select_for_update() if lock else Case.objects.all()
         target = get_object_or_404(_accessible_case_queryset(user, base), pk=target_id)
+        if initial is not None and target.patient_id != initial.patient_id:
+            raise PermissionDenied("Case identity changed; refresh before editing.")
         if lock:
             list(Task.objects.select_for_update().filter(case_id=target.pk).order_by("pk"))
         return target

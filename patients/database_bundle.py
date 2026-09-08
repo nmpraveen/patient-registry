@@ -4,6 +4,7 @@ import json
 import subprocess
 import zipfile
 from copy import deepcopy
+from contextlib import contextmanager
 from datetime import date, datetime, timezone as dt_timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -15,6 +16,7 @@ from django.db import transaction
 from django.db.models import Prefetch
 from django.utils import timezone
 from .anc_validation import validate_anc_outcome
+from .identity import validate_hospital_uhid
 
 from .models import (
     CallLog,
@@ -148,11 +150,22 @@ def prune_backup_bundles(output_dir, *, keep, backup_kind=None):
     return to_remove
 
 
-def import_bundle_bytes(bundle_bytes, *, keep=DEFAULT_BACKUP_KEEP):
-    _, payload = load_bundle_archive(bundle_bytes)
+@contextmanager
+def _replacement_lock():
+    from api.models import MobileDatasetState
     from .identity import identity_allocation_lock
 
-    with identity_allocation_lock():
+    # API receipt, replay and unkeyed writes take this same gate before actor
+    # and target locks. Exports only need the allocator/Patient/Case order.
+    with transaction.atomic():
+        MobileDatasetState.objects.select_for_update().get_or_create(pk=1)
+        with identity_allocation_lock():
+            yield
+
+
+def import_bundle_bytes(bundle_bytes, *, keep=DEFAULT_BACKUP_KEEP):
+    _, payload = load_bundle_archive(bundle_bytes)
+    with _replacement_lock():
         payload = _preflight_replacement(payload)
         safety_backup_path, _, _ = write_backup_bundle(
             keep=keep,
@@ -560,6 +573,7 @@ def _validate_manifest_and_payload(manifest, payload, patient_data_bytes):
         canonical_uhid = " ".join(uhid.split()).upper()
         if uhid != canonical_uhid:
             raise BundleValidationError("Patient UHID must be canonical; ambiguous normalization is not supported.")
+        _validate_hospital_identifier(uhid)
         if uhid and uhid in patient_uhids:
             raise BundleValidationError(f"Backup contains duplicate patient definitions for {uhid}.")
         patient_uhids.add(uhid)
@@ -652,6 +666,13 @@ def _validate_aliases(patients_by_key, alias_field):
             raise BundleValidationError("Merged aliases must reference one bundled unmerged survivor; self-links, cycles and chains are invalid.")
 
 
+def _validate_hospital_identifier(uhid):
+    try:
+        validate_hospital_uhid(uhid)
+    except ValidationError as exc:
+        raise BundleValidationError("Hospital UHID uses the reserved MTNO namespace; reviewed reconciliation is required.") from exc
+
+
 def _validate_identity_graph(payload):
     from .identity_recovery import validate_identity_checkpoint
 
@@ -679,6 +700,7 @@ def _validate_identity_graph(payload):
         uhid = patient.get("uhid")
         if not isinstance(uhid, str) or uhid != " ".join(uhid.split()).upper() or (uhid and uhid in uhids):
             raise BundleValidationError("Patient UHIDs must be canonical and unique when present.")
+        _validate_hospital_identifier(uhid)
         uhids.add(uhid)
         by_mtno[mtno] = patient
         uuids.add(identity_uuid)
@@ -699,6 +721,7 @@ def _validate_legacy_graph(payload):
         uhid = patient.get("uhid") if isinstance(patient, dict) else None
         if not isinstance(uhid, str) or not uhid or uhid != " ".join(uhid.split()).upper() or uhid in by_uhid:
             raise BundleValidationError("Legacy patients require unique canonical nonblank UHIDs.")
+        _validate_hospital_identifier(uhid)
         by_uhid[uhid] = patient
     _validate_aliases(by_uhid, "merged_into_uhid")
     for case in payload.get("cases", []):
@@ -755,7 +778,6 @@ def _preflight_replacement(payload):
 
 def _replace_patient_data(payload):
     from api.notifications import invalidate_mobile_dataset, suspend_mobile_notifications
-    from .identity import identity_allocation_lock
 
     payload = _normalize_payload_for_import(payload)
     usernames = sorted(_collect_usernames(payload))
@@ -769,7 +791,7 @@ def _replace_patient_data(payload):
         category["name"]: category for category in payload.get("categories", []) if isinstance(category, dict)
     }
 
-    with identity_allocation_lock(), suspend_mobile_notifications():
+    with _replacement_lock(), suspend_mobile_notifications():
         payload = _preflight_replacement(payload)
         for category_name, category_data in category_payload_by_name.items():
             if category_name in categories_by_name:

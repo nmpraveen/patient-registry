@@ -1,3 +1,9 @@
+## 2026.09.08.01.53
+
+- Serialize patient imports with API writes and receipt replays before actor/target locks; preserve Patient-before-Case editing and fresh linkage checks.
+- Reserve the MTNO namespace against hospital-ID collisions in writes, database constraints and bundle preflight; stop incompatible legacy migration without rewriting identifiers.
+- Keep calls-queue identity queries constant and display MTNO on blank-UHID vitals and ANC pages.
+
 ## 2026.09.08.00.57
 
 - Reject conflicting identity evidence across an entire legacy UHID group before backfill linkage or issuance, including blank-first and partially blank existing-patient cases.

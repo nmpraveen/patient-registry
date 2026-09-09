@@ -181,12 +181,11 @@ deployment script tests both `/app/backups` and `/app/staticfiles` before it
 starts or replaces the web service, also verifies `/tmp`, and fails closed if
 any runtime write location is not writable.
 
-GitHub Actions tests the pull request head SHA directly. The required checks are
-listed in `.github/BRANCH_PROTECTION.md`, which also records the mandatory
-order for the issue #120 reduction from ten to seven checks: apply the
-seven-check payload and read it back **before** the `android` job stops
-reporting its three contexts. Branch protection is a post-merge administrator
-action:
+GitHub Actions tests the pull request head SHA directly. The seven required
+checks are listed in `.github/BRANCH_PROTECTION.md`. The issue #120 transition
+was completed on 2026-09-09: live protection was reduced and read back before
+the `android` job was retired. Use the same apply-then-read-back discipline for
+any future required-context change:
 
 ```powershell
 .\scripts\apply-branch-protection.ps1 -ReviewerPolicy SoloSafe -SignedCommits NotRequired
@@ -194,8 +193,9 @@ action:
 ```
 
 The first command is read-only. Do not use `-Apply` before the workflow exists
-on `main` and has emitted all required check names. Verify the result with a
-read-back that lists exactly the seven web/security contexts:
+on `main` and has emitted all proposed check names. Verify the result with a
+read-back; for the current policy it must list exactly the seven web/security
+contexts and no `Android (...)` context:
 
 ```bash
 gh api repos/nmpraveen/patient-registry/branches/main/protection \

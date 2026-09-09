@@ -1,3 +1,9 @@
+## 2026.09.09.16.52
+
+- Apply and read back the seven-context SoloSafe policy on live `main` only after the repaired PR head passed all ten former required checks.
+- Retire the deprecated Android matrix from pull-request CI after live protection no longer requires its unit, lint and release contexts.
+- Record the completed safety transition in branch-protection, project-state, roadmap and runbook documentation.
+
 ## 2026.09.09.16.36
 
 - Restore the single full-tree vulnerability, secret and misconfiguration scan instead of excluding retained Android source.

@@ -17,15 +17,14 @@ OpenAPI, Supply-chain scans, Compose and shell, Container integrity and
 Frontend no-overflow. No web, API-security, migration, container or
 supply-chain gate is weakened; only the three Android contexts are dropped.
 
-Live `main` protection is **unchanged by this PR** and still requires ten
-checks, verified by read-only audit on 2026-09-09. The `android` job in
-`.github/workflows/ci.yml` is therefore deliberately left running and still
-reports all three Android contexts, so this PR and any concurrent web PR
-remain mergeable. Retiring that job is a separate follow-up that must land
-only after an administrator applies the seven-check payload and records a
-read-back; the required ordering is documented in
-`.github/BRANCH_PROTECTION.md`. The prior "unprotected on 2026-08-29" claim in
-that file was stale and has been corrected against the live read-back.
+Live `main` protection was changed on 2026-09-09 only after PR head `6665909`
+passed all ten former contexts. The sanctioned installer applied the SoloSafe
+payload at main SHA `a8e528b1da16467c11124f10d68d80676c7845b4`; a fresh
+read-back returned exactly the seven Actions-app-bound web/security contexts,
+strict mode, administrator enforcement and no rulesets. Only after that
+read-back was recorded was the `android` job retired from
+`.github/workflows/ci.yml`. The ordering and rollback procedure are documented
+in `.github/BRANCH_PROTECTION.md`.
 
 The repository filesystem vulnerability, secret and misconfiguration scan
 continues to cover the complete committed tree, including retained Android

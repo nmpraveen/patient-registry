@@ -2,15 +2,15 @@
 
 ## Issue #120 web-only delivery
 
-- PR 1 (this change) marks Android deprecated in project documentation and
-  reduces the tracked required-check payloads from ten to seven. It changes
-  source only.
-- **Next action, administrator:** apply the seven-check payload to live `main`
-  and record the read-back. Until that happens, live protection still requires
-  the three Android contexts.
-- **Only after that read-back:** retire the `android` job in
-  `.github/workflows/ci.yml` to manual/non-required maintenance. Doing this
-  earlier blocks every pull request on checks that will never report.
+- PR 1 marks Android deprecated in project documentation and reduces both live
+  and tracked required checks from ten to seven.
+- The seven-check SoloSafe payload was applied and read back on 2026-09-09 at
+  main SHA `a8e528b1da16467c11124f10d68d80676c7845b4`. Strict mode,
+  administrator enforcement and Actions-app binding are preserved; no Android
+  context remains.
+- After that read-back, the `android` job was retired from
+  `.github/workflows/ci.yml`. Retained Android source remains covered by the
+  full-tree supply-chain scan and Dependabot.
 - Android device acceptance, external signing and APK release are removed from
   issue #120 acceptance. They are not scheduled work for this project.
 - PRs 2-8 (dashboard, intake, FUNo identity, case detail, PhoneBook/notices,

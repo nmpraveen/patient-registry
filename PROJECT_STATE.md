@@ -27,18 +27,15 @@ read-back; the required ordering is documented in
 `.github/BRANCH_PROTECTION.md`. The prior "unprotected on 2026-08-29" claim in
 that file was stale and has been corrected against the live read-back.
 
-The CI filesystem scan is now split. Vulnerability scanning skips `android/`;
-secret and misconfiguration scanning still cover the whole tree, `android/`
-included. This was forced by `CVE-2026-75595` in `io.netty:netty-handler`,
-which appears only in `android/**/gradle.lockfile`. Those lockfiles last
-changed in `cc1ad40` and passed the identical scan on `main` at `a8e528b` on
-2026-09-08; the trivy image is digest-pinned but its vulnerability database is
-fetched at run time, so the same tree began failing on 2026-09-09. Because
-Android is deprecated, that lockfile will not be regenerated, so an unfixable
-transitive CVE would otherwise block all unrelated web work permanently.
-Dependabot still watches the `/android` gradle ecosystem, so dependency
-visibility on the retained source is preserved without being a merge gate. No
-web, server, Python-audit, image-pin or production-image scanning is reduced.
+The repository filesystem vulnerability, secret and misconfiguration scan
+continues to cover the complete committed tree, including retained Android
+source. When the runtime Trivy database began reporting CRITICAL
+`CVE-2026-75595` in Android's centrally pinned `io.netty:netty-handler`
+4.1.136.Final, the security override was advanced to the reported fixed
+4.1.137.Final release and the strict Gradle locks and checksum metadata were
+regenerated. The finding is fixed rather than excluded or waived. Dependabot
+continues to watch the `/android` Gradle ecosystem, and no web, server, Android,
+Python-audit, image-pin or production-image scanning is reduced.
 
 `deploy/Dockerfile.caddy` bumps its pinned `google.golang.org/grpc`
 replacement from v1.83.1 to v1.83.2, clearing unwaived HIGH `CVE-2026-84445`

@@ -172,28 +172,12 @@ jobs:
           mkdir -p "$scan_root"
           git archive --format=tar "${EXPECTED_SHA}" | tar -xf - -C "$scan_root"
           echo "MEDTRACK_SOURCE_SCAN_ROOT=$scan_root" >> "$GITHUB_ENV"
-      # Vulnerability scanning skips android/ because Android is a deprecated
-      # target (issue #120): its Gradle lockfiles are never built, shipped or
-      # executed, and nobody maintains them, so an unfixable transitive CVE
-      # there would permanently block unrelated web work. Dependabot still
-      # watches the /android gradle ecosystem, so the visibility is retained
-      # without being a merge gate. Secret and misconfiguration scanning below
-      # still covers the entire tree, android/ included. Web and server
-      # dependency scanning is unchanged.
-      - name: Filesystem vulnerability scan (excluding deprecated android/)
+      - name: Filesystem vulnerability, secret, and misconfiguration scan
         run: |
           docker run --rm \
             --volume "${MEDTRACK_SOURCE_SCAN_ROOT}:/source:ro" \
             aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969 \
-            fs --scanners vuln --skip-dirs /source/android --skip-dirs android \
-            --severity HIGH,CRITICAL \
-            --ignore-unfixed=false --exit-code 1 /source
-      - name: Filesystem secret and misconfiguration scan (entire tree)
-        run: |
-          docker run --rm \
-            --volume "${MEDTRACK_SOURCE_SCAN_ROOT}:/source:ro" \
-            aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969 \
-            fs --scanners secret,misconfig --severity HIGH,CRITICAL \
+            fs --scanners vuln,secret,misconfig --severity HIGH,CRITICAL \
             --ignore-unfixed=false --exit-code 1 /source
       - name: Scan and SBOM every non-web production service image
         run: |

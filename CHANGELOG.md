@@ -1,3 +1,9 @@
+## 2026.09.09.16.36
+
+- Restore the single full-tree vulnerability, secret and misconfiguration scan instead of excluding retained Android source.
+- Update Android's centrally pinned Netty modules from 4.1.136.Final to the fixed 4.1.137.Final release and regenerate all strict locks and checksum metadata for `CVE-2026-75595`.
+- Make the Windows dependency verifier accept the tracked CRLF Gradle wrapper properties, then prove strict offline dependency resolution and the unit/lint/release gates.
+
 ## 2026.09.09.15.11
 
 - Mark Android a deprecated, non-maintained release target across `AGENTS.md`, `README.md`, `android/README.md` and `android/RELEASE.md`; retain `android/` source, history and dependency-security visibility.
@@ -5,7 +11,7 @@
 - Reduce the tracked required-check payloads and `scripts/apply-branch-protection.ps1` from ten checks to the seven web/security gates; no Django, migration, OpenAPI, supply-chain, compose, container or frontend gate is weakened.
 - Correct the stale "unprotected on 2026-08-29" claim in `.github/BRANCH_PROTECTION.md` against a 2026-09-09 live read-back, and document the mandatory apply-then-retire ordering.
 - Keep the `android` CI job reporting all three contexts, because live `main` protection still requires them; retiring it is a follow-up gated on the administrator apply and read-back.
-- Split the CI filesystem scan: vulnerability scanning now skips the deprecated `android/` tree, while secret and misconfiguration scanning still cover the entire repository. Web and server dependency scanning, Python audit, image pins and production image scans are unchanged.
+- Split the CI filesystem scan: vulnerability scanning skips the deprecated `android/` tree, while secret and misconfiguration scanning still cover the entire repository. Web and server dependency scanning, Python audit, image pins and production image scans are unchanged.
 - Bump the Caddy build's pinned `google.golang.org/grpc` replacement from v1.83.1 to v1.83.2, clearing unwaived HIGH `CVE-2026-84445` in the public-facing reverse proxy.
 
 ## 2026.09.08.02.57

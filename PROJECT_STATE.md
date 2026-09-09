@@ -40,6 +40,14 @@ Dependabot still watches the `/android` gradle ecosystem, so dependency
 visibility on the retained source is preserved without being a merge gate. No
 web, server, Python-audit, image-pin or production-image scanning is reduced.
 
+`deploy/Dockerfile.caddy` bumps its pinned `google.golang.org/grpc`
+replacement from v1.83.1 to v1.83.2, clearing unwaived HIGH `CVE-2026-84445`
+in the public-facing reverse proxy. This followed the file's existing
+`--replace` convention alongside the crypto/net/text pins. The finding was
+pre-existing on `main` and surfaced by the same trivy database refresh; the
+postgres service image scanned clean at `high=0 critical=0 waivers=0`, and
+`security/caddy-vex.json` remains an empty waiver set, so nothing was waived.
+
 `.github/workflows/attest-release.yml` and
 `.github/workflows/supply-chain-refresh.yml` were inspected and contain no
 Android, APK, Gradle or other native artifact assumptions, so neither needed

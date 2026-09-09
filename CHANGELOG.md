@@ -1,4 +1,4 @@
-## 2026.09.09.14.57
+## 2026.09.09.15.11
 
 - Mark Android a deprecated, non-maintained release target across `AGENTS.md`, `README.md`, `android/README.md` and `android/RELEASE.md`; retain `android/` source, history and dependency-security visibility.
 - Remove native feature parity, emulator testing and APK release acceptance from issue #120 scope, and mark the `AGENTS.md` emulator workflow historical rather than deleting it.
@@ -6,6 +6,7 @@
 - Correct the stale "unprotected on 2026-08-29" claim in `.github/BRANCH_PROTECTION.md` against a 2026-09-09 live read-back, and document the mandatory apply-then-retire ordering.
 - Keep the `android` CI job reporting all three contexts, because live `main` protection still requires them; retiring it is a follow-up gated on the administrator apply and read-back.
 - Split the CI filesystem scan: vulnerability scanning now skips the deprecated `android/` tree, while secret and misconfiguration scanning still cover the entire repository. Web and server dependency scanning, Python audit, image pins and production image scans are unchanged.
+- Bump the Caddy build's pinned `google.golang.org/grpc` replacement from v1.83.1 to v1.83.2, clearing unwaived HIGH `CVE-2026-84445` in the public-facing reverse proxy.
 
 ## 2026.09.08.02.57
 

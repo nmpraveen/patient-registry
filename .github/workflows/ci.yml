@@ -280,6 +280,14 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  # DEPRECATED TARGET (issue #120): Android is no longer an acceptance gate for
+  # web work. This job is retained and still reports "Android (unit)",
+  # "Android (lint)" and "Android (release)" ONLY because live `main`
+  # protection still requires those three contexts. Removing or skipping it
+  # before an administrator applies the seven-check payload in
+  # .github/branch-protection.json would leave every pull request permanently
+  # blocked on checks that never report. See .github/BRANCH_PROTECTION.md,
+  # "Android deprecation and required apply ordering".
   android:
     name: Android (${{ matrix.gate }})
     runs-on: ubuntu-latest

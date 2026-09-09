@@ -1,5 +1,39 @@
 # PROJECT_STATE.md
 
+## Issue #120 PR 1 web-only baseline and Android deprecation
+
+MEDTRACK is a web-only project for issue #120. Android is deprecated as a
+release target; `android/` source, history and its dependency-security
+visibility are retained, and the shared server API keeps its authentication,
+authorization, idempotency and integrity tests. `AGENTS.md`, `README.md`,
+`android/README.md` and `android/RELEASE.md` carry the deprecation notice, and
+the Android emulator workflow in `AGENTS.md` is marked historical rather than
+deleted.
+
+`.github/branch-protection.json`, `.github/branch-protection.one-approval.json`
+and the `$expectedContexts` list in `scripts/apply-branch-protection.ps1` now
+describe seven required checks: Django tests, Migration integrity, Strict
+OpenAPI, Supply-chain scans, Compose and shell, Container integrity and
+Frontend no-overflow. No web, API-security, migration, container or
+supply-chain gate is weakened; only the three Android contexts are dropped.
+
+Live `main` protection is **unchanged by this PR** and still requires ten
+checks, verified by read-only audit on 2026-09-09. The `android` job in
+`.github/workflows/ci.yml` is therefore deliberately left running and still
+reports all three Android contexts, so this PR and any concurrent web PR
+remain mergeable. Retiring that job is a separate follow-up that must land
+only after an administrator applies the seven-check payload and records a
+read-back; the required ordering is documented in
+`.github/BRANCH_PROTECTION.md`. The prior "unprotected on 2026-08-29" claim in
+that file was stale and has been corrected against the live read-back.
+
+`.github/workflows/attest-release.yml` and
+`.github/workflows/supply-chain-refresh.yml` were inspected and contain no
+Android, APK, Gradle or other native artifact assumptions, so neither needed
+changing. `scripts/write_build_provenance.py` still covers
+`android/gradle/verification-metadata.xml`, which stays valid because the
+native source is retained.
+
 ## Issue #113 Stage 5 staff operations
 
 The four late PR #119 findings are corrected. Scheduler selection and remaining-work counts use current eligible staff, with actor-before-definition locks and a fresh authorization check; loss of eligibility preserves the cursor/history until authorization returns or reassignment. The clinical mock seed no longer creates staff rows; the explicit operational seed remains. `/api/me/` supplies `capabilities.staff_operations`, and native staff routes/polling require a verified allowed profile. Staff and clinical foreground calls share the account refresh client; stale denial responses cannot override newer authorization.

@@ -1,5 +1,11 @@
 # MEDTRACK Android v1
 
+> **DEPRECATED**
+>
+> Android is deprecated and is not an actively maintained release target. Issue #120 targets web and responsive mobile web. Native feature parity, emulator testing, and Android release acceptance are outside its scope. Shared server security and data-integrity guarantees remain supported.
+>
+> This directory is retained as source and history. It is not built, tested or released as part of web work, and its documentation below describes the last actively maintained state rather than a current release plan.
+
 Native Android companion app for MEDTRACK using Kotlin, Jetpack Compose, Room, WorkManager, Retrofit, and Firebase Cloud Messaging.
 
 This directory is intentionally separate from the Django app. The Retrofit API points at the DRF mobile endpoints mounted under `/api/...` in this repo.

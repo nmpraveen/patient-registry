@@ -2,6 +2,12 @@
 
 A Django + PostgreSQL MVP for **case-based follow-up tracking**.
 
+> **Android is deprecated**
+>
+> Android is deprecated and is not an actively maintained release target. Issue #120 targets web and responsive mobile web. Native feature parity, emulator testing, and Android release acceptance are outside its scope. Shared server security and data-integrity guarantees remain supported.
+>
+> The `android/` directory and its history are retained. Server-side API authentication, authorization, idempotency and integrity tests remain supported and tested; deprecating the client does not deprecate the server's security boundary. See [.github/BRANCH_PROTECTION.md](.github/BRANCH_PROTECTION.md).
+
 Permanent patient MTNO is assigned on save; hospital UHID is optional. Existing identifiers, merge aliases and recovery checkpoints remain traceable. See [Stage 3 identity and recovery](docs/issue-113-stage-3.md).
 
 ## What this build supports
@@ -156,7 +162,7 @@ docker compose exec web python manage.py seed_mock_data --count 30 --reset
 - `--reset` clears only previously seeded mock cases (and linked call/activity logs) before seeding.
 - `--reset-all` clears all case/task/activity data before seeding and now requires confirmation.
 - `--yes-reset-all` skips the interactive `--reset-all` confirmation prompt (required in non-interactive runs, e.g. UI/automation).
-- The seed includes today, upcoming, overdue, awaiting-report, red-flag, quick-entry, call-log, notification, ANC, Surgery, and Medicine coverage for Android/UI demos.
+- The seed includes today, upcoming, overdue, awaiting-report, red-flag, quick-entry, call-log, notification, ANC, Surgery, and Medicine coverage for web UI demos.
 - Demo staff users are created with password `pass`: `demo_admin`, `demo_doctor`, `demo_nurse`, `demo_caller`, and `demo_reception`. On the local Test NNH server, existing `admin` is used for the Admin queue instead.
 
 ## Updating to latest version safely (with backup)

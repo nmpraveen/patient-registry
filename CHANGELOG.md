@@ -1,10 +1,11 @@
-## 2026.09.09.14.25
+## 2026.09.09.14.57
 
 - Mark Android a deprecated, non-maintained release target across `AGENTS.md`, `README.md`, `android/README.md` and `android/RELEASE.md`; retain `android/` source, history and dependency-security visibility.
 - Remove native feature parity, emulator testing and APK release acceptance from issue #120 scope, and mark the `AGENTS.md` emulator workflow historical rather than deleting it.
 - Reduce the tracked required-check payloads and `scripts/apply-branch-protection.ps1` from ten checks to the seven web/security gates; no Django, migration, OpenAPI, supply-chain, compose, container or frontend gate is weakened.
 - Correct the stale "unprotected on 2026-08-29" claim in `.github/BRANCH_PROTECTION.md` against a 2026-09-09 live read-back, and document the mandatory apply-then-retire ordering.
 - Keep the `android` CI job reporting all three contexts, because live `main` protection still requires them; retiring it is a follow-up gated on the administrator apply and read-back.
+- Split the CI filesystem scan: vulnerability scanning now skips the deprecated `android/` tree, while secret and misconfiguration scanning still cover the entire repository. Web and server dependency scanning, Python audit, image pins and production image scans are unchanged.
 
 ## 2026.09.08.02.57
 

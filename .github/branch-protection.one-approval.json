@@ -8,9 +8,6 @@
       { "context": "Supply-chain scans", "app_id": 15368 },
       { "context": "Compose and shell", "app_id": 15368 },
       { "context": "Container integrity", "app_id": 15368 },
-      { "context": "Android (unit)", "app_id": 15368 },
-      { "context": "Android (lint)", "app_id": 15368 },
-      { "context": "Android (release)", "app_id": 15368 },
       { "context": "Frontend no-overflow", "app_id": 15368 }
     ]
   },

@@ -13,10 +13,12 @@ $ErrorActionPreference = "Stop"
 $repository = "nmpraveen/patient-registry"
 $branchName = "main"
 $actionsAppId = 15368
+# Android is a deprecated, non-required target (issue #120). These seven
+# web/security gates are the complete required set and must stay in the same
+# order as the tracked .github/branch-protection*.json payloads.
 $expectedContexts = @(
     "Django tests", "Migration integrity", "Strict OpenAPI",
     "Supply-chain scans", "Compose and shell", "Container integrity",
-    "Android (unit)", "Android (lint)", "Android (release)",
     "Frontend no-overflow"
 )
 $repoRoot = Split-Path -Parent $PSScriptRoot

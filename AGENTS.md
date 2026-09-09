@@ -4,6 +4,12 @@
 MEDTRACK is a Django + Postgres MVP for case-based follow-up tracking (ANC, Surgery, Non-surgical).
 It is not an EHR.
 
+## Delivery target
+
+Android is deprecated and is not an actively maintained release target. Issue #120 targets web and responsive mobile web. Native feature parity, emulator testing, and Android release acceptance are outside its scope. Shared server security and data-integrity guarantees remain supported.
+
+Android source and history stay in `android/`. Do not add native feature work, emulator acceptance, or APK release steps to web tasks, and do not carry a mandatory native acceptance section into web reports.
+
 ## WHAT (stack + map)
 - Django app with server-rendered templates
 - Postgres via Docker Compose
@@ -36,7 +42,8 @@ Local Test NNH server:
 - Do not spin up a separate demo server or reinstall dependencies unless `requirements.txt` or `Dockerfile` changed and the image needs rebuilding.
 - Do not leave hidden server processes running at the end of a task unless the user asked to keep them running or the server is the requested deliverable.
 
-Android emulator workflow:
+Android emulator workflow (deprecated target; historical reference only):
+- Do not run these steps as part of web work or web acceptance. They are kept for the retained `android/` source and are not a gate for issue #120.
 - For quick manual Android starts, prefer the healthy `MarkUS_Local` AVD before trying `MarkUS_Latest_API37`.
 - Keep the Android debug API base URL at `http://10.0.2.2:8000/` for emulator runs against Test NNH.
 - If `MarkUS_Latest_API37` is attached in `adb devices` but screenshots are black, `dumpsys activity users` shows `RUNNING_LOCKED`, or SystemUI/NotificationShade remains focused, stop troubleshooting the APK and switch to `MarkUS_Local`.

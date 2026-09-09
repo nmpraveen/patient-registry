@@ -1,5 +1,22 @@
 # ROADMAP.md
 
+## Issue #120 web-only delivery
+
+- PR 1 marks Android deprecated in project documentation and reduces both live
+  and tracked required checks from ten to seven.
+- The seven-check SoloSafe payload was applied and read back on 2026-09-09 at
+  main SHA `a8e528b1da16467c11124f10d68d80676c7845b4`. Strict mode,
+  administrator enforcement and Actions-app binding are preserved; no Android
+  context remains.
+- After that read-back, the `android` job was retired from
+  `.github/workflows/ci.yml`. Retained Android source remains covered by the
+  full-tree supply-chain scan and Dependabot.
+- Android device acceptance, external signing and APK release are removed from
+  issue #120 acceptance. They are not scheduled work for this project.
+- PRs 2-8 (dashboard, intake, FUNo identity, case detail, PhoneBook/notices,
+  reminder schedules, settings/theme) remain to be delivered. Issues #52, #54,
+  #59, #64, #65, #72, #75 and #113 are unaffected by this PR and stay open.
+
 ## Issue #113 Stage 5 source gate
 
 - All four late PR #119 comments are corrected and have focused lane review GO: scheduler staff eligibility, explicit operational seeding, native authorization gates and shared refresh transport. Complete fresh CI and final pushed-head correspondence for this consolidated update. The earlier clinical acceptance is complete; its database-proof helper lookup was corrected without changing product code.
@@ -72,9 +89,9 @@
 ## Near-Term Roadmap
 
 0. Activate the build and CI containment baseline.
-   - Merge the exact-head workflow and the application lanes required to make strict OpenAPI, Android unit/lint/release, and frontend no-overflow green.
+   - Merge the exact-head workflow and the application lanes required to make strict OpenAPI and frontend no-overflow green. Android unit/lint/release are deprecated and are no longer part of this gate.
    - Do not mark failing checks optional or weaken their commands to merge.
-   - After all ten check names have run on `main`, use the read-only preflight and exact-SHA apply command in `.github/BRANCH_PROTECTION.md`.
+   - After all seven required check names have run on `main`, use the read-only preflight and exact-SHA apply command in `.github/BRANCH_PROTECTION.md`.
    - Keep weekly Dependabot and supply-chain freshness runs enabled; review all lock/digest changes through PRs.
 
 1. Operate and exercise the recovered production system.

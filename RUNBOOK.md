@@ -93,8 +93,12 @@ re-run all gates:
 python .\scripts\check_image_digests.py --update
 ```
 
-Android dependency verification metadata must be updated serially, only after
-the owning application lanes have made all three Android gates green:
+Android is a deprecated target (issue #120) and its gates are not required for
+web work. Perform this step only when deliberately maintaining the retained
+`android/` source; `scripts/write_build_provenance.py` still covers
+`android/gradle/verification-metadata.xml`, so the file must stay valid. When
+it is updated, do so serially after the three Android gates have been run
+manually:
 
 ```bash
 bash scripts/update-android-verification-metadata.sh
@@ -177,9 +181,11 @@ deployment script tests both `/app/backups` and `/app/staticfiles` before it
 starts or replaces the web service, also verifies `/tmp`, and fails closed if
 any runtime write location is not writable.
 
-GitHub Actions tests the pull request head SHA directly. The required checks are
-listed in `.github/BRANCH_PROTECTION.md`. Branch protection is a post-merge
-administrator action:
+GitHub Actions tests the pull request head SHA directly. The seven required
+checks are listed in `.github/BRANCH_PROTECTION.md`. The issue #120 transition
+was completed on 2026-09-09: live protection was reduced and read back before
+the `android` job was retired. Use the same apply-then-read-back discipline for
+any future required-context change:
 
 ```powershell
 .\scripts\apply-branch-protection.ps1 -ReviewerPolicy SoloSafe -SignedCommits NotRequired
@@ -187,7 +193,14 @@ administrator action:
 ```
 
 The first command is read-only. Do not use `-Apply` before the workflow exists
-on `main` and has emitted all required check names.
+on `main` and has emitted all proposed check names. Verify the result with a
+read-back; for the current policy it must list exactly the seven web/security
+contexts and no `Android (...)` context:
+
+```bash
+gh api repos/nmpraveen/patient-registry/branches/main/protection \
+  --jq '.required_status_checks.checks[].context'
+```
 
 ## Local Demo Server
 
@@ -580,7 +593,11 @@ Verified 2026-08-11 NAS recovery proof:
 - exact backup commit passed Django deployment/migration checks, ORM queries, and `/login/` HTTP 200
 - all decrypted scratch material and disposable restore infrastructure were removed after verification
 
-## Android Local Verification
+## Android Local Verification (deprecated target)
+
+Android is deprecated under issue #120. The steps below are retained for the
+`android/` source and are not part of web acceptance. Do not treat a skipped
+native gate as a successful native release.
 
 Fast manual emulator start and login:
 

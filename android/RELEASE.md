@@ -1,5 +1,11 @@
 # Android Release Runbook
 
+> **DEPRECATED**
+>
+> Android is deprecated and is not an actively maintained release target. Issue #120 targets web and responsive mobile web. Native feature parity, emulator testing, and Android release acceptance are outside its scope. Shared server security and data-integrity guarantees remain supported.
+>
+> This runbook is retained for historical reference. Do not treat it as an active release obligation, and do not record a skipped native gate as a successful native release.
+
 ## Release environments
 
 The app has three environment flavors:

@@ -1,5 +1,56 @@
 # PROJECT_STATE.md
 
+## Issue #120 PR 1 web-only baseline and Android deprecation
+
+MEDTRACK is a web-only project for issue #120. Android is deprecated as a
+release target; `android/` source, history and its dependency-security
+visibility are retained, and the shared server API keeps its authentication,
+authorization, idempotency and integrity tests. `AGENTS.md`, `README.md`,
+`android/README.md` and `android/RELEASE.md` carry the deprecation notice, and
+the Android emulator workflow in `AGENTS.md` is marked historical rather than
+deleted.
+
+`.github/branch-protection.json`, `.github/branch-protection.one-approval.json`
+and the `$expectedContexts` list in `scripts/apply-branch-protection.ps1` now
+describe seven required checks: Django tests, Migration integrity, Strict
+OpenAPI, Supply-chain scans, Compose and shell, Container integrity and
+Frontend no-overflow. No web, API-security, migration, container or
+supply-chain gate is weakened; only the three Android contexts are dropped.
+
+Live `main` protection was changed on 2026-09-09 only after PR head `6665909`
+passed all ten former contexts. The sanctioned installer applied the SoloSafe
+payload at main SHA `a8e528b1da16467c11124f10d68d80676c7845b4`; a fresh
+read-back returned exactly the seven Actions-app-bound web/security contexts,
+strict mode, administrator enforcement and no rulesets. Only after that
+read-back was recorded was the `android` job retired from
+`.github/workflows/ci.yml`. The ordering and rollback procedure are documented
+in `.github/BRANCH_PROTECTION.md`.
+
+The repository filesystem vulnerability, secret and misconfiguration scan
+continues to cover the complete committed tree, including retained Android
+source. When the runtime Trivy database began reporting CRITICAL
+`CVE-2026-75595` in Android's centrally pinned `io.netty:netty-handler`
+4.1.136.Final, the security override was advanced to the reported fixed
+4.1.137.Final release and the strict Gradle locks and checksum metadata were
+regenerated. The finding is fixed rather than excluded or waived. Dependabot
+continues to watch the `/android` Gradle ecosystem, and no web, server, Android,
+Python-audit, image-pin or production-image scanning is reduced.
+
+`deploy/Dockerfile.caddy` bumps its pinned `google.golang.org/grpc`
+replacement from v1.83.1 to v1.83.2, clearing unwaived HIGH `CVE-2026-84445`
+in the public-facing reverse proxy. This followed the file's existing
+`--replace` convention alongside the crypto/net/text pins. The finding was
+pre-existing on `main` and surfaced by the same trivy database refresh; the
+postgres service image scanned clean at `high=0 critical=0 waivers=0`, and
+`security/caddy-vex.json` remains an empty waiver set, so nothing was waived.
+
+`.github/workflows/attest-release.yml` and
+`.github/workflows/supply-chain-refresh.yml` were inspected and contain no
+Android, APK, Gradle or other native artifact assumptions, so neither needed
+changing. `scripts/write_build_provenance.py` still covers
+`android/gradle/verification-metadata.xml`, which stays valid because the
+native source is retained.
+
 ## Issue #113 Stage 5 staff operations
 
 The four late PR #119 findings are corrected. Scheduler selection and remaining-work counts use current eligible staff, with actor-before-definition locks and a fresh authorization check; loss of eligibility preserves the cursor/history until authorization returns or reassignment. The clinical mock seed no longer creates staff rows; the explicit operational seed remains. `/api/me/` supplies `capabilities.staff_operations`, and native staff routes/polling require a verified allowed profile. Staff and clinical foreground calls share the account refresh client; stale denial responses cannot override newer authorization.

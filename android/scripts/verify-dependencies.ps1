@@ -15,7 +15,7 @@ if ($actualHash -ne $expectedHash) {
     throw "Gradle wrapper hash mismatch. Expected $expectedHash but found $actualHash."
 }
 $wrapperProperties = Get-Content -LiteralPath $wrapperPropertiesFile -Raw
-if ($wrapperProperties -notmatch '(?m)^distributionSha256Sum=([a-fA-F0-9]{64})$') {
+if ($wrapperProperties -notmatch '(?m)^distributionSha256Sum=([a-fA-F0-9]{64})\r?$') {
     throw 'Gradle distributionSha256Sum is missing or invalid.'
 }
 $distributionHash = $matches[1].ToUpperInvariant()

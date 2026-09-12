@@ -17,12 +17,12 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 case "$tier" in
-  rapid) keep_count=28 ;;
-  daily) keep_count=30 ;;
-  weekly) keep_count=12 ;;
-  monthly) keep_count=12 ;;
-  pre-deployment) keep_count=14 ;;
-  canary) keep_count=1 ;;
+  rapid) remote_keep_count=28; local_keep_count=4; evidence_mode=checkpoint ;;
+  daily) remote_keep_count=30; local_keep_count=2; evidence_mode=checkpoint ;;
+  weekly) remote_keep_count=12; local_keep_count=2; evidence_mode=full ;;
+  monthly) remote_keep_count=12; local_keep_count=1; evidence_mode=full ;;
+  pre-deployment) remote_keep_count=14; local_keep_count=2; evidence_mode=full ;;
+  canary) remote_keep_count=1; local_keep_count=1; evidence_mode=checkpoint ;;
   *)
     usage
     exit 2
@@ -47,6 +47,7 @@ production_env="${MEDTRACK_ENV_FILE:-$repo_root/.env}"
 evidence_root="${MEDTRACK_SECURITY_EVIDENCE_ROOT:-/srv/medtrack/security-evidence}"
 require_audit_schema="${MEDTRACK_REQUIRE_AUDIT_EVENT_SCHEMA:-1}"
 build_context_verifier="${MEDTRACK_BUILD_CONTEXT_VERIFIER:-$repo_root/scripts/build_context_receipt.py}"
+evidence_checkpoint_verifier="${MEDTRACK_SECURITY_EVIDENCE_CHECKPOINT_VERIFIER:-$repo_root/scripts/verify-security-evidence-checkpoint.sh}"
 
 python_command="${PYTHON_COMMAND:-python3}"
 for command_name in age docker flock git install mktemp "$python_command" rclone sha256sum tar; do
@@ -79,6 +80,10 @@ if [[ ! -f "$recipient_file" ]]; then
 fi
 if [[ ! -f "$build_context_verifier" ]]; then
   echo "Canonical medtrack.build-context/v1 verifier is missing (requires build PR #100)" >&2
+  exit 1
+fi
+if [[ ! -x "$evidence_checkpoint_verifier" ]]; then
+  echo "Security-evidence checkpoint verifier is missing or not executable" >&2
   exit 1
 fi
 
@@ -186,9 +191,16 @@ if [[ "$require_audit_schema" == "1" ]]; then
     echo "Security evidence checkpoint is invalid" >&2
     exit 1
   fi
+  evidence_last_segment="$(sed -n 's/^last_segment=//p' "$evidence_root/state/checkpoint.env" | tail -n 1)"
+  if [[ ! "$evidence_last_segment" =~ ^segment-[0-9]{8}-[0-9]{8}T[0-9]{6}Z$ ||
+    ! -d "$evidence_root/segments/$evidence_last_segment" || -L "$evidence_root/segments/$evidence_last_segment" ]]; then
+    echo "Security evidence checkpoint does not identify a safe latest segment" >&2
+    exit 1
+  fi
 else
   evidence_chain_sha256=none
   evidence_sequence=0
+  evidence_last_segment=none
 fi
 if [[ -z "$target_commit" ]]; then
   if [[ "$tier" == "pre-deployment" ]]; then
@@ -251,11 +263,21 @@ if [[ "$require_audit_schema" == "1" ]]; then
     echo "Security evidence contains a link or special file" >&2
     exit 1
   fi
-  install -d -m 0700 "$payload_dir/security-evidence"
-  (cd "$evidence_root" && tar -cf - state segments) |
-    tar -xf - -C "$payload_dir/security-evidence" --no-same-owner --no-same-permissions
-  MEDTRACK_SECURITY_EVIDENCE_ROOT="$payload_dir/security-evidence" \
-    MEDTRACK_SECURITY_EVIDENCE_ALLOW_STALE=1 "$repo_root/scripts/verify-security-evidence.sh"
+  if [[ "$evidence_mode" == "full" ]]; then
+    install -d -m 0700 "$payload_dir/security-evidence"
+    (cd "$evidence_root" && tar -cf - state segments) |
+      tar -xf - -C "$payload_dir/security-evidence" --no-same-owner --no-same-permissions
+    MEDTRACK_SECURITY_EVIDENCE_ROOT="$payload_dir/security-evidence" \
+      MEDTRACK_SECURITY_EVIDENCE_ALLOW_STALE=1 "$repo_root/scripts/verify-security-evidence.sh"
+  else
+    checkpoint_root="$payload_dir/security-evidence-checkpoint"
+    install -d -m 0700 "$checkpoint_root/state" "$checkpoint_root/segments"
+    install -m 0600 "$evidence_root/state/checkpoint.env" "$checkpoint_root/state/checkpoint.env"
+    (cd "$evidence_root/segments" && tar -cf - "$evidence_last_segment") |
+      tar -xf - -C "$checkpoint_root/segments" --no-same-owner --no-same-permissions
+    MEDTRACK_SECURITY_EVIDENCE_CHECKPOINT_ROOT="$checkpoint_root" \
+      "$evidence_checkpoint_verifier"
+  fi
 fi
 install -m 0600 "$production_env" "$payload_dir/config/environment.env"
 for relative_path in docker-compose.yml docker-compose.prod.yml deploy/Caddyfile; do
@@ -271,7 +293,7 @@ if [[ -f /etc/audit/rules.d/medtrack-app.rules ]]; then
 fi
 
 {
-  printf 'backup_format=medtrack-offsite-v3\n'
+  printf 'backup_format=medtrack-offsite-v4\n'
   printf 'created_utc=%s\n' "$stamp"
   printf 'tier=%s\n' "$tier"
   printf 'source_commit=%s\n' "$source_commit"
@@ -285,6 +307,8 @@ fi
   printf 'audit_minimum_max_id=%s\n' "$audit_max_id"
   printf 'security_evidence_sequence=%s\n' "$evidence_sequence"
   printf 'security_evidence_chain_sha256=%s\n' "$evidence_chain_sha256"
+  printf 'security_evidence_mode=%s\n' "$evidence_mode"
+  printf 'security_evidence_last_segment=%s\n' "$evidence_last_segment"
   printf 'postgres_server_version=%s\n' "$("${compose[@]}" exec -T db sh -ceu 'exec psql --tuples-only --no-align --username="$POSTGRES_USER" --dbname="$POSTGRES_DB" --command="SHOW server_version"')"
   docker --version
   docker compose version
@@ -299,8 +323,8 @@ echo "[4/8] Building the recovery-content integrity manifest"
   done < <(find . -type f ! -path './manifest.sha256' -print0 | sort -z)
 ) > "$payload_dir/manifest.sha256"
 
-echo "[5/8] Encrypting the complete recovery archive"
-tar --format=posix -C "$payload_dir" -cf "$plaintext_tar" .
+echo "[5/8] Compressing and encrypting the complete recovery archive"
+tar --format=posix -C "$payload_dir" -czf "$plaintext_tar" .
 age -r "$recipient" -o "$encrypted_partial" "$plaintext_tar"
 if [[ ! -s "$encrypted_partial" ]]; then
   echo "Encrypted archive is empty" >&2
@@ -342,7 +366,7 @@ prune_local() {
   local -a markers=()
   local marker base_name target index excess
   mapfile -t markers < <(find "$local_tier_dir" -maxdepth 1 -type f -name "medtrack-prod-${tier}-*.tar.age.complete" -printf '%f\n' | sort)
-  excess=$((${#markers[@]} - keep_count))
+  excess=$((${#markers[@]} - local_keep_count))
   if (( excess <= 0 )); then
     return
   fi
@@ -353,6 +377,11 @@ prune_local() {
       exit 1
     fi
     base_name="${marker%.complete}"
+    rclone --config "$rclone_config" check "$local_tier_dir" "$remote_tier" \
+      --one-way \
+      --include "/$base_name" \
+      --include "/$base_name.sha256" \
+      --include "/$marker"
     for target in "$base_name" "$base_name.sha256" "$marker"; do
       rm -f -- "$local_tier_dir/$target"
     done
@@ -363,7 +392,7 @@ prune_remote() {
   local -a markers=()
   local marker base_name remote_target index excess
   mapfile -t markers < <(rclone --config "$rclone_config" lsf "$remote_tier" --files-only --include "medtrack-prod-${tier}-*.tar.age.complete" | sort)
-  excess=$((${#markers[@]} - keep_count))
+  excess=$((${#markers[@]} - remote_keep_count))
   if (( excess <= 0 )); then
     return
   fi
@@ -381,8 +410,8 @@ prune_remote() {
 }
 
 echo "[8/8] Applying exact tier retention (Drive deletions use Trash)"
-prune_remote
 prune_local
+prune_remote
 
 completed_epoch="$(date -u +%s)"
 state_tmp="$(mktemp "$state_root/.last-success-${tier}.XXXXXX")"
@@ -392,7 +421,7 @@ mv "$state_tmp" "$state_root/last-success-$tier.epoch"
 receipt_path="$state_root/receipt-${tier}-${stamp}.env"
 receipt_tmp="$(mktemp "$state_root/.receipt-${tier}-${stamp}.XXXXXX")"
 {
-  printf 'receipt_format=medtrack-offsite-receipt-v3\n'
+  printf 'receipt_format=medtrack-offsite-receipt-v4\n'
   printf 'tier=%s\n' "$tier"
   printf 'archive=%s\n' "$archive_name"
   printf 'sha256=%s\n' "$(cut -d ' ' -f 1 "$local_tier_dir/$checksum_name")"
@@ -406,6 +435,7 @@ receipt_tmp="$(mktemp "$state_root/.receipt-${tier}-${stamp}.XXXXXX")"
   printf 'audit_minimum_max_id=%s\n' "$audit_max_id"
   printf 'security_evidence_sequence=%s\n' "$evidence_sequence"
   printf 'security_evidence_chain_sha256=%s\n' "$evidence_chain_sha256"
+  printf 'security_evidence_mode=%s\n' "$evidence_mode"
   printf 'completed_epoch=%s\n' "$completed_epoch"
   printf 'local_archive=%s\n' "$local_tier_dir/$archive_name"
   printf 'local_checksum=%s\n' "$local_tier_dir/$checksum_name"
@@ -419,5 +449,5 @@ cp "$receipt_path" "$latest_receipt_tmp"
 chmod 0600 "$latest_receipt_tmp"
 mv "$latest_receipt_tmp" "$state_root/latest-${tier}.receipt"
 
-printf 'OFFSITE_BACKUP_OK tier=%s archive=%s keep=%s receipt=%s\n' \
-  "$tier" "$archive_name" "$keep_count" "$receipt_path"
+printf 'OFFSITE_BACKUP_OK tier=%s archive=%s local_keep=%s remote_keep=%s evidence=%s receipt=%s\n' \
+  "$tier" "$archive_name" "$local_keep_count" "$remote_keep_count" "$evidence_mode" "$receipt_path"

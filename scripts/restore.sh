@@ -521,7 +521,16 @@ intended_target_commit="$(runtime_value intended_target_commit)"
 audit_table_present="$(runtime_value audit_table_present)"
 security_evidence_sequence="$(runtime_value security_evidence_sequence)"
 security_evidence_chain_sha256="$(runtime_value security_evidence_chain_sha256)"
-if [[ "$(runtime_value backup_format)" != "medtrack-offsite-v3" ||
+backup_format="$(runtime_value backup_format)"
+security_evidence_mode="$(runtime_value security_evidence_mode)"
+security_evidence_last_segment="$(runtime_value security_evidence_last_segment)"
+if [[ "$backup_format" == "medtrack-offsite-v3" ]]; then
+  security_evidence_mode=full
+elif [[ "$backup_format" != "medtrack-offsite-v4" || ! "$security_evidence_mode" =~ ^(full|checkpoint)$ ]]; then
+  echo "Backup format or security-evidence mode is unsupported" >&2
+  exit 1
+fi
+if [[
   "$(runtime_value source_commit)" != "$expected_commit" ||
   "$(runtime_value source_image_id)" != "$verified_web_image_id" ||
   "$(runtime_value source_build_context_schema)" != "$attested_context_schema" ||
@@ -538,12 +547,27 @@ if [[ "$require_audit_schema" == "1" && ( "$audit_table_present" != "1" ||
   exit 1
 fi
 if [[ "$audit_table_present" == "1" ]]; then
-  if [[ ! -d "$payload_dir/security-evidence" ]]; then
-    echo "Backup is missing integrity-protected security evidence" >&2
-    exit 1
+  if [[ "$security_evidence_mode" == "full" ]]; then
+    if [[ ! -d "$payload_dir/security-evidence" ]]; then
+      echo "Backup is missing full integrity-protected security evidence" >&2
+      exit 1
+    fi
+    evidence_result="$(MEDTRACK_SECURITY_EVIDENCE_ROOT="$payload_dir/security-evidence" \
+      MEDTRACK_SECURITY_EVIDENCE_ALLOW_STALE=1 "$repo_root/scripts/verify-security-evidence.sh")"
+  else
+    if [[ ! -d "$payload_dir/security-evidence-checkpoint" ||
+      ! -x "$repo_root/scripts/verify-security-evidence-checkpoint.sh" ]]; then
+      echo "Backup is missing its integrity-protected security-evidence checkpoint" >&2
+      exit 1
+    fi
+    evidence_result="$(MEDTRACK_SECURITY_EVIDENCE_CHECKPOINT_ROOT="$payload_dir/security-evidence-checkpoint" \
+      "$repo_root/scripts/verify-security-evidence-checkpoint.sh")"
+    if [[ ! "$security_evidence_last_segment" =~ ^segment-[0-9]{8}-[0-9]{8}T[0-9]{6}Z$ ||
+      "$evidence_result" != *"last_segment=$security_evidence_last_segment"* ]]; then
+      echo "Security evidence checkpoint does not match the backup runtime identity" >&2
+      exit 1
+    fi
   fi
-  evidence_result="$(MEDTRACK_SECURITY_EVIDENCE_ROOT="$payload_dir/security-evidence" \
-    MEDTRACK_SECURITY_EVIDENCE_ALLOW_STALE=1 "$repo_root/scripts/verify-security-evidence.sh")"
   if [[ "$evidence_result" != *"chain_sha256=$security_evidence_chain_sha256"* ]]; then
     echo "Security evidence chain does not match the backup runtime identity" >&2
     exit 1
@@ -665,6 +689,8 @@ verification_receipt="$receipt_dir/verification.receipt"
   printf 'restored_audit_max_id=%s\n' "$restored_audit_max_id"
   printf 'security_evidence_sequence=%s\n' "$security_evidence_sequence"
   printf 'security_evidence_chain_sha256=%s\n' "$security_evidence_chain_sha256"
+  printf 'security_evidence_mode=%s\n' "$security_evidence_mode"
+  printf 'security_evidence_last_segment=%s\n' "$security_evidence_last_segment"
   printf 'verified_epoch=%s\n' "$(date -u +%s)"
 } > "$verification_receipt"
 chmod 0600 "$verification_receipt"

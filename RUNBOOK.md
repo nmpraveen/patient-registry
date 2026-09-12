@@ -459,15 +459,18 @@ systemctl enable --now \
 systemctl list-timers 'medtrack-offsite-backup*'
 ```
 
-Schedule and retention (all calendar times are `Asia/Kolkata`):
+Schedule and retention (all calendar times are `Asia/Kolkata`). VPS-local retention is deliberately smaller than Drive retention; deletion of an expired local triplet requires a successful comparison with its Drive copy:
 
-| Tier | Schedule | Maximum completed sets |
-|---|---|---:|
-| Rapid | 00:15, 06:15, 12:15, 18:15 daily, up to 5-minute jitter | 28 |
-| Daily | 02:15 daily, up to 10-minute jitter | 30 |
-| Weekly | Sunday 03:15, up to 15-minute jitter | 12 |
-| Monthly | Day 1 at 04:15, up to 20-minute jitter | 12 |
-| Pre-deployment | Manual before deployment | 14 |
+| Tier | Schedule | VPS-local | Drive | Evidence mode |
+|---|---|---:|---:|---|
+| Rapid | 00:15, 06:15, 12:15, 18:15 daily, up to 5-minute jitter | 4 | 28 | Latest segment/checkpoint |
+| Daily | 02:15 daily, up to 10-minute jitter | 2 | 30 | Latest segment/checkpoint |
+| Weekly | Sunday 03:15, up to 15-minute jitter | 2 | 12 | Complete retained chain |
+| Monthly | Day 1 at 04:15, up to 20-minute jitter | 1 | 12 | Complete retained chain |
+| Pre-deployment | Manual before deployment | 2 | 14 | Complete retained chain |
+| Canary | Manual after deployment/maintenance | 1 | 1 | Latest segment/checkpoint |
+
+Format v4 compresses the payload before age encryption. The checkpoint form contains the exact checkpoint plus its referenced latest segment and validates that segment's internal manifest and chain transition. The database dump still carries the complete append-only AuditEvent table. Weekly, monthly, and pre-deployment generations additionally preserve and verify the complete retained evidence chain. `restore.sh` continues to accept existing format v3 full-chain archives.
 
 On the independent verifier, use a separate exact reviewed checkout and separate root-only config. This host—not the VPS or NAS—holds the offline restore identity. Its `MEDTRACK_SCRATCH_RESTORE_HOOK` must download a completed Drive triplet, run `restore.sh verify` against isolated PostgreSQL/Django, retain the verified security-evidence tree at `MEDTRACK_SECURITY_EVIDENCE_ROOT`, and return nonzero on any mismatch. Its alert hook must deliver outside that host. Install and enable both independent timers:
 
@@ -518,7 +521,7 @@ A successful upload is not restore proof. On a separate scratch host, download o
 
 PR #103 defines `public.patients_auditevent`, migration `patients.0037_backend_auth_clinical_security`, and trigger `patients_auditevent_append_only`. Do not enable the production backup/evidence units until that exact schema is integrated and the combined-head scratch tests pass. The backup records the running source commit/image/schema separately from the intended target commit; the source image must restore the pre-deployment database, while the deployment receipt binds the target.
 
-Gunicorn runs as UID `10001`; Caddy runs separately as UID `10002`; both use the restricted runtime-log GID `10001`. They write only timestamp, method, status, duration, and response size to the root-owned, setgid/sticky, group-writable security-log directory. Never add request bodies, URI/path/query strings, authorization or cookie headers, client IPs, usernames, patient search text, or clinical payloads. The hourly root exporter selects only coarse AuditEvent identity/time/category/action/outcome/source fields, bounds rows and log bytes, creates a SHA-256 chained segment, alerts on lag/discontinuity or sustained safe failure/429 counts, and retains 2,160 hourly segments (90 days) with a continuity anchor. Encrypted Drive archives and the pull-only NAS mirror contain the retained segments, anchor, checkpoint, and their manifest hashes. Recovery starts from the anchor, verifies every retained segment, and cross-checks the final chain with the backup marker/receipt.
+Gunicorn runs as UID `10001`; Caddy runs separately as UID `10002`; both use the restricted runtime-log GID `10001`. They write only timestamp, method, status, duration, and response size to the root-owned, setgid/sticky, group-writable security-log directory. Never add request bodies, URI/path/query strings, authorization or cookie headers, client IPs, usernames, patient search text, or clinical payloads. The hourly root exporter selects only coarse AuditEvent identity/time/category/action/outcome/source fields, bounds rows and log bytes, creates a SHA-256 chained segment, alerts on lag/discontinuity or sustained safe failure/429 counts, and retains 2,160 hourly segments (90 days) with a continuity anchor. Weekly, monthly, and pre-deployment archives preserve and verify that complete retained chain. Rapid, daily, and canary archives contain the exact checkpoint and referenced latest segment, verify the latest chain transition, and rely on the database dump for the complete append-only AuditEvent history. Every marker/receipt records the final evidence chain identity.
 
 The custom Caddy image is built from digest-pinned Caddy 2.11.4 builder/runtime images with `github.com/mholt/caddy-ratelimit` pinned at commit `5625512f24f6f59d6f64fb3aafe5eecff0b286db`. It runs as `10002:10001` with all capabilities dropped except `NET_BIND_SERVICE` and `no-new-privileges` enabled. Before the first non-root deployment, run `docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm --no-deps --user 0:0 caddy chown -R 10002:10001 /data /config` once for any existing Caddy volumes and verify `/srv/medtrack/security-logs` has the ownership and mode above; new volumes inherit the reviewed image ownership. CI builds the exact committed Dockerfile into one canonical OCI archive and binds its BuildKit manifest, OCI manifest/config, loaded image ID, Dockerfile/Caddyfile hashes, Trivy report, SBOM, and VEX policy in the service receipt. Startup, deploy, and restore validation require UID/GID `10002:10001`, `http.handlers.rate_limit`, and the exact Caddyfile; stock Caddy fails this gate. Web/admin login, JWT obtain, JWT refresh, and device-verification paths have separate coarse endpoint classes with global static caps followed by per-client burst and sustained windows. The global handler bounds the number of dynamic client buckets that can be created per window; IPv6 is grouped at `/64`; the module sweeps expired buckets every minute; 429 responses include `Retry-After` and a fixed PHI-free body. Backend application throttles remain mandatory and must not be weakened.
 

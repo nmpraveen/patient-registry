@@ -232,13 +232,31 @@ remote_dir="$fake_remote/medtrack/test/canary"
 [[ ! -e "$local_dir/medtrack-prod-canary-20260811T010000Z.tar.age" ]]
 [[ -s "$backup_root/state/last-success-canary.epoch" ]]
 [[ -s "$backup_root/state/latest-canary.receipt" ]]
-grep -Fxq 'receipt_format=medtrack-offsite-receipt-v3' "$backup_root/state/latest-canary.receipt"
+grep -Fxq 'receipt_format=medtrack-offsite-receipt-v4' "$backup_root/state/latest-canary.receipt"
 grep -Fxq 'tier=canary' "$backup_root/state/latest-canary.receipt"
 grep -Fxq "source_commit=$FAKE_SOURCE_COMMIT" "$backup_root/state/latest-canary.receipt"
 grep -Fxq "target_commit=$FAKE_SOURCE_COMMIT" "$backup_root/state/latest-canary.receipt"
 grep -Fxq 'source_image_id=sha256:synthetic-live-source-image' "$backup_root/state/latest-canary.receipt"
 grep -Fxq 'audit_minimum_row_count=5' "$backup_root/state/latest-canary.receipt"
 grep -Fxq "security_evidence_chain_sha256=$chain_hash" "$backup_root/state/latest-canary.receipt"
+grep -Fxq 'security_evidence_mode=checkpoint' "$backup_root/state/latest-canary.receipt"
+canary_archive="$local_dir/medtrack-prod-canary-20260811T020000Z.tar.age"
+tar -tzf "$canary_archive" | grep -Fq './security-evidence-checkpoint/state/checkpoint.env'
+tar -tzf "$canary_archive" | grep -Fq "./security-evidence-checkpoint/segments/${segment_dir##*/}/chain.env"
+if tar -tzf "$canary_archive" | grep -Fq './security-evidence/segments/'; then
+  echo "Checkpoint-mode canary unexpectedly embedded the full evidence history" >&2
+  exit 1
+fi
+
+for hour in 01 02 03 04 05; do
+  MEDTRACK_BACKUP_TIMESTAMP="20260812T${hour}0000Z" "$repo_root/scripts/backup-offsite.sh" --tier rapid >/dev/null
+done
+rapid_local="$backup_root/local/rapid"
+rapid_remote="$fake_remote/medtrack/test/rapid"
+[[ "$(find "$rapid_local" -maxdepth 1 -type f | wc -l | tr -d '[:space:]')" == "12" ]]
+[[ "$(find "$rapid_remote" -maxdepth 1 -type f | wc -l | tr -d '[:space:]')" == "15" ]]
+[[ ! -e "$rapid_local/medtrack-prod-rapid-20260812T010000Z.tar.age" ]]
+[[ -e "$rapid_remote/medtrack-prod-rapid-20260812T010000Z.tar.age.complete" ]]
 [[ -z "$(find "$backup_root/staging" -mindepth 1 -print -quit)" ]]
 
 echo "OFFSITE_BACKUP_TEST_OK"

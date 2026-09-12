@@ -257,7 +257,9 @@ Production disaster-recovery backups use `scripts/backup-offsite.sh`. Each run:
 
 - creates and validates a PostgreSQL custom-format dump
 - captures the production `.env`, Compose/Caddy recovery files, Git commit, and runtime versions
+- stores a verified latest evidence segment/checkpoint in rapid, daily, and canary backups; weekly, monthly, and pre-deployment backups retain the complete evidence chain
 - builds an internal SHA-256 manifest
+- compresses the recovery payload before encryption so JSON/log evidence is not stored at raw size
 - encrypts the entire archive with an `age` public key before any upload
 - uploads a unique ciphertext, checksum, and completion marker through rclone
 - verifies the uploaded objects before recording success
@@ -265,19 +267,20 @@ Production disaster-recovery backups use `scripts/backup-offsite.sh`. Each run:
 
 The VPS stores only the public encryption recipient. The private `age` identity must remain off the VPS, with at least two recoverable copies. The Google OAuth token is restricted to the root-only rclone configuration and must never be committed.
 
-Production retention is:
+Production retention separates the small VPS working set from the longer Drive history:
 
-| Tier | Frequency | Retained |
-|---|---:|---:|
-| Rapid | Every 6 hours | 28 (7 days) |
-| Daily | Every day | 30 |
-| Weekly | Every Sunday | 12 |
-| Monthly | First day of each month | 12 |
-| Pre-deployment | Before a production deployment | 14 |
+| Tier | Frequency | VPS-local | Google Drive | Evidence payload |
+|---|---:|---:|---:|---|
+| Rapid | Every 6 hours | 4 | 28 (7 days) | Latest verified checkpoint |
+| Daily | Every day | 2 | 30 | Latest verified checkpoint |
+| Weekly | Every Sunday | 2 | 12 | Complete retained chain |
+| Monthly | First day of each month | 1 | 12 | Complete retained chain |
+| Pre-deployment | Before a production deployment | 2 | 14 | Complete retained chain |
+| Canary | After deployment/maintenance | 1 | 1 | Latest verified checkpoint |
 
 The four scheduled tiers provide 82 completed recovery points after the retention windows fill. Pre-deployment backups are additional and capped at 14. See `RUNBOOK.md` for credential placement, canary, timer, health, and restore-check commands.
 
-The live deployment also mirrors completed encrypted sets to Synology `Home/Backups/MEDTRACK`. A restricted SFTP-only VPS account exposes ciphertext read-only; a networked NAS fetcher can write only to an incoming quarantine, and a separate network-disabled promoter validates complete triplets before copying them into the archive. The NAS mirror never receives the private `age` identity and has no automatic deletion path.
+The live deployment also mirrors the bounded VPS-local completed set to Synology `Home/Backups/MEDTRACK`. A restricted SFTP-only VPS account exposes ciphertext read-only; a networked NAS fetcher can write only to an incoming quarantine, and a separate network-disabled promoter validates complete triplets before copying them into the protected archive. Expired, checksum-valid triplets are removed only from VPS export staging; the NAS archive never receives the private `age` identity and retains its independently promoted copies.
 
 ## Useful commands
 

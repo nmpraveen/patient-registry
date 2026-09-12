@@ -1,3 +1,9 @@
+## 2026.09.12.16.33
+
+- Replace duplicate VPS NAS-export ciphertext copies with verified hard links to the canonical encrypted local triplets.
+- Preserve the restricted NAS read boundary by granting group read access only to completed encrypted triplets and failing closed across filesystems or byte conflicts.
+- Add explicit Drive-verification provenance to future completion markers and regress hard-link publication, legacy-copy conversion and retention pruning.
+
 ## 2026.09.12.11.21
 
 - Compress recovery payloads before age encryption and replace repeated full evidence history in rapid, daily and canary backups with a verified latest-segment checkpoint.

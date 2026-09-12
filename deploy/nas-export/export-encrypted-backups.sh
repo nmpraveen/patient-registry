@@ -10,7 +10,7 @@ export_group="${EXPORT_GROUP:-medtrack-nas-readers}"
 state_file="${STATE_FILE:-/srv/medtrack/nas-export/.last-success.epoch}"
 tiers=(rapid daily weekly monthly pre-deployment canary)
 
-for command_name in cmp find getent install ln mktemp sha256sum stat; do
+for command_name in chmod chown cmp find getent install ln mktemp mv rm sha256sum stat; do
   if ! command -v "$command_name" >/dev/null 2>&1; then
     echo "Missing required command: $command_name" >&2
     exit 1
@@ -36,12 +36,16 @@ if [[ -L "$export_root" ]]; then
   exit 1
 fi
 
-publish_immutable() {
+publish_hardlink() {
   local source_file="$1"
   local destination_dir="$2"
-  local name destination_file temp_file
+  local name destination_file temp_file source_identity destination_identity
   name="${source_file##*/}"
   destination_file="$destination_dir/$name"
+
+  chown "$export_owner:$export_group" "$source_file"
+  chmod 0640 "$source_file"
+  source_identity="$(stat -c '%d:%i' "$source_file")"
 
   if [[ -e "$destination_file" ]]; then
     if [[ ! -f "$destination_file" || -L "$destination_file" ]]; then
@@ -52,25 +56,29 @@ publish_immutable() {
       echo "Immutable export conflict: $destination_file" >&2
       return 1
     fi
-    return 0
+    destination_identity="$(stat -c '%d:%i' "$destination_file")"
+    if [[ "$source_identity" == "$destination_identity" ]]; then
+      return 0
+    fi
   fi
 
   temp_file="$(mktemp "$destination_dir/.${name}.XXXXXX")"
-  install -o "$export_owner" -g "$export_group" -m 0640 "$source_file" "$temp_file"
-  if ln "$temp_file" "$destination_file" 2>/dev/null; then
-    rm -f -- "$temp_file"
-    return 0
-  fi
   rm -f -- "$temp_file"
-  if [[ -f "$destination_file" && ! -L "$destination_file" ]] && cmp -s "$source_file" "$destination_file"; then
-    return 0
+  if ! ln "$source_file" "$temp_file"; then
+    echo "Source and export must share one filesystem for hard-link publication: $source_file" >&2
+    return 1
   fi
-  echo "Failed to publish immutable export target: $destination_file" >&2
-  return 1
+  mv -f -- "$temp_file" "$destination_file"
+  destination_identity="$(stat -c '%d:%i' "$destination_file")"
+  if [[ "$source_identity" != "$destination_identity" ]]; then
+    echo "Published export is not a hard link to its source: $destination_file" >&2
+    return 1
+  fi
 }
 
 published_sets=0
 pruned_sets=0
+hardlinked_files=0
 for tier in "${tiers[@]}"; do
   source_tier="$source_root/$tier"
   [[ -d "$source_tier" ]] || continue
@@ -96,9 +104,10 @@ for tier in "${tiers[@]}"; do
       sha256sum -c "${checksum##*/}" >/dev/null
     )
 
-    publish_immutable "$archive" "$destination_tier"
-    publish_immutable "$checksum" "$destination_tier"
-    publish_immutable "$marker" "$destination_tier"
+    publish_hardlink "$archive" "$destination_tier"
+    publish_hardlink "$checksum" "$destination_tier"
+    publish_hardlink "$marker" "$destination_tier"
+    hardlinked_files=$((hardlinked_files + 3))
     published_sets=$((published_sets + 1))
   done < <(find "$source_tier" -maxdepth 1 -type f -name "medtrack-prod-${tier}-*.tar.age.complete" -print0 | sort -z)
 
@@ -136,5 +145,5 @@ chown "$export_owner:$export_group" "$state_temp"
 chmod 0640 "$state_temp"
 mv -f -- "$state_temp" "$state_file"
 
-printf 'MEDTRACK_NAS_EXPORT_OK published_sets=%s pruned_sets=%s export_root=%s\n' \
-  "$published_sets" "$pruned_sets" "$export_root"
+printf 'MEDTRACK_NAS_EXPORT_OK published_sets=%s pruned_sets=%s hardlinked_files=%s export_root=%s\n' \
+  "$published_sets" "$pruned_sets" "$hardlinked_files" "$export_root"

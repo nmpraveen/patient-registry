@@ -4,8 +4,9 @@ These assets expose completed encrypted MEDTRACK backup triplets to a NAS withou
 
 ## Trust boundary
 
-- `/srv/medtrack/offsite-backups/local` remains the root-only source.
-- `export-encrypted-backups.sh` verifies each completed triplet, publishes new files into `/srv/medtrack/nas-export/data`, and mirrors VPS-local retention.
+- `/srv/medtrack/offsite-backups/local` remains the canonical encrypted source. Completed triplets are group-readable only by the restricted `medtrack-nas-readers` group.
+- `export-encrypted-backups.sh` verifies each completed triplet and publishes a hard-linked view in `/srv/medtrack/nas-export/data`, so the SFTP export consumes no second copy of archive data.
+- Source and export must be on the same filesystem. Publication fails closed if a hard link cannot be created or an existing same-name export is not byte-identical.
 - An expired export is removed only when its source triplet is absent and its exported archive/checksum/marker triplet is complete, regular, non-symlinked, and checksum-valid. The protected NAS archive is outside this cleanup boundary.
 - An existing same-name export must be byte-identical; conflicts fail closed.
 - `medtrack-nas-pull` is restricted to public-key SFTP inside `/srv/medtrack/nas-export` with no shell, TTY, forwarding, tunnel, or password authentication.
@@ -41,6 +42,7 @@ systemctl is-active medtrack-nas-export.timer
 systemctl show medtrack-nas-export.service --property=Result --value
 journalctl -u medtrack-nas-export.service --since '24 hours ago' --no-pager
 find /srv/medtrack/nas-export/data -mindepth 2 -maxdepth 2 -type f -printf '%P\t%s\n' | sort
+find /srv/medtrack/nas-export/data -mindepth 2 -maxdepth 2 -type f -links +1 -printf '%P\tlinks=%n\n' | sort
 sshd -T -C user=medtrack-nas-pull,host=localhost,addr=127.0.0.1
 ```
 

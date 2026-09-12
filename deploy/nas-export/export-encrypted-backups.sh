@@ -70,6 +70,7 @@ publish_immutable() {
 }
 
 published_sets=0
+pruned_sets=0
 for tier in "${tiers[@]}"; do
   source_tier="$source_root/$tier"
   [[ -d "$source_tier" ]] || continue
@@ -100,6 +101,31 @@ for tier in "${tiers[@]}"; do
     publish_immutable "$marker" "$destination_tier"
     published_sets=$((published_sets + 1))
   done < <(find "$source_tier" -maxdepth 1 -type f -name "medtrack-prod-${tier}-*.tar.age.complete" -print0 | sort -z)
+
+  while IFS= read -r -d '' exported_marker; do
+    marker_name="${exported_marker##*/}"
+    if [[ ! "$marker_name" =~ ^medtrack-prod-${tier}-[0-9]{8}T[0-9]{6}Z\.tar\.age\.complete$ ]]; then
+      echo "Refusing unexpected exported completion marker: $marker_name" >&2
+      exit 1
+    fi
+    if [[ -e "$source_tier/$marker_name" ]]; then
+      continue
+    fi
+    exported_archive="${exported_marker%.complete}"
+    exported_checksum="$exported_archive.sha256"
+    for exported_file in "$exported_archive" "$exported_checksum" "$exported_marker"; do
+      if [[ ! -s "$exported_file" || -L "$exported_file" ]]; then
+        echo "Refusing to prune an incomplete or unsafe export triplet: $exported_file" >&2
+        exit 1
+      fi
+    done
+    (
+      cd "$destination_tier"
+      sha256sum -c "${exported_checksum##*/}" >/dev/null
+    )
+    rm -- "$exported_archive" "$exported_checksum" "$exported_marker"
+    pruned_sets=$((pruned_sets + 1))
+  done < <(find "$destination_tier" -maxdepth 1 -type f -name "medtrack-prod-${tier}-*.tar.age.complete" -print0 | sort -z)
 done
 
 state_dir="${state_file%/*}"
@@ -110,4 +136,5 @@ chown "$export_owner:$export_group" "$state_temp"
 chmod 0640 "$state_temp"
 mv -f -- "$state_temp" "$state_file"
 
-printf 'MEDTRACK_NAS_EXPORT_OK sets=%s export_root=%s\n' "$published_sets" "$export_root"
+printf 'MEDTRACK_NAS_EXPORT_OK published_sets=%s pruned_sets=%s export_root=%s\n' \
+  "$published_sets" "$pruned_sets" "$export_root"

@@ -340,7 +340,7 @@ receipt_hash="$(receipt_value "$backup_receipt" sha256)"
 local_archive="$(receipt_value "$backup_receipt" local_archive)"
 local_checksum="$(receipt_value "$backup_receipt" local_checksum)"
 local_marker="$(receipt_value "$backup_receipt" local_marker)"
-if [[ "$receipt_format" != "medtrack-offsite-receipt-v3" || "$receipt_tier" != "pre-deployment" ||
+if [[ ! "$receipt_format" =~ ^medtrack-offsite-receipt-v(3|4)$ || "$receipt_tier" != "pre-deployment" ||
   ! "$receipt_source_commit" =~ ^[0-9a-f]{40}$ || -z "$receipt_source_image_id" ||
   "$receipt_source_context_schema" != "medtrack.build-context/v1" ||
   ! "$receipt_source_context_digest" =~ ^sha256:[0-9a-f]{64}$ ||

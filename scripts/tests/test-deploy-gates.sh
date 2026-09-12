@@ -121,7 +121,7 @@ printf '%s  %s\n' "$hash" "$archive" > "$triplet_dir/$archive.sha256"
 } > "$triplet_dir/$archive.complete"
 receipt="$test_root/predeployment.receipt"
 {
-  printf 'receipt_format=medtrack-offsite-receipt-v3\n'
+  printf 'receipt_format=medtrack-offsite-receipt-v4\n'
   printf 'tier=pre-deployment\n'
   printf 'archive=%s\n' "$archive"
   printf 'sha256=%s\n' "$hash"

@@ -5,7 +5,8 @@ These assets expose completed encrypted MEDTRACK backup triplets to a NAS withou
 ## Trust boundary
 
 - `/srv/medtrack/offsite-backups/local` remains the root-only source.
-- `export-encrypted-backups.sh` verifies each completed triplet, then publishes new files into `/srv/medtrack/nas-export/data` without deleting older exports.
+- `export-encrypted-backups.sh` verifies each completed triplet, publishes new files into `/srv/medtrack/nas-export/data`, and mirrors VPS-local retention.
+- An expired export is removed only when its source triplet is absent and its exported archive/checksum/marker triplet is complete, regular, non-symlinked, and checksum-valid. The protected NAS archive is outside this cleanup boundary.
 - An existing same-name export must be byte-identical; conflicts fail closed.
 - `medtrack-nas-pull` is restricted to public-key SFTP inside `/srv/medtrack/nas-export` with no shell, TTY, forwarding, tunnel, or password authentication.
 - Only the NAS-generated public key belongs on the VPS. The private SFTP key stays on the NAS, and the private `age` identity stays off both systems.

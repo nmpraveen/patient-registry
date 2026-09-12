@@ -1,3 +1,11 @@
+## 2026.09.12.11.21
+
+- Compress recovery payloads before age encryption and replace repeated full evidence history in rapid, daily and canary backups with a verified latest-segment checkpoint.
+- Keep complete self-contained security-evidence chains in weekly, monthly and pre-deployment recovery points, while retaining backward restore compatibility with format v3 archives.
+- Separate short bounded VPS-local retention from longer Google Drive retention, and verify the Drive copy before deleting an expired local triplet.
+- Make the restricted VPS NAS export mirror the bounded local set, pruning only complete checksum-valid export triplets whose source set has already expired.
+- Add synthetic regressions for checkpoint restores, compressed archives, independent local/remote retention and safe NAS-export pruning.
+
 ## 2026.09.09.16.52
 
 - Apply and read back the seven-context SoloSafe policy on live `main` only after the repaired PR head passed all ten former required checks.

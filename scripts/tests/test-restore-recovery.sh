@@ -202,6 +202,36 @@ verify_receipts="$test_root/verify-receipts"
 grep -Fxq 'receipt_format=medtrack-restore-verification-v1' "$verify_receipts/verification.receipt"
 grep -Eq -- '-e DATABASE_URL= -e POSTGRES_DB=medtrack_restore_' "$FAKE_DOCKER_LOG"
 
+checkpoint_payload="$test_root/checkpoint-payload"
+cp -a "$payload_dir" "$checkpoint_payload"
+rm -rf -- "$checkpoint_payload/security-evidence"
+mkdir -p "$checkpoint_payload/security-evidence-checkpoint/state" "$checkpoint_payload/security-evidence-checkpoint/segments"
+cp "$evidence_root/state/checkpoint.env" "$checkpoint_payload/security-evidence-checkpoint/state/checkpoint.env"
+cp -a "$segment_dir" "$checkpoint_payload/security-evidence-checkpoint/segments/"
+sed -i 's/^backup_format=.*/backup_format=medtrack-offsite-v4/' "$checkpoint_payload/runtime.txt"
+printf 'security_evidence_mode=checkpoint\nsecurity_evidence_last_segment=%s\n' "${segment_dir##*/}" >> "$checkpoint_payload/runtime.txt"
+(
+  cd "$checkpoint_payload"
+  find . -type f ! -path './manifest.sha256' -print0 | sort -z | while IFS= read -r -d '' payload_file; do
+    sha256sum "$payload_file"
+  done > manifest.sha256
+)
+checkpoint_archive="$test_root/medtrack-prod-canary-20260829T120002Z.tar.age"
+tar --format=posix -C "$checkpoint_payload" -czf "$checkpoint_archive" .
+(
+  cd "$test_root"
+  sha256sum "$(basename "$checkpoint_archive")" > "$(basename "$checkpoint_archive").sha256"
+)
+checkpoint_receipts="$test_root/checkpoint-receipts"
+"$repo_root/scripts/restore.sh" verify \
+  --archive "$checkpoint_archive" \
+  --checksum "$checkpoint_archive.sha256" \
+  --identity "$test_root/identity.txt" \
+  --expected-commit "$commit" \
+  --image-attestation "$image_attestation" \
+  --receipt-dir "$checkpoint_receipts"
+grep -Fxq 'security_evidence_mode=checkpoint' "$checkpoint_receipts/verification.receipt"
+
 activation_receipts="$test_root/activation-receipts"
 rollback_dir="$test_root/rollback-artifacts"
 MEDTRACK_ALLOW_PRODUCTION_RESTORE=1 "$repo_root/scripts/restore.sh" activate \

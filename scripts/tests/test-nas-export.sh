@@ -2,6 +2,12 @@
 set -Eeuo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+grep -Fxq 'ReadWritePaths=/srv/medtrack' "$repo_root/deploy/nas-export/medtrack-nas-export.service"
+if grep -Eq '^ReadWritePaths=.*offsite-backups/local.*nas-export' \
+  "$repo_root/deploy/nas-export/medtrack-nas-export.service"; then
+  echo 'NAS export paths must share one systemd sandbox mount for hard links' >&2
+  exit 1
+fi
 test_root="$(mktemp -d)"
 trap 'rm -rf -- "$test_root"' EXIT
 

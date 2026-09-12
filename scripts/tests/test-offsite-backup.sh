@@ -229,6 +229,11 @@ remote_dir="$fake_remote/medtrack/test/canary"
 [[ "$(find "$remote_dir" -maxdepth 1 -type f | wc -l | tr -d '[:space:]')" == "3" ]]
 [[ -f "$local_dir/medtrack-prod-canary-20260811T020000Z.tar.age.complete" ]]
 [[ -f "$remote_dir/medtrack-prod-canary-20260811T020000Z.tar.age.complete" ]]
+grep -Fxq 'drive_verified=1' "$local_dir/medtrack-prod-canary-20260811T020000Z.tar.age.complete"
+grep -Eq '^drive_verified_epoch=[0-9]+$' "$local_dir/medtrack-prod-canary-20260811T020000Z.tar.age.complete"
+cmp -s \
+  "$local_dir/medtrack-prod-canary-20260811T020000Z.tar.age.complete" \
+  "$remote_dir/medtrack-prod-canary-20260811T020000Z.tar.age.complete"
 [[ ! -e "$local_dir/medtrack-prod-canary-20260811T010000Z.tar.age" ]]
 [[ -s "$backup_root/state/last-success-canary.epoch" ]]
 [[ -s "$backup_root/state/latest-canary.receipt" ]]

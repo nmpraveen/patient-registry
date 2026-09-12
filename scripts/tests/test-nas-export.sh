@@ -62,6 +62,19 @@ common_env=(
 )
 env "${common_env[@]}" "$repo_root/deploy/nas-export/export-encrypted-backups.sh"
 test "$(find "$export_root/rapid" -maxdepth 1 -type f | wc -l)" -eq 6
+for source_file in "$source_root"/rapid/*; do
+  destination_file="$export_root/rapid/${source_file##*/}"
+  test "$(stat -c '%d:%i' "$source_file")" = "$(stat -c '%d:%i' "$destination_file")"
+done
+
+# Simulate one legacy byte-identical copied export and require migration back
+# to the source inode without changing content.
+legacy_export="$export_root/rapid/medtrack-prod-rapid-20260912T180000Z.tar.age"
+cp "$legacy_export" "$legacy_export.copy"
+mv -f "$legacy_export.copy" "$legacy_export"
+test "$(stat -c '%d:%i' "$source_root/rapid/${legacy_export##*/}")" != "$(stat -c '%d:%i' "$legacy_export")"
+env "${common_env[@]}" "$repo_root/deploy/nas-export/export-encrypted-backups.sh"
+test "$(stat -c '%d:%i' "$source_root/rapid/${legacy_export##*/}")" = "$(stat -c '%d:%i' "$legacy_export")"
 
 rm -- "$source_root/rapid/medtrack-prod-rapid-20260912T120000Z.tar.age"{,.sha256,.complete}
 create_triplet 20260913T000000Z

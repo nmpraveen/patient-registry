@@ -352,6 +352,8 @@ rclone --config "$rclone_config" check "$local_tier_dir" "$remote_tier" \
   printf 'archive=%s\n' "$archive_name"
   printf 'sha256=%s\n' "$(cut -d ' ' -f 1 "$local_tier_dir/$checksum_name")"
   printf 'completed_utc=%s\n' "$stamp"
+  printf 'drive_verified=1\n'
+  printf 'drive_verified_epoch=%s\n' "$(date -u +%s)"
   printf 'source_commit=%s\n' "$source_commit"
   printf 'intended_target_commit=%s\n' "$target_commit"
   printf 'security_evidence_chain_sha256=%s\n' "$evidence_chain_sha256"

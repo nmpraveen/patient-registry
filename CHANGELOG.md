@@ -1,3 +1,7 @@
+## 2026.09.12.17.13
+
+- Keep the canonical local backup tree and NAS export inside one systemd sandbox mount so same-filesystem hard links are not rejected as cross-mount operations.
+
 ## 2026.09.12.16.33
 
 - Replace duplicate VPS NAS-export ciphertext copies with verified hard links to the canonical encrypted local triplets.

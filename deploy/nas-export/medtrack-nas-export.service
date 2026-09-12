@@ -21,7 +21,9 @@ ProtectKernelLogs=true
 ProtectKernelModules=true
 ProtectKernelTunables=true
 ProtectSystem=strict
-ReadWritePaths=/srv/medtrack/offsite-backups/local /srv/medtrack/nas-export
+# One common bind mount is required: two separate ReadWritePaths mounts make
+# link(2) return EXDEV even when both directories use the same ext4 filesystem.
+ReadWritePaths=/srv/medtrack
 RestrictAddressFamilies=AF_UNIX
 RestrictRealtime=true
 RestrictSUIDSGID=true

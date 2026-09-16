@@ -1,3 +1,10 @@
+## 2026.09.16.11.58
+
+- Add an independent Manage PhoneBook contacts role control so Reception can maintain contacts without settings-administrator access.
+- Grant the existing Reception role and preserve existing managers through a scoped migration; retain administrator-customized flags and later revocation.
+- Enforce the dedicated capability on web/API contact writes and inactive inspection, preserving fresh locked authorization, audits and stale-edit conflicts.
+- Regress least privilege, role-control toggling and migration preservation; keep Android out of this web-only change.
+
 ## 2026.09.12.17.13
 
 - Keep the canonical local backup tree and NAS export inside one systemd sandbox mount so same-filesystem hard links are not rejected as cross-mount operations.

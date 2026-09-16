@@ -11,6 +11,7 @@ CAPABILITY_FIELD_MAP = {
     "task_reopen": "can_task_reopen",
     "note_add": "can_note_add",
     "patient_merge": "can_patient_merge",
+    "manage_phonebook": "can_manage_phonebook",
     "manage_settings": "can_manage_settings",
 }
 

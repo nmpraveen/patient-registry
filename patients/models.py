@@ -370,6 +370,7 @@ class RoleSetting(MandatoryAuditModelMixin, models.Model):
     can_task_reopen = models.BooleanField(default=False)
     can_note_add = models.BooleanField(default=False)
     can_patient_merge = models.BooleanField(default=False)
+    can_manage_phonebook = models.BooleanField(default=False, db_default=False)
     can_manage_settings = models.BooleanField(default=False)
 
     class Meta:
@@ -384,6 +385,7 @@ class RoleSetting(MandatoryAuditModelMixin, models.Model):
             "task_reopen": self.can_task_reopen,
             "note_add": self.can_note_add,
             "patient_merge": self.can_patient_merge,
+            "manage_phonebook": self.can_manage_phonebook,
             "manage_settings": self.can_manage_settings,
         }
 
@@ -399,6 +401,7 @@ class RoleSetting(MandatoryAuditModelMixin, models.Model):
             "can_task_reopen": self.can_task_reopen,
             "can_note_add": self.can_note_add,
             "can_patient_merge": self.can_patient_merge,
+            "can_manage_phonebook": self.can_manage_phonebook,
             "can_manage_settings": self.can_manage_settings,
         }
 
@@ -1120,6 +1123,7 @@ DEFAULT_ROLE_SETTINGS = {
         "can_task_reopen": True,
         "can_note_add": True,
         "can_patient_merge": True,
+        "can_manage_phonebook": True,
         "can_manage_settings": True,
     },
     "Doctor": {
@@ -1134,6 +1138,7 @@ DEFAULT_ROLE_SETTINGS = {
         "can_note_add": True,
     },
     "Reception": {
+        "can_manage_phonebook": True,
         "case_data_scope": CaseDataScope.ASSIGNED,
         "can_access_call_queue": True,
         "can_intake_patient_lookup": True,

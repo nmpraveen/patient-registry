@@ -18,20 +18,20 @@ def contact_list(request):
     page = Paginator(contacts, 50).get_page(request.GET.get("page"))
     return render(request, "staff_directory/list.html", {
         "page_obj": page, "q": query, "favourites": favourites, "include_inactive": inactive,
-        "can_manage": has_capability(request.user, "manage_settings"),
+        "can_manage": has_capability(request.user, "manage_phonebook"),
     })
 
 
 @login_required
 def contact_detail(request, pk):
-    manager = has_capability(request.user, "manage_settings")
+    manager = has_capability(request.user, "manage_phonebook")
     contact = get_object_or_404(contacts_for(request.user, include_inactive=manager), pk=pk)
     return render(request, "staff_directory/detail.html", {"contact": contact, "can_manage": manager})
 
 
 @login_required
 def contact_edit(request, pk=None):
-    require_staff(request.user, manage=True)
+    require_staff(request.user, capability="manage_phonebook")
     contact = get_object_or_404(contacts_for(request.user, include_inactive=True), pk=pk) if pk else None
     form = ContactForm(request.POST or None, instance=contact,
                        initial={"version": contact.version if contact else 1})

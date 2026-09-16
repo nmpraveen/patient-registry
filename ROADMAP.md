@@ -1,5 +1,11 @@
 # ROADMAP.md
 
+## Reception PhoneBook permission
+
+- Separate contact maintenance from settings administration; grant Reception and preserve existing managers through patients.0045. Admin role controls can grant/revoke PhoneBook access independently.
+- Scoped backend/migration verification passes. Complete exact-head PR review/CI and responsive browser acceptance, then deploy only through encrypted backup, independent restore, approved migration plan, bounded live acceptance and post-deploy canary recovery gates.
+- No Android work or unrelated settings/clinical permission expansion is included.
+
 ## Issue #120 web-only delivery
 
 - PR 1 marks Android deprecated in project documentation and reduces both live

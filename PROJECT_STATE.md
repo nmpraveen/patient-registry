@@ -1,5 +1,11 @@
 # PROJECT_STATE.md
 
+## Reception PhoneBook maintenance
+
+Contact maintenance now uses a dedicated `manage_phonebook` capability, with an independent **Manage PhoneBook contacts** checkbox in custom role management and Django admin. Migration patients.0045 preserves existing settings managers, grants existing Reception, and changes no other policy fields. Admin and Reception defaults enable it; normal initialization preserves later revocation. API `/api/me/` publishes the explicit capability. All contact web/API writes and inactive inspection use it; locked fresh authorization, auth-version revalidation, auditing and stale-version 409 remain intact. Settings, announcement publication, reminder scope, patient identity and clinical capabilities are unchanged. Android is deprecated and receives no native feature work.
+
+Initial isolated PostgreSQL verification passed 68 staff-operation and upgrade tests, including least privilege, role-control toggling/revocation and preservation of customized migration fields. Exact-head CI, code review, responsive browser acceptance and backup-gated VPS deployment are separate completion gates; this source entry does not claim production activation.
+
 ## Issue #120 PR 1 web-only baseline and Android deprecation
 
 MEDTRACK is a web-only project for issue #120. Android is deprecated as a

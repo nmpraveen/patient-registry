@@ -7,7 +7,8 @@ from patients.models import CaseDataScope, RoleSetting
 def staff_user(name, *, manager=False):
     role, _ = RoleSetting.objects.get_or_create(
         role_name="Operations manager" if manager else "Operations reader",
-        defaults={"can_manage_settings": manager, "case_data_scope": CaseDataScope.NONE},
+        defaults={"can_manage_settings": manager, "can_manage_phonebook": manager,
+                  "case_data_scope": CaseDataScope.NONE},
     )
     group, _ = Group.objects.get_or_create(name=role.role_name)
     user = get_user_model().objects.create_user(username=name, password="synthetic-test-password")

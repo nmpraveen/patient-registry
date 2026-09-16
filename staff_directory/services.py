@@ -10,7 +10,7 @@ def contacts_for(user, *, include_inactive=False, q="", favourites=False):
     require_staff(user)
     queryset = Contact.objects.all()
     if include_inactive:
-        require_staff(user, manage=True)
+        require_staff(user, capability="manage_phonebook")
     else:
         queryset = queryset.filter(is_active=True)
     if q:
@@ -27,7 +27,7 @@ def contacts_for(user, *, include_inactive=False, q="", favourites=False):
 
 @transaction.atomic
 def save_contact(user, data, *, pk=None, request=None):
-    actor = mutation_actor(user, manage=True, request=request)
+    actor = mutation_actor(user, capability="manage_phonebook", request=request)
     data = dict(data)
     expected = data.pop("version", None)
     if pk is None:

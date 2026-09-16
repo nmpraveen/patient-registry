@@ -327,7 +327,7 @@ class MeResponseSerializer(serializers.Serializer):
     roles = serializers.ListField(child=serializers.CharField())
     capabilities = serializers.DictField(
         child=serializers.BooleanField(),
-        help_text="Includes staff_operations: active explicit RoleSetting membership or active superuser; group labels and is_staff alone grant no staff access.",
+        help_text="Includes staff_operations for active explicit RoleSetting membership or active superusers, and manage_phonebook for contact maintenance only; group labels and is_staff alone grant no access.",
     )
     data_scope = DataScopeContractSerializer()
 

@@ -154,6 +154,7 @@ class MeView(APIView):
                     "task_reopen": has_capability(request.user, "task_reopen"),
                     "note_add": has_capability(request.user, "note_add"),
                     "manage_settings": has_capability(request.user, "manage_settings"),
+                    "manage_phonebook": has_capability(request.user, "manage_phonebook"),
                     "staff_operations": staff_operations,
                 },
                 "data_scope": role_data_scope_payload(request.user),

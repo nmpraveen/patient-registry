@@ -377,7 +377,8 @@
                       <div class="text-muted small">
                         Scope: {{ role.get_case_data_scope_display }}{% if role.can_access_call_queue %} + call queue{% endif %}{% if role.can_intake_patient_lookup %} + intake lookup{% endif %}<br />
                         Case {{ role.can_case_create|yesno:"create,-" }} / {{ role.can_case_edit|yesno:"edit,-" }},
-                        Task {{ role.can_task_create|yesno:"create,-" }} / {{ role.can_task_edit|yesno:"edit,-" }} / {{ role.can_task_reopen|yesno:"reopen,-" }}
+                        Task {{ role.can_task_create|yesno:"create,-" }} / {{ role.can_task_edit|yesno:"edit,-" }} / {{ role.can_task_reopen|yesno:"reopen,-" }}<br />
+                        PhoneBook: {{ role.can_manage_phonebook|yesno:"manage,read" }}
                       </div>
                     </td>
                     <td>{{ role.member_count }}</td>

@@ -993,6 +993,7 @@ class RoleSettingForm(StyledModelForm):
             "can_task_reopen",
             "can_note_add",
             "can_patient_merge",
+            "can_manage_phonebook",
             "can_manage_settings",
         ]
         widgets = {
@@ -1006,12 +1007,15 @@ class RoleSettingForm(StyledModelForm):
             "can_task_reopen": forms.CheckboxInput(),
             "can_note_add": forms.CheckboxInput(),
             "can_patient_merge": forms.CheckboxInput(),
+            "can_manage_phonebook": forms.CheckboxInput(),
             "can_manage_settings": forms.CheckboxInput(),
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["case_data_scope"].label = "Case data scope"
+        self.fields["can_manage_phonebook"].label = "Manage PhoneBook contacts"
+        self.fields["can_manage_phonebook"].help_text = "Add, edit, deactivate and reactivate contacts only."
         self.fields["case_data_scope"].help_text = "Controls which case records this role can open."
         self.fields["can_access_call_queue"].help_text = "Adds unassigned cases currently due in the calling queue."
         self.fields["can_intake_patient_lookup"].help_text = "Allows identity lookup during new-case intake."

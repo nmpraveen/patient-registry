@@ -11,7 +11,7 @@ from .services import contacts_for, save_contact, set_favourite
 @extend_schema_view(get=extend_schema(parameters=[
     OpenApiParameter("q", str, description="Search name, specialty, organisation and phones; max 100 characters."),
     OpenApiParameter("favourites", bool),
-    OpenApiParameter("include_inactive", bool, description="Settings managers only."),
+    OpenApiParameter("include_inactive", bool, description="PhoneBook managers only."),
 ]))
 class ContactList(generics.ListCreateAPIView):
     permission_classes = [StaffPermission]

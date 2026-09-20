@@ -3,6 +3,7 @@ set -Eeuo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 test_root="$(mktemp -d)"
+export MEDTRACK_OPERATION_LOCK="$test_root/operation.lock"
 trap 'rm -rf -- "$test_root"' EXIT
 
 fake_bin="$test_root/bin"

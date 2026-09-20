@@ -1,3 +1,8 @@
+## 2026.09.20.20.05
+
+- Refresh verified Caddy and Alpine image pins plus the required CA certificate package pin.
+- Align clinical and accessibility regressions with signed notes baselines and extracted assets; isolate shell fixture operation locks for unprivileged CI.
+
 ## 2026.09.20.19.56
 
 - Preserve clinical drafts and notes with signed conflict baselines, and revalidate API/web credentials after mutation locks.

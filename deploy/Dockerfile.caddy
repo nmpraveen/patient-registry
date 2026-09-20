@@ -1,5 +1,5 @@
-ARG CADDY_BUILDER=caddy:2.11.4-builder-alpine@sha256:1a1689db91cfb390b2d856a1b3774e796852822cd723fa54c475b272f82bb4b7
-ARG CADDY_RUNTIME=alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
+ARG CADDY_BUILDER=caddy:2.11.4-builder-alpine@sha256:2b9f32cbba6045e79212bb253f595588d20be8f7d1edf61582c519e124e0d2d8
+ARG CADDY_RUNTIME=alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
 ARG VCS_REF=unknown
 
 FROM ${CADDY_BUILDER} AS builder
@@ -14,7 +14,7 @@ FROM ${CADDY_RUNTIME}
 ARG VCS_REF
 COPY --from=builder --chown=0:0 --chmod=0755 /usr/bin/caddy /usr/bin/caddy
 RUN apk add --no-cache \
-        ca-certificates=20260611-r0 \
+        ca-certificates=20260909-r0 \
         libcap=2.78-r0 \
         mailcap=2.1.54-r0 \
         libcrypto3=3.5.8-r0 \

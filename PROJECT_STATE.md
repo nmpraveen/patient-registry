@@ -6,7 +6,7 @@ The review baseline is `2d1f38ff1623f21e74cd53ca3531336eb989798b`. Notes and cli
 
 Migration `patients.0046_audit_evidence_export_ack` adds recoverable UUID delivery acknowledgements and verified-chain progress, leaving append-only AuditEvent records intact. Immutable evidence snapshots, rotation-aware log deltas, private checked local backups, a shared mutation operation lock and incremental remote checks with mandatory full scrubs strengthen recovery. The source-level coverage and explicit retained safety boundaries are in [review remediation](docs/review-remediation-20260920.md).
 
-The release requires independent review, all seven exact-head CI contexts, encrypted backup, exact-image independent restore, reviewed migration plan, authenticated live acceptance and post-deploy canary verification. This source entry does not certify deployment or recurring recovery automation; final receipts belong to the release evidence.
+Independent review also corrected configuration overriding immutable-snapshot verification. Required CI prompted verified Caddy/Alpine pin refreshes, a retained Android Bouncy Castle security dependency refresh, and portable isolated shell fixtures. The release requires all seven exact-head CI contexts, encrypted backup, exact-image independent restore, reviewed migration plan, authenticated live acceptance and post-deploy canary verification. This source entry does not certify deployment or recurring recovery automation; final receipts belong to the release evidence.
 
 ## Reception PhoneBook maintenance
 

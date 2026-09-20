@@ -110,10 +110,16 @@ status="$(curl --silent --header 'Host: medtrack.invalid' --output /dev/null --w
 [[ "$status" == 429 ]]
 
 docker stop "$container_name" >/dev/null
-if rg -i 'authorization|cookie|query_string|request_body|patient[_ -]?search|clinical_payload|"uri"|"path"|remote_ip|client_ip' "$test_root/logs"; then
+if grep -Eri 'authorization|cookie|query_string|request_body|patient[_ -]?search|clinical_payload|"uri"|"path"|remote_ip|client_ip' "$test_root/logs"; then
   echo "PHI-safe edge log retained a forbidden request field" >&2
   exit 1
+else
+  scan_status=$?
+  if [[ "$scan_status" != 1 ]]; then
+    echo "Could not inspect PHI-safe edge logs" >&2
+    exit "$scan_status"
+  fi
 fi
-rg -q '"status":429' "$test_root/logs/caddy-access.json"
+grep -F '"status":429' "$test_root/logs/caddy-access.json" >/dev/null
 
 echo "EDGE_AUTH_THROTTLE_TEST_OK"

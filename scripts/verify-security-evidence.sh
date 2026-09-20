@@ -12,6 +12,16 @@ fi
 evidence_root="${MEDTRACK_SECURITY_EVIDENCE_ROOT:-/srv/medtrack/security-evidence}"
 maximum_age="${MEDTRACK_SECURITY_EVIDENCE_MAX_AGE_SECONDS:-7200}"
 allow_stale="${MEDTRACK_SECURITY_EVIDENCE_ALLOW_STALE:-0}"
+# Explicit snapshot options must win over the configured live evidence root.
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --root)
+      if [[ $# -lt 2 || "$2" != /* ]]; then echo "--root requires an absolute evidence directory" >&2; exit 2; fi
+      evidence_root="$2"; shift 2 ;;
+    --allow-stale) allow_stale=1; shift ;;
+    *) echo "Usage: verify-security-evidence.sh [--root <absolute-dir>] [--allow-stale]" >&2; exit 2 ;;
+  esac
+done
 state_file="$evidence_root/state/checkpoint.env"
 segments_root="$evidence_root/segments"
 anchor_file="$evidence_root/state/anchor.env"

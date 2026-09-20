@@ -163,6 +163,10 @@ printf 'AGE-SECRET-KEY-TEST\n' > "$test_root/identity.txt"
 
 export PATH="$fake_bin:$PATH"
 export MEDTRACK_ENV_FILE="$test_root/test.env"
+# The configured live evidence path must never redirect archive verification.
+export MEDTRACK_BACKUP_CONFIG="$test_root/backup.env"
+printf 'MEDTRACK_SECURITY_EVIDENCE_ROOT=%q\nMEDTRACK_SECURITY_EVIDENCE_ALLOW_STALE=0\n' \
+  "$test_root/unavailable-live-evidence" > "$MEDTRACK_BACKUP_CONFIG"
 export MEDTRACK_BUILD_CONTEXT_VERIFIER="$test_root/build-context-verifier.py"
 export PYTHON_COMMAND=python
 export MEDTRACK_RESTORE_SCRATCH_ROOT="$test_root"

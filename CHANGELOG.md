@@ -1,3 +1,9 @@
+## 2026.09.20.20.12
+
+- Verify immutable backup and restored evidence explicitly so live configuration cannot redirect integrity checks.
+- Replace optional-command assumptions in edge/security fixtures with portable checks that fail on log inspection errors.
+- Refresh the retained Android Bouncy Castle security override, generated dependency locks and verified artifact checksums.
+
 ## 2026.09.20.20.05
 
 - Refresh verified Caddy and Alpine image pins plus the required CA certificate package pin.

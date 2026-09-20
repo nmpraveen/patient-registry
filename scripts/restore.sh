@@ -557,8 +557,8 @@ if [[ "$audit_table_present" == "1" ]]; then
       echo "Backup is missing full integrity-protected security evidence" >&2
       exit 1
     fi
-    evidence_result="$(MEDTRACK_SECURITY_EVIDENCE_ROOT="$payload_dir/security-evidence" \
-      MEDTRACK_SECURITY_EVIDENCE_ALLOW_STALE=1 "$repo_root/scripts/verify-security-evidence.sh")"
+    evidence_result="$("$repo_root/scripts/verify-security-evidence.sh" \
+      --root "$payload_dir/security-evidence" --allow-stale)"
   else
     if [[ ! -d "$payload_dir/security-evidence-checkpoint" ||
       ! -x "$repo_root/scripts/verify-security-evidence-checkpoint.sh" ]]; then

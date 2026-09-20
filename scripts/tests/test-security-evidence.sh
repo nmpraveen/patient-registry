@@ -82,9 +82,16 @@ test -s "$evidence_root/state/anchor.env"
 [[ "$(find "$evidence_root/segments" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d '[:space:]')" == 1 ]]
 grep -Fq 'sustained authentication failures' "$FAKE_ALERT_LOG"
 [[ "$(grep -c 'sustained authentication failures' "$FAKE_ALERT_LOG")" == 1 ]]
-if rg -i -g '*.jsonl' 'authorization|cookie|query_string|request_body|patient[_ -]?search|clinical_payload|"uri"|"path"' "$evidence_root/segments"; then
+if grep -Ei 'authorization|cookie|query_string|request_body|patient[_ -]?search|clinical_payload|"uri"|"path"' \
+  "$evidence_root"/segments/segment-*/*.jsonl; then
   echo "Security evidence retained a forbidden sensitive field" >&2
   exit 1
+else
+  scan_status=$?
+  if [[ "$scan_status" != 1 ]]; then
+    echo "Could not inspect exported security evidence" >&2
+    exit 1
+  fi
 fi
 
 printf '{"timestamp":"now","method":"GET","status":200,"duration_us":12,"bytes":0}\n' >> "$log_root/caddy-access.json"
@@ -93,6 +100,27 @@ printf '{"timestamp":"now","method":"GET","status":200,"duration_us":10,"bytes":
 "$repo_root/scripts/export-security-evidence.sh"
 "$repo_root/scripts/verify-security-evidence.sh"
 test ! -s "$FAKE_ALERT_LOG"
+
+snapshot_root="$test_root/verification-snapshot"
+cp -a "$evidence_root" "$snapshot_root"
+printf 'MEDTRACK_SECURITY_EVIDENCE_ROOT=%q\nMEDTRACK_SECURITY_EVIDENCE_ALLOW_STALE=0\n' \
+  "$evidence_root" > "$test_root/live-config"
+snapshot_segment="$(find "$snapshot_root/segments" -mindepth 1 -maxdepth 1 -type d -print -quit)"
+printf 'tamper\n' >> "$snapshot_segment/audit-events.jsonl"
+if MEDTRACK_BACKUP_CONFIG="$test_root/live-config" "$repo_root/scripts/verify-security-evidence.sh" \
+  --root "$snapshot_root" --allow-stale >/dev/null 2>&1; then
+  echo "Configured live evidence hid a corrupted explicit snapshot" >&2
+  exit 1
+fi
+cp "$evidence_root/segments/${snapshot_segment##*/}/audit-events.jsonl" "$snapshot_segment/audit-events.jsonl"
+sed -i 's/^completed_epoch=.*/completed_epoch=0/' "$snapshot_root/state/checkpoint.env"
+MEDTRACK_BACKUP_CONFIG="$test_root/live-config" "$repo_root/scripts/verify-security-evidence.sh" \
+  --root "$snapshot_root" --allow-stale
+if MEDTRACK_BACKUP_CONFIG="$test_root/live-config" "$repo_root/scripts/verify-security-evidence.sh" \
+  --root "$snapshot_root" >/dev/null 2>&1; then
+  echo "Explicit snapshot root unexpectedly disabled the freshness check" >&2
+  exit 1
+fi
 
 cp "$evidence_root/state/checkpoint.env" "$test_root/checkpoint.saved"
 sed -i 's/^completed_epoch=.*/completed_epoch=0/' "$evidence_root/state/checkpoint.env"

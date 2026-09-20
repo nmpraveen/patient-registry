@@ -212,8 +212,7 @@ if [[ "$require_audit_schema" == "1" ]]; then
   flock -u 8
   exec 8<&-
   if [[ "$evidence_mode" == "full" ]]; then
-    MEDTRACK_SECURITY_EVIDENCE_ROOT="$snapshot_root" MEDTRACK_SECURITY_EVIDENCE_ALLOW_STALE=1 \
-      "$repo_root/scripts/verify-security-evidence.sh"
+    "$repo_root/scripts/verify-security-evidence.sh" --root "$snapshot_root" --allow-stale
   else
     MEDTRACK_SECURITY_EVIDENCE_CHECKPOINT_ROOT="$snapshot_root" "$evidence_checkpoint_verifier"
   fi

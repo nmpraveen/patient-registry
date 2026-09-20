@@ -8,6 +8,37 @@ import unittest
 
 @unittest.skipIf(os.name == "nt", "Run shell stubs with native Linux Python")
 class BackupSnapshotTests(unittest.TestCase):
+    def test_full_snapshot_verification_cannot_be_redirected_to_configured_live_tree(self):
+        root = Path(__file__).resolve().parents[2]
+        source = (root / "scripts/tests/test-offsite-backup.sh").read_text()
+        harness = source.split("export FAKE_AUDIT_SCHEMA_PRESENT=0")[0]
+        harness = harness.replace('repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"', 'repo_root="$(pwd)"')
+        run = harness + r'''
+export MEDTRACK_BACKUP_CONFIG="$test_root/live-config"
+printf 'MEDTRACK_SECURITY_EVIDENCE_ROOT=%q\nMEDTRACK_SECURITY_EVIDENCE_ALLOW_STALE=0\n' \
+  "$MEDTRACK_SECURITY_EVIDENCE_ROOT" > "$MEDTRACK_BACKUP_CONFIG"
+REAL_TAR="$(command -v tar)"
+export REAL_TAR
+cat > "$fake_bin/tar" <<'FAKE_TAR'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+"$REAL_TAR" "$@"
+for arg in "$@"; do
+  if [[ "$arg" == */payload/security-evidence ]]; then
+    printf 'tampered after snapshot\n' >> "$MEDTRACK_SECURITY_EVIDENCE_ROOT/segments/segment-00000001-20260829T120000Z/audit-events.jsonl"
+  fi
+done
+FAKE_TAR
+chmod +x "$fake_bin/tar"
+MEDTRACK_BACKUP_TIMESTAMP=20260811T010000Z "$repo_root/scripts/backup-offsite.sh" --tier weekly
+if "$repo_root/scripts/verify-security-evidence.sh" >/dev/null 2>&1; then
+  echo "Fixture did not corrupt the configured live tree" >&2
+  exit 1
+fi
+'''
+        result = subprocess.run(["bash", "-s"], cwd=root, input=run, text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_concurrent_export_cannot_change_full_or_checkpoint_snapshot_identity(self):
         root = Path(__file__).resolve().parents[2]
         source = (root / "scripts/tests/test-offsite-backup.sh").read_text()

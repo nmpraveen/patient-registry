@@ -1,3 +1,7 @@
+## 2026.09.20.20.19
+
+- Inspect a private caller-owned copy of edge-test logs so unprivileged Linux CI can validate them without changing production file permissions.
+
 ## 2026.09.20.20.12
 
 - Verify immutable backup and restored evidence explicitly so live configuration cannot redirect integrity checks.

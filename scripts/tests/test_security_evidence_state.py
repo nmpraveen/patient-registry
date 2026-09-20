@@ -1,8 +1,11 @@
+import gzip
+import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
-from scripts.security_evidence_state import capture_log
+from scripts.security_evidence_state import capture_log, ordered_logs
 
 
 class SecurityLogCursorTests(unittest.TestCase):
@@ -110,6 +113,142 @@ class SecurityLogCursorTests(unittest.TestCase):
         self.path.write_bytes(b'a\n' * 2200)
         with self.assertRaises(ValueError):
             capture_log(self.path, cursor, 1000)
+
+
+class CaddyLogCursorTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.path = Path(self.directory.name) / "caddy-access.json"
+
+    def rotate_compressed(self, name):
+        rotated = self.path.with_name(name)
+        with gzip.open(rotated, "wb") as stream:
+            stream.write(self.path.read_bytes())
+        self.path.unlink()
+
+    def test_compressed_size_rotation_drains_tail_and_current_with_bounds(self):
+        self.path.write_bytes(b"old1\nold2\n")
+        first, cursor = capture_log(self.path, None, 5)
+        self.rotate_compressed("caddy-access-2026-09-20T04-05-56.762-size.json.gz")
+        self.path.write_bytes(b"new1\nnew2\n")
+        second, cursor = capture_log(self.path, cursor, 5)
+        third, cursor = capture_log(self.path, cursor, 5)
+        fourth, cursor = capture_log(self.path, cursor, 100)
+        unchanged, _ = capture_log(self.path, cursor, 100)
+        self.assertEqual((first, second, third, fourth, unchanged),
+                         (b"old1\n", b"old2\n", b"new1\n", b"new2\n", b""))
+
+    def test_legacy_time_and_size_rotations_are_drained_in_timestamp_order(self):
+        self.path.write_bytes(b"first\ntail\n")
+        _, cursor = capture_log(self.path, None, 6)
+        self.rotate_compressed("caddy-access-2026-09-20T04-05-56.760.json.gz")
+        self.path.with_name("caddy-access-2026-09-20T04-05-56.762-size.json").write_bytes(b"size\n")
+        with gzip.open(self.path.with_name("caddy-access-2026-09-20T04-05-56.761-time.json.gz"), "wb") as stream:
+            stream.write(b"time\n")
+        self.path.write_bytes(b"current\n")
+        content, _ = capture_log(self.path, cursor, 100)
+        self.assertEqual(content, b"tail\ntime\nsize\ncurrent\n")
+
+    def test_supported_default_names_and_compression_variants(self):
+        for reason in ("", "-size", "-time"):
+            for compression in ("", ".gz"):
+                with self.subTest(reason=reason, compression=compression):
+                    rotated = self.path.with_name(f"caddy-access-2026-09-20T04-05-56.762{reason}.json{compression}")
+                    rotated.touch()
+                    self.assertEqual(ordered_logs(self.path), [rotated])
+                    rotated.unlink()
+
+    def test_same_timestamp_variants_remain_ambiguous(self):
+        first = self.path.with_name("caddy-access-2026-09-20T04-05-56.762-size.json")
+        first.touch()
+        for name in ("caddy-access-2026-09-20T04-05-56.762-size.json.gz",
+                     "caddy-access-2026-09-20T04-05-56.762-time.json",
+                     "caddy-access-2026-09-20T04-05-56.762.json"):
+            with self.subTest(name=name):
+                duplicate = self.path.with_name(name)
+                duplicate.touch()
+                with self.assertRaisesRegex(ValueError, "Ambiguous"):
+                    ordered_logs(self.path)
+                duplicate.unlink()
+
+    def test_invalid_names_and_dates_fail_closed(self):
+        for suffix in ("2026-09-20T04-05-56.762-other.json.gz",
+                       "\uff12\uff10\uff12\uff16-09-20T04-05-56.762-size.json",
+                       "2026-09-20T04-05-56.762-size.json.zst",
+                       "2026-09-20T04-05-56.762-size.json.gz.tmp",
+                       "2026-09-20T04-05-56-size.json.gz",
+                       "2026-02-30T04-05-56.762-size.json.gz",
+                       "2026-09-20T25-05-56.762-time.json.gz"):
+            with self.subTest(suffix=suffix):
+                invalid = self.path.with_name("caddy-access-" + suffix)
+                invalid.touch()
+                with self.assertRaises(ValueError):
+                    ordered_logs(self.path)
+                invalid.unlink()
+
+    def test_compressed_inode_reuse_cannot_disambiguate_repeated_prefix(self):
+        self.path.write_bytes(b"old\ntail\n")
+        _, cursor = capture_log(self.path, None, 4)
+        self.rotate_compressed("caddy-access-2026-09-20T04-05-56.762-size.json.gz")
+        ambiguous = self.path.with_name("caddy-access-2026-09-20T04-05-57.762-size.json.gz")
+        with gzip.open(ambiguous, "wb") as stream:
+            stream.write(b"old\nanother-tail\n")
+        # Linux can recycle the deleted raw inode for this compressed file.
+        # Make that observed allocation deterministic on every test platform.
+        cursor["inode"] = ambiguous.stat().st_ino
+        self.path.write_bytes(b"new\n")
+        with self.assertRaisesRegex(ValueError, "continuity missing"):
+            capture_log(self.path, cursor, 100)
+
+    def test_lost_compressed_tail_cannot_match_reused_current_inode(self):
+        self.path.write_bytes(b"old1\nold2\ntail\n")
+        _, cursor = capture_log(self.path, None, 5)
+        name = "caddy-access-2026-09-20T04-05-56.762-size.json.gz"
+        self.rotate_compressed(name)
+        self.path.write_bytes(b"new\n")
+        _, cursor = capture_log(self.path, cursor, 5)
+        rotated = self.path.with_name(name)
+        old_inode = rotated.stat().st_ino
+        rotated.unlink()
+        self.path.write_bytes(b"old1\nold2\nreplacement\n")
+        original_stat = Path.stat
+
+        def reused_inode(path, *args, **kwargs):
+            result = list(original_stat(path, *args, **kwargs))
+            if path == self.path:
+                result[1] = old_inode
+            return os.stat_result(result)
+
+        with patch.object(Path, "stat", reused_inode):
+            with self.assertRaisesRegex(ValueError, "continuity missing"):
+                capture_log(self.path, cursor, 100)
+
+    def test_lost_raw_rotation_tail_cannot_match_reused_current_inode(self):
+        self.path.write_bytes(b"old1\nold2\ntail\n")
+        _, cursor = capture_log(self.path, None, 5)
+        rotated = self.path.with_name("caddy-access-2026-09-20T04-05-56.762-size.json")
+        self.path.rename(rotated)
+        self.path.write_bytes(b"new\n")
+        content, cursor = capture_log(self.path, cursor, 5)
+        self.assertEqual(content, b"old2\n")
+        # A retained raw rotation still resumes correctly before it is lost.
+        content, _ = capture_log(self.path, cursor, 5)
+        self.assertEqual(content, b"tail\n")
+        old_inode = rotated.stat().st_ino
+        rotated.unlink()
+        self.path.write_bytes(b"old1\nold2\nreplacement\n")
+        original_stat = Path.stat
+
+        def reused_inode(path, *args, **kwargs):
+            result = list(original_stat(path, *args, **kwargs))
+            if path == self.path:
+                result[1] = old_inode
+            return os.stat_result(result)
+
+        with patch.object(Path, "stat", reused_inode):
+            with self.assertRaisesRegex(ValueError, "continuity missing"):
+                capture_log(self.path, cursor, 100)
 
 
 if __name__ == "__main__":

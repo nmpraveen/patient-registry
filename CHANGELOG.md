@@ -1,3 +1,7 @@
+## 2026.09.20.20.52
+
+- Read Caddy size/time gzip rotations with bounded cursor continuity, and verify the effective installed evidence exporter before resuming its timer.
+
 ## 2026.09.20.20.19
 
 - Inspect a private caller-owned copy of edge-test logs so unprivileged Linux CI can validate them without changing production file permissions.

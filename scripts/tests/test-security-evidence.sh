@@ -153,4 +153,31 @@ if "$repo_root/scripts/export-security-evidence.sh" >/dev/null 2>&1; then
 fi
 grep -Fq 'audit/security evidence export failed' "$FAKE_ALERT_LOG"
 
+cat > "$fake_bin/systemctl" <<'FAKE_SYSTEMCTL'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+[[ "$*" == 'show medtrack-security-evidence-export.service --property=ExecStart --value' ]]
+printf '%s\n' "$FAKE_EXEC_START"
+FAKE_SYSTEMCTL
+chmod +x "$fake_bin/systemctl"
+export FAKE_EXEC_START="{ path=$repo_root/scripts/export-security-evidence.sh ; argv[]=$repo_root/scripts/export-security-evidence.sh ; ignore_errors=no ; }"
+"$repo_root/scripts/verify-security-evidence-runner.sh"
+installed_runner="$test_root/installed-exporter"
+cp "$repo_root/scripts/export-security-evidence.sh" "$installed_runner"
+chmod +x "$installed_runner"
+export FAKE_EXEC_START="{ path=$installed_runner ; argv[]=$installed_runner ; ignore_errors=no ; }"
+"$repo_root/scripts/verify-security-evidence-runner.sh"
+printf '\n# stale installed exporter\n' >> "$installed_runner"
+if "$repo_root/scripts/verify-security-evidence-runner.sh" >/dev/null 2>&1; then
+  echo "Runner verification accepted a stale installed exporter" >&2
+  exit 1
+fi
+for command_text in '' "{ path=/bin/sh ; argv[]=/bin/sh -c exporter ; ignore_errors=no ; }" \
+  "{ path=$repo_root/scripts/export-security-evidence.sh ; argv[]=$repo_root/scripts/export-security-evidence.sh ; ignore_errors=no ; } { path=$installed_runner ; argv[]=$installed_runner ; ignore_errors=no ; }"; do
+  if FAKE_EXEC_START="$command_text" "$repo_root/scripts/verify-security-evidence-runner.sh" >/dev/null 2>&1; then
+    echo "Runner verification accepted an unsupported or multiple command" >&2
+    exit 1
+  fi
+done
+
 echo "SECURITY_EVIDENCE_TEST_OK"

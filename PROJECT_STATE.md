@@ -1,5 +1,9 @@
 # PROJECT_STATE.md
 
+## September 20 evidence-export rollout correction
+
+The Caddy log cursor recognizes the pinned Caddy 2.11.4/timberjack 1.4.2 default `-size`/`-time` rotation suffixes, including gzip, while retaining legacy timestamp-only names. Calendar validation, duplicate-timestamp rejection and bounded cursor continuity remain strict. A read-only rollout gate checks the effective systemd exporter executable against the reviewed source so a preserved root-owned old copy cannot masquerade as an updated runner. Regression coverage includes compressed tail/current replay, bounded resumes, ambiguity and installed-copy drift. This source change does not certify live rollout; fresh ledger/progress/chain acceptance remains required.
+
 ## September 20 whole-project review remediation
 
 The review baseline is `2d1f38ff1623f21e74cd53ca3531336eb989798b`. Notes and clinical previews preserve newer edits; clinical API and task/notes web writes revalidate their original credential at the lock boundary. Recent-case/search/API child retrieval is bounded, scoped patient aggregates cannot include inaccessible cases, current age derives from DOB, and bundle export respects its importer limits. Stable page assets and shared clinical controls replace repeated inline/duplicate code; shadowed definitions and the dead case form are removed.

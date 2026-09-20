@@ -55,7 +55,9 @@ Baseline: `2d1f38ff1623f21e74cd53ca3531336eb989798b`. This release addresses the
 
 Run the full Django suite against PostgreSQL, migration-from-zero/drift checks, strict OpenAPI, Node/browser regressions and every operations fixture. The existing seven exact-head required CI contexts stay mandatory. Independent reviewers review the implementation and the final pushed PR head; a local pass is not a production claim.
 
-During rollout, pause the evidence-export timer while the source checkout changes and migration 0046 is pending. Preserve its prior active state and resume it after migration, then run and verify a fresh export. Do not weaken schema, lag, chain or recovery checks to bypass a failure.
+During rollout, pause the evidence-export timer while the source checkout changes and migration 0046 is pending. Preserve its prior active state, verify the effective installed runner with `scripts/verify-security-evidence-runner.sh`, and resume only after the fresh-export ledger/progress/chain checks in `RUNBOOK.md`. Do not weaken schema, lag, chain or recovery checks to bypass a failure.
+
+The rotation compatibility follow-up is based on [Caddy 2.11.4's file writer](https://github.com/caddyserver/caddy/blob/v2.11.4/modules/logging/filewriter.go) and its pinned [timberjack 1.4.2 filename contract](https://github.com/DeRuina/timberjack/blob/v1.4.2/timberjack.go). Default millisecond timestamps accept only legacy no-reason or `size`/`time` variants; arbitrary tags, compression formats and ambiguous timestamps remain rejected.
 
 Create a fresh encrypted pre-deployment recovery set, publish the ciphertext export, independently restore using the backup's exact source image ID, review the exact migration-plan hash, and use the guarded deployment script. Verify live authenticated reads and rolled-back synthetic mutations, then create and independently restore a post-deployment canary using the exact new image. Export publication is not proof of NAS arrival. Manual restore success does not certify unrelated scheduled-verifier health.
 

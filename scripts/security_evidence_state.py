@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime
 import gzip
 import hashlib
 import json
@@ -78,9 +79,18 @@ def ordered_logs(current: Path) -> list[Path]:
     else:
         seen = set()
         for path in current.parent.glob("caddy-access-*.json*"):
-            match = re.fullmatch(r"caddy-access-([0-9T:Z.\-]+)\.json(?:\.gz)?", path.name)
+            # Caddy 2.11.4 uses timberjack's default millisecond timestamp
+            # and size/time reason; older lumberjack rotations omit the reason.
+            match = re.fullmatch(
+                r"caddy-access-([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}-[0-9]{2}-[0-9]{2}\.[0-9]{3})"
+                r"(?:-(?:size|time))?\.json(?:\.gz)?", path.name
+            )
             if not match or path.is_symlink() or match[1] in seen:
                 raise ValueError("Ambiguous or unsafe Caddy rotation")
+            try:
+                datetime.strptime(match[1], "%Y-%m-%dT%H-%M-%S.%f")
+            except ValueError as error:
+                raise ValueError("Invalid Caddy rotation timestamp") from error
             seen.add(match[1])
             rotations.append((match[1], path))
         paths = [path for _, path in sorted(rotations)]
@@ -103,7 +113,9 @@ def capture_log(current: Path, cursor: dict | None, budget: int) -> tuple[bytes,
     if cursor:
         if not isinstance(cursor.get("offset"), int) or cursor["offset"] < 0:
             raise ValueError("Invalid log cursor")
-        inode_matches = [path for path in paths if path.stat().st_ino == cursor.get("inode") and prefix_matches(path, cursor)]
+        # Compression creates a new file and may reuse the deleted raw file's
+        # inode. A gzip candidate therefore needs a unique content fingerprint.
+        inode_matches = [path for path in paths if path.suffix != ".gz" and path.stat().st_ino == cursor.get("inode") and prefix_matches(path, cursor)]
         fingerprint_matches = [path for path in paths if path != current and cursor["prefix_bytes"] > 0 and prefix_matches(path, cursor)]
         if len(inode_matches) == 1:
             previous = inode_matches[0]
@@ -155,7 +167,7 @@ def capture_log(current: Path, cursor: dict | None, budget: int) -> tuple[bytes,
                 "offset": new_offset,
                 "prefix_bytes": len(prefix),
                 "prefix_sha256": hashlib.sha256(prefix).hexdigest(),
-                "inode": path.stat().st_ino,
+                "inode": path.stat().st_ino if path.suffix != ".gz" else None,
                 "known_rotations": known_rotations,
             }
             chunks.append(block_to_keep)

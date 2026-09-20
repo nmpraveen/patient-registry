@@ -1,5 +1,10 @@
 # ROADMAP.md
 
+## Evidence-export rollout follow-up
+
+- Support pinned Caddy reason-suffixed rotation names and verify effective installed exporter identity before timer resumption.
+- Complete exact-head CI/review and verify fresh UUID acknowledgements, matching checkpoint progress, backlog drain and full-chain integrity after installation. Keep recurring independent recovery-health acceptance separate.
+
 ## September 20 maintenance release
 
 - Deliver all demonstrated whole-project review defects and the bounded cleanup/query/static-asset improvements described in [the disposition ledger](docs/review-remediation-20260920.md).

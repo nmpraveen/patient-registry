@@ -1,5 +1,6 @@
 import hashlib
 import json
+import re
 import secrets
 from datetime import timedelta
 
@@ -65,7 +66,7 @@ def encode_cursor(*, user, kind, binding, position, context=None, snapshot=None)
 
 
 def decode_cursor(token, *, user, kind, binding, context=None):
-    if not isinstance(token, str) or len(token) < 32 or len(token) > 128:
+    if not isinstance(token, str) or re.fullmatch(r"[A-Za-z0-9_-]{32,128}", token) is None:
         raise CursorValidationError("Invalid cursor.")
     cursor = MobileOpaqueCursor.objects.filter(
         token_hash=_token_hash(token),

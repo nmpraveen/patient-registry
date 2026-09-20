@@ -23,7 +23,14 @@ case "$command_name" in
     find "$(remote_to_path "$1")" -maxdepth 1 -type f -printf '%f\n' | sort
     ;;
   cat)
+    [[ -z "${FAKE_RCLONE_CATS:-}" ]] || printf '%s\n' "$1" >> "$FAKE_RCLONE_CATS"
     cat "$(remote_to_path "$1")"
+    ;;
+  lsjson)
+    path="$(remote_to_path "$1")"
+    bytes="$(wc -c < "$path" | tr -d '[:space:]')"
+    hash="$(sha256sum "$path" | awk '{print $1}')"
+    printf '{"ID":"%s%s","Size":%s,"ModTime":"synthetic","Hashes":{"sha256":"%s"}}\n' "${path##*/}" "${FAKE_IDENTITY_CHANGE:-}" "$bytes" "$hash"
     ;;
   about)
     printf '{"free":1000000000,"used":1}\n'
@@ -65,6 +72,8 @@ export FAKE_RCLONE_ROOT="$fake_remote"
 export MEDTRACK_BACKUP_CONFIG="$test_root/no-config"
 export MEDTRACK_OFFSITE_ROOT="$test_root"
 export MEDTRACK_BACKUP_STATE_ROOT="$state_root"
+export MEDTRACK_HEALTH_STATE_ROOT="$test_root/health-state"
+export PYTHON_COMMAND=python
 export RCLONE_CONFIG="$test_root/rclone.conf"
 export RCLONE_REMOTE="medtrack-drive:medtrack/test"
 export MEDTRACK_HEALTH_HASH_MODE=all
@@ -106,6 +115,29 @@ MEDTRACK_HEALTH_PRODUCTION_MODE=1 MEDTRACK_HEALTH_HASH_MODE=all \
   MEDTRACK_SECURITY_EVIDENCE_HEALTH_HOOK="$test_root/scratch-hook" \
   MEDTRACK_SCRATCH_RESTORE_RECEIPT="$scratch_receipt" \
   "$repo_root/scripts/check-offsite-backups.sh"
+
+export FAKE_RCLONE_CATS="$test_root/downloads.log"
+MEDTRACK_HEALTH_PRODUCTION_MODE=1 MEDTRACK_HEALTH_HASH_MODE=incremental \
+  MEDTRACK_SECURITY_EVIDENCE_HEALTH_HOOK="$test_root/scratch-hook" \
+  MEDTRACK_SCRATCH_RESTORE_RECEIPT="$scratch_receipt" \
+  "$repo_root/scripts/check-offsite-backups.sh"
+if grep -Eq '\.tar\.age$' "$FAKE_RCLONE_CATS"; then
+  echo "Unchanged ciphertext was downloaded despite verified object identity" >&2; exit 1
+fi
+export FAKE_IDENTITY_CHANGE=changed
+MEDTRACK_HEALTH_PRODUCTION_MODE=1 MEDTRACK_HEALTH_HASH_MODE=incremental \
+  MEDTRACK_SECURITY_EVIDENCE_HEALTH_HOOK="$test_root/scratch-hook" \
+  MEDTRACK_SCRATCH_RESTORE_RECEIPT="$scratch_receipt" \
+  "$repo_root/scripts/check-offsite-backups.sh"
+[[ "$(grep -Ec '\.tar\.age$' "$FAKE_RCLONE_CATS")" == 4 ]]
+unset FAKE_IDENTITY_CHANGE
+for scrub in "$MEDTRACK_HEALTH_STATE_ROOT"/full-scrub-*.receipt; do
+  sed -i 's/^completed_epoch=.*/completed_epoch=0/' "$scrub"
+done
+if MEDTRACK_HEALTH_PRODUCTION_MODE=1 MEDTRACK_HEALTH_HASH_MODE=incremental \
+  "$repo_root/scripts/check-offsite-backups.sh" >/dev/null 2>&1; then
+  echo "Incremental health accepted expired mandatory full scrub" >&2; exit 1
+fi
 
 printf '0\n' > "$scratch_receipt"
 if MEDTRACK_HEALTH_PRODUCTION_MODE=1 MEDTRACK_HEALTH_HASH_MODE=all \

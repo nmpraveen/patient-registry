@@ -9,6 +9,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.db import transaction
 from django.test import TestCase
+from django.templatetags.static import static
 from django.urls import reverse
 from django.utils import timezone
 from scripts.verify_web_vendor_integrity import verify_manifest
@@ -115,14 +116,19 @@ class FrontendAccessibilityRegressionTests(TestCase):
         self.assertIn("camera=()", response.headers["Permissions-Policy"])
 
         html = response.content.decode()
-        nonce_match = re.search(r'<script nonce="([^"]+)"', html)
+        nonce_match = re.search(r'<style nonce="([^"]+)"', html)
         self.assertIsNotNone(nonce_match)
         nonce = nonce_match.group(1)
+        for inline_attrs in re.findall(r'<script(?![^>]*\bsrc=)([^>]*)>', html, re.IGNORECASE):
+            self.assertIn(f'nonce="{nonce}"', inline_attrs)
         csp = response.headers["Content-Security-Policy"]
         self.assertIn(f"script-src 'self' 'nonce-{nonce}'", csp)
         self.assertNotIn("script-src 'self' blob:", csp)
         self.assertIn(f"style-src-elem 'self' 'nonce-{nonce}'", csp)
         self.assertIn("script-src-attr 'none'", csp)
+        script_policy = next(directive.strip() for directive in csp.split(";") if directive.strip().startswith("script-src "))
+        self.assertNotIn("'unsafe-inline'", script_policy)
+        self.assertNotIn("'unsafe-eval'", script_policy)
         self.assertIn("frame-ancestors 'none'", csp)
         self.assertNotIn("cdn.jsdelivr.net", csp)
         self.assertNotIn("fonts.googleapis.com", csp)
@@ -191,6 +197,10 @@ class FrontendAccessibilityRegressionTests(TestCase):
         self.assertIn("/static/patients/vendor/bootstrap/5.3.3/", html)
         self.assertIn("/static/patients/vendor/crayons/4.1.0/", html)
         self.assertIn("crayons-csp-loader.js", html)
+        self.assertContains(response, static("patients/datepicker.js"))
+        self.assertIn('data-module-url="/static/patients/vendor/crayons/4.1.0/dist/crayons/crayons-csp-loader.js"', html)
+        self.assertNotRegex(html, r'<script[^>]+\bsrc="[^"]*/vendor/crayons/')
+        self.assertNotRegex(html, r'<link[^>]+\bhref="[^"]*/vendor/crayons/')
         self.assertIn('class="skip-link" href="#main-content"', html)
         self.assertRegex(html, r'<main[^>]+id="main-content"[^>]+tabindex="-1"')
         self.assertIn('role="combobox"', html)
@@ -522,10 +532,12 @@ class FrontendAccessibilityRegressionTests(TestCase):
         response = self.client.get(reverse("patients:settings_theme"))
         self.assertContains(response, "data-contrast-summary")
         self.assertContains(response, "data-theme-save")
-        self.assertContains(response, "const textContrastRules")
-        self.assertContains(response, "const derivedTextContrastRules")
-        self.assertContains(response, "const mixedTextContrastRules")
-        self.assertContains(response, "const focusContrastRules")
+        self.assertContains(response, static("patients/settings_theme.js"))
+        preview_script = (Path(settings.BASE_DIR) / "patients/static/patients/settings_theme.js").read_text(encoding="utf-8")
+        self.assertIn("const textContrastRules", preview_script)
+        self.assertIn("const derivedTextContrastRules", preview_script)
+        self.assertIn("const mixedTextContrastRules", preview_script)
+        self.assertIn("const focusContrastRules", preview_script)
         self.assertContains(response, "shell__focus_indicator")
 
     def test_case_detail_feedback_uses_text_nodes_and_responsive_guards_exist(self):

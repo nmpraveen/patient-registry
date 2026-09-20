@@ -1,0 +1,26 @@
+[Unit]
+Description=Stream-hash every retained MEDTRACK recovery archive weekly
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=/srv/medtrack/app
+Environment=MEDTRACK_BACKUP_CONFIG=/etc/medtrack-backup/backup.env
+Environment=MEDTRACK_HEALTH_PRODUCTION_MODE=1
+ExecStart=/srv/medtrack/app/scripts/check-offsite-backups.sh --hash-mode all
+UMask=0077
+TimeoutStartSec=3h
+NoNewPrivileges=yes
+PrivateDevices=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+StateDirectory=medtrack-backup-health
+ReadWritePaths=/var/lib/medtrack-backup-health
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

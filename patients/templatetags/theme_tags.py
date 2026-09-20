@@ -6,10 +6,16 @@ from django.contrib.staticfiles import finders
 from django.utils.safestring import mark_safe
 
 from patients.policy import has_capability as policy_has_capability
+from patients.presentation import current_age as record_current_age
 from patients.theme import build_theme_css_vars, resolve_category_theme
 
 
 register = template.Library()
+
+
+@register.filter
+def current_age(record):
+    return record_current_age(record)
 
 
 @register.simple_tag

@@ -119,6 +119,17 @@ test("case and patient detail layouts do not overflow the required viewport", as
   expect(selectBounds.x + selectBounds.width).toBeLessThanOrEqual(viewport.width + 1);
 });
 
+test("extracted page styles preserve dashboard, intake, call-sheet, and theme layouts", async ({ page }, testInfo) => {
+  for (const route of ["/patients/", "/patients/cases/new/", "/patients/calls/upcoming/", "/patients/settings/theme/"]) {
+    await page.goto(route);
+    await page.waitForLoadState("networkidle");
+    await expectNoHorizontalDocumentOverflow(page);
+    if (route === "/patients/" && ["chromium-320", "chromium-desktop"].includes(testInfo.project.name)) {
+      await page.screenshot({ path: path.join(screenshotDir, `dashboard-${testInfo.project.name}.png`), fullPage: true });
+    }
+  }
+});
+
 test("universal search exposes keyboard-operable combobox and live state", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "chromium-desktop", "Semantic interaction is covered once at desktop width.");
 
@@ -230,11 +241,11 @@ test("form IDs and call-sheet selections expose unique accessible names", async 
     const input = selections.nth(index);
     const inputId = await input.getAttribute("id");
     const label = page.locator(`label[for="${inputId}"]`);
-    await expect(label).toHaveText(/Select .+, UHID .+, case \d+/);
+    await expect(label).toHaveText(/^Select .+, MT-\d+(?:, UHID .+)?, case \d+$/);
   }
 });
 
-test("merge review names both UHIDs, affected cases, and stays within its container", async ({ page }, testInfo) => {
+test("merge review names both MTNOs, affected cases, and stays within its container", async ({ page }, testInfo) => {
   test.skip(!["chromium-320", "chromium-desktop"].includes(testInfo.project.name), "Merge evidence is captured at the narrowest and desktop widths.");
 
   await page.goto("/patients/patients/");
@@ -244,14 +255,14 @@ test("merge review names both UHIDs, affected cases, and stays within its contai
   await mergeSelect.selectOption({ index: 1 });
   await page.getByRole("button", { name: "Review Merge" }).click();
   await expect(page.getByRole("heading", { name: "Review Patient Merge" })).toBeVisible();
-  await expect(page.getByText("Source UHID", { exact: true })).toBeVisible();
-  await expect(page.getByText("Target UHID", { exact: true })).toBeVisible();
+  await expect(page.getByText("Source MTNO", { exact: true })).toBeVisible();
+  await expect(page.getByText("Target MTNO", { exact: true })).toBeVisible();
   await expect(page.getByText("Source cases", { exact: true })).toBeVisible();
   await expect(page.getByText("Target cases", { exact: true })).toBeVisible();
   await expect(page.getByText("Complete affected set", { exact: true })).toBeVisible();
   await expect(page.getByText("Source - will move", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("Target - remains", { exact: true }).first()).toBeVisible();
-  await expect(page.getByLabel("Type target UHID to confirm")).toBeVisible();
+  await expect(page.getByLabel("Type target MTNO to confirm")).toBeVisible();
   await expectNoHorizontalDocumentOverflow(page);
   await page.screenshot({
     path: path.join(screenshotDir, `patient-merge-review-${testInfo.project.name}.png`),
@@ -272,6 +283,11 @@ test("CSP loads only local pinned assets and theme contrast preview remains acti
       externalRequests.push(request.url());
     }
   });
+
+  await page.goto("/patients/");
+  await page.waitForLoadState("networkidle");
+  const initialResources = await page.evaluate(() => performance.getEntriesByType("resource").map((entry) => entry.name));
+  expect(initialResources.filter((url) => /vendor\/crayons|\/datepicker\.css/.test(url))).toEqual([]);
 
   const response = await page.goto("/patients/cases/new/");
   const csp = response.headers()["content-security-policy"];

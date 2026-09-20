@@ -19,6 +19,7 @@ from django.urls import reverse
 from api.views import _case_edit_payload
 from .database_bundle import create_bundle_archive, import_bundle_bytes
 from .forms import CaseForm, RecentCaseUpdateForm
+from .recent_cases import notes_baseline
 from .models import Case, CaseDataScope, CaseStatus, RoleSetting, TaskStatus, ensure_rch_reminder_task
 from .test_follow_up import FollowUpTests
 
@@ -87,7 +88,8 @@ class AncReviewFixTests(TestCase):
                     return original(form, *args, **kwargs)
                 with patch.object(RecentCaseUpdateForm, "save", save):
                     response = self.client.post(reverse("patients:recent_case_update", args=[case.pk]),
-                        {"diagnosis": "Updated diagnosis", "notes": "Unrelated notes"})
+                        {"diagnosis": "Ignored stale diagnosis", "notes": "Unrelated notes",
+                         "notes_baseline": notes_baseline(case, self.user)})
                 self.assertEqual(response.status_code, 200)
                 self.assert_clinical_action_preserved(case, action)
                 self.assertEqual(case.notes, "Unrelated notes")

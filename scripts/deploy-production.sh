@@ -51,6 +51,11 @@ done
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
+if [[ "$mode" == "apply" || "$mode" == "rollback" ]]; then
+  # shellcheck source=scripts/operation-lock.sh
+  source "$repo_root/scripts/operation-lock.sh"
+  acquire_medtrack_operation_lock
+fi
 environment_file="${MEDTRACK_ENV_FILE:-$repo_root/.env}"
 if [[ ! -f "$environment_file" ]]; then echo "Missing deployment environment file: $environment_file" >&2; exit 1; fi
 set -a

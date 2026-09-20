@@ -1,7 +1,9 @@
 import hashlib
 import io
 import json
+import os
 import subprocess
+import tempfile
 import zipfile
 from copy import deepcopy
 from contextlib import contextmanager
@@ -97,12 +99,28 @@ def create_bundle_archive(exported_at=None, backup_kind=None):
     if git_commit:
         manifest["git_commit"] = git_commit
     manifest_bytes = _json_bytes(manifest)
-
+    members = {PATIENT_DATA_FILENAME: patient_data_bytes, MANIFEST_FILENAME: manifest_bytes}
+    if (any(len(value) > MAX_BUNDLE_MEMBER_BYTES for value in members.values())
+            or sum(map(len, members.values())) > MAX_BUNDLE_EXPANDED_BYTES):
+        raise BundleValidationError("Patient data exceeds the ZIP recovery limit. Use a full database backup.")
     archive = io.BytesIO()
     with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as bundle_zip:
-        bundle_zip.writestr(PATIENT_DATA_FILENAME, patient_data_bytes)
-        bundle_zip.writestr(MANIFEST_FILENAME, manifest_bytes)
-    return archive.getvalue(), manifest, build_bundle_filename(exported_at, backup_kind=backup_kind)
+        for name, value in members.items():
+            bundle_zip.writestr(name, value)
+        over_ratio = {item.filename for item in bundle_zip.infolist()
+                      if item.file_size > max(item.compress_size, 1) * MAX_BUNDLE_COMPRESSION_RATIO}
+    if over_ratio:
+        # Valid repetitive clinical text must remain importable without weakening
+        # the untrusted ZIP decompression limits. Store those members verbatim.
+        archive = io.BytesIO()
+        with zipfile.ZipFile(archive, "w") as bundle_zip:
+            for name, value in members.items():
+                bundle_zip.writestr(name, value, compress_type=(
+                    zipfile.ZIP_STORED if name in over_ratio else zipfile.ZIP_DEFLATED))
+    result = archive.getvalue()
+    if len(result) > MAX_BUNDLE_COMPRESSED_BYTES:
+        raise BundleValidationError("Patient data exceeds the ZIP recovery limit. Use a full database backup.")
+    return result, manifest, build_bundle_filename(exported_at, backup_kind=backup_kind)
 
 
 def write_backup_bundle(
@@ -120,7 +138,17 @@ def write_backup_bundle(
     backup_kind = backup_kind or backup_kind_for_trigger(trigger)
     archive_bytes, manifest, filename = create_bundle_archive(exported_at=exported_at, backup_kind=backup_kind)
     bundle_path = output_dir / filename
-    bundle_path.write_bytes(archive_bytes)
+    pending_path = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=output_dir, prefix=".patient-backup-", suffix=".tmp", delete=False) as pending:
+            pending_path = Path(pending.name)
+            pending.write(archive_bytes)
+            pending.flush()
+            os.fsync(pending.fileno())
+        pending_path.replace(bundle_path)
+    finally:
+        if pending_path is not None:
+            pending_path.unlink(missing_ok=True)
 
     pruned = prune_backup_bundles(output_dir, keep=keep, backup_kind=backup_kind)
     PatientDataBackupSchedule.record_backup_success(
@@ -285,8 +313,10 @@ def build_patient_data_payload():
     from .identity import identity_allocation_lock
 
     with identity_allocation_lock():
-        list(Patient.objects.select_for_update().order_by("pk").values_list("pk", flat=True))
-        list(Case.objects.select_for_update().order_by("pk").values_list("pk", flat=True))
+        for _ in Patient.objects.select_for_update().order_by("pk").values_list("pk", flat=True).iterator(chunk_size=1000):
+            pass
+        for _ in Case.objects.select_for_update().order_by("pk").values_list("pk", flat=True).iterator(chunk_size=1000):
+            pass
         return _build_patient_data_payload()
 
 
@@ -319,9 +349,9 @@ def _build_patient_data_payload():
     categories_by_name = {}
     patient_payloads_by_mtno = {}
     serialized_cases = []
-    for patient in patients:
+    for patient in patients.iterator(chunk_size=200):
         patient_payloads_by_mtno[patient.mtno] = _serialize_patient(patient)
-    for case in cases:
+    for case in cases.iterator(chunk_size=100):
         categories_by_name.setdefault(case.category.name, _serialize_category(case.category))
         if not case.patient_id:
             raise BundleValidationError("Patient bundle export requires reconciliation of unlinked cases; use a full database backup.")

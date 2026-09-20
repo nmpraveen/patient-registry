@@ -15,14 +15,15 @@ set -Eeuo pipefail
 joined="$*"
 if [[ "$joined" == *"to_regclass"* || "$joined" == *"pg_trigger"* ]]; then
   echo 1
-elif [[ "$joined" == *"SELECT COALESCE(max(id), 0)"* ]]; then
-  echo 2
-elif [[ "$joined" == *"SELECT COALESCE(max(id), 2)"* ]]; then
-  echo 3
-elif [[ "$joined" == *"SELECT COALESCE(max(id), 3)"* ]]; then
-  echo 3
+elif [[ "$joined" == *"DELETE FROM patients_auditevidenceexportack"* || "$joined" == *"INSERT INTO patients_auditevidenceexportack"* ]]; then
+  exit 0
+elif [[ "$joined" == *"SELECT segment_sequence ||"* ]]; then
+  exit 0
+elif [[ "$joined" == *"psql"* && "$joined" != *"--command="* ]]; then
+  cat >/dev/null
+  exit 0
 elif [[ "$joined" == *"COPY (SELECT json_build_object"* ]]; then
-  if [[ "$joined" == *"id > 0"* ]]; then
+  if [[ ! -f "$MEDTRACK_SECURITY_EVIDENCE_ROOT/state/checkpoint.env" ]]; then
     printf '{"id":1,"event_id":"00000000-0000-0000-0000-000000000001","occurred_at":"2026-08-29T12:00:00Z","category":"auth","action":"login","outcome":"failure","source":"web"}\n'
     printf '{"id":2,"event_id":"00000000-0000-0000-0000-000000000002","occurred_at":"2026-08-29T12:00:01Z","category":"auth","action":"login","outcome":"success","source":"web"}\n'
   else
@@ -72,6 +73,7 @@ export MEDTRACK_SECURITY_EVIDENCE_ALERT_HOOK="$test_root/alert-hook"
 export MEDTRACK_SECURITY_FAILURE_ALERT_THRESHOLD=1
 export MEDTRACK_SECURITY_EVIDENCE_KEEP_SEGMENTS=1
 export FAKE_ALERT_LOG="$test_root/alerts.log"
+export PYTHON_COMMAND=python
 
 "$repo_root/scripts/export-security-evidence.sh"
 "$repo_root/scripts/export-security-evidence.sh"
@@ -79,17 +81,46 @@ export FAKE_ALERT_LOG="$test_root/alerts.log"
 test -s "$evidence_root/state/anchor.env"
 [[ "$(find "$evidence_root/segments" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d '[:space:]')" == 1 ]]
 grep -Fq 'sustained authentication failures' "$FAKE_ALERT_LOG"
-if rg -i -g '*.jsonl' 'authorization|cookie|query_string|request_body|patient[_ -]?search|clinical_payload|"uri"|"path"' "$evidence_root/segments"; then
+[[ "$(grep -c 'sustained authentication failures' "$FAKE_ALERT_LOG")" == 1 ]]
+if grep -Ei 'authorization|cookie|query_string|request_body|patient[_ -]?search|clinical_payload|"uri"|"path"' \
+  "$evidence_root"/segments/segment-*/*.jsonl; then
   echo "Security evidence retained a forbidden sensitive field" >&2
   exit 1
+else
+  scan_status=$?
+  if [[ "$scan_status" != 1 ]]; then
+    echo "Could not inspect exported security evidence" >&2
+    exit 1
+  fi
 fi
 
-printf '{"timestamp":"now","method":"GET","status":200,"duration_us":12,"bytes":0}\n' > "$log_root/caddy-access.json"
-printf '{"timestamp":"now","method":"GET","status":200,"duration_us":10,"bytes":0}\n' > "$log_root/gunicorn-access.log"
+printf '{"timestamp":"now","method":"GET","status":200,"duration_us":12,"bytes":0}\n' >> "$log_root/caddy-access.json"
+printf '{"timestamp":"now","method":"GET","status":200,"duration_us":10,"bytes":0}\n' >> "$log_root/gunicorn-access.log"
 : > "$FAKE_ALERT_LOG"
 "$repo_root/scripts/export-security-evidence.sh"
 "$repo_root/scripts/verify-security-evidence.sh"
 test ! -s "$FAKE_ALERT_LOG"
+
+snapshot_root="$test_root/verification-snapshot"
+cp -a "$evidence_root" "$snapshot_root"
+printf 'MEDTRACK_SECURITY_EVIDENCE_ROOT=%q\nMEDTRACK_SECURITY_EVIDENCE_ALLOW_STALE=0\n' \
+  "$evidence_root" > "$test_root/live-config"
+snapshot_segment="$(find "$snapshot_root/segments" -mindepth 1 -maxdepth 1 -type d -print -quit)"
+printf 'tamper\n' >> "$snapshot_segment/audit-events.jsonl"
+if MEDTRACK_BACKUP_CONFIG="$test_root/live-config" "$repo_root/scripts/verify-security-evidence.sh" \
+  --root "$snapshot_root" --allow-stale >/dev/null 2>&1; then
+  echo "Configured live evidence hid a corrupted explicit snapshot" >&2
+  exit 1
+fi
+cp "$evidence_root/segments/${snapshot_segment##*/}/audit-events.jsonl" "$snapshot_segment/audit-events.jsonl"
+sed -i 's/^completed_epoch=.*/completed_epoch=0/' "$snapshot_root/state/checkpoint.env"
+MEDTRACK_BACKUP_CONFIG="$test_root/live-config" "$repo_root/scripts/verify-security-evidence.sh" \
+  --root "$snapshot_root" --allow-stale
+if MEDTRACK_BACKUP_CONFIG="$test_root/live-config" "$repo_root/scripts/verify-security-evidence.sh" \
+  --root "$snapshot_root" >/dev/null 2>&1; then
+  echo "Explicit snapshot root unexpectedly disabled the freshness check" >&2
+  exit 1
+fi
 
 cp "$evidence_root/state/checkpoint.env" "$test_root/checkpoint.saved"
 sed -i 's/^completed_epoch=.*/completed_epoch=0/' "$evidence_root/state/checkpoint.env"

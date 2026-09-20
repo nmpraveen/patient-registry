@@ -1473,7 +1473,7 @@ class MedtrackViewTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()
-        self.assertEqual(len(payload["results"]), 10)
+        self.assertEqual(len(payload["results"]), 12)
         first_result = payload["results"][0]
         self.assertEqual(first_result["id"], created_cases[0].id)
         self.assertTrue(
@@ -1507,12 +1507,16 @@ class MedtrackViewTests(TestCase):
                 "category_text_color",
                 "category_border_color",
                 "detail_url",
-                "tasks",
+                "notes_baseline",
             }.issubset(first_result.keys())
         )
         self.assertEqual(first_result["first_name"], created_cases[0].first_name)
         self.assertNotIn("phone_number", first_result)
         self.assertNotIn("place", first_result)
+        self.assertNotIn("tasks", first_result)
+        detail_response = self.client.get(reverse("patients:recent_case_update", args=[created_cases[0].pk]))
+        self.assertEqual(detail_response.status_code, 200)
+        detail = detail_response.json()["case"]
         self.assertTrue(
             {
                 "id",
@@ -1524,7 +1528,7 @@ class MedtrackViewTests(TestCase):
                 "can_complete",
                 "can_reschedule",
                 "can_note",
-            }.issubset(first_result["tasks"][0].keys())
+            }.issubset(detail["tasks"][0].keys())
         )
 
         all_response = self.client.get(
@@ -3752,21 +3756,22 @@ class MedtrackViewTests(TestCase):
         self.assertContains(response, 'id="task-shared-reschedule-date"')
 
     def test_recent_case_update_persists_changes_and_logs_activity(self):
+        from .recent_cases import notes_baseline
         self.client.force_login(self.user)
         case = self.create_recent_case(diagnosis="Old diagnosis", notes="Old note")
 
         response = self.client.post(
             reverse("patients:recent_case_update", kwargs={"pk": case.pk}),
-            {"diagnosis": "Updated diagnosis", "notes": "Updated note"},
+            {"diagnosis": "Updated diagnosis", "notes": "Updated note", "notes_baseline": notes_baseline(case, self.user)},
             HTTP_X_REQUESTED_WITH="XMLHttpRequest",
         )
 
         self.assertEqual(response.status_code, 200)
         case.refresh_from_db()
-        self.assertEqual(case.diagnosis, "Updated diagnosis")
+        self.assertEqual(case.diagnosis, "Old diagnosis")
         self.assertEqual(case.notes, "Updated note")
-        self.assertEqual(response.json()["case"]["diagnosis"], "Updated diagnosis")
-        self.assertTrue(
+        self.assertEqual(response.json()["case"]["diagnosis"], "Old diagnosis")
+        self.assertFalse(
             CaseActivityLog.objects.filter(
                 case=case,
                 event_type=ActivityEventType.SYSTEM,
@@ -3782,13 +3787,14 @@ class MedtrackViewTests(TestCase):
         )
 
     def test_recent_case_update_no_op_does_not_add_logs(self):
+        from .recent_cases import notes_baseline
         self.client.force_login(self.user)
         case = self.create_recent_case(diagnosis="Stable diagnosis", notes="Stable note")
         initial_log_count = case.activity_logs.count()
 
         response = self.client.post(
             reverse("patients:recent_case_update", kwargs={"pk": case.pk}),
-            {"diagnosis": "Stable diagnosis", "notes": "Stable note"},
+            {"notes": "Stable note", "notes_baseline": notes_baseline(case, self.user)},
             HTTP_X_REQUESTED_WITH="XMLHttpRequest",
         )
 
@@ -3797,12 +3803,13 @@ class MedtrackViewTests(TestCase):
         self.assertEqual(case.activity_logs.count(), initial_log_count)
 
     def test_recent_case_update_notes_only_keeps_blank_diagnosis_blank(self):
+        from .recent_cases import notes_baseline
         self.client.force_login(self.user)
         case = self.create_recent_case(diagnosis="", notes="")
 
         response = self.client.post(
             reverse("patients:recent_case_update", kwargs={"pk": case.pk}),
-            {"diagnosis": "", "notes": "Dashboard note only"},
+            {"notes": "Dashboard note only", "notes_baseline": notes_baseline(case, self.user)},
             HTTP_X_REQUESTED_WITH="XMLHttpRequest",
         )
 
@@ -8133,9 +8140,11 @@ class MedtrackViewTests(TestCase):
         self.assertContains(response, case.full_name)
         self.assertEqual(response.context["case_name_size_class"], "identity-name--compressed")
         self.assertContains(response, "identity-name--compressed")
-        self.assertContains(response, "overflow-wrap: normal;")
-        self.assertContains(response, "word-break: normal;")
-        self.assertContains(response, "grid-template-columns: clamp(25rem, 31vw, 34rem)")
+        self.assertContains(response, static("patients/case_detail.css"))
+        detail_css = (Path(settings.BASE_DIR) / "patients/static/patients/case_detail.css").read_text()
+        self.assertIn("overflow-wrap: normal;", detail_css)
+        self.assertIn("word-break: normal;", detail_css)
+        self.assertIn(".case-detail-title.identity-name--compressed", detail_css)
 
     def test_case_detail_identity_header_renders_collapsible_anc_clinical_sections(self):
         self.client.force_login(self.user)
@@ -8900,7 +8909,9 @@ class MedtrackViewTests(TestCase):
         self.assertIn("data-call-reveal-trigger", section_html)
         self.assertIn("data-call-reveal-close", section_html)
         self.assertIn("Open case", section_html)
-        self.assertContains(response, "external-link-icon.svg")
+        self.assertContains(response, static("patients/dashboard.css"))
+        dashboard_css = (Path(settings.BASE_DIR) / "patients/static/patients/dashboard.css").read_text()
+        self.assertIn("external-link-icon.svg", dashboard_css)
 
     def test_dashboard_card_contains_referral_high_risk_and_ncd_flags(self):
         self.client.force_login(self.user)
@@ -9283,7 +9294,9 @@ class MedtrackViewTests(TestCase):
         self.assertTrue(any(tag["kind"] == "referred" for tag in result["tags"]))
         self.assertTrue(any(tag["kind"] == "ncd" for tag in result["tags"]))
         dashboard_response = self.client.get(reverse("patients:dashboard"))
-        self.assertContains(dashboard_response, 'data-tag-kind="high_risk"')
+        self.assertContains(dashboard_response, static("patients/base.css"))
+        base_css = (Path(settings.BASE_DIR) / "patients/static/patients/base.css").read_text()
+        self.assertIn('data-tag-kind="high_risk"', base_css)
 
     def test_universal_case_search_matches_place_case_notes_and_note_logs_with_direct_results_ranked_first(self):
         self.client.force_login(self.user)
@@ -9456,8 +9469,10 @@ class MedtrackViewTests(TestCase):
         response = self.client.get(reverse("patients:dashboard"))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "View patients")
-        self.assertContains(response, "View cases")
+        self.assertContains(response, static("patients/global_search.js"))
+        search_script = (Path(settings.BASE_DIR) / "patients/static/patients/global_search.js").read_text()
+        self.assertIn("View patients", search_script)
+        self.assertIn("View cases", search_script)
         self.assertContains(response, reverse("patients:patient_list"))
         self.assertContains(response, reverse("patients:case_list"))
         self.assertContains(response, "category_group")

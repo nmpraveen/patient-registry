@@ -2,6 +2,37 @@
   const SOURCE_SELECTOR = 'input[data-crayons-datepicker="true"]';
   const PICKER_FIELD_ATTR = "data-crayons-datepicker-for";
   let anonymousInputCount = 0;
+  let runtimePromise;
+
+  function ensureRuntime() {
+    if (runtimePromise) return runtimePromise;
+    const config = document.getElementById("medtrack-datepicker-script").dataset;
+    const loadStyles = (href) => new Promise((resolve, reject) => {
+      const link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = href;
+      link.onload = resolve;
+      link.onerror = reject;
+      // Preserve the original vendor -> datepicker -> app cascade.
+      document.head.insertBefore(link, document.getElementById("medtrack-base-styles"));
+    });
+    const loadScript = new Promise((resolve, reject) => {
+      const moduleScript = document.createElement("script");
+      moduleScript.type = "module";
+      moduleScript.src = config.moduleUrl;
+      const legacyScript = document.createElement("script");
+      legacyScript.noModule = true;
+      legacyScript.src = config.legacyUrl;
+      const supportedScript = "noModule" in moduleScript ? moduleScript : legacyScript;
+      supportedScript.onload = resolve;
+      supportedScript.onerror = reject;
+      document.body.append(moduleScript, legacyScript);
+    });
+    runtimePromise = Promise.all([
+      loadStyles(config.vendorCssUrl), loadStyles(config.datepickerCssUrl), loadScript,
+    ]).then(() => customElements.whenDefined("fw-datepicker"));
+    return runtimePromise;
+  }
 
   function escapeSelectorValue(value) {
     if (window.CSS && typeof window.CSS.escape === "function") {
@@ -79,7 +110,7 @@
       picker.removeAttribute("disabled");
     }
 
-    picker.readOnly = Boolean(sourceInput.readOnly);
+    picker.readonly = Boolean(sourceInput.readOnly);
     if (sourceInput.readOnly) {
       picker.setAttribute("readonly", "");
     } else {
@@ -97,6 +128,33 @@
     } else {
       picker.removeAttribute("max-date");
     }
+    void syncAccessibility(picker, sourceInput);
+  }
+
+  async function syncAccessibility(picker, sourceInput) {
+    if (!picker.isConnected) return;
+    await window.customElements?.whenDefined("fw-datepicker");
+    await picker.componentOnReady?.();
+    const root = picker.shadowRoot || picker;
+    const field = root.querySelector("fw-input.date-input, fw-input.range-date-input");
+    if (!field) return;
+    await window.customElements?.whenDefined("fw-input");
+    await field.componentOnReady?.();
+    const nativeInput = (field.shadowRoot || field).querySelector("input");
+    if (!nativeInput) return;
+    const labels = Array.from(sourceInput.labels || document.querySelectorAll(`label[for="${escapeSelectorValue(sourceInput.id)}"]`));
+    const name = sourceInput.getAttribute("aria-label")
+      || labels.map((label) => label.textContent.replace(/\s*\*\s*$/, "").trim()).join(" ");
+    if (name) nativeInput.setAttribute("aria-label", name);
+    // IDs outside a shadow tree cannot describe the internal input. Copy only
+    // their accessible description; retain the existing visible help/errors.
+    const descriptions = (sourceInput.getAttribute("aria-describedby") || "").split(/\s+/)
+      .map((id) => document.getElementById(id)?.textContent.trim()).filter(Boolean);
+    const wrapper = sourceInput.closest(".case-create-field, .mb-3, .form-group");
+    wrapper?.querySelectorAll(".invalid-feedback").forEach((error) => descriptions.push(error.textContent.trim()));
+    if (descriptions.length) nativeInput.setAttribute("aria-description", [...new Set(descriptions)].join(" "));
+    else nativeInput.removeAttribute("aria-description");
+    nativeInput.setAttribute("aria-invalid", String(picker.classList.contains("is-invalid") || sourceInput.getAttribute("aria-invalid") === "true"));
   }
 
   function observeSourceInput(picker, sourceInput) {
@@ -119,12 +177,16 @@
     if (target) {
       target.classList.toggle("is-invalid", Boolean(isInvalid));
     }
+    if (picker) void syncAccessibility(picker, input);
   }
 
   function focusInput(input) {
     const picker = findPickerForInput(input);
-    if (picker && typeof picker.focus === "function") {
-      picker.focus();
+    if (picker) {
+      void window.customElements.whenDefined("fw-datepicker").then(async () => {
+        await picker.componentOnReady?.();
+        await picker.setFocus?.();
+      });
       return picker;
     }
     if (input && typeof input.focus === "function") {
@@ -209,6 +271,13 @@
     sourceInput.insertAdjacentElement("afterend", wrapper);
     wrapper.appendChild(picker);
 
+    document.querySelectorAll(`label[for="${escapeSelectorValue(sourceInput.id)}"]`).forEach((label) => {
+      label.addEventListener("click", (event) => {
+        event.preventDefault();
+        focusInput(sourceInput);
+      });
+    });
+
     sourceInput.type = "hidden";
     sourceInput.dataset.crayonsDatepickerSource = "true";
     sourceInput.dataset.crayonsDatepickerReady = "true";
@@ -226,10 +295,19 @@
     picker.addEventListener("fwChange", () => scheduleSync());
     picker.addEventListener("fwBlur", () => scheduleSync());
     picker.addEventListener("fwDateInput", () => scheduleSync({ clearFirst: true }));
+    picker.addEventListener("fwFocus", () => { void syncAccessibility(picker, sourceInput); });
+    void syncAccessibility(picker, sourceInput);
   }
 
   function initDatepickers(root = document) {
-    root.querySelectorAll(SOURCE_SELECTOR).forEach(enhanceInput);
+    const inputs = Array.from(root.querySelectorAll(SOURCE_SELECTOR));
+    if (root.matches?.(SOURCE_SELECTOR)) inputs.unshift(root);
+    if (!inputs.length) return;
+    void ensureRuntime().then(() => {
+      inputs.filter((input) => input.isConnected).forEach(enhanceInput);
+    }).catch(() => {
+      // Keep the original, labelled native inputs usable if assets cannot load.
+    });
   }
 
   function observeDatepickers() {
@@ -240,10 +318,6 @@
       mutations.forEach((mutation) => {
         mutation.addedNodes.forEach((node) => {
           if (!(node instanceof Element)) {
-            return;
-          }
-          if (node.matches(SOURCE_SELECTOR)) {
-            enhanceInput(node);
             return;
           }
           if (typeof node.querySelectorAll === "function") {

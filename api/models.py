@@ -87,6 +87,25 @@ class MobileNotificationType(models.TextChoices):
     OVERDUE = "overdue", "Overdue"
 
 
+GENERIC_NOTIFICATION_COPY = {
+    MobileNotificationType.ASSIGNMENT: (
+        "MEDTRACK assignment",
+        "Open MEDTRACK to review an assignment update.",
+        "assignments",
+    ),
+    MobileNotificationType.RED_FLAG: (
+        "MEDTRACK priority update",
+        "Open MEDTRACK to review a priority update.",
+        "red_flags",
+    ),
+    MobileNotificationType.OVERDUE: (
+        "MEDTRACK task update",
+        "Open MEDTRACK to review a task update.",
+        "overdue",
+    ),
+}
+
+
 class MobileNotification(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="mobile_notifications")
     event_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
@@ -141,25 +160,7 @@ class MobileNotification(models.Model):
 
     @staticmethod
     def canonical_copy(notification_type, event_id):
-        copy = {
-            MobileNotificationType.ASSIGNMENT: (
-                "MEDTRACK assignment",
-                "Open MEDTRACK to review an assignment update.",
-                "assignments",
-            ),
-            MobileNotificationType.RED_FLAG: (
-                "MEDTRACK priority update",
-                "Open MEDTRACK to review a priority update.",
-                "red_flags",
-            ),
-            MobileNotificationType.OVERDUE: (
-                "MEDTRACK task update",
-                "Open MEDTRACK to review a task update.",
-                "overdue",
-            ),
-        }
-        title, body, channel = copy[notification_type]
-        return title, body, channel
+        return GENERIC_NOTIFICATION_COPY[notification_type]
 
     def clean(self):
         super().clean()

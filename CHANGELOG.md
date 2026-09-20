@@ -1,3 +1,26 @@
+## 2026.09.20.20.19
+
+- Inspect a private caller-owned copy of edge-test logs so unprivileged Linux CI can validate them without changing production file permissions.
+
+## 2026.09.20.20.12
+
+- Verify immutable backup and restored evidence explicitly so live configuration cannot redirect integrity checks.
+- Replace optional-command assumptions in edge/security fixtures with portable checks that fail on log inspection errors.
+- Refresh the retained Android Bouncy Castle security override, generated dependency locks and verified artifact checksums.
+
+## 2026.09.20.20.05
+
+- Refresh verified Caddy and Alpine image pins plus the required CA certificate package pin.
+- Align clinical and accessibility regressions with signed notes baselines and extracted assets; isolate shell fixture operation locks for unprivileged CI.
+
+## 2026.09.20.19.56
+
+- Preserve clinical drafts and notes with signed conflict baselines, and revalidate API/web credentials after mutation locks.
+- Bound recent-case, patient search and API child retrieval; scope patient counts, derive current age and validate due-date ranges.
+- Publish consistent recoverable backups and acknowledge exact durable audit events; handle log rotation and serialize deployment/recovery operations.
+- Extract cacheable page assets, consolidate clinical controls, remove shadowed legacy code, and retain supported compatibility and integrity barriers.
+- Expand PostgreSQL, browser and operations regressions; add controlled image caching and incremental backup verification with mandatory full scrubs.
+
 ## 2026.09.16.11.58
 
 - Add an independent Manage PhoneBook contacts role control so Reception can maintain contacts without settings-administrator access.

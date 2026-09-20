@@ -58,6 +58,11 @@ done
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
+if [[ "$mode" == "activate" || "$mode" == "rollback" ]]; then
+  # shellcheck source=scripts/operation-lock.sh
+  source "$repo_root/scripts/operation-lock.sh"
+  acquire_medtrack_operation_lock
+fi
 
 python_command="${PYTHON_COMMAND:-python3}"
 for command_name in comm docker git mktemp "$python_command" realpath sha256sum sort sync tar; do
@@ -552,8 +557,8 @@ if [[ "$audit_table_present" == "1" ]]; then
       echo "Backup is missing full integrity-protected security evidence" >&2
       exit 1
     fi
-    evidence_result="$(MEDTRACK_SECURITY_EVIDENCE_ROOT="$payload_dir/security-evidence" \
-      MEDTRACK_SECURITY_EVIDENCE_ALLOW_STALE=1 "$repo_root/scripts/verify-security-evidence.sh")"
+    evidence_result="$("$repo_root/scripts/verify-security-evidence.sh" \
+      --root "$payload_dir/security-evidence" --allow-stale)"
   else
     if [[ ! -d "$payload_dir/security-evidence-checkpoint" ||
       ! -x "$repo_root/scripts/verify-security-evidence-checkpoint.sh" ]]; then

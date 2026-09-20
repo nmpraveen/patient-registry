@@ -2,6 +2,7 @@
 {% load theme_tags %}
 {% block title %}Cases | MEDTRACK{% endblock %}
 {% block content %}
+{% if filter_error %}<div class="alert alert-danger" role="alert">{{ filter_error }}</div>{% endif %}
 {% if search_mode %}
   <div class="d-flex flex-wrap align-items-end justify-content-between gap-2 mb-3">
     <div>

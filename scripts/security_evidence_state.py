@@ -115,7 +115,12 @@ def capture_log(current: Path, cursor: dict | None, budget: int) -> tuple[bytes,
             raise ValueError("Invalid log cursor")
         # Compression creates a new file and may reuse the deleted raw file's
         # inode. A gzip candidate therefore needs a unique content fingerprint.
-        inode_matches = [path for path in paths if path.suffix != ".gz" and path.stat().st_ino == cursor.get("inode") and prefix_matches(path, cursor)]
+        # A cursor already inside a rotation cannot later belong to current:
+        # that inode was recycled after its unread rotation was removed.
+        cursor_was_rotated = cursor.get("inode") in cursor.get("known_rotations", [])
+        inode_matches = [path for path in paths if path.suffix != ".gz"
+                         and (path != current or not cursor_was_rotated)
+                         and path.stat().st_ino == cursor.get("inode") and prefix_matches(path, cursor)]
         fingerprint_matches = [path for path in paths if path != current and cursor["prefix_bytes"] > 0 and prefix_matches(path, cursor)]
         if len(inode_matches) == 1:
             previous = inode_matches[0]

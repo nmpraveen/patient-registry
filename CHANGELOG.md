@@ -1,3 +1,7 @@
+## 2026.09.20.20.55
+
+- Reject a recycled current-file inode when an unread retained log rotation disappears, while preserving valid rotation resumes.
+
 ## 2026.09.20.20.52
 
 - Read Caddy size/time gzip rotations with bounded cursor continuity, and verify the effective installed evidence exporter before resuming its timer.

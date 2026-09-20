@@ -224,6 +224,32 @@ class CaddyLogCursorTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "continuity missing"):
                 capture_log(self.path, cursor, 100)
 
+    def test_lost_raw_rotation_tail_cannot_match_reused_current_inode(self):
+        self.path.write_bytes(b"old1\nold2\ntail\n")
+        _, cursor = capture_log(self.path, None, 5)
+        rotated = self.path.with_name("caddy-access-2026-09-20T04-05-56.762-size.json")
+        self.path.rename(rotated)
+        self.path.write_bytes(b"new\n")
+        content, cursor = capture_log(self.path, cursor, 5)
+        self.assertEqual(content, b"old2\n")
+        # A retained raw rotation still resumes correctly before it is lost.
+        content, _ = capture_log(self.path, cursor, 5)
+        self.assertEqual(content, b"tail\n")
+        old_inode = rotated.stat().st_ino
+        rotated.unlink()
+        self.path.write_bytes(b"old1\nold2\nreplacement\n")
+        original_stat = Path.stat
+
+        def reused_inode(path, *args, **kwargs):
+            result = list(original_stat(path, *args, **kwargs))
+            if path == self.path:
+                result[1] = old_inode
+            return os.stat_result(result)
+
+        with patch.object(Path, "stat", reused_inode):
+            with self.assertRaisesRegex(ValueError, "continuity missing"):
+                capture_log(self.path, cursor, 100)
+
 
 if __name__ == "__main__":
     unittest.main()

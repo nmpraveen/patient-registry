@@ -197,6 +197,7 @@ FAKE_SOURCE_COMMIT="$(git -C "$repo_root" rev-parse HEAD)"
 export FAKE_SOURCE_COMMIT
 export MEDTRACK_SECURITY_EVIDENCE_ROOT="$test_root/security-evidence"
 mkdir -p "$MEDTRACK_SECURITY_EVIDENCE_ROOT/segments/segment-00000001-20260829T120000Z" "$MEDTRACK_SECURITY_EVIDENCE_ROOT/state"
+: > "$MEDTRACK_SECURITY_EVIDENCE_ROOT/export.lock"
 segment_dir="$MEDTRACK_SECURITY_EVIDENCE_ROOT/segments/segment-00000001-20260829T120000Z"
 genesis="$(printf 'MEDTRACK_SECURITY_EVIDENCE_CHAIN_V1\n' | sha256sum | awk '{print $1}')"
 printf '{}\n' > "$segment_dir/audit-events.jsonl"

@@ -333,6 +333,8 @@ Never reverse a destructive data migration in production. `patients.0028` now fa
 
 ## Production VPS Deployment
 
+For the September 20 remediation, read [the rollout and disposition ledger](docs/review-remediation-20260920.md). Pause `medtrack-security-evidence-export.timer` while changing source to a release requiring `patients.0046`; restore its previous active state after the migration, then run one fresh export and verify the chain. The acknowledgement/progress tables are recoverable delivery state, not a replacement for the immutable AuditEvent table. First export reconciles exact retained UUIDs and may safely replay older events; never backfill acknowledgements from an ID watermark. Deployment `apply`/`rollback` and destructive restore modes share `/run/medtrack-operations.lock` (override only to another trusted absolute path with `MEDTRACK_OPERATION_LOCK`).
+
 Production checkout: `/srv/medtrack/app`
 
 Production domain: `https://book.naveenhospital.net`
@@ -396,7 +398,7 @@ Last verified production deployment (2026-08-23):
 - rollback-only live authorization smoke passed assigned access, forged-ID denial, and reassignment revocation without retaining synthetic records;
 - pre-deployment archive `medtrack-prod-pre-deployment-20260823T174416Z.tar.age` passed Drive verification, immediate NAS export, and off-site health checks.
 
-Before a future code update, run `./scripts/backup.sh` and preserve the resulting backup outside the VPS. Never deploy from a dirty checkout and never run `docker compose down -v` during an update.
+Before a future code update, use the verified encrypted pre-deployment workflow above and independently restore its exact source image. `backup.sh` is a checked private manual export, not a substitute for encrypted offsite recovery. Never deploy from a dirty checkout and never run `docker compose down -v` during an update.
 
 ## Encrypted Google Drive Recovery Backups
 
@@ -499,7 +501,19 @@ systemctl status --no-pager medtrack-offsite-backup-health.service
 journalctl -u 'medtrack-offsite-backup*' --since '24 hours ago' --no-pager
 ```
 
-Every production health pass requires complete archive/checksum/marker triplets for each retained set, cross-checks marker/checksum/evidence-chain metadata, streams every retained ciphertext through SHA-256, runs the independently restored evidence-chain/lag hook, and requires a fresh scratch-restore receipt whose runner has a mandatory alert hook. These requirements are not optional in `MEDTRACK_HEALTH_PRODUCTION_MODE=1`. The VPS-side schedules remain green only as upload evidence; the independent verifier is the authoritative recovery-health signal. Keep the private `age` identity off the VPS and NAS.
+Every production health pass requires complete archive/checksum/marker triplets for each retained set, cross-checks marker/checksum/evidence-chain metadata, runs the independently restored evidence-chain/lag hook, and requires a fresh scratch-restore receipt whose runner has a mandatory alert hook. In `all` mode every retained ciphertext is streamed through SHA-256. In `incremental` mode every remote identity/content-hash/size/mtime is rechecked; new, changed, expired or uncacheable objects are streamed, and a successful full scrub must be no older than eight days. A provider without stable identity and content hashes always falls back to full streaming. These requirements are not optional in `MEDTRACK_HEALTH_PRODUCTION_MODE=1`. The VPS-side schedules remain green only as upload evidence; the independent verifier is the authoritative recovery-health signal. Keep the private `age` identity off the VPS and NAS.
+
+Before enabling incremental mode on the independent verifier, install the new full-scrub service/timer and successfully seed its verified object cache:
+
+```bash
+install -m 0644 deploy/systemd/medtrack-offsite-full-scrub.{service,timer} /etc/systemd/system/
+systemctl daemon-reload
+systemctl start medtrack-offsite-full-scrub.service
+test "$(systemctl show medtrack-offsite-full-scrub.service --property=Result --value)" = success
+systemctl enable --now medtrack-offsite-full-scrub.timer
+```
+
+Keep the existing private backup configuration; do not overwrite it with the example. Configure `MEDTRACK_HEALTH_STATE_ROOT` in a root-private directory and `MEDTRACK_HEALTH_HASH_MODE=incremental` only after the full scrub and independent scratch restore succeed. The new units are not instructions to put the age identity or independent verifier on the production VPS. The legacy Windows verifier's schedule/path must be separately verified before claiming recurring recovery is healthy.
 
 Enable the single-owner patient-data schedule runner after installing its units:
 

@@ -1869,6 +1869,24 @@ class AuditEvent(models.Model):
         raise ValidationError("Audit events are append-only and cannot be deleted.")
 
 
+class AuditEvidenceExportAck(models.Model):
+    """Recoverable export acknowledgements; the source AuditEvent stays immutable."""
+
+    event_id = models.UUIDField(primary_key=True)
+    segment_sequence = models.PositiveBigIntegerField(db_index=True)
+    segment_chain_sha256 = models.CharField(max_length=64)
+    segment_name = models.CharField(max_length=64)
+    acknowledged_at = models.DateTimeField(auto_now_add=True)
+
+
+class AuditEvidenceExportState(models.Model):
+    """Transactionally binds export acknowledgements to a verified chain head."""
+
+    id = models.PositiveSmallIntegerField(primary_key=True, default=1, editable=False)
+    segment_sequence = models.PositiveBigIntegerField()
+    segment_chain_sha256 = models.CharField(max_length=64)
+
+
 class UserSecurityState(models.Model):
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL,

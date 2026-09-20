@@ -11,6 +11,7 @@ from django.utils import timezone
 from patients.models import TaskStatus
 
 from .models import (
+    GENERIC_NOTIFICATION_COPY,
     MobileDatasetState,
     MobileDeviceToken,
     MobileNotification,
@@ -23,23 +24,6 @@ from .push import send_mobile_notification
 
 
 _notifications_suspended = ContextVar("mobile_notifications_suspended", default=False)
-GENERIC_NOTIFICATION_COPY = {
-    MobileNotificationType.ASSIGNMENT: (
-        "MEDTRACK assignment",
-        "Open MEDTRACK to review an assignment update.",
-        "assignments",
-    ),
-    MobileNotificationType.RED_FLAG: (
-        "MEDTRACK priority update",
-        "Open MEDTRACK to review a priority update.",
-        "red_flags",
-    ),
-    MobileNotificationType.OVERDUE: (
-        "MEDTRACK task update",
-        "Open MEDTRACK to review a task update.",
-        "overdue",
-    ),
-}
 
 
 @contextmanager
@@ -63,9 +47,9 @@ def create_mobile_notification(
     dedupe_key="",
 ):
     del title, body, payload  # Clinical content must never be persisted or sent through FCM.
-    purge_expired_mobile_notifications()
     if _notifications_suspended.get() or not user or not getattr(user, "is_active", True):
         return None
+    purge_expired_mobile_notifications()
     if case is None or not _user_can_receive_case_notification(
         user,
         case,
@@ -193,12 +177,20 @@ def notification_is_authorized(notification):
     return authorized_notification_queryset(user).filter(pk=notification.pk).exists()
 
 
-def purge_stale_notifications_for_user(user):
-    # Materialize the authorized set before deleting from the same table. This
-    # keeps the revocation decision stable and avoids a self-referential
-    # subquery changing underneath the delete statement.
-    authorized_ids = list(authorized_notification_queryset(user).values_list("pk", flat=True))
-    deleted = MobileNotification.objects.filter(user=user).exclude(pk__in=authorized_ids).delete()[0]
+def purge_stale_notifications_for_user(user, *, limit=500):
+    # Materialize a bounded stale-ID set before the delete; never put a changing
+    # self-referential authorization subquery in the DELETE statement itself.
+    # Reads always apply authorized_notification_queryset, even with a backlog.
+    bounded_limit = max(1, min(int(limit), 5000))
+    stale_ids = list(
+        MobileNotification.objects.filter(user=user)
+        .exclude(pk__in=authorized_notification_queryset(user).values("pk"))
+        .order_by("pk")
+        .values_list("pk", flat=True)[:bounded_limit]
+    )
+    if not stale_ids:
+        return 0
+    deleted = MobileNotification.objects.filter(user=user, pk__in=stale_ids).delete()[0]
     if deleted:
         bump_notification_epochs([user.pk])
     return deleted

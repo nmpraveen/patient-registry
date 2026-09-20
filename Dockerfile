@@ -1,12 +1,8 @@
 ARG PYTHON_BASE_IMAGE=python:3.12.13-alpine3.23@sha256:601d3d3797e90e2534782e69c85fafb7971b43f24c7b1b079b7e48dd435e458d
 FROM ${PYTHON_BASE_IMAGE}
 
-ARG VCS_REF=unknown
-ARG BUILD_CONTEXT_SHA256=unverified
-
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
-ENV MEDTRACK_IMAGE_REVISION="${VCS_REF}"
 
 WORKDIR /app
 
@@ -37,6 +33,9 @@ COPY templates /app/templates
 
 # Apply commit-specific metadata after dependency installation so changing the
 # reviewed revision does not invalidate the hash-locked dependency layer.
+ARG VCS_REF=unknown
+ARG BUILD_CONTEXT_SHA256=unverified
+ENV MEDTRACK_IMAGE_REVISION="${VCS_REF}"
 LABEL org.opencontainers.image.source="https://github.com/nmpraveen/patient-registry" \
       org.opencontainers.image.revision="${VCS_REF}" \
       org.medtrack.build-context.schema="medtrack.build-context/v1" \

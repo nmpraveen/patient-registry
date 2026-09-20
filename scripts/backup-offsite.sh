@@ -184,16 +184,49 @@ if [[ ! "$audit_row_count" =~ ^[0-9]+$ || ! "$audit_max_id" =~ ^[0-9]+$ ]]; then
 fi
 
 if [[ "$require_audit_schema" == "1" ]]; then
-  MEDTRACK_SECURITY_EVIDENCE_ALLOW_STALE=1 "$repo_root/scripts/verify-security-evidence.sh"
-  evidence_chain_sha256="$(sed -n 's/^chain_sha256=//p' "$evidence_root/state/checkpoint.env" | tail -n 1)"
-  evidence_sequence="$(sed -n 's/^sequence=//p' "$evidence_root/state/checkpoint.env" | tail -n 1)"
+  # The exporter owns this lock exclusively. Hold a shared lock only while
+  # copying, never while dumping, encrypting, or uploading the database.
+  exec 8<"$evidence_root/export.lock"
+  flock -s -w 120 8
+  if find "$evidence_root/state" "$evidence_root/segments" ! -type f ! -type d -print -quit | grep -q .; then
+    echo "Security evidence contains a link or special file" >&2
+    exit 1
+  fi
+  evidence_last_segment="$(sed -n 's/^last_segment=//p' "$evidence_root/state/checkpoint.env" | tail -n 1)"
+  if [[ ! "$evidence_last_segment" =~ ^segment-[0-9]{8}-[0-9]{8}T[0-9]{6}Z$ ]]; then
+    echo "Security evidence checkpoint has an unsafe segment identity" >&2
+    exit 1
+  fi
+  if [[ "$evidence_mode" == "full" ]]; then
+    snapshot_root="$payload_dir/security-evidence"
+    install -d -m 0700 "$snapshot_root"
+    (cd "$evidence_root" && tar -cf - state segments) |
+      tar -xf - -C "$snapshot_root" --no-same-owner --no-same-permissions
+  else
+    snapshot_root="$payload_dir/security-evidence-checkpoint"
+    install -d -m 0700 "$snapshot_root/state" "$snapshot_root/segments"
+    install -m 0600 "$evidence_root/state/checkpoint.env" "$snapshot_root/state/checkpoint.env"
+    (cd "$evidence_root/segments" && tar -cf - "$evidence_last_segment") |
+      tar -xf - -C "$snapshot_root/segments" --no-same-owner --no-same-permissions
+  fi
+  flock -u 8
+  exec 8<&-
+  if [[ "$evidence_mode" == "full" ]]; then
+    MEDTRACK_SECURITY_EVIDENCE_ROOT="$snapshot_root" MEDTRACK_SECURITY_EVIDENCE_ALLOW_STALE=1 \
+      "$repo_root/scripts/verify-security-evidence.sh"
+  else
+    MEDTRACK_SECURITY_EVIDENCE_CHECKPOINT_ROOT="$snapshot_root" "$evidence_checkpoint_verifier"
+  fi
+  # All receipts describe the immutable copy, not a later live checkpoint.
+  evidence_chain_sha256="$(sed -n 's/^chain_sha256=//p' "$snapshot_root/state/checkpoint.env" | tail -n 1)"
+  evidence_sequence="$(sed -n 's/^sequence=//p' "$snapshot_root/state/checkpoint.env" | tail -n 1)"
   if [[ ! "$evidence_chain_sha256" =~ ^[0-9a-f]{64}$ || ! "$evidence_sequence" =~ ^[1-9][0-9]*$ ]]; then
     echo "Security evidence checkpoint is invalid" >&2
     exit 1
   fi
-  evidence_last_segment="$(sed -n 's/^last_segment=//p' "$evidence_root/state/checkpoint.env" | tail -n 1)"
+  evidence_last_segment="$(sed -n 's/^last_segment=//p' "$snapshot_root/state/checkpoint.env" | tail -n 1)"
   if [[ ! "$evidence_last_segment" =~ ^segment-[0-9]{8}-[0-9]{8}T[0-9]{6}Z$ ||
-    ! -d "$evidence_root/segments/$evidence_last_segment" || -L "$evidence_root/segments/$evidence_last_segment" ]]; then
+    ! -d "$snapshot_root/segments/$evidence_last_segment" || -L "$snapshot_root/segments/$evidence_last_segment" ]]; then
     echo "Security evidence checkpoint does not identify a safe latest segment" >&2
     exit 1
   fi
@@ -258,27 +291,6 @@ schema_migration_sha256="$(sha256sum "$payload_dir/schema-migrations.txt" | awk 
   printf 'minimum_max_id=%s\n' "$audit_max_id"
   printf 'maximum_occurred_at=%s\n' "$audit_max_occurred_at"
 } > "$payload_dir/audit-checkpoint.env"
-if [[ "$require_audit_schema" == "1" ]]; then
-  if find "$evidence_root/state" "$evidence_root/segments" ! -type f ! -type d -print -quit | grep -q .; then
-    echo "Security evidence contains a link or special file" >&2
-    exit 1
-  fi
-  if [[ "$evidence_mode" == "full" ]]; then
-    install -d -m 0700 "$payload_dir/security-evidence"
-    (cd "$evidence_root" && tar -cf - state segments) |
-      tar -xf - -C "$payload_dir/security-evidence" --no-same-owner --no-same-permissions
-    MEDTRACK_SECURITY_EVIDENCE_ROOT="$payload_dir/security-evidence" \
-      MEDTRACK_SECURITY_EVIDENCE_ALLOW_STALE=1 "$repo_root/scripts/verify-security-evidence.sh"
-  else
-    checkpoint_root="$payload_dir/security-evidence-checkpoint"
-    install -d -m 0700 "$checkpoint_root/state" "$checkpoint_root/segments"
-    install -m 0600 "$evidence_root/state/checkpoint.env" "$checkpoint_root/state/checkpoint.env"
-    (cd "$evidence_root/segments" && tar -cf - "$evidence_last_segment") |
-      tar -xf - -C "$checkpoint_root/segments" --no-same-owner --no-same-permissions
-    MEDTRACK_SECURITY_EVIDENCE_CHECKPOINT_ROOT="$checkpoint_root" \
-      "$evidence_checkpoint_verifier"
-  fi
-fi
 install -m 0600 "$production_env" "$payload_dir/config/environment.env"
 for relative_path in docker-compose.yml docker-compose.prod.yml deploy/Caddyfile; do
   if [[ -f "$repo_root/$relative_path" ]]; then

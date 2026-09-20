@@ -11,6 +11,7 @@ from django.urls import reverse
 from . import test_follow_up
 from .forms import PatientForm, RecentCaseUpdateForm
 from .models import AuditEvent, Case, Patient
+from .recent_cases import notes_baseline
 
 
 class RecentCaseAuditTests(TestCase):
@@ -25,7 +26,7 @@ class RecentCaseAuditTests(TestCase):
         with patch("patients.audit.record_audit_event", side_effect=RuntimeError("audit unavailable")):
             with self.assertRaises(RuntimeError):
                 self.client.post(reverse("patients:recent_case_update", args=[case.pk]),
-                    {"diagnosis": "After", "notes": "New notes"})
+                    {"notes": "New notes", "notes_baseline": notes_baseline(case, self.user)})
         case.refresh_from_db()
         self.assertEqual((case.diagnosis, case.notes, case.updated_at, case.patient_id, case.status, case.edd), before)
         self.assertEqual(case.activity_logs.count(), activity_count)
@@ -39,7 +40,7 @@ class RecentCaseAuditTests(TestCase):
             return original_save(form, *args, **kwargs)
         with patch.object(RecentCaseUpdateForm, "save", relink_before_save):
             response = self.client.post(reverse("patients:recent_case_update", args=[case.pk]),
-                {"diagnosis": "After", "notes": "New notes"})
+                {"notes": "New notes", "notes_baseline": notes_baseline(case, self.user)})
         self.assertEqual(response.status_code, 400)
         case.refresh_from_db()
         self.assertEqual((case.diagnosis, case.notes, case.patient_id), ("Before", "Keep these notes", other.pk))
@@ -49,7 +50,7 @@ class RecentCaseAuditTests(TestCase):
             return original_save(form, *args, **kwargs)
         with patch.object(RecentCaseUpdateForm, "save", merge_before_save):
             response = self.client.post(reverse("patients:recent_case_update", args=[case.pk]),
-                {"diagnosis": "After", "notes": "New notes"})
+                {"notes": "New notes", "notes_baseline": notes_baseline(case, self.user)})
         self.assertEqual(response.status_code, 400)
         case.refresh_from_db()
         self.assertEqual((case.diagnosis, case.notes), ("Before", "Keep these notes"))
@@ -102,17 +103,17 @@ class RecentCasePatientLockTests(TransactionTestCase):
             identity = pool.submit(post, identity_client,
                 reverse("patients:patient_edit", args=[patient.pk]), identity_data, identity_hook)
             recent = pool.submit(post, self.client, reverse("patients:recent_case_update", args=[case.pk]),
-                {"diagnosis": "Recent diagnosis", "notes": "Recent notes"}, recent_hook, True)
+                {"diagnosis": "Ignored stale diagnosis", "notes": "Recent notes", "notes_baseline": notes_baseline(case, self.user)}, recent_hook, True)
             identity_response, recent_response = identity.result(timeout=15), recent.result(timeout=15)
         self.assertEqual(identity_response.status_code, 302)
         self.assertEqual(recent_response.status_code, 200)
         case.refresh_from_db()
         patient.refresh_from_db()
         self.assertEqual((case.first_name, patient.first_name), ("Concurrent Identity", "Concurrent Identity"))
-        self.assertEqual((case.diagnosis, case.notes), ("Recent diagnosis", "Recent notes"))
+        self.assertEqual((case.diagnosis, case.notes), ("Before", "Recent notes"))
         self.assertEqual((case.status, case.anc_outcome, case.edd, case.usg_edd, case.patient_id), clinical_before)
         self.assertNotEqual(case.updated_at, original_updated_at)
-        self.assertTrue(case.activity_logs.filter(note="Diagnosis updated: Before -> Recent diagnosis").exists())
+        self.assertFalse(case.activity_logs.filter(note__startswith="Diagnosis updated:").exists())
         self.assertTrue(case.activity_logs.filter(note="Recent notes").exists())
         self.assertTrue(AuditEvent.objects.filter(case_id=case.pk, actor_user_id=self.user.pk,
             action="patients.case.recent_updated").exists())

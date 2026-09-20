@@ -1,8 +1,9 @@
 """Shared task edit baselines and clinical activity descriptions."""
 
-from django.contrib.auth import get_user_model
+from django.contrib.auth import HASH_SESSION_KEY, get_user_model
 from django.core import signing
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
+from django.utils.crypto import constant_time_compare
 
 from .models import RoleSetting, UserSecurityState
 
@@ -52,3 +53,36 @@ def lock_edit_actor(user):
     names = list(locked.groups.order_by("name").values_list("name", flat=True))
     list(RoleSetting.objects.select_for_update().filter(role_name__in=names).order_by("pk"))
     return locked
+
+
+def lock_web_edit_actor(request):
+    """Revalidate the original web session after acquiring mutation locks.
+
+    Call inside the mutation transaction, before reading authorization or case
+    scope. Middleware authenticates before these locks and may have observed a
+    session that was revoked while the request waited for another writer.
+    """
+    from .auth_security import (
+        AUTH_VERSION_SESSION_KEY, DEVICE_CREDENTIAL_SESSION_KEY,
+        current_auth_version, parse_positive_auth_version, user_requires_device_approval,
+    )
+    from .models import StaffDeviceCredential, StaffDeviceCredentialStatus
+
+    actor = lock_edit_actor(request.user)
+    denial = "Your session changed. Sign in again."
+    try:
+        bound_version = parse_positive_auth_version(request.session.get(AUTH_VERSION_SESSION_KEY))
+    except ValueError:
+        raise PermissionDenied(denial)
+    session_hash = request.session.get(HASH_SESSION_KEY)
+    if (not actor.is_active or bound_version != current_auth_version(actor)
+            or not isinstance(session_hash, str) or not session_hash
+            or not constant_time_compare(session_hash, actor.get_session_auth_hash())):
+        raise PermissionDenied(denial)
+    if user_requires_device_approval(actor):
+        device_id = request.session.get(DEVICE_CREDENTIAL_SESSION_KEY)
+        if type(device_id) is not int or device_id <= 0 or not StaffDeviceCredential.objects.filter(
+            pk=device_id, user=actor, status=StaffDeviceCredentialStatus.APPROVED,
+        ).exists():
+            raise PermissionDenied(denial)
+    return actor

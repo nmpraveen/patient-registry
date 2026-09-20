@@ -11,8 +11,7 @@ Group=root
 WorkingDirectory=/srv/medtrack/app
 Environment=MEDTRACK_BACKUP_CONFIG=/etc/medtrack-backup/backup.env
 Environment=MEDTRACK_HEALTH_PRODUCTION_MODE=1
-Environment=MEDTRACK_HEALTH_HASH_MODE=all
-ExecStart=/srv/medtrack/app/scripts/check-offsite-backups.sh
+ExecStart=/srv/medtrack/app/scripts/check-offsite-backups.sh --hash-mode incremental
 UMask=0077
 TimeoutStartSec=15m
 NoNewPrivileges=yes
@@ -27,6 +26,8 @@ ProtectKernelModules=yes
 ProtectKernelTunables=yes
 ProtectSystem=strict
 ReadOnlyPaths=/srv/medtrack/app /srv/medtrack/backup-secrets /etc/medtrack-backup /srv/medtrack/offsite-backups /srv/medtrack/security-evidence
+StateDirectory=medtrack-backup-health
+ReadWritePaths=/var/lib/medtrack-backup-health
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 RestrictSUIDSGID=yes
 LockPersonality=yes

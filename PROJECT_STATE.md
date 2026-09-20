@@ -1,5 +1,13 @@
 # PROJECT_STATE.md
 
+## September 20 whole-project review remediation
+
+The review baseline is `2d1f38ff1623f21e74cd53ca3531336eb989798b`. Notes and clinical previews preserve newer edits; clinical API and task/notes web writes revalidate their original credential at the lock boundary. Recent-case/search/API child retrieval is bounded, scoped patient aggregates cannot include inaccessible cases, current age derives from DOB, and bundle export respects its importer limits. Stable page assets and shared clinical controls replace repeated inline/duplicate code; shadowed definitions and the dead case form are removed.
+
+Migration `patients.0046_audit_evidence_export_ack` adds recoverable UUID delivery acknowledgements and verified-chain progress, leaving append-only AuditEvent records intact. Immutable evidence snapshots, rotation-aware log deltas, private checked local backups, a shared mutation operation lock and incremental remote checks with mandatory full scrubs strengthen recovery. The source-level coverage and explicit retained safety boundaries are in [review remediation](docs/review-remediation-20260920.md).
+
+The release requires independent review, all seven exact-head CI contexts, encrypted backup, exact-image independent restore, reviewed migration plan, authenticated live acceptance and post-deploy canary verification. This source entry does not certify deployment or recurring recovery automation; final receipts belong to the release evidence.
+
 ## Reception PhoneBook maintenance
 
 Contact maintenance now uses a dedicated `manage_phonebook` capability, with an independent **Manage PhoneBook contacts** checkbox in custom role management and Django admin. Migration patients.0045 preserves existing settings managers, grants existing Reception, and changes no other policy fields. Admin and Reception defaults enable it; normal initialization preserves later revocation. API `/api/me/` publishes the explicit capability. All contact web/API writes and inactive inspection use it; locked fresh authorization, auth-version revalidation, auditing and stale-version 409 remain intact. Settings, announcement publication, reminder scope, patient identity and clinical capabilities are unchanged. Android is deprecated and receives no native feature work.

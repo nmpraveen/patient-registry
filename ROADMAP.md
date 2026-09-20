@@ -1,5 +1,11 @@
 # ROADMAP.md
 
+## September 20 maintenance release
+
+- Deliver all demonstrated whole-project review defects and the bounded cleanup/query/static-asset improvements described in [the disposition ledger](docs/review-remediation-20260920.md).
+- Preserve dataset/authorization barriers, trusted release attestation, historical migrations, supported API compatibility and deprecated Android history. Further lock/index/streaming/push work requires its own measured workload and complete safety contract.
+- Complete exact-head review/CI, backup-first VPS rollout, authenticated live smoke and independent pre/post exact-image recovery. Incremental recovery health requires a first full scrub and a functioning independent verifier; manual recovery receipts do not replace recurring health proof.
+
 ## Reception PhoneBook permission
 
 - Separate contact maintenance from settings administration; grant Reception and preserve existing managers through patients.0045. Admin role controls can grant/revoke PhoneBook access independently.

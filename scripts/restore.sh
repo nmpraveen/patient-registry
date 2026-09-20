@@ -58,6 +58,11 @@ done
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
+if [[ "$mode" == "activate" || "$mode" == "rollback" ]]; then
+  # shellcheck source=scripts/operation-lock.sh
+  source "$repo_root/scripts/operation-lock.sh"
+  acquire_medtrack_operation_lock
+fi
 
 python_command="${PYTHON_COMMAND:-python3}"
 for command_name in comm docker git mktemp "$python_command" realpath sha256sum sort sync tar; do

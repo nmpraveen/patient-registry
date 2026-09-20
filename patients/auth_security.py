@@ -243,6 +243,12 @@ def clear_auth_attempts(*, scope, request, identifier):
     keys = _throttle_keys(request, identifier)
     ip_limit = max(1, getattr(settings, "AUTH_THROTTLE_IP_LIMIT", 30))
     with transaction.atomic():
+        # Match consume_auth_attempt: JWT views deliberately run without an
+        # outer request transaction, so clearing can race a new reservation.
+        ip_bucket = AuthenticationThrottleBucket.objects.select_for_update().filter(
+            scope=_bucket_scope(scope, "ip"),
+            key_hash=keys["ip"],
+        ).first()
         account_bucket = AuthenticationThrottleBucket.objects.select_for_update().filter(
             scope=_bucket_scope(scope, "account"),
             key_hash=keys["account"],
@@ -258,10 +264,6 @@ def clear_auth_attempts(*, scope, request, identifier):
         # consume_auth_attempt reserves one coarse-IP attempt before credentials
         # are checked. Release only this successful reservation; retain every
         # earlier IP failure and its original window start.
-        ip_bucket = AuthenticationThrottleBucket.objects.select_for_update().filter(
-            scope=_bucket_scope(scope, "ip"),
-            key_hash=keys["ip"],
-        ).first()
         if ip_bucket is not None and ip_bucket.failure_count:
             ip_bucket.failure_count -= 1
             if ip_bucket.failure_count < ip_limit:

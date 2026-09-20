@@ -151,6 +151,8 @@ def main() -> int:
     parser.add_argument("--builder")
     parser.add_argument("--no-pull", action="store_true")
     parser.add_argument("--no-cache", action="store_true")
+    parser.add_argument("--cache-from", action="append", default=[])
+    parser.add_argument("--cache-to", action="append", default=[])
     args = parser.parse_args()
     repo_root = Path(__file__).resolve().parent.parent
     revision = subprocess.run(
@@ -204,6 +206,10 @@ def main() -> int:
             run_scan(repo_root, context_image, "context", canary)
 
             command = ["docker", "buildx", "build"]
+            for cache in args.cache_from:
+                command.extend(["--cache-from", cache])
+            for cache in args.cache_to:
+                command.extend(["--cache-to", cache])
             if args.builder:
                 command.extend(["--builder", args.builder])
             command.extend(["--platform", "linux/amd64", "--provenance=false", "--sbom=false"])

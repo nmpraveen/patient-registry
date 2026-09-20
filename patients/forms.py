@@ -61,6 +61,7 @@ from .theme import (
 )
 from .intake_access import case_intake_patient_queryset, resolve_case_intake_patient
 from .database_bundle import IMPORT_CONFIRMATION_PHRASE, MAX_BUNDLE_COMPRESSED_BYTES
+from .recent_cases import notes_digest, read_notes_baseline
 
 
 User = get_user_model()
@@ -943,26 +944,39 @@ class CallLogForm(StyledModelForm):
 
 
 class RecentCaseUpdateForm(StyledModelForm):
+    notes_baseline = forms.CharField(widget=forms.HiddenInput)
+
+    def __init__(self, *args, user=None, **kwargs):
+        self.user = user
+        super().__init__(*args, **kwargs)
+
+    def clean_notes_baseline(self):
+        self.original_notes = read_notes_baseline(self.cleaned_data["notes_baseline"], self.instance, self.user)
+        return self.cleaned_data["notes_baseline"]
+
     @transaction.atomic
     def save(self, commit=True):
         if not commit:
             return super().save(commit=False)
-        # Bind only this editor's two fields onto the current locked row. A
-        # stale form must never write outcome/status/EDD back into the database.
+        # This is a notes-only editor. A hidden diagnosis from an older browser
+        # must never overwrite a correction made in the full case editor.
         current = Case.objects.select_for_update().get(pk=self.instance.pk)
-        if current.patient_id != self.instance.patient_id or (
+        if current.patient_id != self.original_notes["patient"] or (
             current.patient_id and not Patient.objects.filter(pk=current.patient_id, merged_into__isnull=True).exists()
         ):
             raise ValidationError("This case's patient changed. Reload before saving.")
-        self.previous_diagnosis = current.diagnosis or ""
+        if notes_digest(current.notes) != self.original_notes["notes"]:
+            raise ValidationError("Notes changed since this editor was opened. Reload before saving.", code="edit_conflict")
         self.previous_notes = current.notes or ""
-        current.diagnosis = self.cleaned_data["diagnosis"]
         current.notes = self.cleaned_data["notes"]
-        # Case.save locks Patient even for update_fields. These two fields need
+        if current.notes == self.previous_notes:
+            self.instance = current
+            return current
+        # Case.save locks Patient even for update_fields. Notes need
         # only the Case lock; retain mandatory auditing without touching identity.
         from .audit import audited_bulk_update
         current.updated_at = timezone.now()
-        fields = ("diagnosis", "notes", "updated_at")
+        fields = ("notes", "updated_at")
         audited_bulk_update(Case.objects.filter(pk=current.pk), category=AuditEvent.Category.CLINICAL,
             action="patients.case.recent_updated", changed_fields=fields,
             **{field: getattr(current, field) for field in fields})
@@ -971,9 +985,8 @@ class RecentCaseUpdateForm(StyledModelForm):
 
     class Meta:
         model = Case
-        fields = ["diagnosis", "notes"]
+        fields = ["notes"]
         widgets = {
-            "diagnosis": forms.TextInput(attrs={"placeholder": "Enter diagnosis"}),
             "notes": forms.Textarea(attrs={"rows": 4, "placeholder": "Add case notes"}),
         }
 

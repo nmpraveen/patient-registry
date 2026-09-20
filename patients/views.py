@@ -43,8 +43,10 @@ from django.views import View
 from django.views.generic import CreateView, DetailView, ListView, UpdateView
 
 from . import database_bundle
-from .task_editing import changed_field_conflicts, lock_edit_actor, read_task_edit_token, task_change_note, task_edit_token, task_values
+from .task_editing import changed_field_conflicts, lock_web_edit_actor, read_task_edit_token, task_change_note, task_edit_token, task_values
 from .audit import record_audit_event
+from .presentation import current_age
+from .recent_cases import decode_recent_cursor, encode_recent_cursor, notes_baseline
 from .auth_security import bind_authenticated_session, clear_auth_attempts, consume_auth_attempt
 from .intake_access import case_intake_patient_queryset, resolve_case_intake_patient
 from .policy import (
@@ -334,8 +336,8 @@ TIMELINE_FILTER_OPTIONS = (
 )
 TASK_NOTE_MARKER = "[Task:"
 LEGACY_TASK_NOTE_PREFIX = "Task note updated:"
-RECENT_CASE_LIMIT_DEFAULT = 10
-RECENT_CASE_LIMIT_MAX = 10
+RECENT_CASE_LIMIT_DEFAULT = 20
+RECENT_CASE_LIMIT_MAX = 50
 PENDING_DEVICE_LOGIN_SESSION_KEY = "device_access_pending_login"
 DEVICE_REGISTRATION_STATE_SESSION_KEY = "device_access_registration_state"
 DEVICE_AUTHENTICATION_STATE_SESSION_KEY = "device_access_authentication_state"
@@ -720,8 +722,6 @@ def _forbidden_response(request, message):
 
 
 def _clamp_recent_case_limit(raw_limit):
-    if raw_limit == "all":
-        return None
     try:
         limit = int(raw_limit)
     except (TypeError, ValueError):
@@ -842,15 +842,19 @@ def _patient_search_queryset(query="", *, user=None, allow_intake_lookup=False):
         patient_queryset = case_intake_patient_queryset(actor=user, queryset=patient_queryset)
     elif user is not None:
         patient_queryset = _accessible_patient_queryset(user, patient_queryset)
+    visible = _accessible_case_queryset(user) if user is not None else _visible_case_queryset()
+    case_scope = Q(cases__in=visible)
     queryset = _visible_patient_queryset(
         patient_queryset.annotate(
-            total_case_count=Count("cases", distinct=True),
+            case_count=Count("cases", filter=case_scope, distinct=True),
             active_case_count=Count(
                 "cases",
-                filter=Q(cases__is_archived=False, cases__status=CaseStatus.ACTIVE),
+                filter=case_scope & Q(cases__status=CaseStatus.ACTIVE),
                 distinct=True,
             ),
         )
+        .prefetch_related(Prefetch("cases", queryset=visible.select_related("category").order_by("-updated_at", "-id")[:3],
+                                  to_attr="_search_visible_cases"))
         .order_by("patient_name", "uhid")
     )
     normalized_query = (query or "").strip()
@@ -889,62 +893,10 @@ def _can_manage_patient_identity(user, patient, *, capability):
     return _can_access_all_cases(user, list(patient.cases.only("pk", "is_archived", "created_by_id")))
 
 
-def _patient_active_cases(patient, *, include_archived=False, limit=None):
-    queryset = patient.cases.select_related("category").order_by("-updated_at", "-id")
-    if not include_archived:
-        queryset = queryset.filter(is_archived=False)
-    if limit is not None:
-        queryset = queryset[:limit]
-    return list(queryset)
 
 
-def _serialize_patient_case_summary(case):
-    return {
-        "id": case.id,
-        "category_name": case.category.name,
-        "status": case.status,
-        "status_label": case.get_status_display(),
-        "diagnosis": (case.diagnosis or case.category.name).strip(),
-        "detail_url": reverse("patients:case_detail", kwargs={"pk": case.pk}),
-    }
 
 
-def _serialize_patient_search_result(patient):
-    active_cases = [
-        case
-        for case in _patient_active_cases(patient, limit=3)
-        if case.status == CaseStatus.ACTIVE
-    ]
-    tags = []
-    seen_categories = set()
-    for case in active_cases:
-        category_name = case.category.name
-        if category_name in seen_categories:
-            continue
-        seen_categories.add(category_name)
-        tags.append({"kind": "category", "label": category_name, "value": category_name.lower()})
-    if patient.is_temporary_id:
-        tags.append({"kind": "temporary", "label": "Temporary ID"})
-    return {
-        "id": patient.id,
-        "record_type": "patient",
-        "mtno": patient.mtno,
-        "uhid": patient.uhid,
-        "name": patient.full_name or patient.patient_name or patient.uhid,
-        "blood_group": patient.blood_group or "",
-        "blood_group_display": patient.get_blood_group_display() if patient.blood_group else "",
-        "age": patient.age if patient.age is not None else "\u2014",
-        "village": patient.place or "\u2014",
-        "diagnosis": active_cases[0].diagnosis if active_cases and active_cases[0].diagnosis else (
-            active_cases[0].category.name if active_cases else "\u2014"
-        ),
-        "phone_number": patient.phone_number or "\u2014",
-        "active_case_count": getattr(patient, "active_case_count", len(active_cases)),
-        "total_case_count": getattr(patient, "total_case_count", patient.cases.count()),
-        "cases": [_serialize_patient_case_summary(case) for case in active_cases],
-        "tags": tags,
-        "detail_url": reverse("patients:patient_detail", kwargs={"pk": patient.pk}),
-    }
 
 
 def _case_management_queryset(query=""):
@@ -977,16 +929,16 @@ def _patient_queryset(query="", *, user=None):
     patient_queryset = Patient.objects.filter(merged_into__isnull=True)
     if user is not None:
         patient_queryset = _accessible_patient_queryset(user, patient_queryset)
+    visible = _accessible_case_queryset(user) if user is not None else _visible_case_queryset()
+    case_scope = Q(cases__in=visible)
     queryset = (
         patient_queryset
         .annotate(
-            case_count=Count("cases", distinct=True),
-            active_case_count=Count(
-                "cases",
-                filter=Q(cases__status=CaseStatus.ACTIVE, cases__is_archived=False),
-                distinct=True,
-            ),
+            case_count=Count("cases", filter=case_scope, distinct=True),
+            active_case_count=Count("cases", filter=case_scope & Q(cases__status=CaseStatus.ACTIVE), distinct=True),
         )
+        .prefetch_related(Prefetch("cases", queryset=visible.select_related("category").order_by("-updated_at", "-id")[:3],
+                                  to_attr="_search_visible_cases"))
         .order_by("patient_name", "uhid", "id")
     )
     normalized_query = (query or "").strip()
@@ -1033,7 +985,8 @@ def _serialize_patient_search_result(patient, *, exclude_case_id=None, user=None
     if exclude_case_id is not None:
         active_case_queryset = active_case_queryset.exclude(pk=exclude_case_id)
         case_queryset = case_queryset.exclude(pk=exclude_case_id)
-    active_cases = list(active_case_queryset.order_by("-updated_at", "-id")[:3])
+    active_cases = (patient._search_visible_cases if exclude_case_id is None and hasattr(patient, "_search_visible_cases")
+                    else list(active_case_queryset.order_by("-updated_at", "-id")[:3]))
     category_tags = []
     seen_categories = set()
     for case in active_cases:
@@ -1056,7 +1009,7 @@ def _serialize_patient_search_result(patient, *, exclude_case_id=None, user=None
         "blood_group": patient.blood_group or "",
         "blood_group_display": patient.get_blood_group_display() if patient.blood_group else "",
         "date_of_birth": patient.date_of_birth.isoformat() if patient.date_of_birth else "",
-        "age": patient.age,
+        "age": current_age(patient),
         "age_display": _patient_age_number(patient),
         "village": patient.place or "\u2014",
         "diagnosis": active_cases[0].diagnosis if active_cases and active_cases[0].diagnosis else (
@@ -1069,12 +1022,12 @@ def _serialize_patient_search_result(patient, *, exclude_case_id=None, user=None
         "is_temporary_id": patient.is_temporary_id,
         "case_count": (
             patient.case_count
-            if user is None and exclude_case_id is None and hasattr(patient, "case_count")
+            if exclude_case_id is None and hasattr(patient, "_search_visible_cases")
             else case_queryset.count()
         ),
         "active_case_count": (
             patient.active_case_count
-            if user is None and exclude_case_id is None and hasattr(patient, "active_case_count")
+            if exclude_case_id is None and hasattr(patient, "_search_visible_cases")
             else active_case_queryset.filter(status=CaseStatus.ACTIVE).count()
         ),
         "tags": category_tags,
@@ -1180,7 +1133,10 @@ def _attach_user_role_metadata(users):
 
 
 def _recent_case_task_queryset():
-    return Task.objects.only("id", "case_id", "title", "due_date", "status", "notes").order_by("due_date", "id")
+    return Task.objects.select_related("assigned_user").only(
+        "id", "case_id", "title", "due_date", "status", "notes", "completed_at",
+        "task_type", "assigned_user_id", "assigned_user__username",
+    ).order_by("due_date", "id")
 
 
 def _recent_case_queryset(limit=None, *, include_tasks=True, user=None):
@@ -1188,6 +1144,7 @@ def _recent_case_queryset(limit=None, *, include_tasks=True, user=None):
         Case.objects.select_related("category")
         .only(
             "id",
+            "patient_id",
             "prefix",
             "first_name",
             "last_name",
@@ -1302,6 +1259,7 @@ def _serialize_recent_case(case, user, *, today=None, can_edit_recent=None, can_
         "diagnosis_input": case.diagnosis or "",
         "diagnosis_short": _truncate_text(diagnosis),
         "notes": case.notes or "",
+        "notes_baseline": notes_baseline(case, user),
         "created_at": created_local.isoformat(),
         "created_at_display": created_local.strftime("%d %b %Y %H:%M"),
         "created_at_short_display": _month_day_display(created_local),
@@ -1349,6 +1307,7 @@ def _serialize_recent_case_summary(case, user, *, today=None, can_edit_recent=No
         "diagnosis_input": case.diagnosis or "",
         "diagnosis_short": _truncate_text(diagnosis),
         "notes": case.notes or "",
+        "notes_baseline": notes_baseline(case, user),
         "created_at": created_local.isoformat(),
         "created_at_display": created_local.strftime("%d %b %Y %H:%M"),
         "created_at_short_display": _month_day_display(created_local),
@@ -1850,57 +1809,6 @@ def _delta_direction(value):
     return "flat"
 
 
-def _vitals_metric_specs():
-    return [
-        {
-            "key": "pr",
-            "field_name": "pr",
-            "label": "Pulse Rate",
-            "short_label": "PR",
-            "icon": "💓",
-            "unit": "bpm",
-            "minimum": 40,
-            "maximum": 140,
-            "formatter": _format_integer,
-            "delta_precision": 0,
-        },
-        {
-            "key": "spo2",
-            "field_name": "spo2",
-            "label": "SpO2",
-            "short_label": "SpO2",
-            "icon": "🫁",
-            "unit": "%",
-            "minimum": 80,
-            "maximum": 100,
-            "formatter": _format_integer,
-            "delta_precision": 0,
-        },
-        {
-            "key": "weight",
-            "field_name": "weight_kg",
-            "label": "Weight",
-            "short_label": "Wt",
-            "icon": "⚖️",
-            "unit": "kg",
-            "minimum": 30,
-            "maximum": 120,
-            "formatter": _format_decimal_one,
-            "delta_precision": 1,
-        },
-        {
-            "key": "hemoglobin",
-            "field_name": "hemoglobin",
-            "label": "Hemoglobin",
-            "short_label": "Hb",
-            "icon": "🩸",
-            "unit": "g/dL",
-            "minimum": 4,
-            "maximum": 16,
-            "formatter": _format_decimal_one,
-            "delta_precision": 1,
-        },
-    ]
 
 
 def _vitals_metric_specs():
@@ -2443,27 +2351,13 @@ def _case_age_label(case):
 
 
 def _patient_age_number(patient):
-    if patient.age is not None:
-        return str(patient.age)
-    if patient.date_of_birth:
-        today = timezone.localdate()
-        years = today.year - patient.date_of_birth.year - (
-            (today.month, today.day) < (patient.date_of_birth.month, patient.date_of_birth.day)
-        )
-        return str(max(years, 0))
-    return "-"
+    age = current_age(patient)
+    return str(age) if age is not None else "-"
 
 
 def _case_age_number(case):
-    if case.age is not None:
-        return str(case.age)
-    if case.date_of_birth:
-        today = timezone.localdate()
-        years = today.year - case.date_of_birth.year - (
-            (today.month, today.day) < (case.date_of_birth.month, case.date_of_birth.day)
-        )
-        return str(max(years, 0))
-    return "-"
+    age = current_age(case)
+    return str(age) if age is not None else "-"
 
 
 def _case_gender_code(case):
@@ -3104,11 +2998,10 @@ class DashboardView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
         context["today_date_display"] = _month_day_display(today)
         context["show_recent_cases_panel"] = _can_view_recent_cases(self.request.user)
         context["can_edit_recent_cases"] = _can_edit_recent_cases(self.request.user)
-        context["recent_cases"] = (
-            _recent_case_summary_payload_for_user(self.request.user, limit=None)
-            if context["show_recent_cases_panel"]
-            else []
-        )
+        recent_page = (_recent_case_page(self.request.user) if context["show_recent_cases_panel"]
+                       else {"results": [], "next_cursor": None})
+        context["recent_cases"] = recent_page["results"]
+        context["recent_cases_next_cursor"] = recent_page["next_cursor"]
         return context
 
 
@@ -3484,67 +3377,65 @@ class UpcomingCallsBulkLogView(LoginRequiredMixin, UpcomingCallsAccessMixin, Vie
         return redirect(redirect_url)
 
 
+def _recent_case_page(user, *, cursor="", limit=RECENT_CASE_LIMIT_DEFAULT):
+    from .auth_security import current_auth_version
+    binding = None
+    queryset = _recent_case_queryset(include_tasks=False, user=user)
+    if cursor:
+        binding = {"auth_version": current_auth_version(user), "scope": role_data_scope_payload(user)}
+        created, case_id = decode_recent_cursor(cursor, user, binding)
+        queryset = queryset.filter(Q(created_at__lt=created) | Q(created_at=created, id__lt=case_id))
+    limit = _clamp_recent_case_limit(limit)
+    cases = list(queryset[:limit + 1])
+    more = len(cases) > limit
+    cases = cases[:limit]
+    if more and binding is None:
+        binding = {"auth_version": current_auth_version(user), "scope": role_data_scope_payload(user)}
+    colors = build_theme_category_colors([case.category for case in cases])
+    can_edit = _can_edit_recent_cases(user)
+    today = timezone.localdate()
+    return {"results": [_serialize_recent_case_summary(case, user, today=today,
+                can_edit_recent=can_edit, theme_category_colors=colors) for case in cases],
+            "next_cursor": encode_recent_cursor(cases[-1], user, binding) if more else None}
+
+
 class RecentCasesView(LoginRequiredMixin, CaseDataAccessMixin, View):
     def get(self, request):
         if not _can_view_recent_cases(request.user):
             return _forbidden_response(request, "You do not have permission to view recent cases.")
-
-        limit = _clamp_recent_case_limit(request.GET.get("limit", RECENT_CASE_LIMIT_DEFAULT))
-        return JsonResponse({"results": _recent_cases_payload_for_user(request.user, limit=limit)})
+        try:
+            return JsonResponse(_recent_case_page(request.user,
+                cursor=request.GET.get("cursor", ""), limit=request.GET.get("limit", RECENT_CASE_LIMIT_DEFAULT)))
+        except ValidationError as error:
+            return JsonResponse({"message": error.messages[0]}, status=400)
 
 
 class RecentCaseUpdateView(LoginRequiredMixin, CaseDataAccessMixin, View):
-    def post(self, request, pk):
+    def get(self, request, pk):
         if not _can_view_recent_cases(request.user):
             return _forbidden_response(request, "You do not have permission to view recent cases.")
-        if not _can_edit_recent_cases(request.user):
+        return JsonResponse({"case": _recent_case_payload_for_id(pk, request.user)})
+
+    @transaction.atomic
+    def post(self, request, pk):
+        request.user = lock_web_edit_actor(request)
+        if not _can_view_recent_cases(request.user) or not _can_edit_recent_cases(request.user):
             return _forbidden_response(request, "You do not have permission to edit recent cases.")
-
-        case = get_object_or_404(
-            _accessible_case_queryset(request.user, Case.objects.select_related("category")),
-            pk=pk,
-        )
-        old_diagnosis = case.diagnosis or ""
-        old_notes = case.notes or ""
-        form = RecentCaseUpdateForm(request.POST, instance=case)
+        case = get_object_or_404(_accessible_case_queryset(request.user, Case.objects.select_related("category")), pk=pk)
+        form = RecentCaseUpdateForm(request.POST, instance=case, user=request.user)
         if not form.is_valid():
-            return JsonResponse({"message": "Could not save case.", "errors": form.errors.get_json_data()}, status=400)
-
-        new_diagnosis = form.cleaned_data.get("diagnosis", "") or ""
-        new_notes = form.cleaned_data.get("notes", "") or ""
-        diagnosis_changed = old_diagnosis != new_diagnosis
-        notes_changed = old_notes != new_notes
-
-        if diagnosis_changed or notes_changed:
-            try:
-                form.save()
-            except ValidationError as error:
-                return JsonResponse({"message": error.messages[0]}, status=400)
-            old_diagnosis = form.previous_diagnosis
-            old_notes = form.previous_notes
-            diagnosis_changed = old_diagnosis != new_diagnosis
-            notes_changed = old_notes != new_notes
-            if diagnosis_changed:
-                previous_label = old_diagnosis or "blank"
-                current_label = new_diagnosis or "blank"
-                create_case_activity(
-                    case=case,
-                    user=request.user,
-                    event_type=ActivityEventType.SYSTEM,
-                    note=f"Diagnosis updated: {previous_label} -> {current_label}",
-                )
-            if notes_changed:
-                create_case_activity(
-                    case=case,
-                    user=request.user,
-                    event_type=ActivityEventType.NOTE,
-                    note=new_notes or "Case notes cleared.",
-                )
-            message = "Recent case updated."
-        else:
-            message = "No changes to save."
-
-        return JsonResponse({"message": message, "case": _recent_case_payload_for_id(pk, request.user)})
+            return JsonResponse({"message": "Could not save notes.", "errors": form.errors.get_json_data()}, status=400)
+        try:
+            saved = form.save()
+        except ValidationError as error:
+            return JsonResponse({"message": error.messages[0]},
+                status=409 if error.code == "edit_conflict" else 400)
+        changed = form.previous_notes != saved.notes
+        if changed:
+            create_case_activity(case=saved, user=request.user, event_type=ActivityEventType.NOTE,
+                note=saved.notes or "Case notes cleared.")
+        return JsonResponse({"message": "Notes saved." if changed else "No changes to save.",
+                             "case": _recent_case_payload_for_id(pk, request.user)})
 
 
 class PatientSearchView(LoginRequiredMixin, CaseDataAccessMixin, View):
@@ -3589,146 +3480,16 @@ class PatientSearchView(LoginRequiredMixin, CaseDataAccessMixin, View):
         )
 
 
-class PatientListView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
-    model = Patient
-    template_name = "patients/patient_list.html"
-    context_object_name = "patients"
-    paginate_by = 25
-
-    def get_queryset(self):
-        return _patient_search_queryset(self.request.GET.get("q", ""), user=self.request.user)
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context["patient_query"] = (self.request.GET.get("q") or "").strip()
-        return context
 
 
-class PatientDetailView(LoginRequiredMixin, CaseDataAccessMixin, DetailView):
-    model = Patient
-    template_name = "patients/patient_detail.html"
-    context_object_name = "patient"
-
-    def get_queryset(self):
-        return _accessible_patient_queryset(self.request.user, Patient.objects.all())
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        patient = self.object
-        visible_cases = _accessible_case_queryset(
-            self.request.user,
-            patient.cases.select_related("category").order_by("-updated_at", "-id"),
-        )
-        context["active_cases"] = [case for case in visible_cases if case.status == CaseStatus.ACTIVE]
-        context["closed_cases"] = [case for case in visible_cases if case.status != CaseStatus.ACTIVE]
-        context["can_edit_patient"] = _can_manage_patient_identity(
-            self.request.user, patient, capability="case_edit"
-        )
-        context["can_merge_patient"] = _can_manage_patient_identity(
-            self.request.user, patient, capability="patient_merge"
-        )
-        calls = CallLog.objects.filter(case__in=visible_cases).select_related(
-            "case__category", "task", "staff_user").order_by("-created_at", "-id")[:20]
-        context["recent_calls"] = calls
-        context["merge_form"] = PatientMergeForm(source_patient=patient)
-        return context
 
 
-class PatientUpdateView(LoginRequiredMixin, CaseDataAccessMixin, UpdateView):
-    model = Patient
-    form_class = PatientForm
-    template_name = "patients/patient_form.html"
-
-    def dispatch(self, request, *args, **kwargs):
-        if not has_capability(request.user, "case_edit"):
-            return HttpResponseForbidden("You do not have permission to edit patient records.")
-        return super().dispatch(request, *args, **kwargs)
-
-    def get_queryset(self):
-        return _accessible_patient_queryset(self.request.user, Patient.objects.all())
-
-    def get_object(self, queryset=None):
-        patient = super().get_object(queryset)
-        if not _can_manage_patient_identity(self.request.user, patient, capability="case_edit"):
-            raise PermissionDenied("You do not have permission for every case affected by this patient edit.")
-        return patient
-
-    def form_valid(self, form):
-        with transaction.atomic():
-            patient = Patient.objects.select_for_update().get(pk=self.object.pk)
-            affected_cases = list(Case.objects.select_for_update().filter(patient=patient).order_by("pk"))
-            if not _can_access_all_cases(self.request.user, affected_cases):
-                raise PermissionDenied("You do not have permission for every case affected by this patient edit.")
-            editable_fields = set(PatientForm.Meta.fields) & set(form.changed_data)
-            before = {
-                field: getattr(patient, field)
-                for field in set(PatientForm.Meta.fields) | {"patient_name", "is_temporary_id"}
-            }
-            for field in editable_fields:
-                if field in form.cleaned_data:
-                    setattr(patient, field, form.cleaned_data[field])
-            patient.uhid = " ".join((patient.uhid or "").split()).upper()
-            if "use_temporary_patient_id" in form.changed_data:
-                patient.is_temporary_id = bool(form.cleaned_data.get("use_temporary_patient_id"))
-            patient._normalize_identity_fields()
-            if patient.date_of_birth:
-                today = timezone.localdate()
-                years = today.year - patient.date_of_birth.year
-                patient.age = years - (
-                    (today.month, today.day) < (patient.date_of_birth.month, patient.date_of_birth.day)
-                )
-            patient.full_clean()
-            changed_fields = sorted(
-                field
-                for field, previous in before.items()
-                if getattr(patient, field) != previous
-            )
-            if changed_fields:
-                patient.save(update_fields=[*changed_fields, "updated_at"])
-                self.object = patient
-                record_audit_event(
-                    category=AuditEvent.Category.CLINICAL,
-                    action="patient.identity_updated",
-                    actor=self.request.user,
-                    request=self.request,
-                    object_type="patient",
-                    object_id=self.object.pk,
-                    patient_id=self.object.pk,
-                    metadata={
-                        "affected_case_count": len(affected_cases),
-                        "changed_fields": changed_fields,
-                    },
-                )
-            else:
-                self.object = patient
-        return redirect(self.get_success_url())
-
-    def get_success_url(self):
-        return reverse("patients:patient_detail", kwargs={"pk": self.object.pk})
 
 
 def _merge_patients(*, source_patient, target_patient, actor):
     return _merge_patient_records(source_patient=source_patient, target_patient=target_patient, actor=actor)
 
 
-class PatientMergeView(LoginRequiredMixin, CaseDataAccessMixin, View):
-    def post(self, request, pk):
-        if not has_capability(request.user, "patient_merge"):
-            return HttpResponseForbidden("You do not have permission to merge patient records.")
-        patient_queryset = _accessible_patient_queryset(request.user, Patient.objects.all())
-        source_patient = get_object_or_404(patient_queryset, pk=pk)
-        form = PatientMergeForm(request.POST, source_patient=source_patient, target_queryset=patient_queryset)
-        if not form.is_valid():
-            messages.error(request, "Choose a valid patient to merge into.")
-            return redirect("patients:patient_detail", pk=source_patient.pk)
-        target_patient = form.cleaned_data["target_patient"]
-        try:
-            _merge_patients(source_patient=source_patient, target_patient=target_patient, actor=request.user)
-        except ValidationError as exc:
-            messages.error(request, exc.messages[0])
-            return redirect("patients:patient_detail", pk=source_patient.pk)
-        messages.success(request, f"Merged {source_patient.mtno} into {target_patient.mtno}.")
-        return redirect("patients:patient_detail", pk=target_patient.pk)
 
 
 class FollowUpListView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
@@ -3894,14 +3655,22 @@ class CaseListView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
             queryset = queryset.filter(category_id=category)
         if subcategory:
             queryset = queryset.filter(subcategory=subcategory)
-        if due_start:
-            queryset = queryset.filter(
-                Exists(Task.objects.filter(case_id=OuterRef("pk"), due_date__gte=due_start))
-            )
-        if due_end:
-            queryset = queryset.filter(
-                Exists(Task.objects.filter(case_id=OuterRef("pk"), due_date__lte=due_end))
-            )
+        self.filter_error = ""
+        if due_start or due_end:
+            try:
+                start = date.fromisoformat(due_start) if due_start else None
+                end = date.fromisoformat(due_end) if due_end else None
+                if start and end and start > end:
+                    raise ValueError
+            except ValueError:
+                self.filter_error = "Enter a valid due-date range."
+                return queryset.none()
+            matching_tasks = Task.objects.filter(case_id=OuterRef("pk"))
+            if start:
+                matching_tasks = matching_tasks.filter(due_date__gte=start)
+            if end:
+                matching_tasks = matching_tasks.filter(due_date__lte=end)
+            queryset = queryset.filter(Exists(matching_tasks))
 
         if q:
             queryset = queryset.order_by("-search_rank", "-updated_at", "uhid")
@@ -3926,6 +3695,7 @@ class CaseListView(LoginRequiredMixin, CaseDataAccessMixin, ListView):
             for k in ["q", "status", "category", "category_group", "subcategory", "due_start", "due_end"]
         }
         context["filters"]["category_groups"] = selected_category_groups
+        context["filter_error"] = getattr(self, "filter_error", "")
         context["case_statuses"] = CaseStatus.choices
         context["categories"] = DepartmentConfig.objects.only("id", "name")
         context["subcategory_choices"] = [
@@ -4048,6 +3818,9 @@ class UniversalCaseSearchView(LoginRequiredMixin, CaseDataAccessMixin, View):
             payload["tags"] = [{"kind": "record_type", "label": "Patient"}] + list(payload.get("tags") or [])
             patient_results.append(payload)
 
+        if len(patient_results) == self.max_results:
+            return JsonResponse({"results": patient_results})
+
         direct_query = _case_search_direct_query(query)
         note_activity_matches = Exists(_matching_case_note_activity_queryset(query))
         call_note_matches = Exists(_matching_call_note_queryset(query))
@@ -4055,7 +3828,7 @@ class UniversalCaseSearchView(LoginRequiredMixin, CaseDataAccessMixin, View):
         cases = list(
             _accessible_case_queryset(
                 request.user,
-                Case.objects.select_related("category")
+                Case.objects.select_related("category", "patient")
                 .annotate(
                     search_matches_note_activity=note_activity_matches,
                     search_matches_call_notes=call_note_matches,
@@ -4079,6 +3852,9 @@ class UniversalCaseSearchView(LoginRequiredMixin, CaseDataAccessMixin, View):
                     "diagnosis",
                     "notes",
                     "phone_number",
+                    "patient__id",
+                    "patient__mtno",
+                    "date_of_birth",
                     "high_risk",
                     "referred_by",
                     "ncd_flags",
@@ -4166,7 +3942,7 @@ class UniversalCaseSearchView(LoginRequiredMixin, CaseDataAccessMixin, View):
         for case in top_cases:
             diagnosis = self._normalized(case.diagnosis) or "\u2014"
             village = self._normalized(case.place) or "\u2014"
-            age = case.age if case.age is not None else "\u2014"
+            age = current_age(case) if current_age(case) is not None else "\u2014"
             category = case.category.name
             category_style = _normalized_category_style(category)
             category_theme = resolve_category_theme(theme_category_colors, case.category)
@@ -5722,7 +5498,7 @@ def _quick_task_conflict(request, task, fields):
 class TaskQuickCompleteView(LoginRequiredMixin, View):
     @transaction.atomic
     def post(self, request, pk):
-        request.user = lock_edit_actor(request.user)
+        request.user = lock_web_edit_actor(request)
         if not has_capability(request.user, "task_edit"):
             return _forbidden_response(request, "You do not have permission to edit tasks.")
 
@@ -5739,7 +5515,7 @@ class TaskQuickCompleteView(LoginRequiredMixin, View):
 class TaskQuickReopenView(LoginRequiredMixin, View):
     @transaction.atomic
     def post(self, request, pk):
-        request.user = lock_edit_actor(request.user)
+        request.user = lock_web_edit_actor(request)
         if not _can_reopen_tasks(request.user):
             return _forbidden_response(request, "You do not have permission to reopen completed tasks.")
 
@@ -5756,7 +5532,7 @@ class TaskQuickReopenView(LoginRequiredMixin, View):
 class TaskQuickRescheduleView(LoginRequiredMixin, View):
     @transaction.atomic
     def post(self, request, pk):
-        request.user = lock_edit_actor(request.user)
+        request.user = lock_web_edit_actor(request)
         if not has_capability(request.user, "task_edit"):
             return _forbidden_response(request, "You do not have permission to edit tasks.")
 
@@ -5777,7 +5553,7 @@ class TaskQuickRescheduleView(LoginRequiredMixin, View):
 class TaskQuickNoteView(LoginRequiredMixin, View):
     @transaction.atomic
     def post(self, request, pk):
-        request.user = lock_edit_actor(request.user)
+        request.user = lock_web_edit_actor(request)
         if not has_capability(request.user, "task_edit"):
             return _forbidden_response(request, "You do not have permission to edit tasks.")
 
@@ -5825,7 +5601,7 @@ class TaskUpdateView(LoginRequiredMixin, UpdateView):
 
     @transaction.atomic
     def post(self, request, *args, **kwargs):
-        request.user = lock_edit_actor(request.user)
+        request.user = lock_web_edit_actor(request)
         if not has_capability(request.user, "task_edit"):
             return _forbidden_response(request, "You do not have permission to edit tasks.")
         self.object = _locked_task_for_edit(request.user, kwargs["pk"])
@@ -5931,7 +5707,7 @@ class AddCaseNoteView(LoginRequiredMixin, View):
 class AddCallLogView(LoginRequiredMixin, View):
     @transaction.atomic
     def post(self, request, pk):
-        request.user = lock_edit_actor(request.user)
+        request.user = lock_web_edit_actor(request)
         if not has_capability(request.user, "note_add"):
             return _forbidden_response(request, "You do not have permission to add call logs.")
         case = get_object_or_404(

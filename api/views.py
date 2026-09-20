@@ -8,7 +8,7 @@ from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.core.serializers.json import DjangoJSONEncoder
 from django.db import transaction
-from django.db.models import Max, Min, Prefetch, Q
+from django.db.models import Count, Max, Min, Prefetch, Q, prefetch_related_objects
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
@@ -16,7 +16,7 @@ from django.utils.crypto import salted_hmac
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import permissions, status
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import AuthenticationFailed, PermissionDenied
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -43,7 +43,6 @@ from patients.models import (
     TaskStatus,
     TaskType,
     VitalEntry,
-    UserSecurityState,
     build_default_tasks,
     cancel_open_rch_reminders,
     case_subcategory_choices_for_category_name,
@@ -60,6 +59,7 @@ from patients.forms import CaseForm, TaskForm
 from patients.follow_up import attention_filter, attention_queryset, worklist_queryset
 from patients.intake_access import resolve_case_intake_patient
 from patients.policy import effective_role_policy
+from patients.presentation import current_age
 from patients.views import (
     CASE_CATEGORY_GROUP_FILTERS,
     _blood_pressure_display,
@@ -114,7 +114,7 @@ from .serializers import (
     call_outcome_to_model_value,
 )
 from .throttles import DatabaseSearchThrottle
-from .authentication import token_user, validate_token_auth_version
+from .authentication import token_user, validate_token_auth_version, validate_token_security_context
 
 
 class MobilePagination(PageNumberPagination):
@@ -376,20 +376,36 @@ def _counter_payload(base_queryset):
     }
 
 
-def _task_counts(tasks, today):
-    return {
-        "total": len(tasks),
-        "open": sum(1 for task in tasks if task.status not in {TaskStatus.COMPLETED, TaskStatus.CANCELLED}),
-        "today": sum(1 for task in tasks if task.status == TaskStatus.SCHEDULED and task.due_date == today),
-        "upcoming": sum(1 for task in tasks if task.status == TaskStatus.SCHEDULED and task.due_date > today),
-        "overdue": sum(
-            1
-            for task in tasks
-            if task.status not in {TaskStatus.COMPLETED, TaskStatus.CANCELLED} and task.due_date < today
-        ),
-        "awaiting": sum(1 for task in tasks if task.status == TaskStatus.AWAITING_REPORTS),
-        "completed": sum(1 for task in tasks if task.status == TaskStatus.COMPLETED),
+def _prepare_mobile_case_rows(cases, *, today):
+    """Bound related objects to one next task and one latest vital per case."""
+    if not cases:
+        return
+    open_tasks = ~Q(status__in=[TaskStatus.COMPLETED, TaskStatus.CANCELLED])
+    counts = {
+        "total": Count("pk"),
+        "open": Count("pk", filter=open_tasks),
+        "today": Count("pk", filter=Q(status=TaskStatus.SCHEDULED, due_date=today)),
+        "upcoming": Count("pk", filter=Q(status=TaskStatus.SCHEDULED, due_date__gt=today)),
+        "overdue": Count("pk", filter=open_tasks & Q(due_date__lt=today)),
+        "awaiting": Count("pk", filter=Q(status=TaskStatus.AWAITING_REPORTS)),
+        "completed": Count("pk", filter=Q(status=TaskStatus.COMPLETED)),
     }
+    grouped = Task.objects.filter(case_id__in=[case.pk for case in cases]).order_by().values("case_id").annotate(**counts)
+    counts_by_case = {row["case_id"]: {name: row[name] for name in counts} for row in grouped}
+    for case in cases:
+        case.mobile_task_counts = counts_by_case.get(case.pk, dict.fromkeys(counts, 0))
+        # A mutated instance may have been serialized earlier in this request.
+        # Clear only our own prefetch attributes so the next summary is current.
+        for attribute in ("prefetched_mobile_tasks", "prefetched_mobile_vitals"):
+            if hasattr(case, attribute):
+                delattr(case, attribute)
+    prefetch_related_objects(
+        cases,
+        Prefetch("tasks", queryset=Task.objects.filter(open_tasks).select_related("assigned_user")
+                 .order_by("due_date", "id")[:1], to_attr="prefetched_mobile_tasks"),
+        Prefetch("vitals", queryset=VitalEntry.objects.order_by("-recorded_at", "-id")[:1],
+                 to_attr="prefetched_mobile_vitals"),
+    )
 
 
 def _risk_reasons(case):
@@ -449,7 +465,7 @@ def _serialize_case_row(case, *, user, today, theme_category_colors):
         "mtno": case.mtno,
         "uhid": case.uhid,
         "name": case.full_name or case.patient_name,
-        "age": case.age,
+        "age": current_age(case, today=today),
         "sex": case.gender,
         "sex_label": case.get_gender_display() if case.gender else "",
         "place": case.place,
@@ -472,7 +488,7 @@ def _serialize_case_row(case, *, user, today, theme_category_colors):
         "surgery_done": case.surgery_done,
         "clinical_headline": case.clinical_headline_items,
         "follow_up": case.follow_up,
-        "task_counts": _task_counts(tasks, today),
+        "task_counts": case.mobile_task_counts,
         "next_task": _serialize_task(next_task, can_complete=can_complete) if next_task else None,
         "latest_vital": _serialize_vital(latest_vital) if latest_vital else None,
         "updated_at": case.updated_at.isoformat(),
@@ -481,10 +497,7 @@ def _serialize_case_row(case, *, user, today, theme_category_colors):
 
 def _mobile_case_payload(case, *, user):
     today = timezone.localdate()
-    tasks = list(case.tasks.select_related("assigned_user").order_by("due_date", "id"))
-    latest_vital = case.vitals.order_by("-recorded_at", "-id").first()
-    case.prefetched_mobile_tasks = tasks
-    case.prefetched_mobile_vitals = [latest_vital] if latest_vital else []
+    _prepare_mobile_case_rows([case], today=today)
     theme_category_colors = build_theme_category_colors([case.category] if getattr(case, "category", None) else [])
     return _serialize_case_row(case, user=user, today=today, theme_category_colors=theme_category_colors)
 
@@ -538,17 +551,11 @@ class CaseListView(APIView):
                 "tasks__due_date",
                 filter=~Q(tasks__status__in=[TaskStatus.COMPLETED, TaskStatus.CANCELLED]),
             ),
-            latest_activity_at=Max("activity_logs__created_at"),
         )
         filtered_queryset = filtered_queryset.order_by("next_due", "-updated_at", "id")
-        task_queryset = Task.objects.select_related("assigned_user").order_by("due_date", "id")
-        filtered_queryset = filtered_queryset.prefetch_related(
-            Prefetch("tasks", queryset=task_queryset, to_attr="prefetched_mobile_tasks"),
-            Prefetch("vitals", queryset=VitalEntry.objects.order_by("-recorded_at", "-id"), to_attr="prefetched_mobile_vitals"),
-        )
-
         paginator = MobilePagination()
         page = paginator.paginate_queryset(filtered_queryset, request, view=self)
+        _prepare_mobile_case_rows(page, today=today)
         categories = [case.category for case in page if getattr(case, "category", None) is not None]
         theme_category_colors = build_theme_category_colors(categories)
         results = [
@@ -974,7 +981,7 @@ def _idempotent_response(
     if not client_write_id:
         with transaction.atomic():
             MobileDatasetState.objects.select_for_update().get_or_create(pk=1)
-            locked_user = _lock_mobile_authorization_context(request.user)
+            locked_user = _lock_mobile_authorization_context(request.user, request=request)
             request.user = locked_user
             _authorize_idempotent_target(locked_user, operation, target_type, target_id, lock=True)
             payload, response_status = apply_write()
@@ -985,7 +992,7 @@ def _idempotent_response(
     with transaction.atomic():
         dataset_state, _ = MobileDatasetState.objects.select_for_update().get_or_create(pk=1)
         purge_expired_mobile_receipts()
-        locked_user = _lock_mobile_authorization_context(request.user)
+        locked_user = _lock_mobile_authorization_context(request.user, request=request)
         request.user = locked_user
         _authorize_idempotent_target(locked_user, operation, target_type, target_id, lock=True)
         binding["authorization_hash"] = _authorization_hash(locked_user)
@@ -1064,7 +1071,7 @@ def _idempotent_replay_response(
     with transaction.atomic():
         dataset_state, _ = MobileDatasetState.objects.select_for_update().get_or_create(pk=1)
         purge_expired_mobile_receipts()
-        locked_user = _lock_mobile_authorization_context(request.user)
+        locked_user = _lock_mobile_authorization_context(request.user, request=request)
         request.user = locked_user
         _authorize_idempotent_target(locked_user, operation, target_type, target_id, lock=True)
         receipt = MobileWriteReceipt.objects.select_for_update().filter(
@@ -1096,8 +1103,15 @@ def _idempotency_key_digest(client_write_id):
     return salted_hmac("api.mobile_write_receipt", client_write_id).hexdigest()
 
 
-def _lock_mobile_authorization_context(user):
-    return lock_edit_actor(user)
+def _lock_mobile_authorization_context(user, *, request):
+    actor = lock_edit_actor(user)
+    if not actor.is_active:
+        raise AuthenticationFailed("This account is inactive.")
+    # Authentication happened before waiting on these locks. A password/device
+    # revocation can commit during that wait without removing role capabilities.
+    if request.auth is not None:
+        validate_token_security_context(request.auth, actor)
+    return actor
 
 
 def _canonical_payload_hash(data):
@@ -1591,7 +1605,7 @@ class TaskNoteView(APIView):
     )
     @transaction.atomic
     def post(self, request, pk):
-        request.user = lock_edit_actor(request.user)
+        request.user = _lock_mobile_authorization_context(request.user, request=request)
         if not has_capability(request.user, "task_edit"):
             return Response(
                 {"message": "You do not have permission to add task notes."},
@@ -1904,7 +1918,8 @@ class DeviceTokenView(APIView):
             "last_seen_at": timezone.now(),
         }
         with transaction.atomic():
-            get_user_model().objects.select_for_update().get(pk=request.user.pk)
+            request.user = _lock_mobile_authorization_context(request.user, request=request)
+            defaults["user"] = request.user
             device, created = MobileDeviceToken.objects.update_or_create(token=token, defaults=defaults)
             retained_ids = list(
                 MobileDeviceToken.objects.filter(user=request.user, is_active=True)
@@ -2614,18 +2629,7 @@ class CaseSearchView(APIView):
                 "tasks__due_date",
                 filter=~Q(tasks__status__in=[TaskStatus.COMPLETED, TaskStatus.CANCELLED]),
             ),
-        ).order_by("next_due", "-updated_at", "id").prefetch_related(
-            Prefetch(
-                "tasks",
-                queryset=Task.objects.select_related("assigned_user").order_by("due_date", "id"),
-                to_attr="prefetched_mobile_tasks",
-            ),
-            Prefetch(
-                "vitals",
-                queryset=VitalEntry.objects.order_by("-recorded_at", "-id"),
-                to_attr="prefetched_mobile_vitals",
-            ),
-        )
+        ).order_by("next_due", "-updated_at", "id")
         queryset = queryset.filter(id__lte=snapshot_max_id)
         if position_updated_at is not None:
             if position_next_due is None:
@@ -2672,6 +2676,7 @@ class CaseSearchView(APIView):
             result_count=len(page),
         )
         today = timezone.localdate()
+        _prepare_mobile_case_rows(page, today=today)
         category_colors = build_theme_category_colors([row.category for row in page if row.category_id])
         return Response(
             {

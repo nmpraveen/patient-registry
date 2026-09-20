@@ -18,17 +18,25 @@ production_mode="${MEDTRACK_HEALTH_PRODUCTION_MODE:-0}"
 scratch_restore_receipt="${MEDTRACK_SCRATCH_RESTORE_RECEIPT:-}"
 scratch_restore_max_age="${MEDTRACK_SCRATCH_RESTORE_MAX_AGE_SECONDS:-691200}"
 security_evidence_health_hook="${MEDTRACK_SECURITY_EVIDENCE_HEALTH_HOOK:-}"
+health_state_root="${MEDTRACK_HEALTH_STATE_ROOT:-/var/lib/medtrack-backup-health}"
+scrub_maximum_age="${MEDTRACK_FULL_SCRUB_MAX_AGE_SECONDS:-691200}"
+python_command="${PYTHON_COMMAND:-python3}"
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [[ $# -gt 0 ]]; then
+  if [[ $# != 2 || "$1" != "--hash-mode" ]]; then echo "Usage: check-offsite-backups.sh [--hash-mode all|incremental|latest]" >&2; exit 2; fi
+  hash_mode="$2"
+fi
 
 if [[ ! -f "$rclone_config" ]]; then
   echo "Missing rclone configuration: $rclone_config" >&2
   exit 1
 fi
-if [[ "$hash_mode" != "latest" && "$hash_mode" != "all" ]]; then
-  echo "MEDTRACK_HEALTH_HASH_MODE must be latest or all" >&2
+if [[ "$hash_mode" != "latest" && "$hash_mode" != "all" && "$hash_mode" != "incremental" ]]; then
+  echo "MEDTRACK_HEALTH_HASH_MODE must be latest, incremental, or all" >&2
   exit 1
 fi
-if [[ "$production_mode" == "1" && "$hash_mode" != "all" ]]; then
-  echo "Production off-site health requires full hashing of every retained ciphertext" >&2
+if [[ "$production_mode" == "1" && "$hash_mode" == "latest" ]]; then
+  echo "Production health requires all objects to be checked, with periodic full stream hashing" >&2
   exit 1
 fi
 if [[ "$production_mode" == "1" && ! "$scratch_restore_max_age" =~ ^[1-9][0-9]*$ ]]; then
@@ -38,6 +46,20 @@ fi
 
 now_epoch="$(date -u +%s)"
 failed=0
+if [[ "$health_state_root" != /* || -L "$health_state_root" || ! "$scrub_maximum_age" =~ ^[1-9][0-9]*$ ]]; then
+  echo "Invalid health state directory or scrub interval" >&2; exit 1
+fi
+umask 077
+install -d -m 0700 "$health_state_root"
+remote_identity="$(printf '%s' "$rclone_remote" | sha256sum | awk '{print $1}')"
+scrub_receipt="$health_state_root/full-scrub-$remote_identity.receipt"
+if [[ "$production_mode" == "1" && "$hash_mode" == "incremental" ]]; then
+  scrub_epoch="$(sed -n 's/^completed_epoch=//p' "$scrub_receipt" 2>/dev/null || true)"
+  scrub_format="$(sed -n 's/^receipt_format=//p' "$scrub_receipt" 2>/dev/null || true)"
+  if [[ "$scrub_format" != "medtrack-full-ciphertext-scrub-v1" || ! "$scrub_epoch" =~ ^[0-9]+$ ]] || (( now_epoch - scrub_epoch < 0 || now_epoch - scrub_epoch > scrub_maximum_age )); then
+    echo "OFFSITE_BACKUP_HEALTH_FAIL reason=missing-or-stale-full-scrub" >&2; exit 1
+  fi
+fi
 
 remote_cat() {
   rclone --config "$rclone_config" cat "$1"
@@ -53,6 +75,12 @@ verify_remote_hash() {
   local remote_archive="$1"
   local expected_hash="$2"
   local actual_hash
+  if [[ "$hash_mode" == "incremental" || "$hash_mode" == "all" ]]; then
+    "$python_command" "$repo_root/scripts/offsite_health_state.py" \
+      --remote "$remote_archive" --sha256 "$expected_hash" --config "$rclone_config" \
+      --cache-root "$health_state_root/objects" --mode "$hash_mode" --maximum-age "$scrub_maximum_age" >/dev/null
+    return
+  fi
   actual_hash="$(rclone --config "$rclone_config" cat "$remote_archive" | sha256sum | awk '{print $1}')"
   if [[ "$actual_hash" != "$expected_hash" ]]; then
     echo "OFFSITE_BACKUP_HEALTH_FAIL archive=${remote_archive##*/} reason=ciphertext-hash-mismatch" >&2
@@ -134,7 +162,7 @@ check_tier() {
       return
     fi
 
-    if [[ "$hash_mode" == "all" || "$marker" == "$latest_marker" ]]; then
+    if [[ "$hash_mode" == "all" || "$hash_mode" == "incremental" || "$marker" == "$latest_marker" ]]; then
       expected_hash="$marker_hash"
       if ! verify_remote_hash "$remote_tier/$archive" "$expected_hash"; then
         failed=1
@@ -215,4 +243,9 @@ if (( failed != 0 )); then
 fi
 
 rclone --config "$rclone_config" about "${rclone_remote%%:*}:" --json
+if [[ "$hash_mode" == "all" ]]; then
+  receipt_tmp="$(mktemp "$health_state_root/.full-scrub.XXXXXX")"
+  printf 'receipt_format=medtrack-full-ciphertext-scrub-v1\ncompleted_epoch=%s\n' "$(date -u +%s)" > "$receipt_tmp"
+  mv "$receipt_tmp" "$scrub_receipt"
+fi
 echo "OFFSITE_BACKUP_HEALTH_OK"

@@ -192,5 +192,7 @@
 {% endblock %}
 {% block extra_scripts %}
   <script src="{% static 'patients/vendor/htmx/1.9.12/htmx.min.js' %}"></script>
+  <script src="{% static 'patients/clinical_controls.js' %}" defer></script>
+  <script src="{% static 'patients/case_form_state.js' %}" defer></script>
   <script src="{% static 'patients/case_edit.js' %}" defer></script>
 {% endblock %}

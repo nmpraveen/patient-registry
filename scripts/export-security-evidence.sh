@@ -21,6 +21,8 @@ maximum_lag="${MEDTRACK_SECURITY_EVIDENCE_MAX_LAG_SECONDS:-7200}"
 keep_segments="${MEDTRACK_SECURITY_EVIDENCE_KEEP_SEGMENTS:-720}"
 failure_alert_threshold="${MEDTRACK_SECURITY_FAILURE_ALERT_THRESHOLD:-25}"
 audit_schema_head="f01f9311882c24b865f4ccd48dd32bc9933e6b7f"
+python_command="${PYTHON_COMMAND:-python3}"
+state_helper="$repo_root/scripts/security_evidence_state.py"
 
 if [[ "$repo_root" != /* || "$evidence_root" != /* || "$log_root" != /* ||
   ! "$maximum_rows" =~ ^[1-9][0-9]*$ || ! "$maximum_log_bytes" =~ ^[1-9][0-9]*$ ||
@@ -39,7 +41,7 @@ alert_on_failure() {
 }
 trap alert_on_failure ERR
 
-for command_name in docker find flock git install mktemp sha256sum sort tail; do
+for command_name in docker find flock git install mktemp sha256sum sort "$python_command"; do
   command -v "$command_name" >/dev/null 2>&1 || { echo "Missing required command: $command_name" >&2; false; }
 done
 for private_dir in "$evidence_root" "$evidence_root/state" "$evidence_root/segments"; do
@@ -64,8 +66,9 @@ query_scalar() {
 
 schema_present="$(query_scalar "SELECT CASE WHEN to_regclass('public.patients_auditevent') IS NOT NULL THEN 1 ELSE 0 END")"
 trigger_present="$(query_scalar "SELECT count(*) FROM pg_trigger WHERE tgname='patients_auditevent_append_only' AND NOT tgisinternal")"
-if [[ "$schema_present" != "1" || "$trigger_present" != "1" ]]; then
-  echo "AuditEvent table or PostgreSQL append-only trigger is missing (contract PR #103 $audit_schema_head)" >&2
+ack_present="$(query_scalar "SELECT CASE WHEN to_regclass('public.patients_auditevidenceexportack') IS NOT NULL THEN 1 ELSE 0 END")"
+if [[ "$schema_present" != "1" || "$trigger_present" != "1" || "$ack_present" != "1" ]]; then
+  echo "AuditEvent, export acknowledgement migration, or append-only trigger is missing (contract PR #103 $audit_schema_head)" >&2
   false
 fi
 
@@ -77,38 +80,39 @@ if [[ -f "$state_file" ]]; then
   previous_sequence="$(value "$state_file" sequence)"
   [[ "$last_id" =~ ^[0-9]+$ && "$previous_chain" =~ ^[0-9a-f]{64}$ && "$previous_sequence" =~ ^[0-9]+$ ]] || false
   MEDTRACK_SECURITY_EVIDENCE_ALLOW_STALE=1 "$repo_root/scripts/verify-security-evidence.sh"
+  "$python_command" "$state_helper" ack --root "$evidence_root" --repo "$repo_root" --database "$db_name" --username "$db_user"
 else
   last_id=0
   previous_sequence=0
   previous_chain="$(printf 'MEDTRACK_SECURITY_EVIDENCE_CHAIN_V1\n' | sha256sum | awk '{print $1}')"
+  query_scalar 'DELETE FROM patients_auditevidenceexportack' >/dev/null
 fi
 
 sequence=$((previous_sequence + 1))
 created_utc="$(date -u +%Y%m%dT%H%M%SZ)"
-export_max_id="$(query_scalar "SELECT COALESCE(max(id), $last_id) FROM (SELECT id FROM patients_auditevent WHERE id > $last_id ORDER BY id LIMIT $maximum_rows) bounded")"
-[[ "$export_max_id" =~ ^[0-9]+$ && "$export_max_id" -ge "$last_id" ]] || false
 stage_dir="$(mktemp -d "$evidence_root/.segment-${sequence}.XXXXXX")"
 cleanup() { [[ -z "$stage_dir" ]] || rm -rf -- "$stage_dir"; }
 trap cleanup EXIT
 
 "${compose[@]}" exec -T db psql --tuples-only --no-align --username="$db_user" --dbname="$db_name" \
-  --command="COPY (SELECT json_build_object('id',id,'event_id',event_id,'occurred_at',occurred_at,'category',category,'action',action,'outcome',outcome,'source',source)::text FROM patients_auditevent WHERE id > $last_id AND id <= $export_max_id ORDER BY id) TO STDOUT" \
+  -v ON_ERROR_STOP=1 --command="COPY (SELECT json_build_object('id',id,'event_id',event_id,'occurred_at',occurred_at,'category',category,'action',action,'outcome',outcome,'source',source)::text FROM patients_auditevent WHERE NOT EXISTS (SELECT 1 FROM patients_auditevidenceexportack ack WHERE ack.event_id = patients_auditevent.event_id) ORDER BY id LIMIT $maximum_rows) TO STDOUT" \
   > "$stage_dir/audit-events.jsonl"
-for safe_log in caddy-access.json gunicorn-access.log; do
-  output_name="${safe_log%.*}.jsonl"
-  if [[ -f "$log_root/$safe_log" ]]; then
-    tail -c "$maximum_log_bytes" "$log_root/$safe_log" > "$stage_dir/$output_name"
-  else
-    : > "$stage_dir/$output_name"
-  fi
-done
+export_max_id="$("$python_command" -c 'import json,sys; print(max((int(json.loads(line)["id"]) for line in open(sys.argv[1])),default=0))' "$stage_dir/audit-events.jsonl")"
+if (( export_max_id < last_id )); then export_max_id="$last_id"; fi
+log_arguments=(--root "$log_root" --stage "$stage_dir" --maximum "$maximum_log_bytes")
+if [[ -f "$state_file" ]]; then
+  previous_segment="$(value "$state_file" last_segment)"
+  [[ "$previous_segment" =~ ^segment-[0-9]{8}-[0-9]{8}T[0-9]{6}Z$ ]] || false
+  log_arguments+=(--previous-meta "$evidence_root/segments/$previous_segment/segment.meta")
+fi
+log_cursors="$("$python_command" "$state_helper" logs "${log_arguments[@]}")"
 if grep -Eqi 'authorization|cookie|query_string|request_body|patient[_ -]?search|clinical_payload|"uri"|"path"' \
   "$stage_dir/caddy-access.jsonl" "$stage_dir/gunicorn-access.jsonl"; then
   echo "Security request log contained a forbidden sensitive field" >&2
   false
 fi
-edge_429_count="$(grep -Ehc '"status"[[:space:]]*:[[:space:]]*429' \
-  "$stage_dir/caddy-access.jsonl" "$stage_dir/gunicorn-access.jsonl" | awk '{total += $1} END {print total + 0}' || true)"
+# Count edge requests once: Gunicorn may record the same rejected request.
+edge_429_count="$(grep -Ehc '"status"[[:space:]]*:[[:space:]]*429' "$stage_dir/caddy-access.jsonl" || true)"
 audit_failure_count="$(grep -Eic '"outcome"[[:space:]]*:[[:space:]]*"(failure|denied|locked|lockout)"' \
   "$stage_dir/audit-events.jsonl" || true)"
 if (( edge_429_count >= failure_alert_threshold || audit_failure_count >= failure_alert_threshold )); then
@@ -125,8 +129,10 @@ source_commit="$(docker image inspect --format '{{ index .Config.Labels "org.ope
   printf 'audit_schema_pr_head=%s\n' "$audit_schema_head"
   printf 'audit_start_id=%s\n' "$((last_id + 1))"
   printf 'audit_end_id=%s\n' "$export_max_id"
+  printf 'audit_selection=unacknowledged-event-uuid-v1\n'
   printf 'previous_chain_sha256=%s\n' "$previous_chain"
   printf 'log_export_max_bytes=%s\n' "$maximum_log_bytes"
+  printf 'log_cursors_json=%s\n' "$log_cursors"
   printf 'privacy_contract=no-uri-query-headers-ip-body-cookie-auth-search-or-clinical-payload\n'
   printf 'edge_429_count=%s\n' "$edge_429_count"
   printf 'audit_failure_count=%s\n' "$audit_failure_count"
@@ -144,6 +150,7 @@ chain_hash="$(printf '%s\n%s\n' "$previous_chain" "$manifest_hash" | sha256sum |
 segment_name="segment-$(printf '%08d' "$sequence")-$created_utc"
 mv "$stage_dir" "$evidence_root/segments/$segment_name"
 stage_dir=""
+"$python_command" "$state_helper" sync --root "$evidence_root/segments/$segment_name"
 
 state_tmp="$(mktemp "$evidence_root/state/.checkpoint.XXXXXX")"
 {
@@ -156,6 +163,10 @@ state_tmp="$(mktemp "$evidence_root/state/.checkpoint.XXXXXX")"
 } > "$state_tmp"
 chmod 0600 "$state_tmp"
 mv "$state_tmp" "$state_file"
+"$python_command" "$state_helper" sync --root "$evidence_root/state"
+# Acknowledgements are written only after the exact evidence is durable. A
+# crash before this call leaves rows eligible for replay, never silently lost.
+"$python_command" "$state_helper" ack --root "$evidence_root" --repo "$repo_root" --database "$db_name" --username "$db_user"
 
 segment_list="$(find "$evidence_root/segments" -mindepth 1 -maxdepth 1 -type d -name 'segment-*' -print)"
 mapfile -t retained_segments < <(printf '%s\n' "$segment_list" | sed '/^$/d' | sort)
@@ -177,7 +188,7 @@ while (( ${#retained_segments[@]} > keep_segments )); do
   retained_segments=("${retained_segments[@]:1}")
 done
 
-remaining_oldest="$(query_scalar "SELECT COALESCE(EXTRACT(EPOCH FROM (now() - min(occurred_at)))::bigint, 0) FROM patients_auditevent WHERE id > $export_max_id")"
+remaining_oldest="$(query_scalar "SELECT COALESCE(EXTRACT(EPOCH FROM (now() - min(occurred_at)))::bigint, 0) FROM patients_auditevent WHERE NOT EXISTS (SELECT 1 FROM patients_auditevidenceexportack ack WHERE ack.event_id = patients_auditevent.event_id)")"
 if [[ ! "$remaining_oldest" =~ ^[0-9]+$ || "$remaining_oldest" -gt "$maximum_lag" ]]; then
   echo "AuditEvent export remains beyond the allowed lag: age_seconds=$remaining_oldest" >&2
   false

@@ -1,3 +1,11 @@
+## 2026.09.20.19.56
+
+- Preserve clinical drafts and notes with signed conflict baselines, and revalidate API/web credentials after mutation locks.
+- Bound recent-case, patient search and API child retrieval; scope patient counts, derive current age and validate due-date ranges.
+- Publish consistent recoverable backups and acknowledge exact durable audit events; handle log rotation and serialize deployment/recovery operations.
+- Extract cacheable page assets, consolidate clinical controls, remove shadowed legacy code, and retain supported compatibility and integrity barriers.
+- Expand PostgreSQL, browser and operations regressions; add controlled image caching and incremental backup verification with mandatory full scrubs.
+
 ## 2026.09.16.11.58
 
 - Add an independent Manage PhoneBook contacts role control so Reception can maintain contacts without settings-administrator access.

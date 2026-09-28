@@ -2,4 +2,4 @@
 -r requirements.in
 pip-audit==2.10.1
 pip-tools==7.6.1
-playwright==1.62.0
+playwright==1.63.0

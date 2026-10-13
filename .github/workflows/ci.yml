@@ -185,7 +185,7 @@ jobs:
             --revision "${EXPECTED_SHA}" \
             --builder "${{ steps.service-buildx.outputs.name }}" \
             --output output/production-images
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: medtrack-production-service-scans-${{ env.EXPECTED_SHA }}
@@ -298,7 +298,7 @@ jobs:
           mv "${RUNNER_TEMP}/medtrack-build-cache-next" "${RUNNER_TEMP}/medtrack-build-cache"
       - name: Scan, SBOM, and describe the canonical OCI manifest
         run: bash scripts/verify_canonical_artifact.sh "${EXPECTED_SHA}" output
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: medtrack-sbom-provenance-${{ env.EXPECTED_SHA }}
           path: output/

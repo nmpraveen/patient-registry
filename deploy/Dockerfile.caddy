@@ -1,13 +1,15 @@
-ARG CADDY_BUILDER=caddy:2.11.4-builder-alpine@sha256:2b9f32cbba6045e79212bb253f595588d20be8f7d1edf61582c519e124e0d2d8
+ARG CADDY_BUILDER=caddy:2.11.4-builder-alpine@sha256:0aa610043dab5da82ad0a0268e46bb852785e6f5160f12f1c6fe3f42903d7e1b
 ARG CADDY_RUNTIME=alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
 ARG VCS_REF=unknown
 
 FROM ${CADDY_BUILDER} AS builder
+# Use the patched, checksum-verified Go toolchain for the shipped binary.
+ENV GOTOOLCHAIN=go1.26.9
 RUN xcaddy build \
     --with github.com/mholt/caddy-ratelimit@5625512f24f6f59d6f64fb3aafe5eecff0b286db \
-    --replace golang.org/x/crypto=golang.org/x/crypto@v0.55.0 \
-    --replace golang.org/x/net=golang.org/x/net@v0.56.0 \
-    --replace golang.org/x/text=golang.org/x/text@v0.39.0 \
+    --replace golang.org/x/crypto=golang.org/x/crypto@v0.57.0 \
+    --replace golang.org/x/net=golang.org/x/net@v0.60.0 \
+    --replace golang.org/x/text=golang.org/x/text@v0.42.0 \
     --replace google.golang.org/grpc=google.golang.org/grpc@v1.83.2
 
 FROM ${CADDY_RUNTIME}
@@ -17,8 +19,8 @@ RUN apk add --no-cache \
         ca-certificates=20260909-r0 \
         libcap=2.78-r0 \
         mailcap=2.1.54-r0 \
-        libcrypto3=3.5.8-r0 \
-        libssl3=3.5.8-r0 \
+        libcrypto3=3.5.9-r0 \
+        libssl3=3.5.9-r0 \
     && addgroup -S -g 10001 medtrack-runtime \
     && adduser -S -D -H -u 10002 -G medtrack-runtime medtrack-caddy \
     && mkdir -p /config/caddy /data/caddy /etc/caddy /srv /var/log/medtrack \

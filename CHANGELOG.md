@@ -1,3 +1,10 @@
+## 2026.10.13.19.02
+
+- Update reviewed Python dependencies and pin patched PyJWT/urllib3 versions with regenerated hashes.
+- Refresh OpenSSL pins, the Caddy builder digest, and patched Go/network libraries so container builds and security checks pass.
+- Run browser regressions from the npm lockfile and install each Playwright runner's matching Chromium.
+- Refresh proposed GitHub Actions updates and group routine action updates to reduce review notifications.
+
 ## 2026.09.20.20.55
 
 - Reject a recycled current-file inode when an unread retained log rotation disappears, while preserving valid rotation resumes.

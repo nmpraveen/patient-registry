@@ -26,3 +26,8 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    groups:
+      # Routine tooling updates share one PR; major changes remain separate.
+      actions-maintenance:
+        patterns: ["*"]
+        update-types: [minor, patch]

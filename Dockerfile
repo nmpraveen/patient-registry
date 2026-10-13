@@ -7,8 +7,8 @@ ENV PYTHONUNBUFFERED=1
 WORKDIR /app
 
 RUN apk add --no-cache \
-        libcrypto3=3.5.8-r0 \
-        libssl3=3.5.8-r0 \
+        libcrypto3=3.5.9-r0 \
+        libssl3=3.5.9-r0 \
         sqlite-libs=3.53.4-r0 \
         libuuid=2.41.6-r1 \
     && addgroup -S -g 10001 medtrack \

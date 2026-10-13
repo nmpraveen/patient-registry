@@ -15,7 +15,7 @@ LOCK_TARGETS = (
     ("requirements.in", "requirements.txt", RUNTIME_LOCK_IMAGE),
     ("requirements-ci.in", "requirements-ci.txt", CI_LOCK_IMAGE),
 )
-PIP_TOOLS_VERSION = "7.6.1"
+PIP_TOOLS_VERSION = "7.6.2"
 
 
 def main() -> int:

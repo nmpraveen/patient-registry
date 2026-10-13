@@ -1,13 +1,16 @@
 # Direct production dependencies. Keep exact reviewed versions here and compile
 # requirements.txt with scripts/update-python-locks.py.
-Django==6.1.1
+Django==6.1.2
 django-cors-headers==4.9.0
 django-environ==0.14.0
-djangorestframework==3.18.0
+djangorestframework==3.18.3
 djangorestframework-simplejwt==5.5.1
 drf-spectacular==0.30.0
-firebase-admin==7.5.0
+firebase-admin==7.7.0
 gunicorn==26.2.0
-psycopg[binary]==3.3.5
-webauthn==3.0.0
+psycopg[binary]==3.3.6
+webauthn==3.0.1
 whitenoise==6.12.0
+# Explicit patched transitive dependencies required by the security audit.
+PyJWT==2.15.1
+urllib3==2.8.0

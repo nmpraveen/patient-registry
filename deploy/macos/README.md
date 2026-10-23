@@ -21,6 +21,11 @@ enabled. `settings.json` identifies the local `seed_repository` and existing
 bounded NAS `nas_download_helper`. NAS credentials remain in its Keychain-backed
 toolkit; no NAS pull private key is copied.
 
+An optional exact `operations_commit` in `settings.json` pins the separately
+reviewed health-check source. Update it only to the accepted operations repair
+commit. The application's restore source and images remain bound to the actual
+production release; operations-only repairs do not require an app redeploy.
+
 After explicit delivery authorization, set `config.json`'s `alert_command` to
 the absolute Python executable and installed `bin/pushover_alert.py`. This uses
 the owner's `pushover-notify` skill and Keychain through an echo-disabled PTY

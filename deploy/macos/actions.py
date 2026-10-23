@@ -339,7 +339,8 @@ def health(full=False):
     from scheduler import current
     if not current(ROOT/'state','restore')['healthy']:
         raise ValueError('latest-restore-attempt-not-successful')
-    repo=source(status()['commit'])
+    production=status()
+    repo=source(settings().get('operations_commit',production['commit']))
     hook=ROOT/'bin/evidence-check'
     hook.write_text('#!/bin/sh\nexec /opt/homebrew/bin/python3.12 '+shlex.quote(str(Path(__file__).resolve()))+' evidence\n');hook.chmod(0o700)
     env={'MEDTRACK_BACKUP_CONFIG':'/nonexistent/medtrack-mac','RCLONE_CONFIG':str(ROOT/'secrets/rclone.conf'),

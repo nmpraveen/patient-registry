@@ -58,12 +58,17 @@ class SchedulingIntegrity(unittest.TestCase):
             attempt=dict(line.split('=',1) for line in (state/'scratch-restore.receipt.attempt').read_text().splitlines())
             self.assertEqual(attempt['receipt_sha256'],__import__('hashlib').sha256(receipt).hexdigest())
             self.assertEqual(attempt['attempt_id'],result['contract_id'])
+            sys.path.insert(0,str(ROOT/'scripts'))
+            from verify_scratch_attempt import verify
+            verify(str(state/'scratch-restore.receipt.attempt'),str(state/'scratch-restore.receipt'),int(time.time()))
             config['commands']['restore']=['/usr/bin/false']
             with patch.object(scheduler,'notify',return_value={'accepted':True}):
                 scheduler.run_job(root,config,'restore')
             self.assertIn('status=failure',(state/'scratch-restore.receipt.attempt').read_text())
             self.assertEqual(receipt,(state/'scratch-restore.receipt').read_bytes())
             self.assertFalse(scheduler.current(state,'restore')['healthy'])
+            with self.assertRaises(ValueError):
+                verify(str(state/'scratch-restore.receipt.attempt'),str(state/'scratch-restore.receipt'),int(time.time()))
 
     def test_timeout_terminates_child_and_marks_failure(self):
         with tempfile.TemporaryDirectory() as folder:

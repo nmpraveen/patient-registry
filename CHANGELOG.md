@@ -1,3 +1,8 @@
+## 2026.10.23.17.28
+
+- Serialize recovery status ownership and shell receipt publication so older runs cannot conceal newer failed or interrupted attempts.
+- Revalidate Windows Health and FullScrub prerequisites atomically at completion; cover same-mode and cross-mode overlap with bounded synthetic regressions.
+
 ## 2026.10.23.17.19
 
 - Fail closed on missing, running or failed independent restore attempts and bind successful attempts to the actual receipt.

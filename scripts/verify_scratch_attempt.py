@@ -4,16 +4,7 @@ import hashlib
 import re
 import sys
 from pathlib import Path
-
-
-def fields(raw):
-    result = {}
-    for line in raw.decode("ascii").splitlines():
-        key, value = line.split("=", 1)
-        if key in result:
-            raise ValueError("duplicate field")
-        result[key] = value
-    return result
+from scratch_restore_state import fields, state_lock
 
 
 def require(condition):
@@ -22,8 +13,9 @@ def require(condition):
 
 
 def verify(attempt_path, receipt_path, now):
-    attempt = fields(Path(attempt_path).read_bytes())
-    raw = Path(receipt_path).read_bytes()
+    with state_lock(Path(attempt_path)):
+        attempt = fields(Path(attempt_path).read_bytes())
+        raw = Path(receipt_path).read_bytes()
     receipt = fields(raw)
     require(attempt["attempt_format"] == "medtrack-independent-scratch-attempt-v1")
     require(attempt["status"] == "success")

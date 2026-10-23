@@ -5,19 +5,18 @@ umask 077
 # Install the finalizer before loading private config: preflight is an attempt too.
 started_epoch="$(date -u +%s)"
 attempt_id="${started_epoch}-$$-${RANDOM}"
-receipt_hash=none
+attempt_claimed=0
+state_writer="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/scratch_restore_state.py"
 stage=config
 write_attempt() {
-  local status="$1" alert="$2" target tmp
+  local status="$1" alert="$2" target
+  local -a claim=()
   target="${MEDTRACK_SCRATCH_RESTORE_ATTEMPT:-${MEDTRACK_SCRATCH_RESTORE_RECEIPT:-}.attempt}"
   [[ "$target" == /* && ! -L "$target" && "$target" != "${MEDTRACK_SCRATCH_RESTORE_RECEIPT:-}" ]] || return 1
-  install -d -m 0700 "$(dirname "$target")" || return 1
-  tmp="$(mktemp "$(dirname "$target")/.scratch-attempt.XXXXXX")" || return 1
-  {
-    printf 'attempt_format=medtrack-independent-scratch-attempt-v1\n'
-    printf 'attempt_id=%s\nstatus=%s\nstarted_epoch=%s\nupdated_epoch=%s\n' "$attempt_id" "$status" "$started_epoch" "$(date -u +%s)"
-    printf 'stage=%s\nalert_delivery=%s\nreceipt_sha256=%s\n' "$stage" "$alert" "$receipt_hash"
-  } > "$tmp" && chmod 0600 "$tmp" && mv -f -- "$tmp" "$target"
+  if (( attempt_claimed == 0 )); then claim=(--claim); attempt_claimed=1; fi
+  "${PYTHON_COMMAND:-python3}" "$state_writer" --attempt "$target" \
+    --receipt "${MEDTRACK_SCRATCH_RESTORE_RECEIPT:-}" --attempt-id "$attempt_id" \
+    --started-epoch "$started_epoch" --stage "$stage" --status "$status" --alert "$alert" "${claim[@]}"
 }
 finish() {
   local code=$? delivery=failed alert_hook="${MEDTRACK_SCRATCH_RESTORE_ALERT_HOOK:-}"
@@ -53,19 +52,8 @@ if [[ "$scratch_restore_hook" != /* || ! -x "$scratch_restore_hook" ||
   echo 'Independent scratch restore requires separate absolute state paths and executable restore/alert hooks' >&2
   exit 1
 fi
-install -d -m 0700 "$(dirname "$receipt")"
 stage=restore
 "$scratch_restore_hook"
-stage=receipt
-completed_epoch="$(date -u +%s)"
-receipt_tmp="$(mktemp "$(dirname "$receipt")/.scratch-restore.XXXXXX")"
-{
-  printf 'receipt_format=medtrack-independent-scratch-restore-v1\n'
-  printf 'completed_epoch=%s\nattempt_id=%s\nalert_contract=required\n' "$completed_epoch" "$attempt_id"
-} > "$receipt_tmp"
-chmod 0600 "$receipt_tmp"
-mv -f -- "$receipt_tmp" "$receipt"
-receipt_hash="$(sha256sum "$receipt" | awk '{print $1}')"
 stage=complete
 write_attempt success not-needed
 echo "OFFSITE_SCRATCH_RESTORE_OK receipt=$receipt"

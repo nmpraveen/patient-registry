@@ -19,15 +19,36 @@ $state = [ordered]@{
 }
 $lock = $null
 $code = 1
-function Write-State {
-    $state.updatedUtc = [DateTime]::UtcNow.ToString('o')
+function Write-State([switch]$Claim) {
     [IO.Directory]::CreateDirectory($StatusDirectory) | Out-Null
     $path = Join-Path $StatusDirectory "$Mode.json"
-    $temp = "$path.$($state.attemptId).tmp"
-    $bytes = [Text.Encoding]::UTF8.GetBytes(($state | ConvertTo-Json))
-    $stream = [IO.File]::Open($temp, 'Create', 'Write', 'None')
-    try { $stream.Write($bytes, 0, $bytes.Length); $stream.Flush($true) } finally { $stream.Dispose() }
-    [IO.File]::Move($temp, $path, $true)
+    # All modes share this short transaction lock: ownership, dependency checks
+    # and replacement must be atomic with concurrent claims, even failed runs.
+    $writerLock = $null
+    $deadline = [DateTime]::UtcNow.AddSeconds(5)
+    try {
+        while ($null -eq $writerLock) {
+            try { $writerLock = [IO.File]::Open((Join-Path $StatusDirectory 'status.lock'), 'OpenOrCreate', 'ReadWrite', 'None') }
+            catch [IO.IOException] {
+                if ([DateTime]::UtcNow -ge $deadline) { throw }
+                Start-Sleep -Milliseconds 20
+            }
+        }
+        if (-not $Claim) {
+            $latest = [IO.File]::ReadAllText($path) | ConvertFrom-Json
+            if ($latest.attemptId -ne $state.attemptId) { throw 'Status belongs to a newer attempt' }
+        }
+        if ($state.status -eq 'success') {
+            if ($Mode -eq 'Health') { Assert-SuccessfulState 'Restore'; Assert-SuccessfulState 'FullScrub' }
+            if ($Mode -eq 'FullScrub') { Assert-SuccessfulState 'Restore' }
+        }
+        $state.updatedUtc = [DateTime]::UtcNow.ToString('o')
+        $temp = "$path.$($state.attemptId).tmp"
+        $bytes = [Text.Encoding]::UTF8.GetBytes(($state | ConvertTo-Json))
+        $stream = [IO.File]::Open($temp, 'Create', 'Write', 'None')
+        try { $stream.Write($bytes, 0, $bytes.Length); $stream.Flush($true) } finally { $stream.Dispose() }
+        [IO.File]::Move($temp, $path, $true)
+    } finally { if ($null -ne $writerLock) { $writerLock.Dispose() } }
 }
 function Invoke-QuietProcess([string]$Executable, [string[]]$Arguments, [int]$TimeoutSeconds, [hashtable]$Environment = @{}, [switch]$TrackRunner) {
     $info = [Diagnostics.ProcessStartInfo]::new()
@@ -65,7 +86,7 @@ function Assert-SuccessfulState([string]$Name) {
         $previous.alertDelivery -ne 'not-needed' -or $previous.exitCode -ne 0) { throw 'Prior verifier attempt is not successful' }
 }
 try {
-    Write-State
+    Write-State -Claim
     if ($simulation) {
         $state.stage = switch ($SimulateFailure) { Preflight {'preflight'} Docker {'docker'} Launch {'launch'} default {'runner'} }
         throw 'Bounded synthetic failure'

@@ -2,7 +2,8 @@
 set -Eeuo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 test_root="$(mktemp -d)"
-trap 'rm -rf -- "$test_root"' EXIT
+trap 'wait || true; rm -rf -- "$test_root"' EXIT
+export PYTHON_COMMAND=python
 export MEDTRACK_BACKUP_CONFIG="$test_root/no-config"
 export MEDTRACK_SCRATCH_RESTORE_RECEIPT="$test_root/restore.receipt"
 export MEDTRACK_SCRATCH_RESTORE_ATTEMPT="$test_root/custom.attempt"
@@ -58,4 +59,57 @@ printf 'status=success\n' >> "$MEDTRACK_SCRATCH_RESTORE_ATTEMPT"
 if valid >/dev/null 2>&1; then exit 1; fi
 rm "$MEDTRACK_SCRATCH_RESTORE_ATTEMPT"
 if valid >/dev/null 2>&1; then exit 1; fi
+# Direct/manual shell runs share the same ownership contract as scheduled runs.
+printf '#!/usr/bin/env bash\nexit 0\n' > "$test_root/alert"
+cat > "$test_root/blocked-restore" <<'BLOCKED'
+#!/usr/bin/env bash
+touch "$TEST_READY"
+for ((i=0; i<200; i++)); do
+  [[ ! -f "$TEST_RELEASE" ]] || exit 0
+  sleep 0.05
+done
+exit 87
+BLOCKED
+chmod +x "$test_root/blocked-restore"
+wait_ready() {
+  for ((i=0; i<100; i++)); do
+    [[ ! -f "$1" ]] || return 0
+    sleep 0.05
+  done
+  echo 'Concurrent fixture did not reach its bounded wait' >&2; exit 1
+}
+for newer_state in failure running success; do
+  "$runner" >/dev/null
+  TEST_READY="$test_root/ready-old-$newer_state" TEST_RELEASE="$test_root/release-old-$newer_state" \
+    MEDTRACK_SCRATCH_RESTORE_HOOK="$test_root/blocked-restore" "$runner" > "$test_root/older-output" 2>&1 &
+  older_pid=$!
+  wait_ready "$test_root/ready-old-$newer_state"
+  older_id="$(sed -n 's/^attempt_id=//p' "$MEDTRACK_SCRATCH_RESTORE_ATTEMPT")"
+  case "$newer_state" in
+    failure) MEDTRACK_SCRATCH_RESTORE_HOOK="$test_root/missing" fail_run 1 ;;
+    running)
+      TEST_READY="$test_root/ready-new" TEST_RELEASE="$test_root/release-new" \
+        MEDTRACK_SCRATCH_RESTORE_HOOK="$test_root/blocked-restore" "$runner" > "$test_root/newer-output" 2>&1 &
+      newer_pid=$!
+      wait_ready "$test_root/ready-new"
+      ;;
+    success) "$runner" >/dev/null ;;
+  esac
+  [[ "$(sed -n 's/^attempt_id=//p' "$MEDTRACK_SCRATCH_RESTORE_ATTEMPT")" != "$older_id" ]]
+  grep -qx "status=$newer_state" "$MEDTRACK_SCRATCH_RESTORE_ATTEMPT"
+  sha256sum "$MEDTRACK_SCRATCH_RESTORE_ATTEMPT" "$MEDTRACK_SCRATCH_RESTORE_RECEIPT" > "$test_root/newer-hashes"
+  touch "$test_root/release-old-$newer_state"
+  if wait "$older_pid"; then echo 'Superseded shell runner returned success' >&2; exit 1; fi
+  sha256sum --check --status "$test_root/newer-hashes"
+  if [[ "$newer_state" == running ]]; then
+    if valid >/dev/null 2>&1; then exit 1; fi
+    touch "$test_root/release-new"
+    wait "$newer_pid"
+    valid
+  elif [[ "$newer_state" == failure ]]; then
+    if valid >/dev/null 2>&1; then exit 1; fi
+  else
+    valid
+  fi
+done
 echo SCRATCH_ATTEMPT_TEST_OK

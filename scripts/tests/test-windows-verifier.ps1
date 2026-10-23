@@ -14,6 +14,11 @@ class Stub {
   static int Main(string[] args) {
     bool docker = args.Length > 0 && args[0] == "--context";
     if (!docker) File.WriteAllLines(Environment.GetEnvironmentVariable("TEST_BASH_ARGS"), args);
+    var release = Environment.GetEnvironmentVariable("TEST_RUNNER_RELEASE");
+    if (!docker && !String.IsNullOrEmpty(release)) {
+      for (int i = 0; i < 200 && !File.Exists(release); i++) System.Threading.Thread.Sleep(50);
+      if (!File.Exists(release)) return 87;
+    }
     var code = Environment.GetEnvironmentVariable(docker ? "TEST_DOCKER_EXIT" : "TEST_RUNNER_EXIT");
     return String.IsNullOrEmpty(code) ? 0 : Int32.Parse(code);
   }
@@ -83,6 +88,65 @@ class Stub {
     }
     Assert ((Get-FileHash -LiteralPath (Join-Path $status 'Restore.json')).Hash -eq $before.Hash) 'Simulation altered real status'
     Assert ((Get-Content -LiteralPath $env:TEST_ALERT_LOG).Count -eq $alertsBefore) 'Simulation delivered notification'
+    # Same-mode supersession, cross-mode contention, and interruption after a
+    # Restore claim must all prevent an in-flight verifier publishing success.
+    foreach ($scenario in @('Restore','Health','FullScrub','HealthInterrupted')) {
+        Run Restore 0 complete | Out-Null
+        Run FullScrub 0 complete | Out-Null
+        $olderMode = if ($scenario -eq 'HealthInterrupted') { 'Health' } else { $scenario }
+        $release = Join-Path $testRoot "release-$scenario"
+        $info = [Diagnostics.ProcessStartInfo]::new()
+        $info.FileName = Join-Path $PSHOME 'pwsh.exe'
+        $info.UseShellExecute = $false; $info.CreateNoWindow = $true
+        $info.RedirectStandardOutput = $true; $info.RedirectStandardError = $true
+        foreach ($argument in @('-NoProfile','-File',$wrapper,'-ConfigPath',$configPath,'-StatusDirectory',$status,'-AlertScriptPath',$alert,'-Mode',$olderMode)) { $info.ArgumentList.Add($argument) }
+        $info.Environment['TEST_RUNNER_RELEASE'] = $release
+        $older = [Diagnostics.Process]::new()
+        $older.StartInfo = $info
+        try {
+            Assert ($older.Start()) 'Could not start concurrent fixture'
+            $stdout = $older.StandardOutput.ReadToEndAsync()
+            $stderr = $older.StandardError.ReadToEndAsync()
+            $deadline = [DateTime]::UtcNow.AddSeconds(5)
+            $olderState = $null
+            do {
+                $candidate = Get-Content -LiteralPath (Join-Path $status "$olderMode.json") -Raw | ConvertFrom-Json
+                if ($candidate.status -eq 'running' -and $candidate.stage -eq 'runner') { $olderState = $candidate; break }
+                Start-Sleep -Milliseconds 20
+            } while ([DateTime]::UtcNow -lt $deadline -and -not $older.HasExited)
+            Assert ($null -ne $olderState) 'Older runner never reached bounded wait'
+            if ($scenario -eq 'HealthInterrupted') {
+                # Emulate a process killed immediately after its atomic claim,
+                # before it can fail the execution lock or send an alert.
+                $newer = Get-Content -LiteralPath (Join-Path $status 'Restore.json') -Raw | ConvertFrom-Json
+                $newer.attemptId = [guid]::NewGuid().ToString('N'); $newer.status = 'running'
+                $newer.stage = 'preflight'; $newer.exitCode = $null
+                $stateLock = [IO.File]::Open((Join-Path $status 'status.lock'), 'OpenOrCreate', 'ReadWrite', 'None')
+                try {
+                    $tempState = Join-Path $status 'interrupted.tmp'
+                    [IO.File]::WriteAllText($tempState, ($newer | ConvertTo-Json))
+                    [IO.File]::Move($tempState, (Join-Path $status 'Restore.json'), $true)
+                } finally { $stateLock.Dispose() }
+            } else {
+                $newer = Run Restore 1 preflight
+                Assert ($newer.attemptId -ne $olderState.attemptId) 'Concurrent attempt did not claim its own state'
+                Assert ($newer.alertDelivery -eq 'delivered') 'Newer lock failure did not alert'
+            }
+            $newerHash = (Get-FileHash -LiteralPath (Join-Path $status 'Restore.json')).Hash
+            [IO.File]::WriteAllText($release, 'release synthetic runner')
+            Assert ($older.WaitForExit(5000)) 'Older runner did not finish after release'
+            Assert ($older.ExitCode -ne 0) "In-flight $scenario returned success after invalidation"
+            Assert ((Get-FileHash -LiteralPath (Join-Path $status 'Restore.json')).Hash -eq $newerHash) 'Older finalizer overwrote newer attempt'
+            $final = Get-Content -LiteralPath (Join-Path $status "$olderMode.json") -Raw | ConvertFrom-Json
+            Assert ($final.status -ne 'success') "In-flight $scenario published success after invalidation"
+            $null = $stdout.GetAwaiter().GetResult(); $null = $stderr.GetAwaiter().GetResult()
+            Run Health 1 preflight | Out-Null
+        } finally {
+            if (-not $older.HasExited) { $older.Kill($true); $older.WaitForExit() }
+            $older.Dispose()
+        }
+    }
+    Run Restore 0 complete | Out-Null
     $prior = Get-Content -LiteralPath (Join-Path $status 'Restore.json') -Raw | ConvertFrom-Json
     $prior.status = 'running'
     $prior | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $status 'Restore.json')

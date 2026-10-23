@@ -243,7 +243,7 @@ jobs:
         timeout-minutes: 20
         run: |
           set -euo pipefail
-          python -m unittest scripts.tests.test_security_evidence_state scripts.tests.test_offsite_health_state scripts.tests.test_offsite_backup_snapshot
+          python -m unittest scripts.tests.test_security_evidence_state scripts.tests.test_offsite_health_state scripts.tests.test_offsite_backup_snapshot scripts.tests.test_scratch_restore_state
           for suite in scripts/tests/test-*.sh; do
             bash "$suite"
           done
@@ -266,6 +266,12 @@ jobs:
       - uses: ./.github/actions/verify-exact-head
         with:
           expected-sha: ${{ env.EXPECTED_SHA }}
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Native scratch-state lock regression
+        shell: pwsh
+        run: python -m unittest scripts.tests.test_scratch_restore_state
       - name: Synthetic wrapper failures and state transitions
         shell: pwsh
         run: |

@@ -9,6 +9,30 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from verify_production_service_images import build_service_image, runtime_smoke  # noqa: E402
+from build_canonical_image import verify_loaded_config_digest  # noqa: E402
+
+
+class LoadedImageIdentityTest(unittest.TestCase):
+    @patch("build_canonical_image.subprocess.run")
+    def test_classic_store_config_id_needs_no_conversion(self, run) -> None:
+        digest = "sha256:" + "a" * 64
+        verify_loaded_config_digest(digest, digest)
+        run.assert_not_called()
+
+    @patch("build_canonical_image.subprocess.run")
+    def test_containerd_manifest_id_binds_to_expected_config(self, run) -> None:
+        image_id, config = "sha256:" + "a" * 64, "sha256:" + "b" * 64
+        run.return_value.stdout = json.dumps({"config": {"digest": config}})
+        verify_loaded_config_digest(image_id, config)
+        self.assertEqual(run.call_args.args[0][-1], f"docker-daemon:{image_id}")
+
+    @patch("build_canonical_image.subprocess.run")
+    def test_wrong_or_missing_containerd_config_fails_closed(self, run) -> None:
+        for manifest in ({"config": {"digest": "sha256:" + "c" * 64}}, {}):
+            with self.subTest(manifest=manifest):
+                run.return_value.stdout = json.dumps(manifest)
+                with self.assertRaisesRegex(RuntimeError, "does not match"):
+                    verify_loaded_config_digest("sha256:" + "a" * 64, "sha256:" + "b" * 64)
 
 
 class CommittedServiceBuildTest(unittest.TestCase):

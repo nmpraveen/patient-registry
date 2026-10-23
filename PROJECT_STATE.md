@@ -1,3 +1,9 @@
+## 2026-10-23 Mac operations migration (source)
+
+Mac deployment uses pinned SSH and an enumerated root helper with release-signature, exact main CI, fresh backup and reviewed-plan gates. Recovery runs isolated exact-image NAS/Drive restores, binds source/target/evidence metadata, and records scheduled attempts and authorized failure delivery. Health uses the independently approved private catalog through the retained-integrity checker. See [Mac operations](deploy/macos/README.md).
+
+Source availability does not certify installed privileges, recurrence, cold-boot behavior or production activation. Preserve Windex access/jobs until Mac access, restore, full scrub and scheduled checks have accepted receipts. No app redeployment or live database restore is part of this operations source change.
+
 ## 2026-10-23 retained backup integrity compatibility (source only)
 
 - Optional independently pinned finite catalog binds exact historical namespace/tier/name, ciphertext size/hash and raw checksum/marker hashes. Three-, five- and six-field retained shapes remain strict; newest per tier requires all eight current fields.

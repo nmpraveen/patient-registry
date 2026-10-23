@@ -1,5 +1,12 @@
 # RUNBOOK.md
 
+## Mac Studio operations
+
+Use [Mac deployment and independent recovery](deploy/macos/README.md) for the
+restricted SSH operator, private local verifier, launchd schedules and failure
+alerts. Keep existing Windex access and jobs until all migration acceptance
+gates pass. Mac scratch recovery does not authorize live database replacement.
+
 ## PhoneBook contact permissions
 
 Admin > User Management > Roles > Manage PhoneBook contacts grants contact creation, editing, deactivation/reactivation and inactive inspection without settings administration. Migration patients.0045 grants existing Reception and settings-manager roles only and preserves all other customized fields. Admin/Reception defaults enable the permission; normal initialization does not reset subsequent revocation. Custom roles must be granted explicitly. Announcement management and unrestricted reminders still use manage_settings.

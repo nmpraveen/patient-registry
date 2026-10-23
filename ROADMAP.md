@@ -1,6 +1,12 @@
+## 2026-10-23 Mac migration acceptance
+
+- Install only the reviewed Mac runtime and constrained deployment helper/grants after exact-head CI. Verify access, current-target prepare/plan and rejected unsafe inputs without redeploying the app.
+- Require the approved finite catalog, a new policy-bound full scrub, exact-image NAS restore and actual scheduled success/failure delivery before enabling recurrence. Keep Windex setup intact through acceptance.
+- GUI login, unlocked Keychain, network and Docker Desktop are required; before-login cold boot is not an unattended recovery state. Production database activation remains a separately authorized emergency procedure.
+
 ## 2026-10-23 retained-format rollout gates
 
-- Complete exact-head review/CI for the finite retained-byte catalog framework; hold merge until released by the coordinator.
+- Framework review/CI passed and PR #147 merged; private enrollment and installed-runtime acceptance remain separate.
 - Independently review exact real triplet bytes and historical provenance before private enrollment. Six-field v3 markers need their own pins so stripped eight-field markers cannot downgrade.
 - Preserve archive/marker bytes and restore authorization boundaries. After approved installation, run a new policy-bound full scrub and verify actual scheduled health; source fixtures do not certify runtime acceptance.
 

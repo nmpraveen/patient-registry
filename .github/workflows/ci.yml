@@ -243,7 +243,7 @@ jobs:
         timeout-minutes: 20
         run: |
           set -euo pipefail
-          python -m unittest scripts.tests.test_security_evidence_state scripts.tests.test_offsite_health_state scripts.tests.test_offsite_backup_snapshot scripts.tests.test_scratch_restore_state scripts.tests.test_offsite_legacy_catalog scripts.tests.test_offsite_legacy_health
+          python -m unittest scripts.tests.test_security_evidence_state scripts.tests.test_offsite_health_state scripts.tests.test_offsite_backup_snapshot scripts.tests.test_scratch_restore_state scripts.tests.test_offsite_legacy_catalog scripts.tests.test_offsite_legacy_health scripts.tests.test_mac_operations scripts.tests.test_mac_recovery_scheduler
           for suite in scripts/tests/test-*.sh; do
             bash "$suite"
           done

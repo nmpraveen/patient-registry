@@ -243,7 +243,7 @@ jobs:
         timeout-minutes: 20
         run: |
           set -euo pipefail
-          python -m unittest scripts.tests.test_security_evidence_state scripts.tests.test_offsite_health_state scripts.tests.test_offsite_backup_snapshot
+          python -m unittest scripts.tests.test_security_evidence_state scripts.tests.test_offsite_health_state scripts.tests.test_offsite_backup_snapshot scripts.tests.test_scratch_restore_state
           for suite in scripts/tests/test-*.sh; do
             bash "$suite"
           done
@@ -255,6 +255,31 @@ jobs:
             exit 1
           fi
           python scripts/check_image_digests.py
+
+  windows-verifier:
+    name: Windows verifier regressions
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.EXPECTED_SHA }}
+      - uses: ./.github/actions/verify-exact-head
+        with:
+          expected-sha: ${{ env.EXPECTED_SHA }}
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          # The stdlib-only Windows lock tests need an available Windows binary.
+          # The application remains on the separately pinned Linux Python version.
+          python-version: "3.14.9"
+      - name: Native scratch-state lock regression
+        shell: pwsh
+        run: python -m unittest scripts.tests.test_scratch_restore_state
+      - name: Synthetic wrapper failures and state transitions
+        shell: pwsh
+        run: |
+          ./scripts/tests/test-windows-verifier.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./scripts/tests/test-windows-installer.ps1
 
   container-integrity:
     name: Container integrity

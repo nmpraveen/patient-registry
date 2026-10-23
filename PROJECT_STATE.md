@@ -1,3 +1,10 @@
+## 2026-10-23 independent verifier runner repair (source only)
+
+- Added fail-closed latest-attempt/receipt binding and explicit preflight/alert failure outcomes for scratch restores. Atomic ownership checks protect newer shell/Windows attempts from older finalizers; Windows success publication also rechecks cross-mode dependencies.
+- Added generic PowerShell 7.2+ Windows wrapper and task installer, private config schema, synthetic failure tests and Windows CI. Restore/full-scrub status is required by Windows health, alongside existing production receipt/scrub/evidence gates.
+- No app redeployment, production/NAS mutation, task installation or real notification is part of this change. Runtime owner must configure private hooks, prove exact source-image restores, verify fresh live evidence separately from weekly restored snapshots, and inspect actual scheduled runs/principals. Interactive logon remains an explicit limitation when selected.
+- NAS promoter incoming RW is intentional verified queue drainage; RUNBOOK's former read-only incoming statement is corrected.
+
 # PROJECT_STATE.md
 
 ## September 20 evidence-export rollout correction

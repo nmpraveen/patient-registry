@@ -1,3 +1,14 @@
+## 2026.10.23.17.28
+
+- Serialize recovery status ownership and shell receipt publication so older runs cannot conceal newer failed or interrupted attempts.
+- Revalidate Windows Health and FullScrub prerequisites atomically at completion; cover same-mode and cross-mode overlap with bounded synthetic regressions.
+
+## 2026.10.23.17.19
+
+- Fail closed on missing, running or failed independent restore attempts and bind successful attempts to the actual receipt.
+- Add generic Windows independent-verifier scheduling, explicit account policy, failure reporting and synthetic regression coverage.
+- Document fresh live evidence verification separately from weekly restore proof and correct NAS incoming queue-drainage permissions.
+
 ## 2026.10.23.11.19
 
 - Patch CPython to 3.12.15 across runtime, CI and dependency-lock tooling.

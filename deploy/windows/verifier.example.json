@@ -1,0 +1,14 @@
+{
+  "SourceRoot": "C:\\IndependentVerifier\\reviewed-source",
+  "BashSourceRoot": "/c/IndependentVerifier/reviewed-source",
+  "BashExecutable": "C:\\Program Files\\Git\\bin\\bash.exe",
+  "BackupConfigPath": "/c/IndependentVerifier/private/backup.env",
+  "DockerExecutable": "C:\\Program Files\\Docker\\Docker\\resources\\bin\\docker.exe",
+  "DockerContext": "desktop-linux",
+  "DockerDesktopExecutable": "C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe",
+  "PowerShellExecutable": "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
+  "StatusDirectory": "C:\\IndependentVerifier\\private\\status",
+  "AlertScriptPath": "C:\\IndependentVerifier\\private\\send-pushover.ps1",
+  "RunTimeoutSeconds": 14400,
+  "TaskNamePrefix": "MEDTRACK-IndependentVerifier"
+}

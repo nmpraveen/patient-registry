@@ -16,16 +16,20 @@ scratch_restore_hook="${MEDTRACK_SCRATCH_RESTORE_HOOK:-}"
 require_scratch_restore_hook="${MEDTRACK_REQUIRE_SCRATCH_RESTORE_HOOK:-0}"
 production_mode="${MEDTRACK_HEALTH_PRODUCTION_MODE:-0}"
 scratch_restore_receipt="${MEDTRACK_SCRATCH_RESTORE_RECEIPT:-}"
+scratch_restore_attempt="${MEDTRACK_SCRATCH_RESTORE_ATTEMPT:-$scratch_restore_receipt.attempt}"
 scratch_restore_max_age="${MEDTRACK_SCRATCH_RESTORE_MAX_AGE_SECONDS:-691200}"
 security_evidence_health_hook="${MEDTRACK_SECURITY_EVIDENCE_HEALTH_HOOK:-}"
 health_state_root="${MEDTRACK_HEALTH_STATE_ROOT:-/var/lib/medtrack-backup-health}"
 scrub_maximum_age="${MEDTRACK_FULL_SCRUB_MAX_AGE_SECONDS:-691200}"
 python_command="${PYTHON_COMMAND:-python3}"
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-if [[ $# -gt 0 ]]; then
-  if [[ $# != 2 || "$1" != "--hash-mode" ]]; then echo "Usage: check-offsite-backups.sh [--hash-mode all|incremental|latest]" >&2; exit 2; fi
-  hash_mode="$2"
-fi
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --hash-mode) [[ $# -ge 2 ]] || exit 2; hash_mode="$2"; shift 2 ;;
+    --production) production_mode=1; shift ;;
+    *) echo "Usage: check-offsite-backups.sh [--hash-mode all|incremental|latest] [--production]" >&2; exit 2 ;;
+  esac
+done
 
 if [[ ! -f "$rclone_config" ]]; then
   echo "Missing rclone configuration: $rclone_config" >&2
@@ -218,6 +222,10 @@ if [[ "$production_mode" == "1" ]]; then
       "$scratch_alert_contract" != "required" || ! "$scratch_completed_epoch" =~ ^[0-9]+$ ||
       $((now_epoch - scratch_completed_epoch)) -lt 0 || $((now_epoch - scratch_completed_epoch)) -gt scratch_restore_max_age ]]; then
       echo "OFFSITE_BACKUP_HEALTH_FAIL reason=stale-or-invalid-independent-scratch-restore-receipt" >&2
+      failed=1
+    elif ! "$python_command" "$repo_root/scripts/verify_scratch_attempt.py" \
+      "$scratch_restore_attempt" "$scratch_restore_receipt" "$now_epoch"; then
+      echo "OFFSITE_BACKUP_HEALTH_FAIL reason=invalid-or-unsuccessful-scratch-attempt" >&2
       failed=1
     else
       echo "OFFSITE_BACKUP_INDEPENDENT_SCRATCH_RESTORE_OK age_seconds=$((now_epoch - scratch_completed_epoch))"

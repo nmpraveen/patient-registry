@@ -106,15 +106,32 @@ if MEDTRACK_HEALTH_PRODUCTION_MODE=1 MEDTRACK_HEALTH_HASH_MODE=latest \
 fi
 
 scratch_receipt="$test_root/independent-scratch.receipt"
-{
-  printf 'receipt_format=medtrack-independent-scratch-restore-v1\n'
-  printf 'completed_epoch=%s\n' "$(date -u +%s)"
-  printf 'alert_contract=required\n'
-} > "$scratch_receipt"
+MEDTRACK_SCRATCH_RESTORE_RECEIPT="$scratch_receipt" \
+  MEDTRACK_SCRATCH_RESTORE_ALERT_HOOK="$test_root/scratch-hook" \
+  "$repo_root/scripts/run-offsite-scratch-restore.sh"
 MEDTRACK_HEALTH_PRODUCTION_MODE=1 MEDTRACK_HEALTH_HASH_MODE=all \
   MEDTRACK_SECURITY_EVIDENCE_HEALTH_HOOK="$test_root/scratch-hook" \
   MEDTRACK_SCRATCH_RESTORE_RECEIPT="$scratch_receipt" \
   "$repo_root/scripts/check-offsite-backups.sh"
+
+# Production must reject newer failures/running attempts, missing attempts, and receipt mismatch.
+cp "$scratch_receipt.attempt" "$test_root/good.attempt"
+for attempt_case in failure running missing mismatched; do
+  cp "$test_root/good.attempt" "$scratch_receipt.attempt"
+  case "$attempt_case" in
+    failure|running) sed -i "s/status=success/status=$attempt_case/" "$scratch_receipt.attempt" ;;
+    missing) rm "$scratch_receipt.attempt" ;;
+    mismatched) sed -i 's/receipt_sha256=.*/receipt_sha256=invalid/' "$scratch_receipt.attempt" ;;
+  esac
+  if MEDTRACK_HEALTH_PRODUCTION_MODE=1 MEDTRACK_HEALTH_HASH_MODE=all \
+    MEDTRACK_SECURITY_EVIDENCE_HEALTH_HOOK="$test_root/scratch-hook" \
+    MEDTRACK_SCRATCH_RESTORE_RECEIPT="$scratch_receipt" \
+    "$repo_root/scripts/check-offsite-backups.sh" > "$test_root/rejected" 2>&1; then
+    echo "Production health accepted $attempt_case attempt" >&2; exit 1
+  fi
+  grep -q 'invalid-or-unsuccessful-scratch-attempt' "$test_root/rejected"
+done
+cp "$test_root/good.attempt" "$scratch_receipt.attempt"
 
 export FAKE_RCLONE_CATS="$test_root/downloads.log"
 MEDTRACK_HEALTH_PRODUCTION_MODE=1 MEDTRACK_HEALTH_HASH_MODE=incremental \

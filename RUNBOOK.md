@@ -408,6 +408,14 @@ Before a future code update, use the verified encrypted pre-deployment workflow 
 
 The production backup remote is `medtrack-drive:Naveen-Hospital-Backups/MEDTRACK/production`. Backup payloads are encrypted before upload; filenames and tier names are not encrypted. Never put the private `age` identity or a decrypted archive on the VPS.
 
+Retained historical three-, five- and six-field markers require an independently
+SHA-pinned finite [integrity catalog](docs/retained-backup-catalog.md); the newest
+backup per tier must use the current eight-field marker and existing freshness
+gates. Catalogs do not authorize restores or supply missing provenance. Catalog
+or policy changes require a fresh full scrub; old v1 scrub receipts cannot satisfy
+the new v2 policy-bound receipt check. Keep private entries outside the repository
+and backup storage, and preserve every archive/checksum/marker byte.
+
 Policy note: [Google Drive API policy](https://developers.google.com/workspace/drive/api/terms) restricts using a developer app/project as a general backup mechanism without Google's express prior written consent. On 2026-08-11 the owner explicitly chose personal-use operation and enabled the recurring timers after the technical restore and key-copy gates passed. That is an operator risk decision, not a legal or policy-compliance conclusion. The independent Synology ciphertext mirror below prevents Google Drive from being the only off-VPS copy. The narrow [`drive.file` scope](https://developers.google.com/workspace/drive/api/guides/api-specific-auth) limits technical access; it does not override the use-case restriction.
 
 Required root-only paths:

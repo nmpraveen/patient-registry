@@ -55,12 +55,22 @@ if [[ "$health_state_root" != /* || -L "$health_state_root" || ! "$scrub_maximum
 fi
 umask 077
 install -d -m 0700 "$health_state_root"
+run_state="$(mktemp -d "$health_state_root/.metadata.XXXXXX")"
+trap 'chmod u+w "$run_state/catalog.json" 2>/dev/null || true; rm -rf -- "$run_state"' EXIT
+catalog_snapshot="$run_state/catalog.json"
+catalog_binding="$("$python_command" "$repo_root/scripts/offsite_legacy_catalog.py" snapshot \
+  --catalog "${MEDTRACK_LEGACY_CATALOG:-}" --sha256 "${MEDTRACK_LEGACY_CATALOG_SHA256:-}" \
+  --namespace "$rclone_remote" --output "$catalog_snapshot")"
+read -r metadata_policy catalog_sha256 snapshot_sha256 <<< "$catalog_binding"
 remote_identity="$(printf '%s' "$rclone_remote" | sha256sum | awk '{print $1}')"
 scrub_receipt="$health_state_root/full-scrub-$remote_identity.receipt"
 if [[ "$production_mode" == "1" && "$hash_mode" == "incremental" ]]; then
   scrub_epoch="$(sed -n 's/^completed_epoch=//p' "$scrub_receipt" 2>/dev/null || true)"
   scrub_format="$(sed -n 's/^receipt_format=//p' "$scrub_receipt" 2>/dev/null || true)"
-  if [[ "$scrub_format" != "medtrack-full-ciphertext-scrub-v1" || ! "$scrub_epoch" =~ ^[0-9]+$ ]] || (( now_epoch - scrub_epoch < 0 || now_epoch - scrub_epoch > scrub_maximum_age )); then
+  scrub_policy="$(sed -n 's/^metadata_policy=//p' "$scrub_receipt" 2>/dev/null || true)"
+  scrub_catalog="$(sed -n 's/^legacy_catalog_sha256=//p' "$scrub_receipt" 2>/dev/null || true)"
+  if [[ "$scrub_format" != "medtrack-full-ciphertext-scrub-v2" || "$scrub_policy" != "$metadata_policy" ||
+    "$scrub_catalog" != "$catalog_sha256" || ! "$scrub_epoch" =~ ^[0-9]+$ ]] || (( now_epoch - scrub_epoch < 0 || now_epoch - scrub_epoch > scrub_maximum_age )); then
     echo "OFFSITE_BACKUP_HEALTH_FAIL reason=missing-or-stale-full-scrub" >&2; exit 1
   fi
 fi
@@ -69,20 +79,20 @@ remote_cat() {
   rclone --config "$rclone_config" cat "$1"
 }
 
-receipt_value() {
-  local content="$1"
-  local key="$2"
-  printf '%s\n' "$content" | sed -n "s/^${key}=//p" | tail -n 1 | tr -d '\r'
-}
-
 verify_remote_hash() {
   local remote_archive="$1"
   local expected_hash="$2"
+  local expected_size="$3"
   local actual_hash
-  if [[ "$hash_mode" == "incremental" || "$hash_mode" == "all" ]]; then
+  local -a size_arguments=()
+  [[ "$expected_size" == "-" ]] || size_arguments=(--size "$expected_size")
+  if [[ "$hash_mode" == "incremental" || "$hash_mode" == "all" || "$expected_size" != "-" ]]; then
+    local object_mode="$hash_mode"
+    [[ "$object_mode" != "latest" ]] || object_mode=all
     "$python_command" "$repo_root/scripts/offsite_health_state.py" \
       --remote "$remote_archive" --sha256 "$expected_hash" --config "$rclone_config" \
-      --cache-root "$health_state_root/objects" --mode "$hash_mode" --maximum-age "$scrub_maximum_age" >/dev/null
+      --cache-root "$health_state_root/objects" --mode "$object_mode" --maximum-age "$scrub_maximum_age" \
+      --policy "$metadata_policy:$catalog_sha256" "${size_arguments[@]}" >/dev/null
     return
   fi
   actual_hash="$(rclone --config "$rclone_config" cat "$remote_archive" | sha256sum | awk '{print $1}')"
@@ -97,8 +107,8 @@ check_tier() {
   local maximum_age="$2"
   local maximum_count="$3"
   local success_epoch age marker_count remote_tier latest_marker marker listing remote_listing
-  local marker_content checksum_content archive checksum expected_hash marker_hash checksum_hash checksum_file
-  local completed_utc marker_stamp evidence_chain
+  local archive checksum marker_hash metadata expected_size completed_utc completed_iso
+  local -a latest_arguments=()
   local -a remote_files=()
   local -a markers=()
 
@@ -147,28 +157,27 @@ check_tier() {
       return
     fi
 
-    marker_content="$(remote_cat "$remote_tier/$marker")"
-    checksum_content="$(remote_cat "$remote_tier/$checksum")"
-    marker_hash="$(receipt_value "$marker_content" sha256)"
-    evidence_chain="$(receipt_value "$marker_content" security_evidence_chain_sha256)"
-    completed_utc="$(receipt_value "$marker_content" completed_utc)"
-    marker_stamp="${archive#medtrack-prod-${tier}-}"
-    marker_stamp="${marker_stamp%.tar.age}"
-    checksum_hash="$(printf '%s\n' "$checksum_content" | awk 'NR==1 {print $1}')"
-    checksum_file="$(printf '%s\n' "$checksum_content" | awk 'NR==1 {print $2}')"
-    if [[ "$(receipt_value "$marker_content" archive)" != "$archive" ||
-      ! "$marker_hash" =~ ^[0-9a-f]{64}$ ||
-      "$checksum_hash" != "$marker_hash" ||
-      "$checksum_file" != "$archive" || "$completed_utc" != "$marker_stamp" ||
-      ! "$evidence_chain" =~ ^[0-9a-f]{64}$ ]]; then
+    # Preserve raw bytes: shell command substitution strips trailing newlines.
+    if ! remote_cat "$remote_tier/$marker" > "$run_state/marker" ||
+      ! remote_cat "$remote_tier/$checksum" > "$run_state/checksum"; then
+      echo "OFFSITE_BACKUP_HEALTH_FAIL tier=$tier reason=metadata-read-failed" >&2
+      failed=1
+      return
+    fi
+    latest_arguments=()
+    [[ "$marker" != "$latest_marker" ]] || latest_arguments=(--latest)
+    if ! metadata="$("$python_command" "$repo_root/scripts/offsite_legacy_catalog.py" check \
+      --snapshot "$catalog_snapshot" --snapshot-sha256 "$snapshot_sha256" --namespace "$rclone_remote" \
+      --tier "$tier" --archive "$archive" --marker-file "$run_state/marker" \
+      --checksum-file "$run_state/checksum" "${latest_arguments[@]}")"; then
       echo "OFFSITE_BACKUP_HEALTH_FAIL tier=$tier reason=invalid-marker-or-checksum marker=$marker" >&2
       failed=1
       return
     fi
+    read -r marker_hash completed_utc expected_size <<< "$metadata"
 
-    if [[ "$hash_mode" == "all" || "$hash_mode" == "incremental" || "$marker" == "$latest_marker" ]]; then
-      expected_hash="$marker_hash"
-      if ! verify_remote_hash "$remote_tier/$archive" "$expected_hash"; then
+    if [[ "$hash_mode" == "all" || "$hash_mode" == "incremental" || "$marker" == "$latest_marker" || "$expected_size" != "-" ]]; then
+      if ! verify_remote_hash "$remote_tier/$archive" "$marker_hash" "$expected_size"; then
         failed=1
         return
       fi
@@ -251,9 +260,12 @@ if (( failed != 0 )); then
 fi
 
 rclone --config "$rclone_config" about "${rclone_remote%%:*}:" --json
+"$python_command" "$repo_root/scripts/offsite_legacy_catalog.py" verify-snapshot \
+  --snapshot "$catalog_snapshot" --snapshot-sha256 "$snapshot_sha256" --namespace "$rclone_remote"
 if [[ "$hash_mode" == "all" ]]; then
   receipt_tmp="$(mktemp "$health_state_root/.full-scrub.XXXXXX")"
-  printf 'receipt_format=medtrack-full-ciphertext-scrub-v1\ncompleted_epoch=%s\n' "$(date -u +%s)" > "$receipt_tmp"
+  printf 'receipt_format=medtrack-full-ciphertext-scrub-v2\ncompleted_epoch=%s\nmetadata_policy=%s\nlegacy_catalog_sha256=%s\n' \
+    "$(date -u +%s)" "$metadata_policy" "$catalog_sha256" > "$receipt_tmp"
   mv "$receipt_tmp" "$scrub_receipt"
 fi
 echo "OFFSITE_BACKUP_HEALTH_OK"

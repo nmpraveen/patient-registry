@@ -36,7 +36,8 @@ def atomic_json(path: Path, value: dict) -> None:
     os.replace(temporary, path)
 
 
-def verify(remote: str, expected: str, config: str, cache_root: Path, mode: str, maximum_age: int) -> str:
+def verify(remote: str, expected: str, config: str, cache_root: Path, mode: str, maximum_age: int,
+           expected_size: int | None = None, policy: str = "") -> str:
     if len(expected) != 64 or any(char not in "0123456789abcdef" for char in expected):
         raise ValueError("Invalid ciphertext hash")
     cache_root.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -46,7 +47,10 @@ def verify(remote: str, expected: str, config: str, cache_root: Path, mode: str,
 
     def identity():
         result = subprocess.run(command + ["lsjson", remote, "--stat", "--hash"], check=True, capture_output=True, text=True)
-        return object_identity(json.loads(result.stdout))
+        stat = json.loads(result.stdout)
+        if expected_size is not None and (type(stat.get("Size")) is not int or stat["Size"] != expected_size):
+            raise ValueError("Ciphertext size mismatch")
+        return object_identity(stat)
 
     before = identity()
     try:
@@ -54,21 +58,25 @@ def verify(remote: str, expected: str, config: str, cache_root: Path, mode: str,
     except (FileNotFoundError, ValueError):
         receipt = {}
     now = int(time.time())
-    if mode == "incremental" and can_reuse(receipt, before, expected, now, maximum_age):
+    if (mode == "incremental" and receipt.get("policy", "") == policy
+            and can_reuse(receipt, before, expected, now, maximum_age)):
         return "identity-verified"
     digest = hashlib.sha256()
+    size = 0
     process = subprocess.Popen(command + ["cat", remote], stdout=subprocess.PIPE)
     try:
         for chunk in iter(lambda: process.stdout.read(1024 * 1024), b""):
             digest.update(chunk)
+            size += len(chunk)
     finally:
         process.stdout.close()
-    if process.wait() != 0 or digest.hexdigest() != expected:
+    if (process.wait() != 0 or digest.hexdigest() != expected
+            or (expected_size is not None and size != expected_size)):
         raise ValueError("Ciphertext stream hash mismatch")
     after = identity()
     if before != after:
         raise ValueError("Remote object changed during hashing")
-    atomic_json(cache_file, {"identity": after, "sha256": expected, "hashed_epoch": now})
+    atomic_json(cache_file, {"identity": after, "sha256": expected, "hashed_epoch": now, "policy": policy})
     return "stream-hashed"
 
 
@@ -80,5 +88,8 @@ if __name__ == "__main__":
     parser.add_argument("--cache-root", type=Path, required=True)
     parser.add_argument("--mode", choices=("all", "incremental"), required=True)
     parser.add_argument("--maximum-age", type=int, default=691200)
+    parser.add_argument("--size", type=int)
+    parser.add_argument("--policy", default="")
     args = parser.parse_args()
-    print(verify(args.remote, args.sha256, args.config, args.cache_root, args.mode, args.maximum_age))
+    print(verify(args.remote, args.sha256, args.config, args.cache_root, args.mode, args.maximum_age,
+                 args.size, args.policy))

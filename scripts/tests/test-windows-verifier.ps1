@@ -5,6 +5,13 @@ $wrapper = Join-Path $repo 'deploy/windows/Invoke-MedtrackVerifier.ps1'
 $testRoot = Join-Path ([IO.Path]::GetTempPath()) ('medtrack-wrapper-' + [guid]::NewGuid().ToString('N'))
 [IO.Directory]::CreateDirectory($testRoot) | Out-Null
 function Assert($condition, $message) { if (-not $condition) { throw $message } }
+function Read-AtomicState([string]$Path) {
+    # Poll without denying Windows rename/delete access to the atomic writer.
+    $stream = [IO.File]::Open($Path, 'Open', 'Read', ([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
+    $reader = [IO.StreamReader]::new($stream)
+    try { $content = $reader.ReadToEnd() } finally { $reader.Dispose() }
+    return $content | ConvertFrom-Json
+}
 try {
     $stubSource = Join-Path $testRoot 'stub.cs'
     @'
@@ -110,11 +117,14 @@ class Stub {
             $deadline = [DateTime]::UtcNow.AddSeconds(5)
             $olderState = $null
             do {
-                $candidate = Get-Content -LiteralPath (Join-Path $status "$olderMode.json") -Raw | ConvertFrom-Json
+                $candidate = Read-AtomicState (Join-Path $status "$olderMode.json")
                 if ($candidate.status -eq 'running' -and $candidate.stage -eq 'runner') { $olderState = $candidate; break }
                 Start-Sleep -Milliseconds 20
             } while ([DateTime]::UtcNow -lt $deadline -and -not $older.HasExited)
-            Assert ($null -ne $olderState) 'Older runner never reached bounded wait'
+            if ($null -eq $olderState) {
+                $diagnostic = if ($older.HasExited) { "exit=$($older.ExitCode) stderr=$($stderr.GetAwaiter().GetResult())" } else { 'child still running' }
+                throw "Older runner never reached bounded wait: scenario=$scenario lastStage=$($candidate.stage) $diagnostic"
+            }
             if ($scenario -eq 'HealthInterrupted') {
                 # Emulate a process killed immediately after its atomic claim,
                 # before it can fail the execution lock or send an alert.

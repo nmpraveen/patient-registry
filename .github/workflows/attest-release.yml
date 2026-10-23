@@ -10,7 +10,7 @@ concurrency:
 
 env:
   EXPECTED_SHA: ${{ github.sha }}
-  PYTHON_VERSION: "3.12.13"
+  PYTHON_VERSION: "3.12.15"
 
 jobs:
   build-verify:

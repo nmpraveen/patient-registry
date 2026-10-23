@@ -4,6 +4,8 @@ FROM ${POSTGRES_BASE_IMAGE}
 # Patch the exact Alpine security fixes and replace gosu's stale Go runtime
 # with Alpine's small, CLI-compatible su-exec implementation.
 RUN apk add --no-cache \
+        ca-certificates=20261020-r0 \
+        ca-certificates-bundle=20261020-r0 \
         libcrypto3=3.5.9-r0 \
         libssl3=3.5.9-r0 \
         su-exec=0.3-r0 \

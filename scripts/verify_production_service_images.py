@@ -15,6 +15,7 @@ from build_canonical_image import (
     inspect_oci_archive,
     load_oci_archive,
     sha256_file,
+    verify_loaded_config_digest,
 )
 from verify_container_build import extract_git_archive
 
@@ -195,14 +196,10 @@ def runtime_smoke(
     )[0]
     loaded_image_id = str(inspection.get("Id", ""))
     configured_user = str(inspection.get("Config", {}).get("User", ""))
-    if loaded_image_id != expected_config_digest:
-        raise RuntimeError(
-            f"{service} loaded image ID does not match its OCI config digest: "
-            f"loaded={loaded_image_id} config={expected_config_digest}"
-        )
+    verify_loaded_config_digest(loaded_image_id, expected_config_digest)
     if service == "postgres":
         command = [
-            "docker", "run", "--rm", "--entrypoint", "sh", image, "-ceu",
+            "docker", "run", "--rm", "--entrypoint", "sh", loaded_image_id, "-ceu",
             'test "$(id -u)" = 70; test "$(id -g)" = 70; '
             "! test -e /usr/local/bin/gosu; postgres --version; "
             "printf 'uid=%s gid=%s\\n' \"$(id -u)\" \"$(id -g)\"",
@@ -222,7 +219,7 @@ def runtime_smoke(
             "--security-opt", "no-new-privileges:true",
             "--tmpfs", "/var/log/medtrack:rw,noexec,nosuid,nodev,mode=0770,uid=10002,gid=10001",
             "--volume", f"{(source_root / 'deploy' / 'Caddyfile').resolve()}:/etc/caddy/Caddyfile:ro",
-            image, "-ceu",
+            loaded_image_id, "-ceu",
             'test "$(id -u)" = 10002; test "$(id -g)" = 10001; '
             "caddy list-modules | grep -Fxq http.handlers.rate_limit; "
             "caddy validate --config /etc/caddy/Caddyfile; "

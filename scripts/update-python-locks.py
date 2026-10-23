@@ -9,13 +9,14 @@ import subprocess
 import sys
 
 
-RUNTIME_LOCK_IMAGE = "python:3.12.13-alpine3.23@sha256:601d3d3797e90e2534782e69c85fafb7971b43f24c7b1b079b7e48dd435e458d"
-CI_LOCK_IMAGE = "python:3.12.13-slim-bookworm@sha256:4766d8b510c428e595d74b9cc5bbb2fae8e26316fffb4adc89908d79aacd58a2"
+RUNTIME_LOCK_IMAGE = "python:3.12.15-alpine3.23@sha256:3d0ca66b723a0ff2a7a6e424cc2d01443e1b7c75ffcc110145f75d0f4daf6d63"
+CI_LOCK_IMAGE = "python:3.12.15-slim-bookworm@sha256:6a0e06f5ba0b373d051aabd3fffb9b873f27f9a2a3a14bcbe37dee6f0e3bbc70"
 LOCK_TARGETS = (
     ("requirements.in", "requirements.txt", RUNTIME_LOCK_IMAGE),
     ("requirements-ci.in", "requirements-ci.txt", CI_LOCK_IMAGE),
 )
 PIP_TOOLS_VERSION = "7.6.2"
+PIP_BOOTSTRAP = "pip @ https://files.pythonhosted.org/packages/3f/06/3e4420302363fbb71be3c7f35ce042f54bfca330e3e66b3a2e3c4cca579f/pip-26.2.2-py3-none-any.whl#sha256=fd7f4dfa8190e014013b9f08f3e973f4e4c26ffd179a204895533a7254813a70"
 
 
 def main() -> int:
@@ -38,6 +39,7 @@ def main() -> int:
                     f"""
 mkdir -p "$HOME"
 python -m venv /tmp/medtrack-lock-venv
+/tmp/medtrack-lock-venv/bin/python -m pip install --quiet --disable-pip-version-check --no-cache-dir "{PIP_BOOTSTRAP}"
 /tmp/medtrack-lock-venv/bin/python -m pip install --quiet --disable-pip-version-check --no-cache-dir pip-tools=={PIP_TOOLS_VERSION}
 /tmp/medtrack-lock-venv/bin/pip-compile \
   --quiet \

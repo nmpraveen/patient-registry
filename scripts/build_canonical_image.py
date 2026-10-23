@@ -116,6 +116,28 @@ def load_oci_archive(artifact: Path, image: str) -> None:
     )
 
 
+def verify_loaded_config_digest(image_id: str, expected_config_digest: str) -> None:
+    """Bind a loaded image to the OCI config on classic and containerd stores."""
+    if image_id == expected_config_digest:
+        return
+    # Docker 29's containerd store reports a manifest ID instead of a config ID.
+    # Inspect the immutable loaded ID, never a mutable tag, to retain the binding.
+    manifest = json.loads(subprocess.run(
+        [
+            "docker", "run", "--rm", "--volume",
+            "/var/run/docker.sock:/var/run/docker.sock", SKOPEO_IMAGE,
+            "inspect", "--raw", f"docker-daemon:{image_id}",
+        ],
+        check=True, capture_output=True, text=True,
+    ).stdout)
+    actual = manifest.get("config", {}).get("digest")
+    if actual != expected_config_digest:
+        raise RuntimeError(
+            "loaded image config does not match its OCI config digest: "
+            f"loaded={image_id} config={actual} expected={expected_config_digest}"
+        )
+
+
 def verify_runtime_execution(image: str) -> None:
     program = """
 import os
@@ -254,6 +276,7 @@ def main() -> int:
                 text=True,
             ).stdout
         )[0]
+        verify_loaded_config_digest(inspection["Id"], oci["config_digest"])
         metadata = {
             "schema": SCHEMA,
             "source": "https://github.com/nmpraveen/patient-registry",

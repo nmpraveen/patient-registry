@@ -85,10 +85,11 @@ cbor2==6.1.4 \
     --hash=sha256:e8097e8259b78c8feb5dd5b833b23f83ed588e821ef44cf1455082cfc9434440 \
     --hash=sha256:f3fc7d15cba4174373df2496070faa4a927fe3ed772130d281808120aec7b61c
     # via webauthn
-certifi==2026.7.22 \
-    --hash=sha256:62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775 \
-    --hash=sha256:741e2c3b351ddf169a738da9f2c048608ff7f2c5cc02f1ebc6b118bb090d5d55
+certifi==2026.10.19 \
+    --hash=sha256:035c1e85572b141bf1c3a3eff0e33a8eb74917522f2559075ff8d2fea780a1ae \
+    --hash=sha256:42d35340cc5b9ba78e818ddbff0c5b1c2b779de448a340fd1b989f5fa8670e1b
     # via
+    #   -r requirements.in
     #   httpcore
     #   httpx
     #   requests
@@ -1332,10 +1333,11 @@ whitenoise==6.12.0 \
     # via -r requirements.in
 
 # The following packages are considered to be unsafe in a requirements file:
-pip==26.2.1 \
-    --hash=sha256:71138adf1f4ca900cdb7d289c21b7494329f2332b6d85f0e1c42108c0384ed3e \
-    --hash=sha256:f6ad667e89a1fe78046c8f13232b247200f5258d7828f3f7883d660878e0813f
+pip==26.2.2 \
+    --hash=sha256:3a8e5c800492787f33a4114ef54444546c340df428974ebba17e0fd47e11af2f \
+    --hash=sha256:fd7f4dfa8190e014013b9f08f3e973f4e4c26ffd179a204895533a7254813a70
     # via
+    #   -r requirements-ci.in
     #   pip-api
     #   pip-tools
 setuptools==84.0.0 \

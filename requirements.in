@@ -12,5 +12,6 @@ psycopg[binary]==3.3.6
 webauthn==3.0.1
 whitenoise==6.12.0
 # Explicit patched transitive dependencies required by the security audit.
+certifi==2026.10.19
 PyJWT==2.15.1
 urllib3==2.8.0

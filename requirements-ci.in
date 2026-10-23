@@ -1,5 +1,7 @@
 # CI-only Python tools. This compiles to an independent hash-locked environment.
 -r requirements.in
+# pip vendors an independent CA bundle.
+pip==26.2.2
 pip-audit==2.10.1
 pip-tools==7.6.2
 playwright==1.63.0

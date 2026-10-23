@@ -408,6 +408,17 @@ print('MAC_RESTORED_AUTHENTICATION_OK')
     print('MEDTRACK_MAC_RESTORE_OK')
 
 
+def catalog_environment(configuration):
+    catalog=ROOT/'secrets/retained-integrity.json'
+    pin=configuration.get('legacy_catalog_sha256')
+    if pin is None and not catalog.exists():return {}
+    if (not isinstance(pin,str) or not re.fullmatch('[a-f0-9]{64}',pin) or
+        catalog.is_symlink() or not catalog.is_file() or catalog.stat().st_uid!=os.getuid() or
+        catalog.stat().st_mode & 0o077 or not 0<catalog.stat().st_size<=2*1024**2):
+        raise ValueError('private-catalog-and-independent-pin-required')
+    return {'MEDTRACK_LEGACY_CATALOG':str(catalog),'MEDTRACK_LEGACY_CATALOG_SHA256':pin}
+
+
 def health(full=False):
     # Never let an older successful receipt hide a later failed or interrupted run.
     sys.path.insert(0,str(Path(__file__).resolve().parent))
@@ -415,7 +426,8 @@ def health(full=False):
     if not current(ROOT/'state','restore')['healthy']:
         raise ValueError('latest-restore-attempt-not-successful')
     production=status()
-    repo=source(settings().get('operations_commit',production['commit']))
+    configuration=settings()
+    repo=source(configuration.get('operations_commit',production['commit']))
     hook=ROOT/'bin/evidence-check'
     hook.write_text('#!/bin/sh\nexec /opt/homebrew/bin/python3.12 '+shlex.quote(str(Path(__file__).resolve()))+' evidence\n');hook.chmod(0o700)
     env={'MEDTRACK_BACKUP_CONFIG':'/nonexistent/medtrack-mac','RCLONE_CONFIG':str(ROOT/'secrets/rclone.conf'),
@@ -424,6 +436,7 @@ def health(full=False):
          'MEDTRACK_HEALTH_STATE_ROOT':str(ROOT/'state/health-cache'),
          'MEDTRACK_SCRATCH_RESTORE_RECEIPT':str(ROOT/'state/scratch-restore.receipt'),
          'MEDTRACK_SECURITY_EVIDENCE_HEALTH_HOOK':str(hook)}
+    env.update(catalog_environment(configuration))
     command(['/opt/homebrew/bin/bash',str(repo/'scripts/check-offsite-backups.sh')],capture=False,env=env,timeout=7200)
     print('MEDTRACK_MAC_HEALTH_OK')
 

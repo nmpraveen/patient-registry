@@ -65,7 +65,9 @@ class OperationsBoundaryTests(unittest.TestCase):
                 ops.trusted(link)
 
     def test_rejects_unreviewed_source_and_modified_tree(self):
-        with patch.object(ops,'trusted'), patch.object(ops,'git',return_value=' M scripts/restore.sh'):
+        # This synthetic ownership test must not probe the runner's root home.
+        with patch.object(ops,'trusted'), patch.object(Path,'exists',return_value=False), \
+             patch.object(ops,'git',return_value=' M scripts/restore.sh'):
             with self.assertRaisesRegex(ValueError,'modified-production-source'):
                 ops.clean_source()
         with patch.object(ops,'clean_source'), patch.object(ops,'run',side_effect=ops.subprocess.CalledProcessError(1,['git'])):

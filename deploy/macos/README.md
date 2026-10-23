@@ -26,6 +26,14 @@ reviewed health-check source. Update it only to the accepted operations repair
 commit. The application's restore source and images remain bound to the actual
 production release; operations-only repairs do not require an app redeploy.
 
+When the accepted operations source supports retained historical markers, copy
+only the independently reviewed catalog to `secrets/retained-integrity.json`
+(0600) and set `legacy_catalog_sha256` to its separately approved digest in
+`settings.json`. Health passes this fixed path and pin to the canonical checker,
+which verifies the immutable snapshot and binds its policy to the full scrub.
+Never derive the pin from backup storage or enroll new entries automatically.
+Missing/malformed pins and non-private or linked catalog files fail closed.
+
 After explicit delivery authorization, set `config.json`'s `alert_command` to
 the absolute Python executable and installed `bin/pushover_alert.py`. This uses
 the owner's `pushover-notify` skill and Keychain through an echo-disabled PTY

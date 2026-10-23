@@ -1,13 +1,14 @@
+## 2026.10.23.18.25
+
+- Add constrained Mac deployment operations with independent release signatures and current main CI verification.
+- Verify isolated NAS/Drive restores against complete metadata, running source, prepared target and audit evidence; retain cancellation ownership through worker cleanup.
+- Schedule independent Mac recovery and authorized failure alerts, with separately pinned retained-integrity catalogs and existing Windex fallback preserved through acceptance.
+
 ## 2026.10.23.18.10
 
-- Keep prepared deployment targets separate from the running image's source during backup recovery.
-- Validate complete NAS and Drive metadata and bind restored payload source, target and evidence chain before publishing success.
-
-## 2026.10.23.18.06
-
-- Add restricted Mac deployment operations with independent release signatures and current main CI verification.
-- Add isolated NAS recovery, Drive integrity checks, persistent scheduled-attempt state and authorized failure delivery on macOS.
-- Preserve existing recovery access while Mac acceptance gates are completed.
+- Add independently pinned retained-backup integrity catalogs with strict historical marker shapes and current newest-backup requirements.
+- Bind full scrubs and hash-cache acceptance to the catalog and policy; preserve restore, evidence, retention and freshness gates.
+- Cover catalog tampering, marker downgrades, immutable snapshots and existing recovery locks with synthetic regressions.
 
 ## 2026.10.23.17.28
 

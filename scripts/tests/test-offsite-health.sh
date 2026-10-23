@@ -55,6 +55,10 @@ for tier in rapid daily weekly monthly; do
     printf 'archive=%s\n' "$archive"
     printf 'sha256=%s\n' "$hash"
     printf 'completed_utc=%s\n' "$remote_stamp"
+    printf 'drive_verified=1\n'
+    printf 'drive_verified_epoch=%s\n' "$(date -u +%s)"
+    printf 'source_commit=%040d\n' 1
+    printf 'intended_target_commit=%040d\n' 2
     printf 'security_evidence_chain_sha256=%064d\n' 1
   } > "$tier_dir/$archive.complete"
   printf '0\n' > "$state_root/last-success-$tier.epoch"

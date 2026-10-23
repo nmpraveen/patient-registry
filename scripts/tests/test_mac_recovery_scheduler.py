@@ -20,6 +20,55 @@ scheduler=load('scheduler');actions=load('actions')
 
 
 class SchedulingIntegrity(unittest.TestCase):
+    def test_health_binds_fixed_private_catalog_and_operations_source(self):
+        with tempfile.TemporaryDirectory() as folder,patch.object(actions,'ROOT',Path(folder)):
+            root=Path(folder);(root/'bin').mkdir();(root/'secrets').mkdir()
+            catalog=root/'secrets/retained-integrity.json';catalog.write_text('{}');catalog.chmod(0o600)
+            config={'operations_commit':'b'*40,'legacy_catalog_sha256':'c'*64}
+            with patch.object(actions,'status',return_value={'commit':'a'*40}), \
+                 patch.object(actions,'settings',return_value=config),patch.object(actions,'source',return_value=root) as source, \
+                 patch('scheduler.current',return_value={'healthy':True}),patch.object(actions,'command') as command, \
+                 patch('sys.stdout'):
+                actions.health(True)
+            source.assert_called_once_with('b'*40)
+            env=command.call_args.kwargs['env']
+            self.assertEqual(env['MEDTRACK_LEGACY_CATALOG'],str(catalog))
+            self.assertEqual(env['MEDTRACK_LEGACY_CATALOG_SHA256'],'c'*64)
+            self.assertEqual(env['MEDTRACK_HEALTH_HASH_MODE'],'all')
+
+    def test_catalog_requires_independent_pin_and_private_regular_file(self):
+        with tempfile.TemporaryDirectory() as folder,patch.object(actions,'ROOT',Path(folder)):
+            root=Path(folder);(root/'secrets').mkdir();catalog=root/'secrets/retained-integrity.json'
+            self.assertEqual(actions.catalog_environment({}),{})
+            with self.assertRaises(ValueError):actions.catalog_environment({'legacy_catalog_sha256':'a'*64})
+            catalog.write_text('{}');catalog.chmod(0o600)
+            for pin in (None,'','invalid',17):
+                with self.subTest(pin=pin),self.assertRaises(ValueError):
+                    actions.catalog_environment({'legacy_catalog_sha256':pin})
+            catalog.chmod(0o644)
+            with self.assertRaises(ValueError):actions.catalog_environment({'legacy_catalog_sha256':'a'*64})
+            catalog.unlink();target=root/'other';target.write_text('{}');target.chmod(0o600);catalog.symlink_to(target)
+            with self.assertRaises(ValueError):actions.catalog_environment({'legacy_catalog_sha256':'a'*64})
+
+    def test_catalog_pin_reaches_canonical_snapshot_and_rejects_changed_bytes(self):
+        from scripts import offsite_legacy_catalog as policy
+        import hashlib
+        namespace='medtrack-drive:Naveen-Hospital-Backups/MEDTRACK/production'
+        with tempfile.TemporaryDirectory() as folder,patch.object(actions,'ROOT',Path(folder)):
+            root=Path(folder);(root/'secrets').mkdir();catalog=root/'secrets/retained-integrity.json'
+            raw=json.dumps({'catalog_format':policy.CATALOG_FORMAT,'policy_version':policy.POLICY,
+                            'namespace':namespace,'entries':[]}).encode()
+            catalog.write_bytes(raw);catalog.chmod(0o600);pin=hashlib.sha256(raw).hexdigest()
+            env=actions.catalog_environment({'legacy_catalog_sha256':pin})
+            result=policy.create_snapshot(env['MEDTRACK_LEGACY_CATALOG'],env['MEDTRACK_LEGACY_CATALOG_SHA256'],
+                                          namespace,root/'snapshot.json')
+            self.assertEqual(result[:2],(policy.POLICY,pin))
+            catalog.write_bytes(raw+b'\n')
+            with self.assertRaisesRegex(ValueError,'catalog digest mismatch'):
+                policy.create_snapshot(env['MEDTRACK_LEGACY_CATALOG'],env['MEDTRACK_LEGACY_CATALOG_SHA256'],
+                                       namespace,root/'changed.json')
+            self.assertFalse((root/'changed.json').exists())
+
     def test_drive_restore_rejects_traversal_and_tier_mismatch_before_io(self):
         for archive,tier in [('../../secret','canary'),('medtrack-prod-canary-20261023T120614Z.tar.age','daily'),(None,None)]:
             with patch.object(actions,'command') as run,self.assertRaises(ValueError):actions.drive_download(archive,tier)

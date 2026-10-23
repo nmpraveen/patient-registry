@@ -1,3 +1,15 @@
+## 2026-10-23 Mac operations migration (source)
+
+Mac deployment uses pinned SSH and an enumerated root helper with release-signature, exact main CI, fresh backup and reviewed-plan gates. Recovery runs isolated exact-image NAS/Drive restores, binds source/target/evidence metadata, and records scheduled attempts and authorized failure delivery. Health uses the independently approved private catalog through the retained-integrity checker. See [Mac operations](deploy/macos/README.md).
+
+Source availability does not certify installed privileges, recurrence, cold-boot behavior or production activation. Preserve Windex access/jobs until Mac access, restore, full scrub and scheduled checks have accepted receipts. No app redeployment or live database restore is part of this operations source change.
+
+## 2026-10-23 retained backup integrity compatibility (source only)
+
+- Optional independently pinned finite catalog binds exact historical namespace/tier/name, ciphertext size/hash and raw checksum/marker hashes. Three-, five- and six-field retained shapes remain strict; newest per tier requires all eight current fields.
+- Per-run immutable-content snapshot, policy/catalog-bound full-scrub receipts and object-cache scope prevent catalog replacement or policy changes from reusing old acceptance. Existing retention, freshness, restore-attempt and evidence gates remain; restore code is unchanged.
+- Only synthetic catalog fixtures are included. Private enrollment requires independently reviewed provenance, including six-field historical markers; no real entries, runtime installation, or deployment are certified here. See [schema and rollout contract](docs/retained-backup-catalog.md).
+
 ## 2026-10-23 independent verifier runner repair (source only)
 
 - Added fail-closed latest-attempt/receipt binding and explicit preflight/alert failure outcomes for scratch restores. Atomic ownership checks protect newer shell/Windows attempts from older finalizers; Windows success publication also rechecks cross-mode dependencies.

@@ -15,3 +15,7 @@ Regenerate the production and CI locks with `python scripts/update-python-locks.
 Local evidence: `output/security-remediation-20261023/`. Production acceptance remains a separate deployment receipt tied to the merged commit; a locally tested image or public version page does not establish privileged runtime or recovery verification.
 
 The web build validates dependencies with patched pip, then removes pip and ensurepip from the runtime. This avoids shipping unused installer code with vulnerable vendored packages. Dependency changes must use a rebuilt image. Docker 29 containerd IDs are manifest IDs; the image gate resolves the immutable loaded ID and requires its config digest to match the reviewed OCI artifact, retaining rejection of mismatched images.
+
+The complete Caddy image scan also identified CVE-2026-63209 in klauspost/compress 1.18.6. Pin its compatible 1.18.7 replacement per the [upstream advisory](https://github.com/klauspost/compress/security/advisories/GHSA-259r-337f-4rfw). No vulnerability waiver is added.
+
+Repository deployment, backup, restore, health and runbook paths contain no runtime pip invocation; pip is used only for host/CI/build dependency setup. Keep runtime package mutation disabled and use the hashed lock/build workflow for changes.

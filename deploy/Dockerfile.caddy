@@ -7,6 +7,7 @@ FROM ${CADDY_BUILDER} AS builder
 ENV GOTOOLCHAIN=go1.26.10
 RUN xcaddy build \
     --with github.com/mholt/caddy-ratelimit@5625512f24f6f59d6f64fb3aafe5eecff0b286db \
+    --replace github.com/klauspost/compress=github.com/klauspost/compress@v1.18.7 \
     --replace golang.org/x/crypto=golang.org/x/crypto@v0.57.0 \
     --replace golang.org/x/net=golang.org/x/net@v0.60.0 \
     --replace golang.org/x/text=golang.org/x/text@v0.42.0 \

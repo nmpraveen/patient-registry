@@ -1,3 +1,9 @@
+## 2026-10-23 retained-format rollout gates
+
+- Complete exact-head review/CI for the finite retained-byte catalog framework; hold merge until released by the coordinator.
+- Independently review exact real triplet bytes and historical provenance before private enrollment. Six-field v3 markers need their own pins so stripped eight-field markers cannot downgrade.
+- Preserve archive/marker bytes and restore authorization boundaries. After approved installation, run a new policy-bound full scrub and verify actual scheduled health; source fixtures do not certify runtime acceptance.
+
 ## 2026-10-23 independent monitoring follow-through
 
 - Review and merge the bounded recovery-runner PR separately from app deployment.

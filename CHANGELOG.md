@@ -1,3 +1,9 @@
+## 2026.10.23.18.10
+
+- Add independently pinned retained-backup integrity catalogs with strict historical marker shapes and current newest-backup requirements.
+- Bind full scrubs and hash-cache acceptance to the catalog and policy; preserve restore, evidence, retention and freshness gates.
+- Cover catalog tampering, marker downgrades, immutable snapshots and existing recovery locks with synthetic regressions.
+
 ## 2026.10.23.17.28
 
 - Serialize recovery status ownership and shell receipt publication so older runs cannot conceal newer failed or interrupted attempts.

@@ -19,3 +19,5 @@ The web build validates dependencies with patched pip, then removes pip and ensu
 The complete Caddy image scan also identified CVE-2026-63209 in klauspost/compress 1.18.6. Pin its compatible 1.18.7 replacement per the [upstream advisory](https://github.com/klauspost/compress/security/advisories/GHSA-259r-337f-4rfw). No vulnerability waiver is added.
 
 Repository deployment, backup, restore, health and runbook paths contain no runtime pip invocation; pip is used only for host/CI/build dependency setup. Keep runtime package mutation disabled and use the hashed lock/build workflow for changes.
+
+Python runtime, CI and lock-compiler images use [CPython 3.12.15](https://www.python.org/downloads/release/python-31215/), the September 30 security patch for SSLContext, archive handling and urllib credentials. The Mac virtual environment must use the patched Homebrew 3.12.15 interpreter with OpenSSL 3.5.9; the old standalone AI interpreter is preserved and inactive for this project.

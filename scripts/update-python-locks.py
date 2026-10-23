@@ -9,8 +9,8 @@ import subprocess
 import sys
 
 
-RUNTIME_LOCK_IMAGE = "python:3.12.13-alpine3.23@sha256:601d3d3797e90e2534782e69c85fafb7971b43f24c7b1b079b7e48dd435e458d"
-CI_LOCK_IMAGE = "python:3.12.13-slim-bookworm@sha256:4766d8b510c428e595d74b9cc5bbb2fae8e26316fffb4adc89908d79aacd58a2"
+RUNTIME_LOCK_IMAGE = "python:3.12.15-alpine3.23@sha256:3d0ca66b723a0ff2a7a6e424cc2d01443e1b7c75ffcc110145f75d0f4daf6d63"
+CI_LOCK_IMAGE = "python:3.12.15-slim-bookworm@sha256:6a0e06f5ba0b373d051aabd3fffb9b873f27f9a2a3a14bcbe37dee6f0e3bbc70"
 LOCK_TARGETS = (
     ("requirements.in", "requirements.txt", RUNTIME_LOCK_IMAGE),
     ("requirements-ci.in", "requirements-ci.txt", CI_LOCK_IMAGE),

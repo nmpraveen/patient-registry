@@ -174,6 +174,8 @@ def main(argv=None):
     p.add_argument('--root',type=Path,required=True)
     p.add_argument('action',choices=('schedule','status',*JOBS))
     p.add_argument('--test',action='store_true')
+    p.add_argument('--archive');p.add_argument('--tier',choices=('rapid','daily','weekly','monthly','pre-deployment','canary'))
+    p.add_argument('--backup-source',choices=('nas','drive'))
     args=p.parse_args(argv);root=args.root.resolve()
     if not root.is_absolute() or root.stat().st_uid!=os.getuid() or root.stat().st_mode & 0o077:
         raise ValueError('private-owner-root-required')
@@ -187,6 +189,10 @@ def main(argv=None):
         except BlockingIOError:
             print('MEDTRACK_MAC_JOB_ALREADY_RUNNING');return 75
         config=read(root/'config.json')
+        if any((args.archive,args.tier,args.backup_source)):
+            if args.action!='restore':raise ValueError('backup-selection-only-for-restore')
+            for flag,value in (('--archive',args.archive),('--tier',args.tier),('--backup-source',args.backup_source)):
+                if value:config['commands']['restore'] += [flag,value]
         if args.action=='schedule':
             if config.get('enabled') is not True:
                 print('MEDTRACK_MAC_SCHEDULE_NOT_ENABLED');return 0

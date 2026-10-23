@@ -100,13 +100,29 @@ checks are the minimum. Windows verifier checks are included when present.
 Public GitHub evidence needs no credentials. Proof expires after two hours;
 CI is rechecked before each mutation. API errors fail closed.
 
+For a fresh pre-deployment backup, invoke the scheduler's `restore` with
+`--backup-source drive --tier pre-deployment --archive <exact-archive-name>`.
+It downloads only that complete encrypted triplet with the existing Drive
+configuration and runs the same isolated verification and attempt/receipt
+publication. This avoids waiting for the NAS's six-hour pull interval while
+the two-hour pre-deployment receipt is valid. Routine scheduled restore still
+uses the independently mirrored NAS copy.
+
 Follow [RUNBOOK.md](../../RUNBOOK.md): review exact-source build/scan/signature
-evidence; authorize source; create a fresh target-bound `backup`; independently
-restore it; `prepare` the production source; run `plan --evidence-id mac-<release>`;
+evidence; authorize source; `prepare` the target Git checkout; create a fresh
+target-bound `backup` of the still-running source; independently restore it;
+run `plan --evidence-id mac-<release>`;
 inspect its retained migration plan; invoke `apply` only with the reviewed
 `--plan-sha256`. Apply retains existing operation locks, backup, image,
 migration, login and rollback gates. Migration acceptance against the current
 release does not authorize deploying a different application version.
+
+Preparation changes only the Git checkout. It precedes backup because the
+canonical backup runner requires the checkout to match the intended target
+while binding the dump to the currently running source image. Plan/apply still
+require the fresh target-bound backup. A disconnected or timed-out deployment
+client is not proof that a remote operation stopped: inspect status and retained
+remote evidence before another operation; never interrupt an activation blindly.
 
 Private deployment logs and receipts stay in the operations root. Production
 restore activation remains a separately authorized emergency procedure with

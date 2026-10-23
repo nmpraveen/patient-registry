@@ -19,6 +19,26 @@ scheduler=load('scheduler');actions=load('actions')
 
 
 class SchedulingIntegrity(unittest.TestCase):
+    def test_drive_restore_rejects_traversal_and_tier_mismatch_before_io(self):
+        for archive,tier in [('../../secret','canary'),('medtrack-prod-canary-20261023T120614Z.tar.age','daily'),(None,None)]:
+            with patch.object(actions,'command') as run,self.assertRaises(ValueError):actions.drive_download(archive,tier)
+            run.assert_not_called()
+
+    def test_drive_triplet_binds_bytes_marker_and_checksum(self):
+        import hashlib
+        archive='medtrack-prod-pre-deployment-20261023T180000Z.tar.age'
+        data=b'synthetic encrypted fixture';digest=hashlib.sha256(data).hexdigest()
+        def download(args,**kwargs):
+            target=Path(args[-1])
+            if target.name.endswith('.complete'):
+                target.write_text(f'archive={archive}\nsha256={digest}\ndrive_verified=1\nsource_commit='+('a'*40)+'\n')
+            elif target.name.endswith('.sha256'):target.write_text(digest+'  '+archive+'\n')
+            else:target.write_bytes(data)
+        with tempfile.TemporaryDirectory() as folder,patch.object(actions,'ROOT',Path(folder)),patch.object(actions,'command',side_effect=download):
+            receipt=actions.drive_download(archive,'pre-deployment')
+            self.assertEqual(receipt['sha256'],digest)
+            self.assertTrue(receipt['read_only'])
+
     def test_old_success_cannot_hide_a_newer_failure_or_interruption(self):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder);now=int(time.time())
@@ -78,6 +98,19 @@ class SchedulingIntegrity(unittest.TestCase):
                 result=scheduler.run_job(root,config,'health')
             self.assertEqual(result['exit_code'],124)
             self.assertFalse(scheduler.current(root/'state','health')['healthy'])
+
+    def test_action_timeout_kills_orphan_holding_inherited_pipes(self):
+        with tempfile.TemporaryDirectory() as folder:
+            pidfile=Path(folder)/'child.pid'
+            script='sleep 30 & echo $! > '+__import__('shlex').quote(str(pidfile))+'; exit 0'
+            with self.assertRaises(subprocess.TimeoutExpired):
+                actions.command(['/bin/sh','-c',script],timeout=0.2)
+            pid=int(pidfile.read_text())
+            for _ in range(50):
+                state=subprocess.run(['/bin/ps','-p',str(pid),'-o','stat='],capture_output=True,text=True).stdout.strip()
+                if not state or state.startswith('Z'):break
+                time.sleep(0.02)
+            self.assertTrue(not state or state.startswith('Z'),state)
 
     def test_ambiguous_delivery_is_not_retried(self):
         with tempfile.TemporaryDirectory() as folder:

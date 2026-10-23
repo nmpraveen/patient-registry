@@ -23,18 +23,43 @@ ENV={'HOME':str(Path.home()),'PATH':PATH,'LANG':'en_US.UTF-8','LC_ALL':'en_US.UT
 SHA=re.compile(r'[a-f0-9]{40}\Z')
 DIGEST=re.compile(r'sha256:[a-f0-9]{64}\Z')
 TIERS=('rapid','daily','weekly','monthly','pre-deployment','canary')
+ARCHIVE=re.compile(r'medtrack-prod-(rapid|daily|weekly|monthly|pre-deployment|canary)-[0-9]{8}T[0-9]{6}Z\.tar\.age\Z')
 
 
 def command(args,*,capture=True,cwd=None,env=None,timeout=1800,stdin=None):
-    result=subprocess.run(args,cwd=cwd,env=ENV|(env or {}),input=stdin,
+    process=subprocess.Popen(args,cwd=cwd,env=ENV|(env or {}),stdin=subprocess.PIPE if stdin is not None else subprocess.DEVNULL,
                           stdout=subprocess.PIPE if capture else None,stderr=subprocess.PIPE,
-                          text=True,timeout=timeout)
-    if result.returncode:
+                          text=True,start_new_session=True)
+    try:
+        output,error=process.communicate(input=stdin,timeout=timeout)
+    except BaseException:
+        try:terminate_group(process)
+        finally:
+            for stream in (process.stdin,process.stdout,process.stderr):
+                if stream is not None:stream.close()
+        raise
+    if process.returncode:
         diagnostic=ROOT/'logs/last-command-error.log'
         diagnostic.parent.mkdir(parents=True,exist_ok=True,mode=0o700)
-        diagnostic.write_text(result.stderr[-32768:]);diagnostic.chmod(0o600)
+        diagnostic.write_text(error[-32768:]);diagnostic.chmod(0o600)
         raise RuntimeError('recovery-command-failed:'+Path(args[0]).name)
-    return result.stdout
+    return output
+
+
+def terminate_group(process):
+    try:os.killpg(process.pid,signal.SIGTERM)
+    except ProcessLookupError:return
+    try:process.wait(timeout=5)
+    except subprocess.TimeoutExpired:pass
+    # A shell can exit while an orphan still holds stdout/stderr open. Darwin
+    # may report EPERM when signaling an already-empty process group.
+    groups=subprocess.check_output(['/bin/ps','-axo','pgid=,stat='],text=True)
+    alive=any(parts[0]==str(process.pid) and not parts[1].startswith('Z')
+              for line in groups.splitlines() if len(parts:=line.split())>=2)
+    if alive:
+        try:os.killpg(process.pid,signal.SIGKILL)
+        except ProcessLookupError:pass
+    process.wait()
 
 
 def settings():
@@ -62,7 +87,7 @@ def status():
 
 def download_binary(args,target,maximum,timeout=600):
     temp=target.with_suffix(target.suffix+'.partial');digest=hashlib.sha256();count=0
-    process=subprocess.Popen(['/opt/homebrew/bin/gtimeout','--kill-after=30s',str(timeout),*args],stdout=subprocess.PIPE,stderr=subprocess.PIPE,env=ENV)
+    process=subprocess.Popen(['/opt/homebrew/bin/gtimeout','--kill-after=30s',str(timeout),*args],stdout=subprocess.PIPE,stderr=subprocess.PIPE,env=ENV,start_new_session=True)
     try:
         with temp.open('wb') as out:
             os.chmod(temp,0o600)
@@ -75,7 +100,7 @@ def download_binary(args,target,maximum,timeout=600):
         os.replace(temp,target)
         return {'sha256':digest.hexdigest(),'bytes':count},error
     finally:
-        if process.poll() is None:process.kill();process.wait()
+        if process.poll() is None:terminate_group(process)
         if temp.exists():temp.unlink()
 
 
@@ -152,6 +177,25 @@ def nas_download(archive=None,tier=None):
     result=json.loads(command(args,timeout=300))
     write_json(folder/'download.json',result)
     return result
+
+
+def drive_download(archive,tier):
+    if not archive or not tier or not ARCHIVE.fullmatch(archive) or ARCHIVE.fullmatch(archive).group(1)!=tier:
+        raise ValueError('exact-drive-archive-and-tier-required')
+    folder=ROOT/'cache/drive'/('restore-'+uuid.uuid4().hex[:12]);folder.mkdir(parents=True,mode=0o700)
+    remote='medtrack-drive:Naveen-Hospital-Backups/MEDTRACK/production/'+tier+'/'+archive
+    for suffix in ('.complete','.sha256',''):
+        command(['/opt/homebrew/bin/rclone','--config',str(ROOT/'secrets/rclone.conf'),
+                 'copyto',remote+suffix,str(folder/(archive+suffix))],timeout=600)
+    ciphertext=folder/archive;digest=hashlib.sha256(ciphertext.read_bytes()).hexdigest()
+    checksum=(folder/(archive+'.sha256')).read_text().strip().split()
+    marker=dict(line.split('=',1) for line in (folder/(archive+'.complete')).read_text().splitlines() if '=' in line)
+    if (checksum!=[digest,archive] or marker.get('sha256')!=digest or marker.get('archive')!=archive or
+        marker.get('drive_verified')!='1' or not SHA.fullmatch(marker.get('source_commit',''))):
+        raise ValueError('drive-triplet-verification-failed')
+    result={'format':'medtrack-drive-download-v1','source':remote,'archive':str(ciphertext),
+            'sha256':digest,'bytes':ciphertext.stat().st_size,'marker':marker,'read_only':True}
+    write_json(folder/'download.json',result);return result
 
 
 def environment(work,production,project):
@@ -246,9 +290,10 @@ export -f docker
     return shell
 
 
-def restore(archive=None,tier=None):
+def restore(archive=None,tier=None,backup_source='nas'):
     production=status();repo=source(production['commit']);ensure_images(production)
-    downloaded=nas_download(archive,tier);marker=downloaded['marker']
+    downloaded=drive_download(archive,tier) if backup_source=='drive' else nas_download(archive,tier)
+    marker=downloaded['marker']
     if marker['source_commit']!=production['commit']:raise ValueError('nas-backup-source-not-current')
     run_id=time.strftime('%Y%m%dT%H%M%SZ',time.gmtime())+'-'+uuid.uuid4().hex[:8]
     project='medtrack_mac_restore_'+uuid.uuid4().hex[:12]
@@ -320,7 +365,7 @@ print('MAC_RESTORED_AUTHENTICATION_OK')
         write_json(receipts/'nas-source.json',downloaded)
         write_json(ROOT/'receipts/latest-restore.json',{'completed_epoch':int(time.time()),'run_id':run_id,
                    'source_commit':production['commit'],'archive':Path(downloaded['archive']).name,
-                   'sha256':downloaded['sha256'],'verification':values,'nas_source':downloaded['source']})
+                   'sha256':downloaded['sha256'],'verification':values,'backup_source':backup_source,'origin':downloaded['source']})
     finally:
         command(['/opt/homebrew/bin/bash','-c',prefix+compose+' down\n'],capture=False,cwd=repo)
         volumes=command(['docker','volume','ls','-q','--filter','label=com.docker.compose.project='+project]).splitlines()
@@ -359,10 +404,11 @@ def main():
         raise InterruptedError('recovery-cancelled')
     signal.signal(signal.SIGTERM,cancelled)
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('action',choices=('access','restore','health','scrub','evidence'))
-    p.add_argument('--archive');p.add_argument('--tier',choices=TIERS);args=p.parse_args()
+    p.add_argument('--archive');p.add_argument('--tier',choices=TIERS)
+    p.add_argument('--backup-source',choices=('nas','drive'),default='nas');args=p.parse_args()
     if args.action=='access':
         print(json.dumps(status()));command(ssh_args('authenticated-check'),capture=False,timeout=120)
-    elif args.action=='restore':restore(args.archive,args.tier)
+    elif args.action=='restore':restore(args.archive,args.tier,args.backup_source)
     elif args.action=='evidence':evidence()
     else:health(args.action=='scrub')
 

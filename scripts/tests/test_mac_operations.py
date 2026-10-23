@@ -76,6 +76,16 @@ class OperationsBoundaryTests(unittest.TestCase):
         with patch.object(ops,'PROOFS',Path('/nonexistent/medtrack-proof')):
             with self.assertRaises(FileNotFoundError):ops.require_proof('a'*40)
 
+    def test_prepare_changes_only_git_and_does_not_require_future_backup(self):
+        target='b'*40
+        with patch.object(os,'geteuid',return_value=0),patch.object(ops,'clean_source'), \
+             patch.object(ops,'reviewed_target'),patch.object(ops,'require_proof'), \
+             patch.object(ops,'git',return_value='a'*40),patch.object(ops,'run') as run, \
+             patch.object(ops,'BACKUP',Path('/nonexistent/future-backup')),patch('sys.stdout',new=io.StringIO()):
+            ops.perform(ops.parse(['prepare',target]))
+        self.assertEqual([call.args[0][0] for call in run.call_args_list],['git','git'])
+        self.assertEqual(run.call_args.args[0][-3:],['checkout','--detach',target])
+
     def test_exports_only_the_requested_current_production_image(self):
         digest='sha256:'+'1'*64
         with patch.object(os,'geteuid',return_value=0), patch.object(ops,'clean_source'), \

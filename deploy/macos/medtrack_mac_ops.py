@@ -292,14 +292,13 @@ def perform(args):
     elif args.operation == 'prepare':
         reviewed_target(args.target, fetch=True)
         require_proof(args.target)
-        trusted(BACKUP)
-        values = dict(line.split('=',1) for line in BACKUP.read_text().splitlines() if '=' in line)
-        if (values.get('target_commit') != args.target or values.get('tier')!='pre-deployment' or
-            not 0<=time.time()-int(values.get('completed_epoch','0'))<=7200):
-            raise ValueError('target-bound-predeployment-backup-required')
-        # Script plan/apply rechecks all receipt content, age and image provenance.
+        # Backup requires the target checkout while recording the still-running
+        # source image. Preparation changes Git only; plan/apply retain the
+        # fresh target-bound backup gates before any application activation.
         run(['git','-c',f'safe.directory={ROOT}','merge-base','--is-ancestor','HEAD',args.target])
-        run(['git','-c',f'safe.directory={ROOT}','checkout','--detach',args.target])
+        changed=git('rev-parse','HEAD')!=args.target
+        if changed:run(['git','-c',f'safe.directory={ROOT}','checkout','--detach',args.target])
+        print(json.dumps({'source_prepared':args.target,'checkout_changed':changed,'application_changed':False}))
     elif args.operation in ('plan','apply'):
         reviewed_target(args.target)
         require_proof(args.target)

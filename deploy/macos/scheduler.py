@@ -13,6 +13,7 @@ import sys
 import time
 import uuid
 from zoneinfo import ZoneInfo
+from process_groups import live, terminate
 
 JOBS = ('restore', 'scrub', 'health')
 MAX_AGE = {'restore': 8*86400, 'scrub':8*86400, 'health':8*3600}
@@ -94,14 +95,17 @@ def execute(command, env, output, timeout):
     child=subprocess.Popen(command,env=env,stdin=subprocess.DEVNULL,
         stdout=output,stderr=subprocess.STDOUT,start_new_session=True)
     try:
-        return child.wait(timeout=timeout)
+        code=child.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
-        os.killpg(child.pid,signal.SIGTERM)
-        try:
-            child.wait(timeout=45)
-        except subprocess.TimeoutExpired:
-            os.killpg(child.pid,signal.SIGKILL);child.wait()
+        terminate(child,grace=45)
         return 124
+    except BaseException:
+        terminate(child,grace=45)
+        raise
+    if live(child.pid):
+        terminate(child,grace=5)
+        return 1
+    return code
 
 
 def notify(root,config,job,run_id,test=False):
@@ -122,14 +126,21 @@ def notify(root,config,job,run_id,test=False):
                         if test else f'Mac Studio {job} check failed. The latest attempt is marked failed; inspect the private recovery report.'),
              'idempotency_key':'medtrack-mac-'+job+'-'+run_id}
     # Only bounded operational text is passed; exceptions/logs never leave host.
+    child=None
     try:
-        r=subprocess.run(hook,input=json.dumps(message),capture_output=True,text=True,timeout=45)
-        answer=json.loads(r.stdout)
-        result={'accepted':r.returncode==0 and answer.get('status') in ('provider_accepted','duplicate'),
+        child=subprocess.Popen(hook,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
+                               text=True,start_new_session=True)
+        output,_=child.communicate(input=json.dumps(message),timeout=45)
+        answer=json.loads(output)
+        result={'accepted':child.returncode==0 and answer.get('status') in ('provider_accepted','duplicate'),
                 'status':answer.get('status','unknown'),'epoch':int(time.time())}
         atomic(root/'state'/(job+'-alert.json'),result)
         return result
     except (OSError,ValueError,subprocess.TimeoutExpired):
+        if child is not None:
+            terminate(child)
+            for stream in (child.stdin,child.stdout,child.stderr):
+                if stream is not None:stream.close()
         result={'accepted':False,'status':'ambiguous','epoch':int(time.time())}
         atomic(root/'state'/(job+'-alert.json'),result)
         return result
@@ -156,6 +167,8 @@ def run_job(root,config,job,test=False):
             env={'HOME':str(Path.home()),'PATH':config['path'],'LANG':'en_US.UTF-8',
                  'LC_ALL':'en_US.UTF-8','MEDTRACK_OPERATIONS_ROOT':str(root)}
             code=execute(command,env,output,config.get('timeout_seconds',7200))
+    except InterruptedError:
+        code=143
     except (OSError,ValueError,KeyError,subprocess.TimeoutExpired):
         code=1
     record.update(completed_epoch=int(time.time()),exit_code=code,outcome='success' if code==0 else 'failed')
@@ -170,6 +183,10 @@ def run_job(root,config,job,test=False):
 
 
 def main(argv=None):
+    def cancelled(signum,frame):
+        signal.signal(signal.SIGTERM,signal.SIG_IGN)
+        raise InterruptedError('scheduler-cancelled')
+    signal.signal(signal.SIGTERM,cancelled)
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--root',type=Path,required=True)
     p.add_argument('action',choices=('schedule','status',*JOBS))

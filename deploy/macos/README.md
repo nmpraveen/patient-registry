@@ -53,6 +53,9 @@ are persisted before preflight; failure, timeout or interruption invalidates
 older success. The restore attempt/receipt follows the shared
 `medtrack-independent-scratch-attempt-v1` contract and exact receipt hashing.
 Timeout terminates the child process group with time for restore cleanup.
+SIGTERM also stops the worker before releasing the execution lock. A leader's
+exit does not count as cleanup while a live descendant remains; TERM-ignoring
+descendants are killed and cancellation is recorded as a failed attempt.
 Inspect residual scratch resources after a force kill or power loss; a running
 or interrupted attempt is never healthy.
 

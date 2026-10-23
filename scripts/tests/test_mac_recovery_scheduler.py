@@ -12,6 +12,7 @@ from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
 ROOT=Path(__file__).resolve().parents[2]
+sys.path.insert(0,str(ROOT/'deploy/macos'))
 def load(name):
     spec=importlib.util.spec_from_file_location(name,ROOT/'deploy/macos'/(name+'.py'))
     module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module);return module
@@ -111,6 +112,43 @@ class SchedulingIntegrity(unittest.TestCase):
                 if not state or state.startswith('Z'):break
                 time.sleep(0.02)
             self.assertTrue(not state or state.startswith('Z'),state)
+
+    def test_scheduler_timeout_kills_term_ignoring_descendant(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder);pidfile=root/'descendant.pid';worker=root/'worker.py'
+            worker.write_text('import os,signal,time,sys\nfrom pathlib import Path\n'
+                'child=os.fork()\nif child==0:\n signal.signal(signal.SIGTERM,signal.SIG_IGN)\n'
+                ' Path(sys.argv[1]).write_text(str(os.getpid()))\n while True:time.sleep(.02)\n'
+                'signal.signal(signal.SIGTERM,lambda *_:sys.exit(0))\nwhile True:time.sleep(.02)\n')
+            with (root/'log').open('w') as output:
+                code=scheduler.execute([sys.executable,str(worker),str(pidfile)],dict(os.environ),output,0.5)
+            self.assertEqual(code,124)
+            state=subprocess.run(['/bin/ps','-p',pidfile.read_text(),'-o','stat='],capture_output=True,text=True).stdout.strip()
+            self.assertTrue(not state or state.startswith('Z'),state)
+
+    def test_scheduler_sigterm_keeps_lock_until_worker_cleanup(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder);root.chmod(0o700);pidfile=root/'worker.pid';worker=root/'worker.py'
+            worker.write_text('import os,signal,time,sys\nfrom pathlib import Path\n'
+                'def stop(*_):\n time.sleep(1.2)\n sys.exit(0)\n'
+                'signal.signal(signal.SIGTERM,stop)\nPath(sys.argv[1]).write_text(str(os.getpid()))\ntime.sleep(30)\n')
+            config={'path':'/usr/bin:/bin','commands':{'health':[sys.executable,str(worker),str(pidfile)]}}
+            (root/'config.json').write_text(json.dumps(config))
+            args=[sys.executable,str(ROOT/'deploy/macos/scheduler.py'),'--root',str(root),'health']
+            parent=subprocess.Popen(args,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+            try:
+                deadline=time.monotonic()+5
+                while not pidfile.exists() and time.monotonic()<deadline:time.sleep(.02)
+                self.assertTrue(pidfile.exists());parent.terminate()
+                config['commands']['health']=['/usr/bin/true'];(root/'config.json').write_text(json.dumps(config))
+                second=subprocess.run(args,capture_output=True,text=True,timeout=5)
+                self.assertEqual(second.returncode,75)
+                parent.communicate(timeout=10)
+                self.assertFalse(scheduler.current(root/'state','health')['healthy'])
+                self.assertEqual(scheduler.read(root/'state/health-attempt.json')['exit_code'],143)
+                self.assertFalse(scheduler.live(int(pidfile.read_text())))
+            finally:
+                if parent.poll() is None:parent.kill();parent.communicate()
 
     def test_ambiguous_delivery_is_not_retried(self):
         with tempfile.TemporaryDirectory() as folder:

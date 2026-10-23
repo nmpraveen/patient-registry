@@ -26,7 +26,7 @@ def main():
         (root/name).mkdir(mode=0o700,exist_ok=True)
     install_lock=(root/'state/execution.lock').open('a')
     fcntl.flock(install_lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
-    for name in ('scheduler.py','actions.py','pushover_alert.py','deploy.py'):
+    for name in ('scheduler.py','actions.py','pushover_alert.py','deploy.py','process_groups.py'):
         shutil.copy2(Path(__file__).parent/name,root/'bin'/name);(root/'bin'/name).chmod(0o700)
     path='/opt/homebrew/opt/findutils/libexec/gnubin:/opt/homebrew/opt/coreutils/libexec/gnubin:/opt/homebrew/opt/gnu-tar/libexec/gnubin:/opt/homebrew/bin:'+str(Path.home()/'.docker/bin')+':/usr/bin:/bin:/usr/sbin:/sbin'
     config_path=root/'config.json'

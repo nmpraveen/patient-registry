@@ -1,4 +1,4 @@
-## 2026.10.23.17.53
+## 2026.10.23.18.06
 
 - Add restricted Mac deployment operations with independent release signatures and current main CI verification.
 - Add isolated NAS recovery, Drive integrity checks, persistent scheduled-attempt state and authorized failure delivery on macOS.

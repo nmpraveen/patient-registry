@@ -15,6 +15,7 @@ import sys
 import tarfile
 import time
 import uuid
+from process_groups import terminate as terminate_group
 
 ROOT=Path(os.environ.get('MEDTRACK_OPERATIONS_ROOT',str(Path.home()/'Library/Application Support/MEDTRACK/operations')))
 PATH='/opt/homebrew/opt/findutils/libexec/gnubin:/opt/homebrew/opt/coreutils/libexec/gnubin:/opt/homebrew/opt/gnu-tar/libexec/gnubin:/opt/homebrew/bin:'+str(Path.home()/'.docker/bin')+':/usr/bin:/bin:/usr/sbin:/sbin'
@@ -44,22 +45,6 @@ def command(args,*,capture=True,cwd=None,env=None,timeout=1800,stdin=None):
         diagnostic.write_text(error[-32768:]);diagnostic.chmod(0o600)
         raise RuntimeError('recovery-command-failed:'+Path(args[0]).name)
     return output
-
-
-def terminate_group(process):
-    try:os.killpg(process.pid,signal.SIGTERM)
-    except ProcessLookupError:return
-    try:process.wait(timeout=5)
-    except subprocess.TimeoutExpired:pass
-    # A shell can exit while an orphan still holds stdout/stderr open. Darwin
-    # may report EPERM when signaling an already-empty process group.
-    groups=subprocess.check_output(['/bin/ps','-axo','pgid=,stat='],text=True)
-    alive=any(parts[0]==str(process.pid) and not parts[1].startswith('Z')
-              for line in groups.splitlines() if len(parts:=line.split())>=2)
-    if alive:
-        try:os.killpg(process.pid,signal.SIGKILL)
-        except ProcessLookupError:pass
-    process.wait()
 
 
 def settings():

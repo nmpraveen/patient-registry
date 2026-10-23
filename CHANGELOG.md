@@ -1,3 +1,9 @@
+## 2026.10.23.11.10
+
+- Refresh Python and system certificate trust after the eMudhra incident; pin patched Certifi and pip with verified hashes.
+- Rebuild Caddy with the Go certificate-validation fix and updated Alpine trust bundle; refresh PostgreSQL/web trust stores.
+- Pin browser CI to the patched Node 22.23.4 runtime.
+
 ## 2026.10.13.19.02
 
 - Update reviewed Python dependencies and pin patched PyJWT/urllib3 versions with regenerated hashes.

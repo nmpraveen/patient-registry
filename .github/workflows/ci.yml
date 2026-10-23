@@ -268,7 +268,9 @@ jobs:
           expected-sha: ${{ env.EXPECTED_SHA }}
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          # The stdlib-only Windows lock tests need an available Windows binary.
+          # The application remains on the separately pinned Linux Python version.
+          python-version: "3.14.9"
       - name: Native scratch-state lock regression
         shell: pwsh
         run: python -m unittest scripts.tests.test_scratch_restore_state

@@ -256,6 +256,23 @@ jobs:
           fi
           python scripts/check_image_digests.py
 
+  windows-verifier:
+    name: Windows verifier regressions
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.EXPECTED_SHA }}
+      - uses: ./.github/actions/verify-exact-head
+        with:
+          expected-sha: ${{ env.EXPECTED_SHA }}
+      - name: Synthetic wrapper failures and state transitions
+        shell: pwsh
+        run: |
+          ./scripts/tests/test-windows-verifier.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./scripts/tests/test-windows-installer.ps1
+
   container-integrity:
     name: Container integrity
     runs-on: ubuntu-latest

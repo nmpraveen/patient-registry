@@ -1,3 +1,10 @@
+## 2026-10-23 independent monitoring follow-through
+
+- Review and merge the bounded recovery-runner PR separately from app deployment.
+- On the independent verifier only, configure the reviewed Windows wrapper/private hooks, run Restore -> FullScrub -> Health, then verify actual task principal/logon/triggers/next run and completed scheduled execution.
+- Require current independently verified evidence within the existing two-hour lag gate; weekly restored evidence remains recovery proof only. Keep the eight-day full-scrub and restore-age gates.
+- Confirm off-host failure alerts and explicit delivery-failure state. Synthetic failure checks are not live recovery or alert-delivery proof. No runtime completion is claimed here.
+
 # ROADMAP.md
 
 ## Evidence-export rollout follow-up

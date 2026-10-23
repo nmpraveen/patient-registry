@@ -484,7 +484,7 @@ Schedule and retention (all calendar times are `Asia/Kolkata`). VPS-local retent
 
 Format v4 compresses the payload before age encryption. The checkpoint form contains the exact checkpoint plus its referenced latest segment and validates that segment's internal manifest and chain transition. The database dump still carries the complete append-only AuditEvent table. Weekly, monthly, and pre-deployment generations additionally preserve and verify the complete retained evidence chain. `restore.sh` continues to accept existing format v3 full-chain archives.
 
-On the independent verifier, use a separate exact reviewed checkout and separate root-only config. This host—not the VPS or NAS—holds the offline restore identity. Its `MEDTRACK_SCRATCH_RESTORE_HOOK` must download a completed Drive triplet, run `restore.sh verify` against isolated PostgreSQL/Django, retain the verified security-evidence tree at `MEDTRACK_SECURITY_EVIDENCE_ROOT`, and return nonzero on any mismatch. Its alert hook must deliver outside that host. Install and enable both independent timers:
+On the independent verifier, use a separate exact reviewed checkout and separate root-only config. This host—not the VPS or NAS—holds the offline restore identity. Its `MEDTRACK_SCRATCH_RESTORE_HOOK` must download a completed Drive triplet, run `restore.sh verify` against isolated PostgreSQL/Django, retain the verified recovery evidence separately, and return nonzero on any mismatch. The health evidence hook must independently fetch and verify the current complete evidence chain and enforce the existing two-hour live evidence-lag gate; a weekly restored snapshot cannot satisfy that live gate. Its alert hook must deliver outside that host. Install and enable both independent timers:
 
 ```bash
 install -d -m 0700 /var/lib/medtrack-backup-health /srv/medtrack/security-evidence
@@ -505,7 +505,7 @@ systemctl status --no-pager medtrack-offsite-backup-health.service
 journalctl -u 'medtrack-offsite-backup*' --since '24 hours ago' --no-pager
 ```
 
-Every production health pass requires complete archive/checksum/marker triplets for each retained set, cross-checks marker/checksum/evidence-chain metadata, runs the independently restored evidence-chain/lag hook, and requires a fresh scratch-restore receipt whose runner has a mandatory alert hook. In `all` mode every retained ciphertext is streamed through SHA-256. In `incremental` mode every remote identity/content-hash/size/mtime is rechecked; new, changed, expired or uncacheable objects are streamed, and a successful full scrub must be no older than eight days. A provider without stable identity and content hashes always falls back to full streaming. These requirements are not optional in `MEDTRACK_HEALTH_PRODUCTION_MODE=1`. The VPS-side schedules remain green only as upload evidence; the independent verifier is the authoritative recovery-health signal. Keep the private `age` identity off the VPS and NAS.
+Every production health pass requires complete archive/checksum/marker triplets for each retained set, cross-checks marker/checksum/evidence-chain metadata, runs the independently verified current evidence-chain/lag hook, and requires a fresh scratch-restore receipt whose runner has a mandatory alert hook. In `all` mode every retained ciphertext is streamed through SHA-256. In `incremental` mode every remote identity/content-hash/size/mtime is rechecked; new, changed, expired or uncacheable objects are streamed, and a successful full scrub must be no older than eight days. A provider without stable identity and content hashes always falls back to full streaming. These requirements are not optional in `MEDTRACK_HEALTH_PRODUCTION_MODE=1`. The VPS-side schedules remain green only as upload evidence; the independent verifier is the authoritative recovery-health signal. Keep the private `age` identity off the VPS and NAS.
 
 Before enabling incremental mode on the independent verifier, install the new full-scrub service/timer and successfully seed its verified object cache:
 
@@ -517,7 +517,18 @@ test "$(systemctl show medtrack-offsite-full-scrub.service --property=Result --v
 systemctl enable --now medtrack-offsite-full-scrub.timer
 ```
 
-Keep the existing private backup configuration; do not overwrite it with the example. Configure `MEDTRACK_HEALTH_STATE_ROOT` in a root-private directory and `MEDTRACK_HEALTH_HASH_MODE=incremental` only after the full scrub and independent scratch restore succeed. The new units are not instructions to put the age identity or independent verifier on the production VPS. The legacy Windows verifier's schedule/path must be separately verified before claiming recurring recovery is healthy.
+Keep the existing private backup configuration; do not overwrite it with the example. Configure `MEDTRACK_HEALTH_STATE_ROOT` in a root-private directory and `MEDTRACK_HEALTH_HASH_MODE=incremental` only after the full scrub and independent scratch restore succeed. The new units are not instructions to put the age identity or independent verifier on the production VPS. For Windows, use the reviewed wrapper and installer in `deploy/windows/` as described below; actual task principals, triggers, next runs and completed scheduled executions must be verified before claiming recurring recovery is healthy.
+
+### Independent Windows verifier (PowerShell 7.2+)
+
+The generic contract and examples are in [`deploy/windows/README.md`](deploy/windows/README.md) and `verifier.example.json`. Use a separate reviewed source checkout; this is monitoring/recovery tooling, not an application deployment. Private hooks must select the actual backup source commit/images, use isolated scratch resources, and independently validate Drive/NAS recovery and the fresh evidence chain. No commit or credential is embedded in the wrapper.
+
+The shell runner atomically publishes `${MEDTRACK_SCRATCH_RESTORE_RECEIPT}.attempt` (or `MEDTRACK_SCRATCH_RESTORE_ATTEMPT`) before hook preflight. It contains attempt ID, started/updated epoch, `running|success|failure`, stage, alert delivery and receipt SHA-256. Every production health run requires a successful latest attempt with the same ID and exact hash as the actual receipt. Missing/malformed/running/failed attempts fail closed, including a newer failure beside an older successful receipt. A preflight or hook failure invokes the required off-host alert hook; failed delivery is recorded and exits 2. Older receipts without a matching attempt require a real successful rerun, never a manufactured receipt.
+
+Windows also atomically replaces `Restore.json`, `Health.json`, or `FullScrub.json` in the private status directory before preflight. These cover failures before Bash can run, including unreadable config, Docker startup, launch, timeout and notification failures. Windows health additionally rejects failed/running prior Restore or FullScrub statuses. Inspect both Windows state and shell receipt/attempt; a shell receipt alone cannot prove that a later Windows launch succeeded. All Windows invocations must use the wrapper and the same status directory. Seed Restore, then FullScrub, then Health through the wrapper before enabling recurring tasks.
+
+The installer defaults to preserving existing principals and never guesses passwords. New tasks require an explicit `-AccountPolicy CurrentUserInteractive`, or a separately provisioned intentional unattended principal. Interactive tasks run only while that user is logged on. The installer emits read-back principal/logon type, triggers, next run, last result and settings. A registration or synthetic test pass is not a completed scheduled recovery. No live schedule or recovery completion is asserted by this source change.
+
 
 Enable the single-owner patient-data schedule runner after installing its units:
 
@@ -602,7 +613,7 @@ The installer creates `medtrack-nas-pull` as an SFTP-only chrooted account, keep
 NAS containment rules:
 
 - the fetcher runs non-root with a read-only root filesystem, all Linux capabilities dropped, `no-new-privileges`, a 256 MiB memory limit, and only the incoming area writable
-- the promoter runs non-root with `network_mode: none`, cannot see SFTP credentials, and has the incoming area read-only plus archive/state writable
+- the promoter runs non-root with `network_mode: none`, cannot see SFTP credentials, and has incoming writable for verified queue drainage plus archive/state writable (the previous read-only incoming claim was stale)
 - the private `age` identity never enters the VPS or NAS; both hold ciphertext only
 - strict filename filters, per-file/transfer ceilings, complete-triplet checks, and SHA-256 verification limit what a compromised VPS can feed the NAS
 - no container has the Docker socket, NAS media mounts, or access to other NAS folders

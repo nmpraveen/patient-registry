@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Mac-local MEDTRACK recovery; production data is used only in private scratch."""
 import argparse
+import datetime as dt
 import hashlib
 import json
 import os
@@ -25,6 +26,8 @@ SHA=re.compile(r'[a-f0-9]{40}\Z')
 DIGEST=re.compile(r'sha256:[a-f0-9]{64}\Z')
 TIERS=('rapid','daily','weekly','monthly','pre-deployment','canary')
 ARCHIVE=re.compile(r'medtrack-prod-(rapid|daily|weekly|monthly|pre-deployment|canary)-[0-9]{8}T[0-9]{6}Z\.tar\.age\Z')
+MARKER_FIELDS={'archive','sha256','completed_utc','drive_verified','drive_verified_epoch',
+               'source_commit','intended_target_commit','security_evidence_chain_sha256'}
 
 
 def command(args,*,capture=True,cwd=None,env=None,timeout=1800,stdin=None):
@@ -160,8 +163,58 @@ def nas_download(archive=None,tier=None):
     if archive:args+=['-Archive',archive]
     if tier:args+=['-Tier',tier]
     result=json.loads(command(args,timeout=300))
+    verified=verify_triplet(Path(result['archive']))
+    if result['sha256']!=verified['sha256'] or result['marker']!=verified['marker']:
+        raise ValueError('nas-download-metadata-mismatch')
+    result.update(verified)
     write_json(folder/'download.json',result)
     return result
+
+
+def verify_triplet(ciphertext):
+    archive=ciphertext.name
+    if not ARCHIVE.fullmatch(archive):raise ValueError('invalid-backup-name')
+    for suffix in ('','.sha256','.complete'):
+        path=Path(str(ciphertext)+suffix)
+        maximum=2*1024**3 if not suffix else 65536
+        if path.is_symlink() or not path.is_file() or not 0<path.stat().st_size<=maximum:
+            raise ValueError('invalid-backup-file')
+    marker={}
+    for line in Path(str(ciphertext)+'.complete').read_text(encoding='ascii').splitlines():
+        if '=' not in line:raise ValueError('invalid-completion-marker')
+        key,value=line.split('=',1)
+        if key in marker or key not in MARKER_FIELDS or not value:
+            raise ValueError('invalid-completion-marker')
+        marker[key]=value
+    if set(marker)!=MARKER_FIELDS:raise ValueError('incomplete-completion-marker')
+    stamp=archive[-24:-8]
+    completed=dt.datetime.strptime(stamp,'%Y%m%dT%H%M%SZ').replace(tzinfo=dt.timezone.utc)
+    if (completed.strftime('%Y%m%dT%H%M%SZ')!=stamp or marker['completed_utc']!=stamp or
+        marker['archive']!=archive or marker['drive_verified']!='1' or
+        not re.fullmatch('[1-9][0-9]{0,11}',marker['drive_verified_epoch']) or
+        not completed.timestamp()<=int(marker['drive_verified_epoch'])<=int(time.time())+300 or
+        not SHA.fullmatch(marker['source_commit']) or not SHA.fullmatch(marker['intended_target_commit']) or
+        not re.fullmatch('[a-f0-9]{64}',marker['security_evidence_chain_sha256'])):
+        raise ValueError('invalid-completion-marker-values')
+    with ciphertext.open('rb') as stream:digest=hashlib.file_digest(stream,'sha256').hexdigest()
+    checksum=Path(str(ciphertext)+'.sha256').read_text(encoding='ascii').strip().split()
+    if checksum!=[digest,archive] or marker['sha256']!=digest:
+        raise ValueError('backup-triplet-verification-failed')
+    return {'archive':str(ciphertext),'sha256':digest,'bytes':ciphertext.stat().st_size,'marker':marker}
+
+
+def bind_backup(downloaded,production,verification=None):
+    marker=downloaded['marker'];archive=Path(downloaded['archive']).name
+    tier=ARCHIVE.fullmatch(archive).group(1)
+    target=production.get('checkout_commit',production['commit']) if tier=='pre-deployment' else production['commit']
+    if marker['source_commit']!=production['commit'] or marker['intended_target_commit']!=target:
+        raise ValueError('backup-source-or-target-mismatch')
+    if verification is not None:
+        expected={'archive':archive,'ciphertext_sha256':downloaded['sha256'],
+                  'git_commit':marker['source_commit'],'intended_target_commit':marker['intended_target_commit'],
+                  'security_evidence_chain_sha256':marker['security_evidence_chain_sha256']}
+        if any(verification.get(key)!=value for key,value in expected.items()):
+            raise ValueError('restore-receipt-binding-mismatch')
 
 
 def drive_download(archive,tier):
@@ -172,14 +225,7 @@ def drive_download(archive,tier):
     for suffix in ('.complete','.sha256',''):
         command(['/opt/homebrew/bin/rclone','--config',str(ROOT/'secrets/rclone.conf'),
                  'copyto',remote+suffix,str(folder/(archive+suffix))],timeout=600)
-    ciphertext=folder/archive;digest=hashlib.sha256(ciphertext.read_bytes()).hexdigest()
-    checksum=(folder/(archive+'.sha256')).read_text().strip().split()
-    marker=dict(line.split('=',1) for line in (folder/(archive+'.complete')).read_text().splitlines() if '=' in line)
-    if (checksum!=[digest,archive] or marker.get('sha256')!=digest or marker.get('archive')!=archive or
-        marker.get('drive_verified')!='1' or not SHA.fullmatch(marker.get('source_commit',''))):
-        raise ValueError('drive-triplet-verification-failed')
-    result={'format':'medtrack-drive-download-v1','source':remote,'archive':str(ciphertext),
-            'sha256':digest,'bytes':ciphertext.stat().st_size,'marker':marker,'read_only':True}
+    result={'format':'medtrack-drive-download-v1','source':remote,'read_only':True,**verify_triplet(folder/archive)}
     write_json(folder/'download.json',result);return result
 
 
@@ -278,8 +324,7 @@ export -f docker
 def restore(archive=None,tier=None,backup_source='nas'):
     production=status();repo=source(production['commit']);ensure_images(production)
     downloaded=drive_download(archive,tier) if backup_source=='drive' else nas_download(archive,tier)
-    marker=downloaded['marker']
-    if marker['source_commit']!=production['commit']:raise ValueError('nas-backup-source-not-current')
+    bind_backup(downloaded,production)
     run_id=time.strftime('%Y%m%dT%H%M%SZ',time.gmtime())+'-'+uuid.uuid4().hex[:8]
     project='medtrack_mac_restore_'+uuid.uuid4().hex[:12]
     work=ROOT/'scratch'/project;work.mkdir(mode=0o700)
@@ -308,7 +353,7 @@ def restore(archive=None,tier=None,backup_source='nas'):
               '--expected-commit',production['commit'],'--image-attestation',str(attestation),'--receipt-dir',str(receipts)]
         command(['/opt/homebrew/bin/bash','-c',prefix+shlex.join(args)],capture=False,cwd=repo,timeout=7200)
         values=dict(line.split('=',1) for line in (receipts/'verification.receipt').read_text().splitlines() if '=' in line)
-        if values.get('ciphertext_sha256')!=downloaded['sha256']:raise ValueError('restore-receipt-mismatch')
+        bind_backup(downloaded,production,values)
         # Exercise authentication on the restored database. Synthetic writes are
         # rolled back, and the whole isolated database volume is then removed.
         database='medtrack_restore_auth_'+uuid.uuid4().hex[:12]

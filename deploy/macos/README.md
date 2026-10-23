@@ -111,6 +111,14 @@ publication. This avoids waiting for the NAS's six-hour pull interval while
 the two-hour pre-deployment receipt is valid. Routine scheduled restore still
 uses the independently mirrored NAS copy.
 
+Both download paths require all eight current marker fields exactly once,
+valid completion and Drive-verification times, matching ciphertext and sidecar,
+and full source, target and evidence-chain identities. Historical marker shapes
+are ineligible for this current-release restore path. Pre-deployment backups
+must bind the running source to the prepared checkout; ordinary backups target
+their source. The decrypted restore receipt must repeat those source, target,
+archive, ciphertext and chain bindings before success is published.
+
 Follow [RUNBOOK.md](../../RUNBOOK.md): review exact-source build/scan/signature
 evidence; authorize source; `prepare` the target Git checkout; create a fresh
 target-bound `backup` of the still-running source; independently restore it;
@@ -126,6 +134,12 @@ while binding the dump to the currently running source image. Plan/apply still
 require the fresh target-bound backup. A disconnected or timed-out deployment
 client is not proof that a remote operation stopped: inspect status and retained
 remote evidence before another operation; never interrupt an activation blindly.
+
+Status distinguishes `checkout_commit` (prepared target) from `running_commit`
+and the compatibility `commit` field (both taken from the immutable running web
+image). The reported version and restore source follow that running commit.
+After preparing B while A still serves traffic, backup and independent restore
+therefore remain bound to A; only the intended deployment target is B.
 
 Private deployment logs and receipts stay in the operations root. Production
 restore activation remains a separately authorized emergency procedure with

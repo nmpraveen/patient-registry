@@ -86,6 +86,25 @@ class OperationsBoundaryTests(unittest.TestCase):
         self.assertEqual([call.args[0][0] for call in run.call_args_list],['git','git'])
         self.assertEqual(run.call_args.args[0][-3:],['checkout','--detach',target])
 
+    def test_status_and_receipt_bind_running_a_after_preparing_b(self):
+        a='a'*40;b='b'*40;image='sha256:'+'1'*64
+        service_state={'web':{'image':image,'running':True,'health':'healthy'}}
+        def fake_git(*args):
+            if args==('show',a+':VERSION'):return '2026.01.01.00.00'
+            if args==('rev-parse','HEAD'):return b
+            raise AssertionError(args)
+        for operation in ('status','build-receipt'):
+            output=io.StringIO()
+            with patch.object(os,'geteuid',return_value=0),patch.object(ops,'clean_source'), \
+                 patch.object(ops,'services',return_value=service_state),patch.object(ops,'git',side_effect=fake_git), \
+                 patch.object(ops,'run',return_value=json.dumps({'org.opencontainers.image.revision':a})), \
+                 patch('sys.stdout',new=output):
+                ops.perform(ops.parse([operation]))
+            value=json.loads(output.getvalue())
+            self.assertEqual(value['checkout_commit'],b)
+            self.assertEqual(value['commit'] if operation=='status' else value['source_commit'],a)
+            if operation=='status':self.assertEqual(value['version'],'2026.01.01.00.00')
+
     def test_exports_only_the_requested_current_production_image(self):
         digest='sha256:'+'1'*64
         with patch.object(os,'geteuid',return_value=0), patch.object(ops,'clean_source'), \

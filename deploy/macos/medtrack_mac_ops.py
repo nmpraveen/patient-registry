@@ -203,6 +203,15 @@ def services():
     return result
 
 
+def running_identity(service_state):
+    image=service_state['web']['image']
+    labels=json.loads(run(['docker','image','inspect','--format','{{json .Config.Labels}}',image],True))
+    revision=labels.get('org.opencontainers.image.revision','')
+    if not SHA.fullmatch(revision):raise ValueError('running-image-source-missing')
+    version=git('show',revision+':VERSION')
+    return {'source_commit':revision,'version':version,'image_id':image,'labels':labels}
+
+
 def parse(argv):
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest='operation', required=True)
@@ -235,9 +244,10 @@ def perform(args):
     if args.operation == 'authorize-release':
         authorize_release(args.target)
     elif args.operation == 'status':
-        print(json.dumps({'format':'medtrack-mac-ops-v1', 'commit':git('rev-parse','HEAD'),
-                          'version':(ROOT/'VERSION').read_text().strip(),
-                          'services':services(), 'checked_epoch':int(time.time())}))
+        service_state=services();identity=running_identity(service_state)
+        print(json.dumps({'format':'medtrack-mac-ops-v2','commit':identity['source_commit'],
+                          'running_commit':identity['source_commit'],'checkout_commit':git('rev-parse','HEAD'),
+                          'version':identity['version'],'services':service_state,'checked_epoch':int(time.time())}))
     elif args.operation == 'authenticated-check':
         trusted(Path('/root/medtrack-authenticated-login-smoke'))
         run(['/root/medtrack-authenticated-login-smoke'],
@@ -249,12 +259,11 @@ def perform(args):
             raise ValueError('production-image-changed')
         run(['docker','image','save',args.expected_image])
     elif args.operation == 'build-receipt':
-        image = services()['web']['image']
-        labels = json.loads(run(['docker','image','inspect','--format',
-                                '{{json .Config.Labels}}',image],True))
+        identity=running_identity(services());labels=identity['labels']
         selected = {k:v for k,v in labels.items() if k.startswith('org.opencontainers.image.')
                     or k.startswith('org.medtrack.')}
-        print(json.dumps({'image_id':image,'source_commit':git('rev-parse','HEAD'),'labels':selected}))
+        print(json.dumps({'image_id':identity['image_id'],'source_commit':identity['source_commit'],
+                          'checkout_commit':git('rev-parse','HEAD'),'labels':selected}))
     elif args.operation == 'evidence':
         evidence=Path('/srv/medtrack/security-evidence')
         trusted(evidence)

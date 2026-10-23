@@ -1,3 +1,8 @@
+## 2026.10.23.18.10
+
+- Keep prepared deployment targets separate from the running image's source during backup recovery.
+- Validate complete NAS and Drive metadata and bind restored payload source, target and evidence chain before publishing success.
+
 ## 2026.10.23.18.06
 
 - Add restricted Mac deployment operations with independent release signatures and current main CI verification.

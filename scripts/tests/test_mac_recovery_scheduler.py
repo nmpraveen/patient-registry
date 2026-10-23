@@ -25,20 +25,70 @@ class SchedulingIntegrity(unittest.TestCase):
             with patch.object(actions,'command') as run,self.assertRaises(ValueError):actions.drive_download(archive,tier)
             run.assert_not_called()
 
-    def test_drive_triplet_binds_bytes_marker_and_checksum(self):
+    def triplet_fixture(self):
         import hashlib
-        archive='medtrack-prod-pre-deployment-20261023T180000Z.tar.age'
+        archive='medtrack-prod-pre-deployment-20200101T000000Z.tar.age'
         data=b'synthetic encrypted fixture';digest=hashlib.sha256(data).hexdigest()
+        marker={'archive':archive,'sha256':digest,'completed_utc':'20200101T000000Z',
+                'drive_verified':'1','drive_verified_epoch':'1577836810','source_commit':'a'*40,
+                'intended_target_commit':'b'*40,'security_evidence_chain_sha256':'c'*64}
+        return archive,data,marker
+
+    def download_fixture(self,archive,data,marker_text):
+        import hashlib
         def download(args,**kwargs):
             target=Path(args[-1])
-            if target.name.endswith('.complete'):
-                target.write_text(f'archive={archive}\nsha256={digest}\ndrive_verified=1\nsource_commit='+('a'*40)+'\n')
-            elif target.name.endswith('.sha256'):target.write_text(digest+'  '+archive+'\n')
+            if target.name.endswith('.complete'):target.write_text(marker_text)
+            elif target.name.endswith('.sha256'):target.write_text(hashlib.sha256(data).hexdigest()+'  '+archive+'\n')
             else:target.write_bytes(data)
+        return download
+
+    def test_drive_triplet_binds_bytes_marker_and_checksum(self):
+        archive,data,marker=self.triplet_fixture()
+        download=self.download_fixture(archive,data,''.join(k+'='+v+'\n' for k,v in marker.items()))
         with tempfile.TemporaryDirectory() as folder,patch.object(actions,'ROOT',Path(folder)),patch.object(actions,'command',side_effect=download):
             receipt=actions.drive_download(archive,'pre-deployment')
-            self.assertEqual(receipt['sha256'],digest)
+            self.assertEqual(receipt['sha256'],marker['sha256'])
             self.assertTrue(receipt['read_only'])
+
+    def test_drive_rejects_missing_invalid_duplicate_and_unknown_marker_fields(self):
+        archive,data,marker=self.triplet_fixture()
+        variants=[]
+        for field in marker:
+            missing=dict(marker);missing.pop(field);variants.append(missing)
+            invalid=dict(marker);invalid[field]='invalid';variants.append(invalid)
+        for field,value in [('completed_utc','20200102T000000Z'),('drive_verified_epoch','1577836799'),
+                            ('drive_verified_epoch',str(int(time.time())+301)),('drive_verified','0')]:
+            invalid=dict(marker);invalid[field]=value;variants.append(invalid)
+        texts=[''.join(k+'='+v+'\n' for k,v in value.items()) for value in variants]
+        valid=''.join(k+'='+v+'\n' for k,v in marker.items())
+        texts.extend(valid+field+'='+marker[field]+'\n' for field in marker)
+        texts.extend((valid+'unrecognized=1\n',valid+'invalid line\n',valid+'\n'))
+        for index,marker_text in enumerate(texts):
+            with self.subTest(index=index),tempfile.TemporaryDirectory() as folder, \
+                 patch.object(actions,'ROOT',Path(folder)), \
+                 patch.object(actions,'command',side_effect=self.download_fixture(archive,data,marker_text)), \
+                 self.assertRaises(ValueError):actions.drive_download(archive,'pre-deployment')
+
+    def test_backup_and_restored_payload_bind_running_source_prepared_target_and_chain(self):
+        archive,data,marker=self.triplet_fixture()
+        downloaded={'archive':'/synthetic/'+archive,'sha256':marker['sha256'],'marker':marker}
+        production={'commit':'a'*40,'checkout_commit':'b'*40}
+        verification={'archive':archive,'ciphertext_sha256':marker['sha256'],'git_commit':'a'*40,
+                      'intended_target_commit':'b'*40,'security_evidence_chain_sha256':'c'*64}
+        actions.bind_backup(downloaded,production,verification)
+        for field in verification:
+            bad=dict(verification);bad[field]='d'*64
+            with self.subTest(field=field),self.assertRaises(ValueError):actions.bind_backup(downloaded,production,bad)
+        for field in ('source_commit','intended_target_commit'):
+            bad=dict(marker);bad[field]='d'*40
+            with self.subTest(field=field),self.assertRaises(ValueError):
+                actions.bind_backup(dict(downloaded,marker=bad),production)
+        # Ordinary recovery archives target their source, not a prepared future release.
+        ordinary=dict(downloaded,archive=downloaded['archive'].replace('pre-deployment','daily'))
+        with self.assertRaises(ValueError):actions.bind_backup(ordinary,production)
+        ordinary['marker']=dict(marker,intended_target_commit='a'*40)
+        actions.bind_backup(ordinary,production)
 
     def test_old_success_cannot_hide_a_newer_failure_or_interruption(self):
         with tempfile.TemporaryDirectory() as folder:

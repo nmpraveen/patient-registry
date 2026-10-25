@@ -39,8 +39,14 @@ fi
 if env SECRET_KEY=synthetic-test-key POSTGRES_PASSWORD=synthetic \
   MEDTRACK_REQUIRE_TRUSTED_PROXY=True MEDTRACK_EXPECTED_PROXY_IP=172.30.0.10 \
   MEDTRACK_TRUSTED_PROXY_CIDRS=172.30.0.11/32 \
-  python "$repo_root/manage.py" check >/dev/null 2>&1; then
+  python "$repo_root/manage.py" check >"$test_root/proxy-check.log" 2>&1; then
   echo "Production startup accepted an inconsistent trusted-proxy allowlist" >&2
+  exit 1
+fi
+# A missing dependency or unrelated startup failure must not satisfy this gate.
+if ! grep -Fq "The expected Caddy address is outside MEDTRACK_TRUSTED_PROXY_CIDRS" "$test_root/proxy-check.log"; then
+  cat "$test_root/proxy-check.log" >&2
+  echo "Startup failed without exercising the trusted-proxy allowlist rejection" >&2
   exit 1
 fi
 if docker run --rm --entrypoint sh caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648 \

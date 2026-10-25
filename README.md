@@ -285,11 +285,13 @@ The live deployment also mirrors the bounded VPS-local completed set to Synology
 ## Useful commands
 
 ```bash
-docker compose exec web python manage.py test
+docker compose exec web python manage.py test patients.test_anc_review_fixes --noinput
 docker compose exec web python manage.py createsuperuser
 docker compose exec -T web python manage.py backup_patient_data --keep 30
 docker compose down
 ```
+
+For tests, select the affected module or class (the label above is an example); reserve the full Django suite for cross-cutting changes or full acceptance. On Mac Studio, use native tests with the isolated PostgreSQL container as documented in the local `MAC_DEVELOPMENT.md` guide, not the restricted web container. Operations/scanner tests are separate explicit suites. See the [test audit](docs/test-audit-2026-10-25.md) for triggers, coverage and evidence.
 
 The pinned Playwright Chromium regression matrix covers 320, 390, 430, and 1440 pixel viewports. With a local server running, configure `PLAYWRIGHT_BASE_URL`, `PLAYWRIGHT_USERNAME`, and `PLAYWRIGHT_PASSWORD`, then run `npm ci` and `npm run test:e2e`. See `local-dev/TEST_NNH_SERVER.md` for the Test NNH example; evidence is written under `output/playwright/`.
 

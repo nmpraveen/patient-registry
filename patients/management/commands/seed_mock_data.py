@@ -701,7 +701,8 @@ class Command(BaseCommand):
         recorded_at = timezone.make_aware(datetime.combine(day, time(hour=hour, minute=minute)))
         now = timezone.now()
         if recorded_at > now:
-            recorded_at = now - timedelta(minutes=5)
+            # Backdating by five minutes can move today's vital into yesterday.
+            recorded_at = now
         return recorded_at
 
     def seed_vitals_for_case(self, case, demo_user, today, rng, profile_name):

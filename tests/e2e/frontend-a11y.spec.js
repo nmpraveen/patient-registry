@@ -130,8 +130,7 @@ test("extracted page styles preserve dashboard, intake, call-sheet, and theme la
   }
 });
 
-test("universal search exposes keyboard-operable combobox and live state", async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name !== "chromium-desktop", "Semantic interaction is covered once at desktop width.");
+test("universal search exposes keyboard-operable combobox and live state", { tag: "@desktop" }, async ({ page }) => {
 
   await page.goto("/patients/");
   await page.keyboard.press("Tab");
@@ -155,8 +154,7 @@ test("universal search exposes keyboard-operable combobox and live state", async
   await expect(search).toHaveAttribute("aria-expanded", "false");
 });
 
-test("universal search discards aborted and out-of-order PHI responses", async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name !== "chromium-desktop", "Async race behavior is covered once at desktop width.");
+test("universal search discards aborted and out-of-order PHI responses", { tag: "@desktop" }, async ({ page }) => {
 
   let releaseShortened;
   let markShortenedRequested;
@@ -217,8 +215,7 @@ test("universal search discards aborted and out-of-order PHI responses", async (
   await expect(page.getByText("CURRENT RESULT")).toBeVisible();
 });
 
-test("form IDs and call-sheet selections expose unique accessible names", async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name !== "chromium-desktop", "DOM semantics are covered once at desktop width.");
+test("form IDs and call-sheet selections expose unique accessible names", { tag: "@desktop" }, async ({ page }) => {
 
   await page.goto("/patients/settings/users/?tab=users");
   const userFormIds = await page.locator('[id^="id_user-"]').evaluateAll((nodes) => nodes.map((node) => node.id));
@@ -245,8 +242,7 @@ test("form IDs and call-sheet selections expose unique accessible names", async 
   }
 });
 
-test("merge review names both MTNOs, affected cases, and stays within its container", async ({ page }, testInfo) => {
-  test.skip(!["chromium-320", "chromium-desktop"].includes(testInfo.project.name), "Merge evidence is captured at the narrowest and desktop widths.");
+test("merge review names both MTNOs, affected cases, and stays within its container", { tag: "@edge-widths" }, async ({ page }, testInfo) => {
 
   await page.goto("/patients/patients/");
   const patientHref = await firstHref(page, 'tbody a[href^="/patients/patients/"]');
@@ -270,8 +266,7 @@ test("merge review names both MTNOs, affected cases, and stays within its contai
   });
 });
 
-test("CSP loads only local pinned assets and theme contrast preview remains active", async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name !== "chromium-desktop", "Asset and theme runtime checks are covered once at desktop width.");
+test("CSP loads only local pinned assets and theme contrast preview remains active", { tag: "@desktop" }, async ({ page }, testInfo) => {
   const externalRequests = [];
   page.on("request", (request) => {
     if (request.url().startsWith("blob:")) {
@@ -353,8 +348,7 @@ test("CSP loads only local pinned assets and theme contrast preview remains acti
   expect(externalRequests).toEqual([]);
 });
 
-test("logout cannot reveal cached PHI with browser back", async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name !== "chromium-desktop", "Cache behavior is covered once at desktop width.");
+test("logout cannot reveal cached PHI with browser back", { tag: "@desktop" }, async ({ page }) => {
 
   await page.goto("/patients/patients/");
   const patientHref = await firstHref(page, 'tbody a[href^="/patients/patients/"]');

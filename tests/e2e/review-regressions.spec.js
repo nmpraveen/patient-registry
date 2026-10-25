@@ -4,7 +4,6 @@ const username = process.env.PLAYWRIGHT_USERNAME || "a11y-admin";
 const password = process.env.PLAYWRIGHT_PASSWORD || "a11y-test-password";
 
 test.beforeEach(async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name !== "chromium-desktop", "State transitions are exercised once; responsive layout has its own matrix.");
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
   testInfo.webErrors = errors;

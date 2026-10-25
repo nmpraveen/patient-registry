@@ -18,17 +18,24 @@ module.exports = defineConfig({
     screenshot: "only-on-failure",
     trace: "retain-on-failure",
   },
+  // Select viewport coverage before fixtures run; state transitions run once on desktop.
   projects: [
     {
       name: "chromium-320",
+      testIgnore: "**/review-regressions.spec.js",
+      grepInvert: /@desktop/,
       use: { ...devices["Desktop Chrome"], viewport: { width: 320, height: 900 } },
     },
     {
       name: "chromium-390",
+      testIgnore: "**/review-regressions.spec.js",
+      grepInvert: /@desktop|@edge-widths/,
       use: { ...devices["Desktop Chrome"], viewport: { width: 390, height: 900 } },
     },
     {
       name: "chromium-430",
+      testIgnore: "**/review-regressions.spec.js",
+      grepInvert: /@desktop|@edge-widths/,
       use: { ...devices["Desktop Chrome"], viewport: { width: 430, height: 960 } },
     },
     {

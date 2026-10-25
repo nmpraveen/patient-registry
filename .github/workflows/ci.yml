@@ -107,19 +107,6 @@ jobs:
   strict-openapi:
     name: Strict OpenAPI
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16.14-alpine3.24@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
-        env:
-          POSTGRES_DB: medtrack_ci
-          POSTGRES_USER: medtrack_ci
-          POSTGRES_PASSWORD: medtrack-ci-synthetic-password
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd "pg_isready -U medtrack_ci -d medtrack_ci"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -374,7 +361,9 @@ jobs:
       - name: Install locked browser test runner and its Chromium build
         run: |
           npm ci
-          npx playwright install --with-deps chromium
+          # The Python install above already installed the shared system libraries.
+          # Keep this runner's browser install in case its pinned revision diverges.
+          npx playwright install chromium
       - name: Seed synthetic data and run responsive smoke
         env:
           E2E_USERNAME: demo_admin

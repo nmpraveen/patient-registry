@@ -21,16 +21,16 @@ from .database_bundle import create_bundle_archive, import_bundle_bytes
 from .forms import CaseForm, RecentCaseUpdateForm
 from .recent_cases import notes_baseline
 from .models import Case, CaseDataScope, CaseStatus, RoleSetting, TaskStatus, ensure_rch_reminder_task
-from .test_follow_up import FollowUpTests
+from . import test_follow_up
 
 
 class AncReviewFixTests(TestCase):
-    client_class = FollowUpTests.client_class
-    setUp = FollowUpTests.setUp
-    case = FollowUpTests.case
-    task = FollowUpTests.task
-    action = FollowUpTests.action
-    ids = FollowUpTests.ids
+    client_class = test_follow_up.FollowUpTests.client_class
+    setUp = test_follow_up.FollowUpTests.setUp
+    case = test_follow_up.FollowUpTests.case
+    task = test_follow_up.FollowUpTests.task
+    action = test_follow_up.FollowUpTests.action
+    ids = test_follow_up.FollowUpTests.ids
 
     def scoped_editor(self):
         user = get_user_model().objects.create_user("scoped-review")

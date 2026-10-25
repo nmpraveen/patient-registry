@@ -1,3 +1,9 @@
+## 2026.10.25.04.44
+
+- Keep synthetic vital timestamps on the intended day at India midnight while preventing future timestamps.
+- Reduce unused CI setup and focused-test overhead while retaining all existing web, security, identity and recovery coverage.
+- Stop deprecated Android dependency version-update PRs and require the expected proxy rejection in the edge security regression.
+
 ## 2026.10.23.18.25
 
 - Add constrained Mac deployment operations with independent release signatures and current main CI verification.

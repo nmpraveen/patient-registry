@@ -267,11 +267,13 @@ docker compose --profile deploy run --rm migrate
 
 Web startup does not run migrations. In production, use the reviewed plan/apply gate below instead of invoking this job directly.
 
-Run tests:
+Run affected tests (replace the example label with the affected module/class; omit it for full acceptance):
 
 ```powershell
-docker compose exec web python manage.py test
+docker compose exec web python manage.py test patients.test_anc_review_fixes --noinput
 ```
+
+On Mac Studio use native tests as documented in the local `MAC_DEVELOPMENT.md` guide. See the [test audit](docs/test-audit-2026-10-25.md) for CI and explicit operations suites.
 
 Seed demo data:
 

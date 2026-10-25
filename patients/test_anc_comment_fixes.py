@@ -11,16 +11,16 @@ from django.urls import reverse
 
 from api.views import _case_edit_payload
 from .models import Case, CaseDataScope, CaseStatus, RoleSetting, TaskStatus
-from .test_follow_up import FollowUpTests
+from . import test_follow_up
 
 
 class AncCommentFixTests(TestCase):
-    client_class = FollowUpTests.client_class
-    setUp = FollowUpTests.setUp
-    case = FollowUpTests.case
-    task = FollowUpTests.task
-    action = FollowUpTests.action
-    ids = FollowUpTests.ids
+    client_class = test_follow_up.FollowUpTests.client_class
+    setUp = test_follow_up.FollowUpTests.setUp
+    case = test_follow_up.FollowUpTests.case
+    task = test_follow_up.FollowUpTests.task
+    action = test_follow_up.FollowUpTests.action
+    ids = test_follow_up.FollowUpTests.ids
 
     def test_cancelled_grey_task_requires_reopen_permission_in_web_and_api(self):
         user = get_user_model().objects.create_user("comment-editor")

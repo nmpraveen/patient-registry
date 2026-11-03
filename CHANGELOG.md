@@ -1,6 +1,7 @@
-## 2026.11.03.13.14
+## 2026.11.03.13.23
 
 - Patch msgpack to 1.2.3 and pyasn1 to 0.6.5 to address five dependency findings.
+- Patch Caddy JOSE dependencies, using the upstream v3 RSA JWK DoS backport and patched v4 release.
 - Patch Guava in retained Android build/test locks so the repository security scan remains enforced.
 - Patch CI filelock and setuptools dependencies and audit both hash locks in CI and scheduled checks.
 - Start the existing Docker Desktop engine before independent restores when unavailable, with a bounded timeout.

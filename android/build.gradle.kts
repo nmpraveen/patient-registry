@@ -19,6 +19,7 @@ val medtrackBuildRoot = providers.environmentVariable("MEDTRACK_ANDROID_BUILD_DI
     )
 
 val securityDependencyOverrides = mapOf(
+    "com.google.guava:guava" to "33.7.2-jre",
     "org.bouncycastle:bcprov-jdk18on" to "1.85",
     "com.google.protobuf:protobuf-java" to "3.25.5",
     "com.google.protobuf:protobuf-java-util" to "3.25.5",

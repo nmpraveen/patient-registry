@@ -1,6 +1,7 @@
-## 2026.11.03.13.06
+## 2026.11.03.13.14
 
 - Patch msgpack to 1.2.3 and pyasn1 to 0.6.5 to address five dependency findings.
+- Patch Guava in retained Android build/test locks so the repository security scan remains enforced.
 - Patch CI filelock and setuptools dependencies and audit both hash locks in CI and scheduled checks.
 - Start the existing Docker Desktop engine before independent restores when unavailable, with a bounded timeout.
 - Preserve running production images before deployment builds and reject conflicting retention names.

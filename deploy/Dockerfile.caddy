@@ -5,8 +5,11 @@ ARG VCS_REF=unknown
 FROM ${CADDY_BUILDER} AS builder
 # Use the patched, checksum-verified Go toolchain for the shipped binary.
 ENV GOTOOLCHAIN=go1.26.10
+# v3 has no patched tag: pin the upstream RSA JWK DoS backport (go-jose#314).
 RUN xcaddy build \
     --with github.com/mholt/caddy-ratelimit@5625512f24f6f59d6f64fb3aafe5eecff0b286db \
+    --replace github.com/go-jose/go-jose/v3=github.com/go-jose/go-jose/v3@v3.0.6-0.20261030183946-0e502b87c7aa \
+    --replace github.com/go-jose/go-jose/v4=github.com/go-jose/go-jose/v4@v4.1.8 \
     --replace github.com/klauspost/compress=github.com/klauspost/compress@v1.18.7 \
     --replace golang.org/x/crypto=golang.org/x/crypto@v0.57.0 \
     --replace golang.org/x/net=golang.org/x/net@v0.60.0 \

@@ -20,6 +20,29 @@ scheduler=load('scheduler');actions=load('actions')
 
 
 class SchedulingIntegrity(unittest.TestCase):
+    def test_restore_reuses_running_desktop_engine(self):
+        with patch.object(actions.subprocess,'run',return_value=subprocess.CompletedProcess([],0)) as probe, \
+             patch.object(actions,'command') as command:
+            actions.ensure_docker()
+        self.assertEqual(probe.call_args.args[0],['docker','--context','desktop-linux','info'])
+        command.assert_not_called()
+
+    def test_restore_starts_stopped_desktop_with_deadline_and_rechecks(self):
+        with patch.object(actions.subprocess,'run',return_value=subprocess.CompletedProcess([],1)), \
+             patch.object(actions,'command') as command:
+            actions.ensure_docker()
+        self.assertEqual([call.args[0] for call in command.call_args_list],
+                         [['docker','desktop','start','--timeout','120'],
+                          ['docker','--context','desktop-linux','info']])
+        self.assertEqual(command.call_args_list[0].kwargs['timeout'],150)
+
+    def test_failed_desktop_start_blocks_restore_before_production_or_download(self):
+        with patch.object(actions.subprocess,'run',return_value=subprocess.CompletedProcess([],1)), \
+             patch.object(actions,'command',side_effect=RuntimeError('startup-failed')), \
+             patch.object(actions,'status') as status,patch.object(actions,'nas_download') as download:
+            with self.assertRaisesRegex(RuntimeError,'startup-failed'):actions.restore()
+        status.assert_not_called();download.assert_not_called()
+
     def test_health_binds_fixed_private_catalog_and_operations_source(self):
         with tempfile.TemporaryDirectory() as folder,patch.object(actions,'ROOT',Path(folder)):
             root=Path(folder);(root/'bin').mkdir();(root/'secrets').mkdir()
@@ -264,6 +287,34 @@ class SchedulingIntegrity(unittest.TestCase):
         self.assertEqual(dt.datetime.fromtimestamp(scheduler.slot('restore',before),zone).day,25)
         self.assertEqual(dt.datetime.fromtimestamp(scheduler.slot('restore',after),zone).day,1)
         self.assertEqual(dt.datetime.fromtimestamp(scheduler.slot('restore',after),zone).hour,3)
+
+    def test_health_waits_48_hours_after_success_or_failure(self):
+        with tempfile.TemporaryDirectory() as folder:
+            state=Path(folder);started=1793218865
+            self.assertTrue(scheduler.due(state,'health',started))
+            for outcome in ('success','failed','running'):
+                record={'run_id':'latest','outcome':outcome,'started_epoch':started,
+                        'completed_epoch':started+60}
+                scheduler.atomic(state/'health-attempt.json',record)
+                if outcome=='success':scheduler.atomic(state/'health-success.json',record)
+                with self.subTest(outcome=outcome):
+                    self.assertFalse(scheduler.due(state,'health',started+48*3600-1))
+                    self.assertTrue(scheduler.due(state,'health',started+48*3600))
+                    self.assertEqual(scheduler.current(state,'health',started+47*3600)['healthy'],
+                                     outcome=='success')
+                    self.assertFalse(scheduler.current(state,'health',started+51*3600)['healthy'])
+
+    def test_health_elapsed_interval_survives_dst_and_catches_up(self):
+        with tempfile.TemporaryDirectory() as folder:
+            state=Path(folder);zone=ZoneInfo('America/Detroit')
+            started=dt.datetime(2026,10,31,7,15,tzinfo=zone).timestamp()
+            scheduler.atomic(state/'health-attempt.json',{'started_epoch':started,'outcome':'success'})
+            # The autumn clock change must not stretch the elapsed interval to 49 hours.
+            before=dt.datetime(2026,11,2,6,14,tzinfo=zone).timestamp()
+            after=dt.datetime(2026,11,2,6,15,tzinfo=zone).timestamp()
+            self.assertFalse(scheduler.due(state,'health',before))
+            self.assertTrue(scheduler.due(state,'health',after))
+            self.assertTrue(scheduler.due(state,'health',after+3*86400))
 
     @unittest.skipUnless(sys.platform=='darwin','Mac Docker acceptance requires Homebrew and Docker Desktop')
     def test_scratch_configuration_cannot_publish_ports_or_use_live_secrets(self):

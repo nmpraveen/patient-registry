@@ -4,8 +4,13 @@
 
 Use [Mac deployment and independent recovery](deploy/macos/README.md) for the
 restricted SSH operator, private local verifier, launchd schedules and failure
-alerts. Keep existing Windex access and jobs until all migration acceptance
-gates pass. Mac scratch recovery does not authorize live database replacement.
+alerts. The October 28 cutover passed fresh NAS restore, full-scrub and actual
+calendar-triggered Health checks, then removed all three Windex schedules.
+Health now runs every 48 elapsed hours after the latest attempt, including failed attempts; weekly scrub/restore slots are unchanged. The 15-minute dispatcher only starts due work. See the Mac operations runbook for the installed schedule.
+
+Mac Studio is the active scheduled verifier; private Windows recovery material
+is retained but inactive. See `output/mac-backup-cutover-20261028/REPORT.md`.
+Mac scratch recovery does not authorize live database replacement.
 
 ## PhoneBook contact permissions
 
@@ -380,7 +385,9 @@ evidence_dir=/srv/medtrack/deploy-evidence/<deployment-id>
 sha256sum "$evidence_dir/migration-plan.txt"
 ```
 
-The plan command requires the existing `db` container to already report healthy. It builds the reviewed Git-object-only web image and the pinned custom Caddy image, verifies their receipts/modules, and runs read-only Django planning in a disposable `--no-deps` container; it never pulls, starts, stops, or recreates the live `db`, `web`, or Caddy services. Preserve the emitted `MEDTRACK_BUILD_RECEIPT` line with the deployment evidence.
+The plan command requires the existing `db` container to already report healthy. Before building, retain each current web/db/Caddy image under its immutable `medtrack-retained:<service>-<full-image-sha256>` name; a missing image or conflicting retained name must stop preparation. BuildKit/containerd can discard the previous image record when a shared tag is rebuilt even while its container stays healthy. The guarded Mac helper performs and rechecks retention independently of the release checkout; preserve that guard when replacing the installed helper. See [Mac operations](deploy/macos/README.md).
+
+Planning builds the reviewed Git-object-only web image and the pinned custom Caddy image, verifies their receipts/modules, and runs read-only Django planning in a disposable `--no-deps` container; it never pulls, starts, stops, or recreates the live `db`, `web`, or Caddy services. Preserve the emitted `MEDTRACK_BUILD_RECEIPT` line with the deployment evidence.
 
 Review the migration plan. Then apply only the exact approved hash, using a root-owned executable login-smoke hook that obtains credentials outside the repository and emits no secrets or PHI:
 
@@ -537,6 +544,10 @@ systemctl enable --now medtrack-offsite-full-scrub.timer
 Keep the existing private backup configuration; do not overwrite it with the example. Configure `MEDTRACK_HEALTH_STATE_ROOT` in a root-private directory and `MEDTRACK_HEALTH_HASH_MODE=incremental` only after the full scrub and independent scratch restore succeed. The new units are not instructions to put the age identity or independent verifier on the production VPS. For Windows, use the reviewed wrapper and installer in `deploy/windows/` as described below; actual task principals, triggers, next runs and completed scheduled executions must be verified before claiming recurring recovery is healthy.
 
 ### Independent Windows verifier (PowerShell 7.2+)
+
+Windex scheduling was retired October 28 after Mac acceptance. This section
+documents the retained fallback tooling; ordinary releases use the active Mac
+verifier and do not recreate Windows schedules.
 
 The generic contract and examples are in [`deploy/windows/README.md`](deploy/windows/README.md) and `verifier.example.json`. Use a separate reviewed source checkout; this is monitoring/recovery tooling, not an application deployment. Private hooks must select the actual backup source commit/images, use isolated scratch resources, and independently validate Drive/NAS recovery and the fresh evidence chain. No commit or credential is embedded in the wrapper.
 

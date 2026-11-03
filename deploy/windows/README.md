@@ -1,5 +1,14 @@
 # Windows independent MEDTRACK verifier
 
+**Operational status, October 28, 2026:** the three Windex MEDTRACK schedules
+were removed after fresh Mac NAS restore, full-scrub and calendar-triggered
+Health acceptance. Mac Studio is the active scheduled verifier. Windows files,
+credentials and private task XML are retained for a deliberate fallback; these
+installation instructions do not authorize reactivating the retired schedules.
+See [Mac operations](../macos/README.md) and the local cutover report at
+`output/mac-backup-cutover-20261028/REPORT.md`. Before any Windows reactivation,
+refresh the actual production source/images and rerun all checks below.
+
 Requires PowerShell 7.2+, a working Bash/Python/coreutils environment, and a separately reviewed source checkout. It does not deploy the app or provision credentials. Install only on the independent verifier, never on the VPS or NAS.
 
 ## Private JSON contract
@@ -25,6 +34,17 @@ The installer passes status and alert paths separately to the wrapper so malform
 `backup.env` supplies `MEDTRACK_SCRATCH_RESTORE_HOOK`, `MEDTRACK_SCRATCH_RESTORE_ALERT_HOOK`, `MEDTRACK_SCRATCH_RESTORE_RECEIPT`, optional `MEDTRACK_SCRATCH_RESTORE_ATTEMPT`, rclone config/remote, health cache, and the live security-evidence hook. See `../backup/backup.env.example`. The restore hook must perform real independent recovery checks for the actual source images. The evidence hook must independently verify a freshly fetched complete chain within the existing two-hour lag gate; a weekly restored evidence snapshot cannot meet that live gate. The Windows health invocation forces `--production` after private config loading; all full-scrub, receipt-age, ciphertext and evidence checks remain mandatory.
 
 ## Manual run and registration
+
+Before reactivating the Windows fallback for a newly deployed release, refresh any release pins in the private
+restore hook, application checkout and image attestation together. Verify the
+current production source and exact image IDs; retain the previous files and
+confirm transferred image hashes before loading them. Preserve the independent
+synthetic environment, private recovery credentials and existing task definitions.
+An old successful restore does not validate a newer release. Run the existing
+Restore, FullScrub and Health tasks in that order and require fresh successful
+attempts plus `LastTaskResult = 0` for each; do not re-register tasks or reset failed
+state to make the result appear healthy. A failed Restore also blocks later
+FullScrub/Health runs, so fix and rerun the prerequisite first.
 
 ```powershell
 $configPath = 'C:\IndependentVerifier\private\verifier.json'

@@ -174,6 +174,27 @@ verify_running_image_id() {
   fi
 }
 
+retain_running_images() {
+  # BuildKit/containerd can drop the old image record when a tag is replaced,
+  # even while its container runs. Retain immutable names before any build.
+  local service container image reference existing
+  for service in web db caddy; do
+    container="$("${compose[@]}" ps -q "$service")"
+    [[ -n "$container" ]] || { echo "Missing production service: $service" >&2; return 1; }
+    image="$(docker inspect --format '{{.Image}}' "$container")"
+    [[ "$image" =~ ^sha256:[a-f0-9]{64}$ ]] || { echo "Invalid production image" >&2; return 1; }
+    reference="medtrack-retained:$service-${image#sha256:}"
+    [[ "$(docker image inspect --format '{{.Id}}' "$image")" == "$image" ]] || return 1
+    existing="$(docker image ls --no-trunc --quiet --filter "reference=$reference")"
+    if [[ -n "$existing" && "$existing" != "$image" ]]; then
+      echo "Retained image reference conflicts with the running image" >&2
+      return 1
+    fi
+    docker image tag "$image" "$reference"
+    [[ "$(docker image inspect --format '{{.Id}}' "$reference")" == "$image" ]] || return 1
+  done
+}
+
 verify_image_attestation() {
   local attestation_file="$1" expected="$2"
   local inspected_id
@@ -386,6 +407,7 @@ if [[ -z "$source_web_container" || "$(docker inspect --format '{{.Image}}' "$so
   exit 1
 fi
 image_attestation="$evidence_dir/image.attestation"
+retain_running_images
 if [[ "$mode" == "plan" ]]; then
   "$repo_root/scripts/build-attested-image.sh" "$expected_commit" "$image_attestation"
   "${compose[@]}" build caddy

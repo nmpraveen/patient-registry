@@ -321,7 +321,18 @@ export -f docker
     return shell
 
 
+def ensure_docker():
+    ready=subprocess.run(['docker','--context','desktop-linux','info'],env=ENV,
+                         capture_output=True,text=True,timeout=30)
+    if ready.returncode:
+        # Restore needs the existing owner-scoped Desktop engine. Its CLI waits
+        # for startup with a fixed deadline; failure keeps the attempt unhealthy.
+        command(['docker','desktop','start','--timeout','120'],timeout=150)
+        command(['docker','--context','desktop-linux','info'],timeout=30)
+
+
 def restore(archive=None,tier=None,backup_source='nas'):
+    ensure_docker()
     production=status();repo=source(production['commit']);ensure_images(production)
     downloaded=drive_download(archive,tier) if backup_source=='drive' else nas_download(archive,tier)
     bind_backup(downloaded,production)

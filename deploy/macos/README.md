@@ -2,9 +2,12 @@
 
 Mac Studio owns independent recovery verification and the deployment operator
 connection. Production remains on the VPS; the NAS still pulls its ciphertext.
-Keep Windex's keys, verifier and schedules until Mac access, NAS restore, full
-Drive scrub, scheduled success and scheduled failure delivery all pass. Keep
-sanitized acceptance receipts in local `output/mac-operations-migration-20261023/`.
+The October 28 cutover passed a fresh NAS restore, full Drive scrub and actual
+calendar-triggered Health run before removing all three Windex schedules.
+The normal Mac calendar is enabled and loaded; Windex verifier files/keys and
+task XML remain inactive recovery material. Current acceptance and recovery
+locations: `output/mac-backup-cutover-20261028/REPORT.md`. The October 23 receipts
+are historical evidence, including the unchanged failure-alert delivery path.
 
 ## Installation
 
@@ -47,13 +50,28 @@ acceptance. It preserves secrets, refuses replacement during a verifier run,
 and never changes Windex jobs. Disable work by setting `enabled` false or
 unloading only `gui/$(id -u)/org.nmpraveen.medtrack.recovery` with `launchctl bootout`.
 
+If `launchctl disable` was previously used, clear that separate OS override with
+`launchctl enable gui/$(id -u)/org.nmpraveen.medtrack.recovery` before bootstrapping
+the enabled agent. Verify both `config.json` and `launchctl print-disabled`; an
+enabled JSON flag alone does not clear a launchd disabled override. Docker
+Desktop's existing login-startup setting was enabled and read back October 28.
+Retirement of another host's schedules requires fresh acceptance and explicit
+cutover scope; installing the Mac files alone does not complete that handoff.
+
 ## Scheduling and recovery
 
-The user LaunchAgent checks due work every 15 minutes and at login. Schedule in
-America/Detroit: health 01:15, 07:15, 13:15 and 19:15; full scrub Saturday 08:00;
-restore Sunday 03:30. Missed slots run at the next invocation. GUI login,
+The user LaunchAgent checks due work every 15 minutes and at login.
+Health runs once every 48 elapsed hours after its latest attempt (owner request,
+October 28). Failed/interrupted Health attempts remain unhealthy but do not
+retry every dispatcher tick; an operator can still run a manual check. A Health
+success expires after 50 hours, allowing dispatch/runtime grace. The weekly
+America/Detroit slots remain full scrub Saturday 08:00 and restore Sunday 03:30.
+Missed work runs at the next invocation. GUI login,
 available Keychain, network and Docker Desktop are required. A cold restart
 before FileVault/login unlock is not an unattended verifier state.
+Before a restore, an unavailable Desktop engine is started through
+`docker desktop start --timeout 120` and checked again. Startup failure keeps
+the attempt unhealthy and uses the existing failure alert.
 
 Use installed `bin/scheduler.py --root <private-root> status`, `restore`,
 `scrub`, or `health`; `schedule` runs due work. One job runs at a time. Attempts
@@ -100,6 +118,17 @@ authorize only enumerated operations with validated arguments. Do not grant
 general sudo, shell or caller-selected executable/configuration paths. Image
 export accepts only each service's current image ID. Preserve existing access
 and validate the combined policy with `visudo`.
+
+The installed helper must retain the running web, database and Caddy images
+under `medtrack-retained:<service>-<full-image-sha256>` before `plan` or `apply`.
+These names are immutable: a conflict or missing image denies preparation.
+It verifies the retained names again after the operation. Containerd can lose
+an image record when BuildKit replaces its only tag, even while a container
+uses the old image; service health alone does not prove exportability.
+Keep this guard when updating the helper, and update the existing sudoers
+digest without widening its operations. `scripts/deploy-production.sh` also
+retains images for direct entrypoint use. Never prune retained images without
+checking running containers and the required recovery/rollback artifacts.
 
 Installed Mac `bin/deploy.py` supports `status`, `authenticated-check`,
 `build-receipt`, `authorize-release`, `backup`, `prepare`, `plan`, and `apply`.

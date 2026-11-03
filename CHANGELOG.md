@@ -1,3 +1,10 @@
+## 2026.11.03.13.03
+
+- Preserve running production images before deployment builds and reject conflicting retention names.
+- Record the accepted Mac recovery cutover and owner-requested 48-hour Health cadence.
+- Update pinned CI actions, Certifi and Python Playwright with regenerated hash locks; preserve existing release gates.
+- Synchronize concise repository guidance and current recovery runbooks.
+
 ## 2026.10.25.04.44
 
 - Keep synthetic vital timestamps on the intended day at India midnight while preventing future timestamps.

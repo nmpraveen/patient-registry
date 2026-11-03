@@ -126,6 +126,46 @@ class OperationsBoundaryTests(unittest.TestCase):
             self.assertNotIn('BASH_ENV',env)
             self.assertNotIn('shell',run.call_args.kwargs)
 
+    def test_retention_survives_build_replacing_the_only_mutable_tag(self):
+        old='sha256:'+'1'*64;new='sha256:'+'2'*64
+        tags={'medtrack-caddy:2.11.4-ratelimit':old}
+        def docker(args,capture=False):
+            if args[1:3]==['image','inspect']:
+                value=tags.get(args[-1],args[-1] if args[-1] in tags.values() else None)
+                if value is None:raise ops.subprocess.CalledProcessError(1,args)
+                return value+'\n'
+            if args[1:3]==['image','ls']:
+                value=tags.get(args[-1].removeprefix('reference='))
+                return value+'\n' if value else ''
+            if args[1:3]==['image','tag']:
+                tags[args[-1]]=args[-2];return
+            raise AssertionError(args)
+        with patch.object(ops,'services',return_value={'caddy':{'image':old}}),patch.object(ops,'run',side_effect=docker):
+            retained=ops.retain_running_images()
+            tags['medtrack-caddy:2.11.4-ratelimit']=new
+            ops.verify_retained_images(retained)
+            self.assertIn(old,tags.values())
+
+    def test_conflicting_retention_tag_is_never_overwritten(self):
+        image='sha256:'+'1'*64
+        with patch.object(ops,'services',return_value={'caddy':{'image':image}}), \
+             patch.object(ops,'run',side_effect=[image,'sha256:'+'2'*64]) as run:
+            with self.assertRaisesRegex(ValueError,'retained-image-reference-conflict'):
+                ops.retain_running_images()
+        self.assertFalse(any(c.args[0][1:3]==['image','tag'] for c in run.call_args_list))
+
+    def test_plan_cannot_build_when_running_image_cannot_be_retained(self):
+        target='a'*40
+        with patch.object(os,'geteuid',return_value=0),patch.object(ops,'clean_source'), \
+             patch.object(ops,'reviewed_target'),patch.object(ops,'require_proof'), \
+             patch.object(ops,'trusted'),patch.object(ops,'git',return_value=target), \
+             patch.object(ops,'evidence_dir',return_value=Path('/synthetic')), \
+             patch.object(ops,'retain_running_images',side_effect=ValueError('production-image-unavailable')), \
+             patch.object(ops,'run') as run:
+            with self.assertRaisesRegex(ValueError,'production-image-unavailable'):
+                ops.perform(ops.parse(['plan',target,'mac-synthetic']))
+        run.assert_not_called()
+
 
 if __name__=='__main__':
     unittest.main()

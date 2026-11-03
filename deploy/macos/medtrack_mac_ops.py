@@ -212,6 +212,36 @@ def running_identity(service_state):
     return {'source_commit':revision,'version':version,'image_id':image,'labels':labels}
 
 
+def retain_running_images():
+    """Keep content-addressed names before BuildKit replaces a mutable tag.
+
+    The containerd image store can discard the previous image record even
+    while a container still uses it. These names must never be reassigned.
+    """
+    retained = {}
+    for service, state in services().items():
+        image = state['image']
+        if not DIGEST.fullmatch(image):
+            raise ValueError('invalid-production-image')
+        reference = 'medtrack-retained:' + service + '-' + image.removeprefix('sha256:')
+        if run(['docker', 'image', 'inspect', '--format', '{{.Id}}', image], True).strip() != image:
+            raise ValueError('production-image-unavailable')
+        existing = run(['docker', 'image', 'ls', '--no-trunc', '--quiet',
+                        '--filter', 'reference=' + reference], True).split()
+        if existing and set(existing) != {image}:
+            raise ValueError('retained-image-reference-conflict')
+        run(['docker', 'image', 'tag', image, reference])
+        retained[reference] = image
+    verify_retained_images(retained)
+    return retained
+
+
+def verify_retained_images(retained):
+    for reference, image in retained.items():
+        if run(['docker', 'image', 'inspect', '--format', '{{.Id}}', reference], True).strip() != image:
+            raise ValueError('retained-image-changed')
+
+
 def parse(argv):
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest='operation', required=True)
@@ -326,7 +356,11 @@ def perform(args):
                 raise ValueError('plan-hash-mismatch')
             command += ['--approve-plan-sha256',args.plan_sha256,
                         '--login-smoke-hook','/root/medtrack-authenticated-login-smoke']
-        run(command)
+        retained = retain_running_images()
+        try:
+            run(command)
+        finally:
+            verify_retained_images(retained)
 
 
 def main(argv=None):

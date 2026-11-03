@@ -16,7 +16,8 @@ from zoneinfo import ZoneInfo
 from process_groups import live, terminate
 
 JOBS = ('restore', 'scrub', 'health')
-MAX_AGE = {'restore': 8*86400, 'scrub':8*86400, 'health':8*3600}
+HEALTH_INTERVAL = 2*86400
+MAX_AGE = {'restore': 8*86400, 'scrub':8*86400, 'health':HEALTH_INTERVAL+2*3600}
 
 
 def atomic(path, data):
@@ -35,15 +36,13 @@ def read(path):
 
 
 def slot(job, now):
-    local=dt.datetime.fromtimestamp(now,ZoneInfo('America/Detroit'))
     if job=='health':
-        candidates=[local.replace(hour=h,minute=15,second=0,microsecond=0) for h in (1,7,13,19)]
-        candidates += [x-dt.timedelta(days=1) for x in candidates]
-    else:
-        weekday,hour,minute=(6,3,30) if job=='restore' else (5,8,0)
-        day=local-dt.timedelta(days=(local.weekday()-weekday)%7)
-        candidate=day.replace(hour=hour,minute=minute,second=0,microsecond=0)
-        candidates=[candidate,candidate-dt.timedelta(days=7)]
+        return now-HEALTH_INTERVAL
+    local=dt.datetime.fromtimestamp(now,ZoneInfo('America/Detroit'))
+    weekday,hour,minute=(6,3,30) if job=='restore' else (5,8,0)
+    day=local-dt.timedelta(days=(local.weekday()-weekday)%7)
+    candidate=day.replace(hour=hour,minute=minute,second=0,microsecond=0)
+    candidates=[candidate,candidate-dt.timedelta(days=7)]
     return max(x.timestamp() for x in candidates if x.timestamp()<=now)
 
 
@@ -58,6 +57,11 @@ def current(state, job, now=None):
 
 def due(state,job,now):
     c=current(state,job,now)
+    if job=='health':
+        # Owner-requested cadence applies to failed attempts too: the dispatcher
+        # must not turn a failed two-day check into a retry every 15 minutes.
+        started=c['attempt'].get('started_epoch')
+        return not isinstance(started,(int,float)) or not 0<=now-started<HEALTH_INTERVAL
     return not c['healthy'] or c['success'].get('started_epoch',0)<slot(job,now)
 
 

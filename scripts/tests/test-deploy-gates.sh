@@ -26,11 +26,24 @@ elif [[ "$1" == "build" ]]; then
   exit 0
 elif [[ "$1" == "run" ]]; then
   exit 0
+elif [[ "$1" == "image" && "$2" == "ls" ]]; then
+  if [[ "${FAKE_RETENTION_CONFLICT:-0}" == "1" ]]; then printf 'sha256:%064d\n' 9; fi
+  exit 0
+elif [[ "$1" == "image" && "$2" == "tag" ]]; then
+  exit 0
 elif [[ "$1" == "image" && "$2" == "inspect" && "$joined" == *"{{.Id}}"* ]]; then
+  ref="${@: -1}"
+  if [[ "$ref" == medtrack-retained:* ]]; then
+    echo "sha256:${ref##*-}"
+    exit 0
+  elif [[ "$ref" == sha256:* ]]; then
+    echo "$ref"
+    exit 0
+  fi
   if [[ "$joined" == *"medtrack-caddy:2.11.4-ratelimit"* ]]; then
-    echo "sha256:synthetic-caddy-image"
+    echo "sha256:3333333333333333333333333333333333333333333333333333333333333333"
   else
-    echo "sha256:synthetic-planned-image"
+    echo "sha256:2222222222222222222222222222222222222222222222222222222222222222"
   fi
 elif [[ "$1" == "image" && "$2" == "inspect" && "$joined" == *"org.opencontainers.image.revision"* ]]; then
   echo "${FAKE_IMAGE_REVISION:?set FAKE_IMAGE_REVISION}"
@@ -40,11 +53,11 @@ elif [[ "$1" == "image" && "$2" == "inspect" && "$joined" == *"build-context.dig
   echo "sha256:$(printf '%064d' 1)"
 elif [[ "$1" == "inspect" && "$joined" == *"{{.Image}}"* ]]; then
   if [[ "$joined" == *"synthetic-caddy-container"* ]]; then
-    echo "sha256:synthetic-caddy-image"
+    echo "sha256:3333333333333333333333333333333333333333333333333333333333333333"
   elif [[ -f "${FAKE_DEPLOY_STATE:-/nonexistent}" ]]; then
-    echo "sha256:synthetic-planned-image"
+    echo "sha256:2222222222222222222222222222222222222222222222222222222222222222"
   else
-    echo "sha256:synthetic-previous-image"
+    echo "sha256:1111111111111111111111111111111111111111111111111111111111111111"
   fi
 elif [[ "$1" == "inspect" && "$joined" == *"{{.Config.Image}}"* ]]; then
   echo "patient-registry-web:synthetic-previous"
@@ -60,11 +73,11 @@ elif [[ "$joined" == *" ps -q web"* ]]; then
 elif [[ "$joined" == *" ps -q caddy"* ]]; then
   echo "synthetic-caddy-container"
 elif [[ "$joined" == *" images -q web"* ]]; then
-  echo "sha256:synthetic-planned-image"
+  echo "sha256:2222222222222222222222222222222222222222222222222222222222222222"
 elif [[ "$joined" == *" images -q migrate"* ]]; then
-  echo "sha256:synthetic-planned-image"
+  echo "sha256:2222222222222222222222222222222222222222222222222222222222222222"
 elif [[ "$joined" == *" images -q caddy"* ]]; then
-  echo "sha256:synthetic-caddy-image"
+  echo "sha256:3333333333333333333333333333333333333333333333333333333333333333"
 elif [[ "$joined" == *"pg_dump"* ]]; then
   printf 'PGDMP-synthetic-deploy-rollback\n'
 elif [[ "$joined" == *"pg_restore --list"* ]]; then
@@ -127,7 +140,7 @@ receipt="$test_root/predeployment.receipt"
   printf 'archive=%s\n' "$archive"
   printf 'sha256=%s\n' "$hash"
   printf 'source_commit=%s\n' "$commit"
-  printf 'source_image_id=sha256:synthetic-previous-image\n'
+  printf 'source_image_id=sha256:1111111111111111111111111111111111111111111111111111111111111111\n'
   printf 'source_build_context_schema=medtrack.build-context/v1\n'
   printf 'source_build_context_sha256=sha256:%064d\n' 1
   printf 'source_schema_migration_sha256=%064d\n' 1
@@ -148,7 +161,7 @@ receipt="$test_root/predeployment.receipt"
 export PATH="$fake_bin:$PATH"
 export MEDTRACK_ENV_FILE="$test_root/test.env"
 export MEDTRACK_BUILD_CONTEXT_VERIFIER="$test_root/build-context-verifier.py"
-export PYTHON_COMMAND=python
+export PYTHON_COMMAND=python3
 export FAKE_IMAGE_REVISION="$commit"
 FAKE_GIT_TREE="$(git -C "$repo_root" rev-parse "$commit^{tree}")"
 export FAKE_GIT_TREE
@@ -168,6 +181,18 @@ grep -Fxq "migration_plan_sha256=$plan_hash" "$evidence_dir/plan.receipt"
 if grep -Eq '(^| )compose( |$).*( pull| up| stop| start| restart| down)( |$)' "$plan_log"; then
   echo "Plan phase unexpectedly attempted to mutate a live service" >&2
   cat "$plan_log" >&2
+  exit 1
+fi
+
+conflict_log="$test_root/retention-conflict.log"
+if FAKE_RETENTION_CONFLICT=1 FAKE_DOCKER_LOG="$conflict_log" \
+  "$repo_root/scripts/deploy-production.sh" plan "$commit" \
+  --backup-receipt "$receipt" --evidence-dir "$test_root/conflict-evidence" >/dev/null 2>&1; then
+  echo "Plan unexpectedly accepted a conflicting retained image" >&2
+  exit 1
+fi
+if grep -Eq '( build |image tag | up | stop )' "$conflict_log"; then
+  echo "Retention conflict permitted an image or service mutation" >&2
   exit 1
 fi
 
@@ -234,9 +259,9 @@ stale_receipt="$test_root/stale-deployment.receipt"
   printf 'rollback_database=patient_registry_deploy_rollback_synthetic\n'
   printf 'rollback_database_oid=222\n'
   printf 'deployed_database_oid=111\n'
-  printf 'previous_image_id=sha256:synthetic-previous-image\n'
+  printf 'previous_image_id=sha256:1111111111111111111111111111111111111111111111111111111111111111\n'
   printf 'previous_image_ref=patient-registry-web:synthetic-previous\n'
-  printf 'deployed_image_id=sha256:synthetic-planned-image\n'
+  printf 'deployed_image_id=sha256:2222222222222222222222222222222222222222222222222222222222222222\n'
   printf 'build_context_sha256=sha256:%064d\n' 2
 } > "$stale_receipt"
 export FAKE_DOCKER_LOG="$test_root/stale-rollback-docker.log"

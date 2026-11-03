@@ -144,7 +144,9 @@ jobs:
       - run: python -m pip install "$PIP_BOOTSTRAP"
       - run: python -m pip install --require-hashes -r requirements-ci.txt
       - name: Python vulnerability audit
-        run: python -m pip_audit --strict --require-hashes -r requirements.txt
+        run: |
+          python -m pip_audit --strict --require-hashes -r requirements.txt
+          python -m pip_audit --strict --require-hashes -r requirements-ci.txt
       - name: Reproduce Python locks
         run: |
           python scripts/update-python-locks.py

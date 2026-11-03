@@ -1,5 +1,8 @@
-## 2026.11.03.13.03
+## 2026.11.03.13.06
 
+- Patch msgpack to 1.2.3 and pyasn1 to 0.6.5 to address five dependency findings.
+- Patch CI filelock and setuptools dependencies and audit both hash locks in CI and scheduled checks.
+- Start the existing Docker Desktop engine before independent restores when unavailable, with a bounded timeout.
 - Preserve running production images before deployment builds and reject conflicting retention names.
 - Record the accepted Mac recovery cutover and owner-requested 48-hour Health cadence.
 - Update pinned CI actions, Certifi and Python Playwright with regenerated hash locks; preserve existing release gates.

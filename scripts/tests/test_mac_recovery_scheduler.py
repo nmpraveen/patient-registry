@@ -20,6 +20,29 @@ scheduler=load('scheduler');actions=load('actions')
 
 
 class SchedulingIntegrity(unittest.TestCase):
+    def test_restore_reuses_running_desktop_engine(self):
+        with patch.object(actions.subprocess,'run',return_value=subprocess.CompletedProcess([],0)) as probe, \
+             patch.object(actions,'command') as command:
+            actions.ensure_docker()
+        self.assertEqual(probe.call_args.args[0],['docker','--context','desktop-linux','info'])
+        command.assert_not_called()
+
+    def test_restore_starts_stopped_desktop_with_deadline_and_rechecks(self):
+        with patch.object(actions.subprocess,'run',return_value=subprocess.CompletedProcess([],1)), \
+             patch.object(actions,'command') as command:
+            actions.ensure_docker()
+        self.assertEqual([call.args[0] for call in command.call_args_list],
+                         [['docker','desktop','start','--timeout','120'],
+                          ['docker','--context','desktop-linux','info']])
+        self.assertEqual(command.call_args_list[0].kwargs['timeout'],150)
+
+    def test_failed_desktop_start_blocks_restore_before_production_or_download(self):
+        with patch.object(actions.subprocess,'run',return_value=subprocess.CompletedProcess([],1)), \
+             patch.object(actions,'command',side_effect=RuntimeError('startup-failed')), \
+             patch.object(actions,'status') as status,patch.object(actions,'nas_download') as download:
+            with self.assertRaisesRegex(RuntimeError,'startup-failed'):actions.restore()
+        status.assert_not_called();download.assert_not_called()
+
     def test_health_binds_fixed_private_catalog_and_operations_source(self):
         with tempfile.TemporaryDirectory() as folder,patch.object(actions,'ROOT',Path(folder)):
             root=Path(folder);(root/'bin').mkdir();(root/'secrets').mkdir()

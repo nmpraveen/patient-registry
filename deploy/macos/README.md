@@ -69,6 +69,9 @@ America/Detroit slots remain full scrub Saturday 08:00 and restore Sunday 03:30.
 Missed work runs at the next invocation. GUI login,
 available Keychain, network and Docker Desktop are required. A cold restart
 before FileVault/login unlock is not an unattended verifier state.
+Before a restore, an unavailable Desktop engine is started through
+`docker desktop start --timeout 120` and checked again. Startup failure keeps
+the attempt unhealthy and uses the existing failure alert.
 
 Use installed `bin/scheduler.py --root <private-root> status`, `restore`,
 `scrub`, or `health`; `schedule` runs due work. One job runs at a time. Attempts
